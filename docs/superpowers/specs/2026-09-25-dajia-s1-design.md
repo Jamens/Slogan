@@ -79,11 +79,13 @@ apps/desktop        @dajia/desktop    Electron 壳：main / preload / React rend
 
 拆包的两个理由，缺一不可：`core` 与 `drawing` 必须能在纯 Node 下测试（施工图错误靠肉眼验不出来）；图纸引擎将来可被 CLI 或云端复用。
 
-技术栈：Electron + `electron-vite` + React 19 + TypeScript 5 strict；打包 `electron-builder` 出 NSIS 安装器；自动更新走 GitHub Releases；renderer 状态用 zustand。
+技术栈：Electron + `electron-vite` + React 19 + TypeScript strict（主版本按 `latest` 取，2026-09-25 实测 `typescript@7.0.2`；计划 1 里记了降级到 `^6` 的退路）；打包 `electron-builder` 出 NSIS 安装器；自动更新走 GitHub Releases；renderer 状态用 zustand。
 
 ### 4.2 依赖方向（强制）
 
-`core` ← `{ scene-2d, scene-3d, drawing }`；三个消费方**互相禁止 import**。由 eslint 规则约束。这是 D2b 单一真源的执行机制，不依赖人工自觉。
+`core` ← `{ scene-2d, scene-3d, drawing }`；三个消费方**互相禁止 import**。这是 D2b 单一真源的执行机制，不依赖人工自觉。
+
+执行机制改为**自研 CI 脚本 `pnpm lint:deps`（`scripts/check-package-deps.mjs`）+ 它自己的 vitest 用例**，不用 eslint 规则 —— 修正本文档第 1 版的"由 eslint 规则约束"。理由：约束本身必须可测。守卫误报或漏报时 D2b 就是假的，而脚本能直接吃 fixture 目录断言，eslint 插件做不到；且未知包目录一律抛错，避免"新增包忘了登记 → 扫不到 → 静默通过"。
 
 ### 4.3 进程模型
 
@@ -228,12 +230,12 @@ dajia
 
 **未验证**：以上除端口握手与只读登录外，均无建库、建表、写入操作。
 
-## 13. 待用户确认事项
+## 13. 已确认事项
 
 1. ~~**建库授权**~~ → **已获授权。** 用户于 2026-09-25 明确"允许在 MySQL 建 `dajia` 和 `dajia_test` 库"。授权覆盖 M1.3 所需的建库与建表；执行时点仍按里程碑排在 M1.3，本文档写入时尚未执行。
-2. 是否将 `Jamens/Slogan` 改名为更贴合产品名的仓库（如 `dajia`）。当前默认保留原名，仅本地 `git init` + 配置 remote，**push 由用户本人执行**。
-3. M1.8 描图底图是否保留在 S1（默认保留最简版）。
-4. **安装包代码签名，需要你拍。** 本文档第 1 版漏了这一项。NSIS 安装包若无代码签名证书，Windows SmartScreen 会拦一个蓝色全屏警告，"使用者为不懂技术的人"这一条会让它看起来像病毒。三条路：(a) 买 OV/EV 证书（约 ¥1500–4000/年，EV 才能立刻消除警告）；(b) 不签名，改为一页图文安装说明 + 你远程协助；(c) 先按 (b) 做，等确有外部用户再补证书。**当前默认按 (c) 写**，M1.0 的打包配置预留签名开关。
+2. **仓库名保留 `Jamens/Slogan`**（用户取默认值）。本地已 `git init` + 配置 remote，**push 由用户本人执行**。
+3. **M1.8 描图底图保留在 S1**（用户取默认值），仅最简版：放底图 + 两点定标。
+4. **代码签名走 (c)**（用户取默认值）：先不签名，配一页图文安装说明；确有外部用户后再补证书。M1.0 的打包配置预留 `sign` 开关，NSIS 产物在无签名下可正常构建。
 
 ## 14. 后续子项目路线图
 
