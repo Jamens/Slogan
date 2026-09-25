@@ -631,7 +631,7 @@ export * from './units/mm';
 pnpm verify
 ```
 
-Expected: typecheck 通过、依赖方向通过、`pnpm test` 报 `5 passed`（units 4 个 describe 块内共 8 条 it，加 Task 1 的 1 条 → 以实际 it 计数为准；关键是 0 failed）。
+Expected: typecheck 通过、依赖方向通过、`pnpm test` 全绿。**实测计数：13 passed**（Task 1 smoke 1 + Task 2 守卫 5 + 本任务 units 7）。初稿这里写的"5 passed"是从没跑过的手算，往后各任务一律以实际输出为准。
 
 - [ ] **Step 5: 提交**
 
@@ -642,6 +642,8 @@ git commit -m "feat: 整数毫米单位层
 真源唯一长度类型 Mm，quantizeMm 是浮点落回整数的唯一入口，assertMm 挡住
 未量化坐标写进文档。超出安全整数范围一并拒掉：再大加减就不准了。"
 ```
+
+**执行日志（Task 3）**：先跑红确认两道门禁都拦得住（vitest `TypeError: quantizeMm is not a function` ×7、tsc `TS2305 has no exported member` ×4），实现后转绿。测试在初稿 7 条断言组之外补了三条边界：`-Infinity` 也要抛、`Number.MAX_SAFE_INTEGER` 本身必须放行（只拒超出者的话，合法上限会被误杀）、`mmToMeters(-240)` 的负值换算。
 
 ---
 
