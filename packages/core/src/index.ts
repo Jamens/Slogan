@@ -7,3 +7,5 @@ export { stableStringify } from './model/stable-stringify';
 export { Document, SCHEMA_VERSION } from './model/document';
 export type * from './model/patch';
 export { applyPatch, invertPatch } from './model/patch';
+export type * from './model/command';
+export { TransactionLog, affectedIds } from './model/transaction';

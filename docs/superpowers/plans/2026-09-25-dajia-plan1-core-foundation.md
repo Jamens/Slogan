@@ -1570,6 +1570,27 @@ describe('TransactionLog', () => {
     expect(log.canRedo).toBe(true);
   });
 
+  it('undo/redo 的 affected 跟着被撤/被重做的那笔走', () => {
+    const setThickness = (): Command => ({
+      type: 'wall.setThickness',
+      build(doc) {
+        const w = doc.get(PID(3)) as WallEntity;
+        return { upsert: [{ ...w, thicknessMm: 120 }], remove: [] };
+      },
+    });
+    const log = seed();
+    log.dispatch(movePoint(PID(1), 100, 200));
+    log.dispatch(setThickness());
+    expect(log.affected).toEqual(new Set([PID(3)]));
+    expect(log.undo()).toBe(true);
+    expect(log.undo()).toBe(true);
+    // 撤到第一笔：不随 undo 刷新的话这里会停在 {PID(3)}
+    expect(log.affected).toEqual(new Set([PID(1)]));
+    expect(log.redo()).toBe(true);
+    expect(log.redo()).toBe(true);
+    expect(log.affected).toEqual(new Set([PID(3)]));
+  });
+
   it('redo 再应用，与不撤销等价', () => {
     const log = seed();
     log.dispatch(movePoint(PID(1), 100, 200));
@@ -1672,7 +1693,9 @@ export interface Command {
 ```ts
 import type { EntityId } from '../ids';
 import type { Command } from './command';
-import { Document } from './document';
+// TransactionLog 只在类型位置用到 Document（字段/参数/返回值），不调它的静态方法，
+// 所以是类型导入；Task 6 的反例（applyPatch 调 Document.replaceEntities）才需要值导入。
+import type { Document } from './document';
 import type { Entity } from './entity';
 import { applyPatch, invertPatch, type Patch } from './patch';
 
@@ -1706,6 +1729,7 @@ export class TransactionLog {
     return this.doc;
   }
 
+  /** 最近一次 dispatch/undo/redo 触及的实体 id，供计划 3 的 3D 增量重建使用。 */
   get affected(): ReadonlySet<EntityId> {
     return this.lastAffected;
   }
@@ -1775,6 +1799,12 @@ git commit -m "feat: 命令与事务日志
 dispatch/undo/redo 以补丁及其 previous 为单位；build 抛错时不动栈，
 避免半途事务。affected 供计划 3 的 3D 增量重建使用。"
 ```
+
+**执行日志（Task 7）**：按 Task 6 补的规矩走的顺序 —— 先写测试跑红，再实现。红态同时打中两道门禁：vitest 7 条全 `TypeError: TransactionLog is not a constructor`；`pnpm typecheck` 报 `TS2305 has no exported member 'TransactionLog' / 'Command'` 外加一条 `TS7006 Parameter 'doc' implicitly has an 'any' type` —— `build(doc)` 的上下文类型来自 `Command`，`Command` 还没导出时它只能是隐式 any。这条是顺带证明"测试确实经过类型检查"。
+
+清单里 `import { Document }` 改成了 `import type { Document }`（本文件只在类型位置用它，不调静态方法），清单已同步修正，并留注释对照 Task 6 的反例。
+
+**变异验证（本任务的重点发现）**：先给 `undo 还原并开 redo` 补一条 `expect(log.affected).toEqual(new Set([PID(1)]))`，然后把 `undo()` 里的 `lastAffected` 更新删掉 —— **8 条全绿**。原因是这条断言恒真：dispatch 刚把 `lastAffected` 设成 `{PID(1)}`，undo 更不更新看不出差别。改成"两笔动不同实体的命令，连撤两次"的场景（撤到第一笔时正确值应为 `{PID(1)}`，不刷新则停在 `{PID(3)}`）才真正咬住。最终三轮变异各打红 1 条：A = `undo` 不刷 affected、B = `dispatch` 不清 redoStack、C = `redo` 不刷 affected；恢复后与备份 `diff` 逐字节一致，`pnpm verify` **51 passed**（前序 43 + 本任务 8）。教训：**"实现里已经做了"不等于"测试能证明它做了"**，断言必须让"做了"与"没做"落到不同的可观测值上。
 
 ---
 
