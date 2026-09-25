@@ -1842,8 +1842,10 @@ import {
   wallDelete,
   wallMoveEndpoint,
   wallSetThickness,
+  type ColumnEntity,
   type OpeningEntity,
   type PointEntity,
+  type SlabEntity,
   type StoreyEntity,
   type WallEntity,
 } from '@dajia/core';
@@ -1962,7 +1964,7 @@ describe('wallCreate', () => {
           heightMm: 3000,
         }),
       ),
-    ).toThrow(/厚度/);
+    ).toThrow(/不小于墙长/);
   });
 });
 
@@ -2003,7 +2005,9 @@ describe('wallDelete', () => {
     const { wallId, storeyId } = oneWall(log);
     log.dispatch({
       type: 'opening.create',
-      build(doc) {
+      // 不写 doc 形参：这条命令不读文档，留着会撞 noUnusedParameters（TS6133）。
+      // Command.build 允许少写参数。
+      build() {
         const opening: OpeningEntity = {
           kind: 'opening',
           id: uuidv7(),
@@ -2038,8 +2042,14 @@ describe('wallDelete', () => {
     // 第二面墙共享 first.endId
     log.dispatch({
       type: 'wall.create',
-      build(doc) {
-        const end: PointEntity = { kind: 'point', id: uuidv7(), storeyId: first.storeyId, x: 3600, y: 2400 };
+      build() {
+        const end: PointEntity = {
+          kind: 'point',
+          id: uuidv7(),
+          storeyId: first.storeyId,
+          x: 3600,
+          y: 2400,
+        };
         const w: WallEntity = {
           kind: 'wall',
           id: uuidv7(),
@@ -2065,6 +2075,43 @@ describe('wallDelete', () => {
   it('删不存在的墙抛错', () => {
     const log = emptyLog();
     expect(() => wallDelete({ wallId: uuidv7() }).build(log.document)).toThrow(/不存在/);
+  });
+
+  it('端点仍被柱或板引用时不回收', () => {
+    const log = emptyLog();
+    const { wallId, storeyId } = oneWall(log);
+    const wall = log.document.get(wallId) as WallEntity;
+    log.dispatch({
+      type: 'column.create',
+      build() {
+        const column: ColumnEntity = {
+          kind: 'column',
+          id: uuidv7(),
+          storeyId,
+          pointId: wall.startId,
+          widthMm: 400,
+          depthMm: 400,
+          heightMm: 3000,
+          loadBearing: true,
+          material: 'concrete',
+        };
+        const slab: SlabEntity = {
+          kind: 'slab',
+          id: uuidv7(),
+          storeyId,
+          // 故意只挂终点：让"查柱"与"查板"各自决定一个点的生死，
+          // 否则起点被柱和板同时引用，漏查板也能蒙过。板的边界点数 S1 不校验。
+          boundaryPointIds: [wall.endId],
+          thicknessMm: 120,
+          elevationOffsetMm: 0,
+        };
+        return { upsert: [column, slab], remove: [] };
+      },
+    });
+    log.dispatch(wallDelete({ wallId }));
+    // 起点只剩柱引用，终点只剩板引用：两条引用扫描少一条就会误删
+    expect(log.document.get(wall.startId)).toBeDefined();
+    expect(log.document.get(wall.endId)).toBeDefined();
   });
 
   it('撤消删除后墙、洞口、端点全部原样回来', () => {
@@ -2272,8 +2319,8 @@ export function wallDelete(input: { wallId: EntityId }): Command {
     build(doc: Document) {
       const wall = requireWall(doc, input.wallId);
       const remove: EntityId[] = [wall.id];
-      const dropOpening: readonly OpeningEntity[] = doc.byKind('opening');
-      for (const opening of dropOpening) {
+      const openings: readonly OpeningEntity[] = doc.byKind('opening');
+      for (const opening of openings) {
         if (opening.hostWallId === wall.id) remove.push(opening.id);
       }
       for (const pointId of [wall.startId, wall.endId]) {
@@ -2326,6 +2373,28 @@ git commit -m "feat: 楼层与墙命令，含级联删除与孤儿点回收
 删墙连带删其洞口，端点在没有任何墙/柱/板引用时才回收。
 零长墙与墙厚≥墙长在命令构造期就拒，不让自相交轮廓进真源。"
 ```
+
+**执行日志（Task 8）**：Step 1 的红同时打中两道门禁，且暴露清单里三处照抄就过不去的地方：
+
+1. **`toThrow(/厚度/)` 与实现的消息不匹配** —— 抛的是 `墙厚 240 不小于墙长 100，轮廓会自相交`，里面没有"厚度"两个字。这是 Task 6 `/同时/` 的同一类错：正则放宽到"抛了就算过"会失去区分力，所以改成 `/不小于墙长/`（既咬住这条规则，又不会因"零长墙"或"必须是整数毫米"意外通过）。改前先跑了一次，实测 `AssertionError: expected [Function] to throw error matching /厚度/ but got '墙厚 240 不小于墙长…'` —— 先拿到证据再改断言，不是猜。
+2. **两处 `build(doc)` 的 `doc` 未使用，被 `noUnusedParameters` 判 TS6133** —— `pnpm typecheck` 报 `commands.test.ts(172,13)` 与 `(207,13)`。改成 `build()`：`Command.build` 允许实现方少写参数。
+3. 测试里长行做了换行展开（与 biome/prettier 无关，纯可读性），实现里 `dropOpening` 改名 `openings`。
+
+**补了一条计划没有的测试**：`stillReferenced` 的查柱与查板两条分支在计划里**完全没有被测**（计划 1 没有柱/板命令，但 `wallDelete` 已经依赖它们，漏了就会误删点）。用一条手写的 `column.create` 原始命令补上：柱只挂起点、板只挂终点，使两条分支各自决定一个点的生死 —— 若板同时挂两点，漏查板也能蒙过。
+
+**变异验证（`commands.test.ts` 14 条，每轮单独短路一处，跑完与 `/tmp/wall_backup.ts` diff 确认逐字节还原）**：
+
+| 变异 | 结果 |
+| --- | --- |
+| A `wallDelete` 不级联洞口 | 1 failed（`删墙级联删其洞口`） |
+| B `stillReferenced` 不查柱 | 1 failed（`端点仍被柱或板引用时不回收`） |
+| C `stillReferenced` 不查板 | 1 failed（同上） |
+| D `wallCreate` 不查零长 | 1 failed（`零长墙抛错`） |
+| E `wallCreate` 终点不量化（`x1 = input.end.x`） | 2 failed（`建墙即带出两个端点` + `零长墙抛错`） |
+
+第一轮跑 A–D 时 B、C 的输出是 `Tests no tests` + `PARSE_ERROR`：变异写成了 `if (false)` 后面留着 `return true;` 的悬空体，把文件写坏了，不是测试漏了。改成 `if (false && …)` 后两处各咬 1 条。E 顺带证明"端点量化"这条被两条不同的测试守着。
+
+**仍未覆盖**：`wallSetThickness` 的 `thicknessMm <= 0` 与 `墙厚 ≥ 墙长` 分支、`storeyCreate` 的 `heightMm <= 0` 与 index 非整数分支（计划只测了 index 重复）；柱/板命令本体要等计划 2。实测 `pnpm verify` **65 passed**（前序 51 + 本任务 14）。
 
 ---
 
