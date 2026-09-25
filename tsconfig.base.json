@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "paths": {
+      "@dajia/core": ["./packages/core/src/index.ts"],
+      "@dajia/protocol": ["./packages/protocol/src/index.ts"],
+      "@dajia/drawing": ["./packages/drawing/src/index.ts"],
+      "@dajia/scene-2d": ["./packages/scene-2d/src/index.ts"],
+      "@dajia/scene-3d": ["./packages/scene-3d/src/index.ts"]
+    },
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "types": ["node"]
+  }
+}

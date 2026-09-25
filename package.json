@@ -1,0 +1,19 @@
+{
+  "name": "dajia",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p packages/core/tsconfig.json",
+    "test": "vitest run",
+    "verify": "pnpm typecheck && pnpm lint:deps && pnpm test"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1"
+  }
+}
