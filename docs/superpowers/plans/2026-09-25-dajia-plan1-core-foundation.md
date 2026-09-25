@@ -845,6 +845,10 @@ function wall(over: Partial<WallEntity> = {}): WallEntity {
   };
 }
 
+function point(x: number, y: number) {
+  return { kind: 'point', id: uuidv7(), storeyId: uuidv7(), x, y } as const;
+}
+
 describe('stableStringify', () => {
   it('键顺序无关', () => {
     expect(stableStringify({ b: 1, a: 2 })).toBe(stableStringify({ a: 2, b: 1 }));
@@ -912,6 +916,16 @@ describe('Document', () => {
     ).toThrow(/thicknessMm/);
   });
 
+  it('坐标同属整数毫米约定：点带浮点 x 必须被拒（spec D8）', () => {
+    const p = point(1200.5, 0);
+    expect(() =>
+      Document.replaceEntities(Document.create(projectId), new Map([[p.id, p]])),
+    ).toThrow(/point\.x/);
+    const ok = point(1200, 0);
+    const doc = Document.replaceEntities(Document.create(projectId), new Map([[ok.id, ok]]));
+    expect(doc.byKind('point')[0]?.x).toBe(1200);
+  });
+
   it('拒绝形状不合法的实体：id 不是 v7 就抛', () => {
     const doc = Document.create(uuidv7());
     expect(() =>
@@ -920,6 +934,13 @@ describe('Document', () => {
         new Map([['wall-1', { ...(wall() as Entity), id: 'wall-1' }]]),
       ),
     ).toThrow(/id/);
+  });
+
+  it('拒绝 Map 的 key 与实体 id 不一致', () => {
+    const w = wall();
+    expect(() =>
+      Document.replaceEntities(Document.create(projectId), new Map([[uuidv7(), w]])),
+    ).toThrow(/key 与实体 id 不一致/);
   });
 });
 ```
@@ -1067,8 +1088,12 @@ import { stableStringify } from './stable-stringify';
 
 export const SCHEMA_VERSION = 1;
 
-const MM_FIELDS: Record<EntityKind, readonly string[]> = {
-  point: [],
+/**
+ * 每种实体必须为整数毫米的字段。**含点的 x/y**：spec D8 写的是"坐标与长度一律整数
+ * 毫米"，初稿只叫 `MM_FIELDS` 且按 `*Mm` 后缀列举，把浮点坐标留在了真源里。
+ */
+const INTEGER_FIELDS: Record<EntityKind, readonly string[]> = {
+  point: ['x', 'y'],
   wall: ['thicknessMm', 'heightMm', 'elevationOffsetMm'],
   opening: ['distanceMm', 'widthMm', 'heightMm', 'sillMm'],
   storey: ['elevationMm', 'heightMm'],
@@ -1084,7 +1109,7 @@ function validate(entity: Entity): void {
   if (!isEntityId(entity.id)) {
     throw new TypeError(`实体 id 必须是 UUIDv7，收到 ${JSON.stringify(entity.id)}`);
   }
-  for (const field of MM_FIELDS[entity.kind]) {
+  for (const field of INTEGER_FIELDS[entity.kind]) {
     const value = (entity as unknown as Record<string, unknown>)[field];
     if (typeof value !== 'number' || !Number.isInteger(value) || !Number.isSafeInteger(value)) {
       throw new TypeError(`${entity.kind}.${field} 必须是整数毫米，收到 ${JSON.stringify(value)}`);
@@ -1162,7 +1187,7 @@ export { Document, SCHEMA_VERSION } from './model/document';
 pnpm verify
 ```
 
-Expected: 全绿。`equals` 相关的两条若红，先查 `MM_FIELDS.wall` 是否含 `thicknessMm`，再查 `byKind`/`canonical` 的排序 —— 不要靠放宽断言解决。
+Expected: 全绿。`equals` 相关的两条若红，先查 `INTEGER_FIELDS.wall` 是否含 `thicknessMm`，再查 `byKind`/`canonical` 的排序 —— 不要靠放宽断言解决。
 
 - [ ] **Step 6: 提交**
 
@@ -1174,6 +1199,8 @@ canonical() = 实体按 id 升序 + 键递归排序，是 Task 9 属性测试判
 「撤销后逐字节还原」的唯一依据。replaceEntities 顺手校验 id 为 v7、
 长度字段为整数毫米，浮点尾差进不了真源。"
 ```
+
+**执行日志（Task 5）**：实现时改掉了初稿一处与 spec D8 冲突的地方 —— `MM_FIELDS.point` 是空数组，即只校验带 `Mm` 后缀的长度字段，**点的 x/y 两个坐标没被校验**，浮点坐标可以静默进真源。现改名 `INTEGER_FIELDS` 并把 `point: ['x', 'y']` 补上，配一条 `point(1200.5, 0)` 必须抛的测试。另补两条：Map 的 key 与实体 id 不一致要抛、合法坐标 1200 要放行（防"一律抛"造成假绿）。实测先红（11/13 失败）后绿，`pnpm verify` 计数 **32 passed**（前四任务 19 + 本任务 13）。
 
 ---
 
