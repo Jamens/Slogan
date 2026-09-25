@@ -779,6 +779,8 @@ pnpm verify
 
 Expected: 全绿。若"跨毫秒字典序递增"偶发失败，说明时间戳字节序写错（须大端），回去看 `for (let i = 0; i < 6; i++)` 那一行。
 
+**执行日志（Task 4）**：先红（`uuidv7 is not a function` ×6）后绿，`pnpm verify` 计数 **19 passed**（smoke 1 + 守卫 5 + units 7 + ids 6）。"跨毫秒字典序递增"不是概率断言：两个 ID 的时间戳字节必不相同，大端前缀决定字典序，与随机位无关。测试另补一条 `uuidv7(1.5)` 必须抛（非整数毫秒）。
+
 - [ ] **Step 5: 提交**
 
 ```bash
