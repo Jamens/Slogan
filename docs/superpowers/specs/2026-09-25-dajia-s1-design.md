@@ -228,6 +228,12 @@ dajia
 - `Jamens/Slogan` 为零 commit 的空仓库
 - 全局 `git config core.autocrlf=true`，`user.name=JunHao`。实测提交时 git 已警告会做 LF→CRLF 转换，因此 **M1.0 必须包含 `.gitattributes`（`* text=auto eol=lf`）**，否则跨平台行尾会污染 diff
 
+**M1.0 开工后补测（2026-09-25，计划 1 Task 1）**：
+
+- 实际解析到的工具链：`typescript@7.0.2`、`vitest@5.0.1`、`@types/node@26.6.2`、pnpm 11.18.0（最新 12.6.0，未升）
+- **TS7 与本文档第 1 版的配置写法不兼容**：`baseUrl` 已被移除（`TS5102`），`paths` 的值必须以 `./` 起头（`TS5090`）。已按实测改为"无 `baseUrl` + 相对 `./` 的 paths"，验证方式为一次性探针（import 不存在的导出得 `TS2305`，证明别名指向真实文件而非退化成 `any`）
+- `electron@44.4.5`、`electron-vite@5.0.0`、`electron-builder@26.15.3`、`react@19.3.0`、`zustand@5.0.15`、`mysql2@3.24.4`、`fast-check@4.10.2` 为 `npm view <pkg> version` 的 `latest`，安装时以 `pnpm-lock.yaml` 为准
+
 **未验证**：以上除端口握手与只读登录外，均无建库、建表、写入操作。
 
 ## 13. 已确认事项

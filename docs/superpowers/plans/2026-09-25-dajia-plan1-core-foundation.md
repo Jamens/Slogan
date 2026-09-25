@@ -98,13 +98,12 @@ packages:
     "lib": ["ES2023"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "baseUrl": ".",
     "paths": {
-      "@dajia/core": ["packages/core/src/index.ts"],
-      "@dajia/protocol": ["packages/protocol/src/index.ts"],
-      "@dajia/drawing": ["packages/drawing/src/index.ts"],
-      "@dajia/scene-2d": ["packages/scene-2d/src/index.ts"],
-      "@dajia/scene-3d": ["packages/scene-3d/src/index.ts"]
+      "@dajia/core": ["./packages/core/src/index.ts"],
+      "@dajia/protocol": ["./packages/protocol/src/index.ts"],
+      "@dajia/drawing": ["./packages/drawing/src/index.ts"],
+      "@dajia/scene-2d": ["./packages/scene-2d/src/index.ts"],
+      "@dajia/scene-3d": ["./packages/scene-3d/src/index.ts"]
     },
     "strict": true,
     "noImplicitOverride": true,
@@ -120,7 +119,9 @@ packages:
 }
 ```
 
-`baseUrl` + `paths` 这一组是必须的，不是便利：包 `exports` 直接指向 `.ts` 源文件（本项目不出编译产物），tsc 经 `node_modules` 软链解析这种 `exports` 目标不是稳定行为，smoke 测试会在 typecheck 阶段红。`paths` 让它与 vitest 的 alias 走同一条确定路径。`extends` 时 `baseUrl`/`paths` 相对**声明它们的配置文件**解析，所以这里写的路径就是仓库根相对路径，子包 tsconfig 不必重复。
+`paths` 这一组是必须的，不是便利：包 `exports` 直接指向 `.ts` 源文件（本项目不出编译产物），tsc 经 `node_modules` 软链解析这种 `exports` 目标不是稳定行为，smoke 测试会在 typecheck 阶段红。`paths` 让它与 vitest 的 alias 走同一条确定路径。
+
+**执行期修正（Task 1 实测）**：本文档初稿写的是 `"baseUrl": "."` + 不带 `./` 的 `paths`。`typescript@7.0.2` 直接拒绝这种配置：`TS5102 Option 'baseUrl' has been removed` 与 `TS5090 Non-relative paths are not allowed`。现在的写法（无 `baseUrl`，`paths` 值以 `./` 起头）在本机可用，且 `./` 相对**声明 paths 的那个配置文件**解析 —— 已在 `packages/core/test/` 里通过一次性探针验证：临时 import 一个不存在的导出会报 `TS2305 has no exported member`，说明别名指向的是真实文件而不是静默退化成 `any`。
 
 `vitest.config.ts`：
 
@@ -170,6 +171,8 @@ pnpm add -D -w typescript vitest @types/node
 ```
 
 Expected: `node_modules` 生成，`pnpm-lock.yaml` 出现且含 `typescript`、`vitest`。把三者解析到的版本抄进本任务的执行日志行。
+
+**执行日志（Task 1，2026-09-25 本机实测）**：`pnpm add -D -w typescript vitest @types/node` 解析到 `typescript@7.0.2`、`vitest@5.0.1`、`@types/node@26.6.2`，共 41 个包，`node_modules/.bin/tsc -v` 确认 `tsc` 二进制在 TS7 下仍叫 `tsc`。`pnpm typecheck` 首次因 `baseUrl` 被 TS7 移除而失败，配置修正后退出 0；`pnpm test` 先故意把断言改成 `toBe(2)` 得到 `AssertionError: expected 1 to be 2 / Tests 1 failed`，改回后 `1 passed`，退出 0。
 
 - [ ] **Step 3: 建 `@dajia/core` 空壳与冒烟测试**
 
@@ -2957,6 +2960,6 @@ Expected: 干净（`.gitignore` 已忽略 `out/`、`release/`、`node_modules/`�
 - `noUnusedParameters` + `verbatimModuleSyntax` 会在我几处省事写法上报错；这是好事，按提示改。
 - `import.meta.dirname` 需 Node 20.11+，本机 24 满足；electron-vite 打包后是否保留该语义要在 Step 4 实测。
 - **源码直连的打包风险**：包 `exports` 指向 `.ts`，Electron 侧要靠 vite/esbuild 转译 node_modules 里的 workspace 软链目标。若 `pnpm --filter @dajia/desktop build` 报 "failed to resolve @dajia/core" 或把 `.ts` 原样丢进产物，解法是在 `electron.vite.config.ts` 的 `main`/`preload` 里加 `resolve.alias` 指向 `packages/core/src/index.ts`（与 vitest 同一招），并把结论记进执行日志 —— 不许改成"先给 core 出一份编译产物"，那会推翻 D2 的源码直连决定。
-- **`typescript@7` 是新主版本**（本机 `npm view typescript dist-tags` 实测 `latest = 7.0.2`，`6.0.3` 仍可选）。装完先确认 `node_modules/.bin` 下确实有 `tsc`，再跑门禁；若 `tsc` 与 vitest 的类型加载在它下面出问题，退到 `typescript@^6` 并把实际用的主版本记进 spec 第 12 节。一次只改一处，不要同时动配置去猜。
+- **`typescript@7` 是新主版本**（本机 `npm view typescript dist-tags` 实测 `latest = 7.0.2`，`6.0.3` 仍可选）。**Task 1 已命中它**：TS7 移除了 `baseUrl`（`TS5102`）并要求 `paths` 值以 `./` 起头（`TS5090`），配置已按实测改好；`tsc` 二进制名未变。暂不需要退到 `^6`，真退时把实际主版本记进 spec 第 12 节。
 - Electron 首次装会下载 ~100MB，网络代理下可能失败 —— 失败时报出来，不要退到"跳过这一步"。
 - 属性测试若长期跑不动（>60s），降 `numRuns` 而不是删不变式，并在 commit message 里记下实际值；`executed` 的硬计数断言要同步改，否则它会以"期望 300 实际 1000"的方式红。
