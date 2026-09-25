@@ -7,7 +7,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p packages/core/tsconfig.json",
+    "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/protocol/tsconfig.json && pnpm --filter @dajia/desktop typecheck",
+    "build": "pnpm --filter @dajia/desktop build",
     "lint:deps": "node scripts/check-package-deps.mjs",
     "test": "vitest run",
     "verify": "pnpm typecheck && pnpm lint:deps && pnpm test"

@@ -2855,6 +2855,26 @@ pnpm --filter @dajia/desktop add -D electron electron-vite electron-builder @vit
 
 Expected: 三条命令均成功。把解析到的精确版本抄进执行日志；Electron 首次会下载约 100MB，失败就报出来，不要跳过这一步。
 
+**装完必须补两步，否则后面全是"看起来装上了其实没装上"**（本机实测，见执行日志）：
+
+1. pnpm 11 默认不跑依赖的构建脚本，会在 `pnpm-workspace.yaml` 里写一个 `allowBuilds: {esbuild: "set this to true or false"}` 的**字符串占位**并静默跳过 esbuild 的原生二进制安装 → vite/electron-vite 直接不可用。手工改成布尔并给出理由：
+
+```yaml
+allowBuilds:
+  esbuild: true               # vite / electron-vite 需要 esbuild 原生二进制
+  electron-winstaller: false  # 只有 electron-builder 出 NSIS 才用到，排在计划 4 之后
+```
+
+改完 `pnpm install` 重装一次，确认 `node_modules/.pnpm/esbuild@*/node_modules/esbuild/bin/esbuild` 存在（平台二进制本体在 `@esbuild+win32-x64@*/node_modules/@esbuild/win32-x64/esbuild.exe`）。
+
+2. Electron 44 的 `install.js` 不再挂在 postinstall 上（44.4.5 的 `package.json` 里根本没有 `postinstall`，只有一个独立的 `install-electron` bin）。`pnpm install` 之后 `node_modules/electron/dist/` 是空的、`node_modules/electron/path.txt` 不存在，此时 `electron .` 报的是找不到可执行文件而不是应用崩溃 —— 很容易误判成代码问题。显式补一刀：
+
+```bash
+pnpm --filter @dajia/desktop exec install-electron
+```
+
+Expected: `node_modules/.pnpm/electron@44.*/node_modules/electron/dist/electron.exe` 存在，包根的 `path.txt` 内容为 `electron.exe`。
+
 - [ ] **Step 2: 写 IPC 契约与它的测试**
 
 `packages/protocol/src/ipc.ts`：
@@ -3006,11 +3026,11 @@ createRoot(document.getElementById('root')!).render(
 );
 ```
 
-`apps/desktop/src/renderer/src/App.tsx`：
+`apps/desktop/src/renderer/src/App.tsx`（`import type`，且路径是 `../../preload/index`：App 在 `src/renderer/src/` 下，到 `src/preload` 要上两级 —— 写成 `../preload/index` 会 `TS2307` 并连带让 `window.dajia.ping()` 的 `value` 退化成隐式 `any`，报一串 `TS7006`）：
 
 ```tsx
 import { useEffect, useState } from 'react';
-import type { DajiaApi } from '../preload/index';
+import type { DajiaApi } from '../../preload/index';
 
 declare global {
   interface Window {
@@ -3048,17 +3068,43 @@ export default function App(): React.JSX.Element {
 `apps/desktop/electron.vite.config.ts`：
 
 ```ts
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 
+/**
+ * @dajia/core 与 @dajia/protocol 的 exports 指向 .ts 源码（D2 源码直连），主进程与
+ * preload 里必须把它们打进产物，不能留裸说明符：
+ * - electron-vite 默认按 package.json 的 dependencies 外部化（build.externalizeDeps: true），
+ *   所以 exclude 是必需的；
+ * - 光配 alias 不够，实测只配 alias 时 out/main/index.js 仍是 `import '@dajia/core'`；
+ * - 不配 alias 也不行：Node 的 ESM 解析既不吃 core 源码里无扩展名的相对导入，
+ *   也不给 node_modules 下的 .ts 剥类型，主进程一启动就 ERR_MODULE_NOT_FOUND。
+ */
+const src = (p: string) => fileURLToPath(new URL(p, import.meta.url));
+
+const workspaceDeps = {
+  resolve: {
+    alias: {
+      '@dajia/core': src('../../packages/core/src/index.ts'),
+      '@dajia/protocol': src('../../packages/protocol/src/index.ts'),
+    },
+  },
+  build: {
+    externalizeDeps: { exclude: ['@dajia/core', '@dajia/protocol'] },
+  },
+};
+
 export default defineConfig({
-  main: {},
-  preload: {},
+  main: workspaceDeps,
+  preload: workspaceDeps,
   renderer: { plugins: [react()] },
 });
 ```
 
-`apps/desktop/tsconfig.json`：
+**这一步是"构建成功但产物不可用"的坑**：`defineConfig({ main: {}, preload: {} })` 会让 `electron-vite build` 正常退出 0，`out/main/index.js` 里却留着裸的 `import { CORE_SCHEMA_VERSION } from '@dajia/core'`。Step 4 因此必须 grep 产物，不能只看 build 的退出码。
+
+`apps/desktop/tsconfig.json`（`types` 只写 `node`：`vite/client` 会 `TS2688 Cannot find type definition file for 'vite/client'` —— pnpm 的隔离 node_modules 下 vite 不是 desktop 包的直接依赖，它虽然在 `@vitejs/plugin-react` 的依赖树里，`types` 却解析不到。本任务不用 `import.meta.env`，去掉它零损失）：
 
 ```json
 {
@@ -3066,7 +3112,7 @@ export default defineConfig({
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "types": ["node", "vite/client"]
+    "types": ["node"]
   },
   "include": ["src/main", "src/preload", "src/renderer/src"],
   "exclude": ["src/renderer/index.html"]
@@ -3129,7 +3175,37 @@ pnpm --filter @dajia/desktop build
 
 Expected: `pnpm verify` 全绿；build 产出 `apps/desktop/out/{main,preload,renderer}`。
 
-若 electron-vite 报 preload 扩展名不匹配（`.js` vs `.mjs`），以 `out/preload/` 实际产物为准修正 main 里的 preload 路径，并把结论记进本任务执行日志 —— 不要留着猜。
+若 electron-vite 报 preload 扩展名不匹配（`.js` vs `.mjs`），以 `out/preload/` 实际产物为准修正 main 里的 preload 路径，并把结论记进本任务执行日志 —— 不要留着猜。**实测答案：产物是 `out/preload/index.mjs`**（electron-vite 5 对 ESM preload 固定发 `.mjs`，因为 `apps/desktop/package.json` 是 `"type": "module"`），所以 main 里写 `../preload/index.mjs` 是对的，不用改。
+
+- [ ] **Step 4b: 证明产物能被真正加载，而不是"构建退出码 0"**
+
+`electron-vite build` 成功不等于产物可运行（见 Step 3 的裸说明符坑）。两条门禁，都要跑：
+
+```bash
+# 1) 产物里不许留裸说明符
+grep -c "from '@dajia/" apps/desktop/out/main/index.js apps/desktop/out/preload/index.mjs
+```
+
+Expected: 两个文件都是 `0`。非 0 就是外部化没关掉。
+
+```bash
+# 2) 真开一次窗口，跑通 IPC 往返并把渲染结果读回来
+```
+
+用一段一次性探针（写在 gitignore 的 `out/` 里，跑完删掉）：`import './main/index.js'` 复用同一份主进程代码，`app.whenReady()` 后轮询 `webContents.executeJavaScript`，先取 `typeof window.dajia?.ping`，出现后依次取 `window.dajia.ping()` 与 `document.querySelector('main').innerText`，然后 `app.exit(0)`。
+
+Expected 两行，且第二行必须含 `pong:1`：
+
+```
+PROBE ping => "pong:1"
+PROBE dom  => "搭家\n\n主进程应答：pong:1"
+```
+
+`PROBE dom` 是这条链路上唯一能证明"React 真的渲染了、`useEffect` 里的 promise 真的 resolve 并写回了 state"的证据：`ping()` 的初值是 `未连接主进程`，只有往返成功才会变成 `pong:1`。光看 `ping => "pong:1"` 只证明 contextBridge + ipcMain 通，不证明 UI 用上了它。
+
+再单独跑一次 `electron .`（走 `package.json` 的 `main` 字段，和上面 `electron out/probe.mjs` 的入口解析路径不同），把 stdout 带时间戳落盘再判读，别用 `timeout` 一刀切：上次实测崩溃行和 kill 撞在一起，无法区分是进程自己崩的还是被杀的瞬间输出。
+
+Expected: 存活 10s 以上、`--type=gpu-process` 与 network utility 子进程都在，日志里除开发期的 `Insecure Content-Security-Policy` 安全告警外没有 crash/error 行。
 
 - [ ] **Step 5: 写 CI**
 
@@ -3161,16 +3237,20 @@ jobs:
 
 - [ ] **Step 6: 提交（并如实记录未验证项）**
 
+`git add` 要带上 `pnpm-workspace.yaml`（`allowBuilds` 是真源的一部分，漏了别人 clone 完装不出 esbuild 二进制）：
+
 ```bash
-git add apps packages vitest.config.ts package.json .github
+git add apps packages vitest.config.ts package.json pnpm-workspace.yaml .github docs
 git commit -m "feat: Electron 壳与 CI
 
 main/preload/renderer 三入口接通，ping/pong 证明 IPC 通路可用；
 @ 通道表立在 @dajia/protocol，计划 4 的持久化接口挂旁边。
+electron-vite 配置里 alias + externalizeDeps.exclude 缺一则产物留裸
+@dajia/ 说明符，主进程起不来。
 CI 跑 pnpm verify + 桌面构建。
 
-未验证：窗口真实打开与渲染（需人工执行 pnpm dev 目测），
-electron-builder 出安装包（排在计划 4 之后一起做）。"
+未验证：electron-builder 出安装包（排在计划 4 之后一起做）、
+CI 首次真跑（本机没跑过 GitHub Actions）、Linux 下 frozen-lockfile 安装。"
 ```
 
 ```bash
@@ -3178,6 +3258,37 @@ git status --short
 ```
 
 Expected: 干净（`.gitignore` 已忽略 `out/`、`release/`、`node_modules/`）。
+
+**执行日志（Task 10）**：
+
+装到的精确版本（`pnpm --filter @dajia/desktop add` 实测，Win/x64，pnpm 11.18 + Node 24.14.1）：`react@19.3.0`、`react-dom@19.3.0`、`@vitejs/plugin-react@6.1.1`（带进 vite@8.3.0）、`electron@44.4.5`、`electron-vite@5.0.0`、`electron-builder@26.15.3`、`typescript@7.0.2`、`@types/react@19.3.0`、`@types/react-dom@19.3.0`。`@types/*` 按计划在 desktop 包内，不放根。
+
+三道坑，都是"看起来成功、实际不可用"型：
+
+1. **pnpm 11 的构建脚本闸门**：首次 `pnpm add` 之后 pnpm 把 `esbuild` 与 `electron-winstaller` 的 postinstall 判为"未授权"，并往 `pnpm-workspace.yaml` 里自动写了一行字符串占位 `allowBuilds: {esbuild: "set this to true or false"}` —— 这个值不是合法布尔，pnpm 自己也不认，得手工改成 `esbuild: true` / `electron-winstaller: false` 再重装一次。改完 `node_modules/.pnpm/esbuild@0.25.12/node_modules/esbuild/bin/esbuild` 与 `@esbuild+win32-x64@0.25.12/.../esbuild.exe`（10.6 MB）才落地。
+
+2. **Electron 44 没有 postinstall**：`pnpm install` 成功、`node_modules/electron` 目录齐全，但 `dist/` 是空的，`electron .` 直接报找不到可执行文件。44.4.5 的 `package.json` 里只有 `install-electron` 这个独立 bin，得手工 `pnpm exec install-electron`（在 `apps/desktop` 下跑）才下二进制。之后 `dist/electron.exe` 存在、包根 `path.txt` 内容为 `electron.exe`。**这一步不补，后面所有"electron 起不来"的排查都会跑偏**——它报的是缺文件，不是应用崩溃。
+
+3. **`electron-vite build` 退出码 0，产物却不可加载**（本任务最值钱的一条）。首版配置照计划写 `defineConfig({ main: {}, preload: {} })`，build 干净通过，但 `out/main/index.js` 里是原样的 `import { CORE_SCHEMA_VERSION } from '@dajia/core'`。证据不是猜的：直接 `node --experimental-strip-types` 式加载产物报 `ERR_MODULE_NOT_FOUND ... packages/core/src/units/mm` —— 即 Node 真去找了那个裸包，说明 electron-vite 按 `dependencies` 把两个 workspace 包外部化了（`build.externalizeDeps` 默认 true）。**只加 `resolve.alias` 不够**，实测产物照旧留裸说明符（alias 命中的是 vite 的解析，外部化在它之前就把包摘出去了）；最终解是 alias + `build.externalizeDeps.exclude: ['@dajia/core','@dajia/protocol']` 两个一起。事后核验：`grep -c "from '@dajia/"` 在 `out/main/index.js` 与 `out/preload/index.mjs` 上都是 `0`，`dajia:ping` 两边各内联 `1` 次。计划 Step 3 已把这条坑写进配置注释，Step 4b 把 grep 变成门禁。
+
+preload 扩展名的实测答案：产物是 `out/preload/index.mjs`（不是 `.js`），main 里 `../preload/index.mjs` 原样正确，未改。
+
+typecheck 两处照抄会红的地方：`types: ["node","vite/client"]` 报 `TS2688 Cannot find type definition file for 'vite/client'`（pnpm 隔离树下 vite 不是 desktop 的直接依赖），去掉 `vite/client` 后本任务无一处 `import.meta.env`，零损失；`App.tsx` 里计划写的 `'../preload/index'` 报 `TS2307`，并连带 `ping()` 回调隐式 any 一串 `TS7006`，实际路径是 `'../../preload/index'`。
+
+真跑通了一次窗口（Step 4b）：
+
+```
+PROBE ping => "pong:1"
+PROBE dom  => "搭家\n\n主进程应答：pong:1"
+```
+
+探针是临时文件，写在 gitignore 的 `apps/desktop/out/probe.mjs`，跑完已删。`PROBE dom` 那行是这条链路唯一能证明 UI 真用上了 IPC 的证据：`reply` 的初值是 `未连接主进程`，只有 contextBridge → `ipcMain.handle` → promise resolve → `setReply` 全流程走完才会变成 `pong:1`。
+
+`electron .`（走 `package.json` 的 `main` 字段，与探针的入口解析不同）单独跑了 12 秒：主进程 11428 存活，`--type=gpu-process` 与 network utility 子进程都在，用户数据目录落到 `%APPDATA%\@dajia/desktop`，日志里除一行开发期的 `Insecure Content-Security-Policy` 告警外没有任何 crash/error 行。补充一件前一轮的悬案：更早一次 `ELECTRON_ENABLE_LOGGING=1 timeout 14 electron .` 打过一行 `Renderer process crashed`，与 timeout 发 SIGTERM 的时刻撞在一起，无法判定是崩了还是被杀。**本轮两次复跑都没有重现**。判读方式记进 Step 4b：以后跑窗口一律带时间戳落盘，不许用 `timeout` 一刀切。那行 CSP 告警是真的（renderer/index.html 没有 CSP meta），electron 官方说明打包后不再显示，但它是 hardening 项，排在计划 4。
+
+最终门禁：`pnpm verify` 退出码 0（core + protocol + desktop 三份 typecheck、`lint:deps`、**77 passed / 10 files**）；`pnpm --filter @dajia/desktop build` 产出 `out/{main/index.js 1.04 kB, preload/index.mjs 290 B, renderer/index.html + assets/index-CTm3D5SL.js 566 kB}`。
+
+**未验证清单（照实说）**：① `electron-vite dev` 没跑过，`ELECTRON_RENDERER_URL` 那条 loadURL 分支一次都没执行到，上面的证据全走 `loadFile`；② `electron-builder` 出 NSIS 安装包排在计划 4（`electron-builder.yml` 目前只保证语法成立，且刻意不写 `win.icon`）；③ GitHub Actions 首次真跑要等推送之后，尤其 Linux 下 `pnpm install --frozen-lockfile` 能否吃 Windows 生成的 lockfile 未测；④ CI 里没有 electron 二进制也照样能过（verify 与 build 都不需要 `dist/`），这是设计而非疏漏，但"CI 会不会顺手跑起窗口"没验证。
 
 ---
 
@@ -3195,7 +3306,7 @@ Expected: 干净（`.gitignore` 已忽略 `out/`、`release/`、`node_modules/`�
 
 - `noUnusedParameters` + `verbatimModuleSyntax` 会在我几处省事写法上报错；这是好事，按提示改。
 - `import.meta.dirname` 需 Node 20.11+，本机 24 满足；electron-vite 打包后是否保留该语义要在 Step 4 实测。
-- **源码直连的打包风险**：包 `exports` 指向 `.ts`，Electron 侧要靠 vite/esbuild 转译 node_modules 里的 workspace 软链目标。若 `pnpm --filter @dajia/desktop build` 报 "failed to resolve @dajia/core" 或把 `.ts` 原样丢进产物，解法是在 `electron.vite.config.ts` 的 `main`/`preload` 里加 `resolve.alias` 指向 `packages/core/src/index.ts`（与 vitest 同一招），并把结论记进执行日志 —— 不许改成"先给 core 出一份编译产物"，那会推翻 D2 的源码直连决定。
+- **源码直连的打包风险**：包 `exports` 指向 `.ts`，Electron 侧要靠 vite/esbuild 转译 node_modules 里的 workspace 软链目标。若 `pnpm --filter @dajia/desktop build` 报 "failed to resolve @dajia/core" 或把 `.ts` 原样丢进产物，解法是在 `electron.vite.config.ts` 的 `main`/`preload` 里加 `resolve.alias` 指向 `packages/core/src/index.ts`（与 vitest 同一招），并把结论记进执行日志 —— 不许改成"先给 core 出一份编译产物"，那会推翻 D2 的源码直连决定。**Task 10 实测修正**：只加 `resolve.alias` 不够，`build.externalizeDeps` 默认按 `dependencies` 把两个 workspace 包外部化，产物里仍留裸 `@dajia/*` 说明符（build 退出码 0，`node` 加载才报 `ERR_MODULE_NOT_FOUND`）。正解是 alias + `build.externalizeDeps.exclude: ['@dajia/core','@dajia/protocol']`，见 Step 3 配置与 Step 4b 的 grep 门禁。
 - **`typescript@7` 是新主版本**（本机 `npm view typescript dist-tags` 实测 `latest = 7.0.2`，`6.0.3` 仍可选）。**Task 1 已命中它**：TS7 移除了 `baseUrl`（`TS5102`）并要求 `paths` 值以 `./` 起头（`TS5090`），配置已按实测改好；`tsc` 二进制名未变。暂不需要退到 `^6`，真退时把实际主版本记进 spec 第 12 节。
 - Electron 首次装会下载 ~100MB，网络代理下可能失败 —— 失败时报出来，不要退到"跳过这一步"。
 - 属性测试若长期跑不动（>60s），降 `numRuns` 而不是删不变式，并在 commit message 里记下实际值；`executed` 的硬计数断言要同步改，否则它会以"期望 300 实际 1000"的方式红。

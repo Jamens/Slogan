@@ -1,3 +1,8 @@
 packages:
   - 'packages/*'
   - 'apps/*'
+allowBuilds:
+  # vite/electron-vite 构建要走 esbuild 的原生二进制，不放行拿不到 dist 里的可执行文件
+  esbuild: true
+  # electron-winstaller 只有 electron-builder 出 NSIS 安装包时才用到，排在计划 4 之后
+  electron-winstaller: false

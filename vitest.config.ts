@@ -5,6 +5,9 @@ export default defineConfig({
   resolve: {
     alias: {
       '@dajia/core': fileURLToPath(new URL('./packages/core/src/index.ts', import.meta.url)),
+      '@dajia/protocol': fileURLToPath(
+        new URL('./packages/protocol/src/index.ts', import.meta.url),
+      ),
     },
   },
   test: {
