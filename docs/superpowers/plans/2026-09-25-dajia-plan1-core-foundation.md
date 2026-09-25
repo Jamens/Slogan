@@ -2427,6 +2427,11 @@ import fc from 'fast-check';
 
 /** 坐标：整数毫米，范围取真实建房量级 */
 export const arbMm = fc.integer({ min: -20_000, max: 20_000 });
+/**
+ * 非整数坐标：模拟 UI/吸附前落到命令层的值。用整数除以 10 造，不用 fc.double，
+ * 后者会产极小/极大与各种特殊浮点，把"没量化就进真源"这条路淹在噪声里。
+ */
+export const arbFractionalMm = fc.integer({ min: -200_000, max: 200_000 }).map((n) => n / 10);
 export const arbThickness = fc.integer({ min: 50, max: 500 });
 export const arbHeight = fc.integer({ min: 1000, max: 6000 });
 export const arbWallLength = fc.integer({ min: 2000, max: 12_000 });
@@ -2438,9 +2443,11 @@ export const arbWallAngle = fc.integer({ min: -179, max: 179 });
  * - 墙长 ≥ 2000 使量化后两端点必不重合，零长墙也生成不出来。
  * 生成器自己就不产非法值，比 filter 掉非法值强：不减速、不触发 no-allocation 告警，
  * 也不会让人误以为"非法值测过了"。
+ *
+ * 起点取非整数值：命令层负责量化，这样不变式 4 才真的在考"有没有旁路把浮点送进真源"。
  */
 export const arbWallShape = fc
-  .tuple(arbMm, arbMm, arbWallLength, arbWallAngle, arbThickness, arbHeight)
+  .tuple(arbFractionalMm, arbFractionalMm, arbWallLength, arbWallAngle, arbThickness, arbHeight)
   .map(([x, y, len, angleDeg, thicknessMm, heightMm]) => {
     const rad = (angleDeg * Math.PI) / 180;
     return {
@@ -2543,6 +2550,8 @@ describe('不变式 2：随机命令序列全撤销后逐字节还原', () => {
         (shapes, editPicks) => {
           executed++;
           const { log, storeyId } = freshStorey();
+          // 只撤本次序列，不越过建楼层那笔：baseline 之下的栈是测试的准备动作
+          const baseline = log.depth;
           const initial = log.document.canonical();
 
           for (const shape of shapes) log.dispatch(wallCreate(withStorey(storeyId, shape)));
@@ -2581,15 +2590,40 @@ describe('不变式 2：随机命令序列全撤销后逐字节还原', () => {
           }
 
           let guard = 0;
-          while (log.canUndo && guard++ < 500) log.undo();
+          while (log.depth > baseline && guard++ < 500) log.undo();
           expect(guard).toBeLessThan(500);
-          expect(log.canUndo).toBe(false);
+          expect(log.depth).toBe(baseline);
           expect(log.document.canonical()).toBe(initial);
         },
       ),
       { numRuns: 300 },
     );
     expect(executed).toBe(300);
+  });
+
+  // Counterexample 抄成写死的用例：属性测试红过之后必须留下哨兵，
+  // 否则下次改动可能再也随机不到同一条路径。
+  it('哨兵：一面墙、零编辑，撤销不得越过准备动作', () => {
+    const { log, storeyId } = freshStorey();
+    const baseline = log.depth;
+    const initial = log.document.canonical();
+    log.dispatch(
+      wallCreate({
+        storeyId,
+        start: { x: 0, y: 0 },
+        end: { x: 2000, y: 0 },
+        thicknessMm: 50,
+        heightMm: 1000,
+      }),
+    );
+    expect(log.depth).toBe(baseline + 1);
+    expect(log.undo()).toBe(true);
+    expect(log.depth).toBe(baseline);
+    expect(log.document.canonical()).toBe(initial);
+    // baseline 之下还剩建楼层那笔：再撤一次就到空文档
+    expect(log.canUndo).toBe(true);
+    log.undo();
+    expect(log.document.entities.size).toBe(0);
   });
 });
 
@@ -2641,20 +2675,33 @@ describe('不变式 3：单步 dispatch → undo 等价于没发生', () => {
 });
 
 describe('不变式 4：没有旁路能把非法值写进真源', () => {
-  it('随机序列跑完，每个 *Mm 字段都仍是安全整数', () => {
+  /** 非整数偏移：量化前后必不相同，用来暴露"忘了调 quantizeMm"的旁路 */
+  const FRACTIONAL_OFFSETS: Array<{ dx: number; dy: number }> = [
+    { dx: 999.6, dy: 700.4 },
+    { dx: -800.4, dy: 1500.6 },
+    { dx: 1500.25, dy: -1100.4 },
+    { dx: -1200.5, dy: -900.5 },
+  ];
+
+  it('随机序列跑完，每个整数毫米字段（含点的 x/y）都仍是安全整数', () => {
     let executed = 0;
+    let fractionalInputs = 0;
     fc.assert(
       fc.property(fc.array(arbWallShape, { minLength: 1, maxLength: 6 }), (shapes) => {
         executed++;
         const { log, storeyId } = freshStorey();
-        for (const shape of shapes) {
+        for (const [i, shape] of shapes.entries()) {
+          if (!Number.isInteger(shape.start.x) || !Number.isInteger(shape.end.y)) {
+            fractionalInputs++;
+          }
           log.dispatch(wallCreate(withStorey(storeyId, shape)));
           const wall = log.document.byKind('wall').at(-1)!;
           const anchor = log.document.get(wall.startId) as PointEntity;
           // 同样用相对锚点偏移：绝对坐标有极小概率正好落在 start 上，命令层会抛零长墙，
           // 那是生成器的运气问题不是被测代码的缺陷，不该让它变成红测试。
+          const { dx, dy } = FRACTIONAL_OFFSETS[i % FRACTIONAL_OFFSETS.length]!;
           log.dispatch(
-            wallMoveEndpoint({ wallId: wall.id, end: 'end', x: anchor.x - 800, y: anchor.y + 1500 }),
+            wallMoveEndpoint({ wallId: wall.id, end: 'end', x: anchor.x + dx, y: anchor.y + dy }),
           );
           const grown = log.document.byKind('wall').at(-1)!;
           log.dispatch(wallSetThickness({ wallId: grown.id, thicknessMm: 50 }));
@@ -2662,7 +2709,10 @@ describe('不变式 4：没有旁路能把非法值写进真源', () => {
         for (const entity of log.document.entities.values()) {
           const record = entity as unknown as Record<string, unknown>;
           for (const [key, value] of Object.entries(record)) {
-            if (!key.endsWith('Mm')) continue;
+            // 点的 x/y 也在这里：字段名不带 Mm 后缀，靠后缀扫会整条漏掉
+            const isMmField =
+              key.endsWith('Mm') || (entity.kind === 'point' && (key === 'x' || key === 'y'));
+            if (!isMmField) continue;
             expect(typeof value).toBe('number');
             expect(Number.isSafeInteger(value)).toBe(true);
           }
@@ -2671,6 +2721,8 @@ describe('不变式 4：没有旁路能把非法值写进真源', () => {
       { numRuns: 200 },
     );
     expect(executed).toBe(200);
+    // 正对照：生成器若哪天不再产浮点，上面那条扫描就成了空跑
+    expect(fractionalInputs).toBeGreaterThan(0);
   });
 });
 ```
@@ -2709,6 +2761,27 @@ git commit -m "test: 核心不变式的属性测试
 随机命令序列撤销后 canonical 逐字节还原；任何旁路都写不进非整数毫米。
 这类断言手写用例覆盖不到，正是属性测试存在的理由。"
 ```
+
+**执行日志（Task 9）**：`pnpm add -D -w fast-check` 解析到 `fast-check@4.10.2`（+2 包）。`import fc from 'fast-check'` 在 `verbatimModuleSyntax` + `moduleResolution: Bundler` 下可用：实测 `node -e "import('fast-check')"` 显示 ESM 构建有真的 `default` 导出（对象，含 `integer/property/assert/double/tuple/array`），命名导出也齐全，`pnpm typecheck` 对默认导入无意见。
+
+**初跑确实红，但红的是测试自己写错的不变式，不是内核。** 不变式 2 报 `expected '{"entities":[],"projectId":…}' to be '{"entities":[{…storey…}],…}'`，化简后的反例是 `[[{start:{0,0},end:{2000,0},thicknessMm:50,heightMm:1000}],[]]` —— 一面墙、零编辑。原因：`initial` 在 `freshStorey()` 之后取，而撤销循环用 `while (log.canUndo)` 一直撤到栈空，连准备动作那笔 `storeyCreate` 也撤了，于是回到空文档。内核行为完全正确（撤掉建楼层当然就没楼层了），是**不变式的范围写错了**：要证的是"本次序列撤销干净"，不是"整个日志清空"。改成记 `baseline = log.depth`、循环条件 `log.depth > baseline`、并把 `expect(log.canUndo).toBe(false)` 换成 `expect(log.depth).toBe(baseline)`。这不是放宽测试：范围收紧到被测序列，且按 Step 3 的要求把反例抄成了写死的哨兵 `哨兵：一面墙、零编辑，撤销不得越过准备动作`，里面还额外钉了"baseline 之下还剩一笔、再撤一次才到空文档"，防止有人以后把撤销改成"到楼层就停"来蒙过。
+
+**清单原文还有两处不够咬人，一并改掉：**
+
+1. **不变式 4 原本只扫 `key.endsWith('Mm')`** —— 点的 `x`/`y` 不带后缀，正是 Task 5 泄漏浮点的那两个字段，靠后缀扫会整条漏掉。现在把 `entity.kind === 'point'` 的 `x`/`y` 纳入扫描，并加 `fractionalInputs > 0` 作正对照（生成器哪天不产浮点了，这条扫描就是空跑）。
+2. **`arbWallShape` 的起点原本是整数** —— 命令层的量化没机会出错。改成 `arbFractionalMm`（整数除以 10，不用 `fc.double`，免得被极端浮点淹掉），并在不变式 4 里用 `FRACTIONAL_OFFSETS` 的非整数偏移驱动 `wallMoveEndpoint`。偏移量都取到量化后 `|dx| ≥ 800`、`|dy| ≥ 700`，既不会与锚点重合（零长墙），也保证墙长仍远大于随后写入的 50mm 墙厚。
+
+**变异验证（每轮先还原再单独变异，跑完与 `/tmp/t9bak` 逐字节比对确认全部一致）**：
+
+| 变异 | 结果 |
+| --- | --- |
+| A 不变式 2 的 `numRuns` 改 1000（Step 4 的空跑自查） | 1 红：`expect(executed).toBe(300)` 失败 —— 计数断言确实在数样本 |
+| B `invertPatch` 不再恢复被删实体 | 2 红（不变式 2、不变式 3 的 wallDelete 条），反例 `[…],[2]` 正是 pick=2 那条分支 |
+| C 关掉点的整数校验 **且** 去掉 `wallCreate` 的量化 | 1 红：不变式 4，反例 `start.x = -11.1` 直接指出浮点进了真源 |
+| C2 只去掉量化、保留真源校验 | 5 红：`Document` 校验抛错，说明命令层与真源两道防线各自独立生效 |
+| D `redo()` 变空操作 | 1 红：不变式 3 的 undo→redo 条 |
+
+**仍未覆盖**：洞口（`opening.*`）与柱/板（`column.create`、`slab.create`）命令没进生成器 —— 计划 1 没有这些命令的构造函数，洞口沿墙定位要等计划 2 的参数化；因此"删墙级联 + 孤儿点回收"在属性层面只测到墙与点。实测 `pnpm verify` **74 passed**（前序 65 + 本任务 9），属性测试耗时 218ms。
 
 ---
 
