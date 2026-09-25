@@ -34,22 +34,25 @@
 
 **一句话交付物：从空工程到导出一页可施工级的 A3 平面图 PDF。**
 
+对齐 D3 的口径，免得日后被当成缩水：**S1 交付的是"可施工级平面图"这一种图纸；一套完整施工图集（立面、剖面、门窗表、多图纸成册）在同一大版本的后半段交付**，二者共用 S1 建立的 IR 与标注引擎，不需要重写。
+
 | 里程碑 | 内容 | 退出条件 |
 |---|---|---|
 | M1.0 | pnpm workspace、electron-vite、TS 5 strict、包依赖方向 lint 规则、CI（typecheck / test / build） | CI 全绿 |
 | M1.1 | `@dajia/core`：实体模型、command 层与撤销、`quantize`、AABB 索引、轴线→轮廓与接头派生、属性测试 | 不变式测试通过 |
-| M1.2 | `@dajia/scene-2d`：三层 canvas 视口、拉墙/拖点/删除、吸附、数值输入 | 可交互完成一栋单层房子 |
+| M1.2 | `@dajia/scene-2d`：三层 canvas 视口、拉墙/拖点/删除、吸附、数值输入、楼层管理、构件属性面板（厚度 / 承重 / 材料） | 可交互完成一栋两层房子并改外墙厚到 240mm |
 | M1.3 | 持久化：迁移、repository、首启连接向导、工程锁与心跳、自动保存与崩溃恢复 | kill 进程重开无静默丢失 |
 | M1.4 | `@dajia/drawing`：图面 IR、图框、线型表、三道尺寸线、指北针与标高、A3 单页排版 | IR 快照测试通过 |
 | M1.5 | 自研 PDF 内容流后端 + 中文字体嵌入 + 比例尺自检 | 打印实测误差 ≤ 0.5mm |
-| M1.6 | `@dajia/scene-3d` 的 M1 形态：只读拉伸体 + 选中状态双向同步 | 3D 无任何写入路径 |
-| M1.7 | （可裁剪，默认含最简版）描图底图 + 两点定标 | 底图可缩放到真实尺寸 |
+| M1.6 | `@dajia/scene-3d` 的 M1 形态：只读拉伸体 + 选中状态双向同步 | 3D 无构件级写入；选中在 2D/3D 间双向一致 |
+| M1.7 | 3D 视口内拖动整层：拖拽**必须**解释为 `storey.setElevation` 命令写回，禁止顶点级编辑 | 3D 拖动后 2D 与图纸结果一致 |
+| M1.8 | （可裁剪，默认含最简版）描图底图 + 两点定标 | 底图可缩放到真实尺寸 |
 
 ### 3.1 S1 明确不做
 
 | 不做 | 去向 | 原因 |
 |---|---|---|
-| 在 3D 里拉墙、开门窗 | S3 | 需独立约束求解系统；与 M1.6 架构不冲突，事后加不改前两层 |
+| 在 3D 里拉墙、开门窗 | S3 | 需独立约束求解系统；与 M1.6/M1.7 架构不冲突，事后加不改前两层 |
 | 立面、剖面、门窗表 | 同一大版本后半段 | 与平面共用 IR 与标注引擎，平面打通即验证全链路 |
 | 弧形墙、复杂拓扑接缝 | S3 | S1 支持直墙 + L / T / 十字接头，已覆盖自建房绝大多数轮廓 |
 | 楼梯、坡屋面几何 | S3 | S1 屋面只支持平板 |
@@ -110,7 +113,12 @@ renderer 永不接触数据库。所有持久化路径为：renderer → preload
 
 ### 5.5 command 层与视图状态
 
-所有变更为 `{ type, payload, inverse }`，撤销栈即命令流，自动保存为"快照 + 增量命令"。S1 命令集：`wall.create`、`wall.moveEndpoint`、`wall.setThickness`、`wall.delete`、`opening.create`、`opening.move`、`opening.delete`、`storey.create`、`storey.setElevation`、`column.create`、`slab.create`。
+所有变更为 `{ type, payload, inverse }`，撤销栈即命令流，自动保存为"快照 + 增量命令"。
+
+命令分两档，避免"实现了却没界面"变成隐疾：
+
+- **S1 有编辑器 UI 的**：`wall.create`、`wall.moveEndpoint`、`wall.setThickness`、`wall.delete`、`opening.create`、`opening.move`、`opening.delete`、`storey.create`、`storey.setElevation`。
+- **数据模型与命令层已实现、S1 不提供 UI 的**：`column.create`、`slab.create`。放进 S1 是因为 D1 要求结构语义一开始就在真源里，删掉会让 S3 改内核；UI 分别随 S3（楼梯、柱网）与 S2（楼板关联剖面）开放。验收标准只覆盖上一档。
 
 每条 command 必须实现 `inverse`，且属性测试要求 `apply → inverse` 回到逐字节相同的状态。
 
@@ -130,7 +138,7 @@ renderer 永不接触数据库。所有持久化路径为：renderer → preload
 
 三层 canvas 叠加：底层网格与轴网、中层构件、顶层交互（橡皮筋、手柄、实时尺寸）。连续拖动只重绘顶层。
 
-3D 侧 `packages/scene-3d/src/extrude.ts`：墙轴线 + 厚 + 高 → 棱柱；按 command 的 `affectedIds` 增量重建 mesh，不做全场景重建。M1 阶段 3D 视口只读，唯一写路径是把拖拽解释为 `storey.setElevation` 等命令，禁止直接改顶点。
+3D 侧 `packages/scene-3d/src/extrude.ts`：墙轴线 + 厚 + 高 → 棱柱；按 command 的 `affectedIds` 增量重建 mesh，不做全场景重建。M1.6 阶段 3D 视口完全只读；M1.7 起，3D 的唯一写路径是把整层拖拽解释为 `storey.setElevation` 命令，**禁止顶点级与构件级编辑**（后者属 S3）。
 
 ## 7. 图纸引擎
 
@@ -166,7 +174,7 @@ dajia
 
 ### 8.2 加载、保存、锁
 
-加载 = 最近 snapshot + 重放其后的 `command_log`。保存 = 追加 command；每 2000 条或 60 秒静默合并新 snapshot。一次保存包在一个事务内。
+加载 = 最近 snapshot + 重放其后的 `command_log`。保存 = 追加 command；每 2000 条命令、或连续 60 秒无编辑，二者先到即合并出新 snapshot。一次保存包在一个事务内。
 
 `project.lock_token` + 心跳行是 **S1 必做项**：工程被持有效锁时，第二个实例检测到即以只读打开并显示顶部横幅。这是 D5（直连共享 MySQL）自带的账单 —— 没有它，两台机器打开同一库会静默互相覆盖。
 
@@ -213,17 +221,19 @@ dajia
 - Node v24.14.1；pnpm 11.18.0；git 2.53.0.windows.2
 - MySQL **8.0.45** 监听 `127.0.0.1:3306`，`root` / `1234560` **登录成功**
 - 服务端参数：`character_set_server=utf8mb4`、`collation_server=utf8mb4_0900_ai_ci`、`lower_case_table_names=1`、`max_connections=151`
-- 该实例现有 18 个数据库（含 `smartscrm`、`smartscrm_react`、`flowmart`、`ledger_db` 等），搭家使用独立的 `dajia` 与 `dajia_test`，不触碰其余
-- `npm` 上 `dajia` 包名空闲（`zhujia` 已占用）
+- 该实例现有 18 个数据库（其中 `mysql`、`information_schema`、`performance_schema`、`sys` 为系统库，用户库 14 个，含 `smartscrm`、`smartscrm_react`、`flowmart`、`ledger_db` 等），搭家使用独立的 `dajia` 与 `dajia_test`，不触碰其余
+- `npm` 上包名 `dajia` 未被占用（`zhujia` 已占用，故排除）
 - `Jamens/Slogan` 为零 commit 的空仓库
+- 全局 `git config core.autocrlf=true`，`user.name=JunHao`。实测提交时 git 已警告会做 LF→CRLF 转换，因此 **M1.0 必须包含 `.gitattributes`（`* text=auto eol=lf`）**，否则跨平台行尾会污染 diff
 
 **未验证**：以上除端口握手与只读登录外，均无建库、建表、写入操作。
 
 ## 13. 待用户确认事项
 
-1. **建库授权**：M1.3 需执行 `CREATE DATABASE dajia` 与 `dajia_test`。截至本文档写入时**尚未获得授权**，未执行任何写操作。
+1. ~~**建库授权**~~ → **已获授权。** 用户于 2026-09-25 明确"允许在 MySQL 建 `dajia` 和 `dajia_test` 库"。授权覆盖 M1.3 所需的建库与建表；执行时点仍按里程碑排在 M1.3，本文档写入时尚未执行。
 2. 是否将 `Jamens/Slogan` 改名为更贴合产品名的仓库（如 `dajia`）。当前默认保留原名，仅本地 `git init` + 配置 remote，**push 由用户本人执行**。
-3. M1.7 描图底图是否保留在 S1（默认保留最简版）。
+3. M1.8 描图底图是否保留在 S1（默认保留最简版）。
+4. **安装包代码签名，需要你拍。** 本文档第 1 版漏了这一项。NSIS 安装包若无代码签名证书，Windows SmartScreen 会拦一个蓝色全屏警告，"使用者为不懂技术的人"这一条会让它看起来像病毒。三条路：(a) 买 OV/EV 证书（约 ¥1500–4000/年，EV 才能立刻消除警告）；(b) 不签名，改为一页图文安装说明 + 你远程协助；(c) 先按 (b) 做，等确有外部用户再补证书。**当前默认按 (c) 写**，M1.0 的打包配置预留签名开关。
 
 ## 14. 后续子项目路线图
 
