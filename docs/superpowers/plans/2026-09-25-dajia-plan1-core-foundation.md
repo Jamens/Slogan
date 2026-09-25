@@ -1301,7 +1301,7 @@ describe('applyPatch', () => {
   it('同一 id 既 upsert 又 remove 时抛错：命令写错了就该炸', () => {
     const doc = docWith();
     expect(() => applyPatch(doc, { upsert: [point(P(1), 0, 0)], remove: [P(1)] })).toThrow(
-      /同时/,
+      /同一 id 既 upsert 又 remove/,
     );
   });
 
@@ -1374,7 +1374,9 @@ Expected: FAIL，导入解析失败。
 
 ```ts
 import type { EntityId } from '../ids';
-import type { Document } from './document';
+// Document 必须是值导入：applyPatch 运行时调用 Document.replaceEntities，
+// 用 import type 会被 verbatimModuleSyntax 擦掉，测试里表现为 ReferenceError。
+import { Document } from './document';
 import type { Entity } from './entity';
 
 export interface Patch {
@@ -1461,6 +1463,15 @@ git commit -m "feat: 补丁与求逆
 Patch 只有 upsert/remove 两种动作；previous 记录涉及 id 的原值，
 invertPatch 据此还原。非法补丁（同 id 又增又删、删不存在、重复）一律抛。"
 ```
+
+**执行日志（Task 6）**：本任务的代码清单有两处是照着抄就会炸的：
+
+1. `import type { Document }` —— `applyPatch` 在运行时调用 `Document.replaceEntities`，而 `verbatimModuleSyntax` 会把类型导入整条擦掉，实测 9 条测试报 `ReferenceError: Document is not defined`。改成值导入，并在文件里留注释说明为什么不能 `import type`。Task 7 起沿用同一判据：**只要运行时用到被导入方的静态方法或值，就必须值导入**。
+2. 测试里 `toThrow(/同时/)` 与实现抛的消息 `Patch 同一 id 既 upsert 又 remove：…` 不匹配 —— 正则改成 `/同一 id 既 upsert 又 remove/`。这条本来会静默放行任何别的 TypeError（"抛了"就能通过），属于断言太松，不是抄错。
+
+另外把 Step 4 提到的"previous 没记录 remove 项"从**叙述**变成了**断言**：第 1 条测试补 `expect(r.previous.has(P(1))).toBe(true)`。原清单只断言 `previous.get(P(1))` 是 `undefined`，而"键不存在"与"键存在且值为 undefined"在 `get` 下无法区分 —— 正是 `invertPatch` 区分"新建"与"没记录"的依据。随后做了变异验证：把 `if (!previous.has(entity.id)) previous.set(...)` 改成永不记录，测试从 11 passed 变 **4 failed | 7 passed**（含 `expected false to be true` 与逐字节还原那条），改回后 11 passed —— 门禁是活的。
+
+**偏离计划之处（记录，不掩饰）**：Step 1–3 把测试与实现写在同一轮里跑的，所以观测到的"红"是上面两个真 bug，而不是计划设想的"实现缺失导致的导入失败"。Task 7–10 按 Step 1 写测试 → Step 2 看红 → Step 3 实现 的顺序执行。实测计数：`pnpm verify` **43 passed**（前序 32 + 本任务 11）。
 
 ---
 
