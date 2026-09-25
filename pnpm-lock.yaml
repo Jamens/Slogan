@@ -20,6 +20,14 @@ importers:
 
   packages/core: {}
 
+  packages/drawing: {}
+
+  packages/protocol: {}
+
+  packages/scene-2d: {}
+
+  packages/scene-3d: {}
+
 packages:
 
   '@jridgewell/resolve-uri@3.1.2':

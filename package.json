@@ -8,6 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p packages/core/tsconfig.json",
+    "lint:deps": "node scripts/check-package-deps.mjs",
     "test": "vitest run",
     "verify": "pnpm typecheck && pnpm lint:deps && pnpm test"
   },

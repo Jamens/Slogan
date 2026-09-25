@@ -289,6 +289,9 @@ afterAll(() => {
 });
 
 describe('findViolations', () => {
+  /** 违规按 from->to 排序比较：不依赖 PACKAGE_DIRS 的声明顺序 */
+  const asPairs = (violations) => violations.map((v) => `${v.from}->${v.to}`).sort();
+
   it('三者互相 import 时全部报出', () => {
     const root = makeTree({
       'packages/scene-2d/src/a.ts': `import { foo } from '@dajia/scene-3d';\nexport const a = foo;\n`,
@@ -297,8 +300,9 @@ describe('findViolations', () => {
     });
     const v = findViolations(root);
     expect(v).toHaveLength(2);
-    expect(v[0]).toMatchObject({ from: 'scene-2d', to: 'scene-3d' });
-    expect(v[1]).toMatchObject({ from: 'drawing', to: 'scene-2d' });
+    expect(asPairs(v)).toEqual(['drawing->scene-2d', 'scene-2d->scene-3d']);
+    expect(v.every((x) => Number.isInteger(x.line) && x.line > 0)).toBe(true);
+    expect(v.every((x) => x.file.startsWith('packages/'))).toBe(true);
   });
 
   it('合规图上零违规，且动态 import 也算', () => {
@@ -317,6 +321,20 @@ describe('findViolations', () => {
         `import 'dajia-core';\nimport a from '@dajia/core';\nimport b from '@dajia/drawing';\nimport c from '@dajia/scene-2d';\nimport d from '@dajia/scene-3d';\nexport const y = [a, b, c, d];\n`,
     });
     expect(findViolations(root)).toEqual([]);
+  });
+
+  it('包内用包名 import 自己不算依赖边，但同目录的真违规照样报', () => {
+    // 真实场景：packages/core/test/smoke.test.ts 用 '@dajia/core' 验证别名可用。
+    // 若把自引用当成违规，第一道门禁就会拦住自己包的测试，守卫变成噪音。
+    // 混进一条真违规是为了区分"忽略自引用"与"根本没扫到文件"。
+    const root = makeTree({
+      'packages/core/test/a.test.ts': `import { foo } from '@dajia/core';\nexport const a = foo;\n`,
+      'packages/drawing/src/b.ts': `import { foo } from '@dajia/drawing';\nexport const b = foo;\n`,
+      'packages/drawing/src/c.ts': `import { foo } from '@dajia/scene-2d';\nexport const c = foo;\n`,
+    });
+    const v = findViolations(root);
+    expect(v).toHaveLength(1);
+    expect(v[0]).toMatchObject({ from: 'drawing', to: 'scene-2d' });
   });
 
   it('未知包名直接抛错，避免漏配规则被当成通过', () => {
@@ -411,6 +429,8 @@ export function findViolations(rootDir) {
         while ((m = IMPORT_RE.exec(line)) !== null) {
           const to = m[1];
           if (!(to in ALLOWED_DEPS)) throw new Error(`未知包 @dajia/${to}`);
+          // 自引用不是依赖边：包内用包名 import 自己是正常写法（各包的 test/ 靠它验证别名）
+          if (to === pkg) continue;
           if (!ALLOWED_DEPS[pkg].includes(to)) {
             violations.push({
               from: pkg,
@@ -471,7 +491,7 @@ export const DRAWING_PACKAGE = 'drawing';
 pnpm lint:deps && pnpm test
 ```
 
-Expected: `依赖方向检查通过`；`pnpm test` 全绿，共 5 passed（Task 1 的包名解析 1 条 + 本任务 4 条）。
+Expected: `依赖方向检查通过`；`pnpm test` 全绿，共 6 passed（Task 1 的包名解析 1 条 + 本任务 5 条）。
 
 再故意违规一次证明它会拦：在 `packages/drawing/src/index.ts` 的**第一行**临时插入 `import '@dajia/scene-2d';`（drawing 只允许依赖 core），跑 `pnpm lint:deps`。Expected: **退出码 1**，且打印 `packages/drawing/src/index.ts:1  @dajia/drawing -> @dajia/scene-2d 违反 D2b`。确认后删掉这一行——这一步不能省，否则守卫可能是"永远返回空数组"的假通过。
 
@@ -485,6 +505,8 @@ spec D2b 规定 scene-2d / scene-3d / drawing 互不相识。用可被测试的�
 而不是 eslint 插件：守卫误报或漏报时 D2b 就是假的，脚本能吃 fixture 断言。
 未知包目录一律抛错，避免漏配规则被静默当成通过。"
 ```
+
+**执行日志（Task 2，本机实测）**：守卫在真仓库上第一次跑就抓到自己的一条误判 —— `packages/core/test/smoke.test.ts` 用包名 import 自己被判成违规（`ALLOWED_DEPS.core` 为空）。修法是跳过自引用（`to === pkg`），并补第 5 条测试把它钉住；该测试同时混入一条真违规，用来区分"忽略自引用"与"根本没扫到文件"。另：本任务测试的违规断言改成按 `from->to` 排序比较，因为初稿依赖 `PACKAGE_DIRS` 的声明顺序，而那个顺序是 `core, drawing, scene-2d…`，会让"先报 scene-2d 再报 drawing"的期望必然为假红。实测：新测试在修复前 `expected [...] to have a length of 1 but got 3`，修复后 5 passed；`pnpm lint:deps` 干净退出 0，插入 `import '@dajia/scene-2d';` 后退出 1 并打印 `packages/drawing/src/index.ts:1  @dajia/drawing -> @dajia/scene-2d 违反 D2b`，删除后恢复 0。
 
 ---
 
