@@ -6595,7 +6595,7 @@ pnpm typecheck 2>&1 | tail -3
 pnpm vitest run packages/core/test/properties.test.ts 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tail -6
 ```
 
-Expected: 7 passed（条数不变：本步骤只换取值写法，不加用例）。`canonical()` 那几条比对若因 `grown` 取到不同实体而红，说明残留**确实在改变被测对象** —— 那不是回归，是那处测试本来就是错的，把红的那条 Counterexample 抄下来写进执行日志。
+Expected: **9 passed**（`properties.test.ts` 里 7 条 `it`，其中「反例哨兵」那条是 `it.each(REGRESSIONS)`，两条夹具展成 2 条测试，所以 vitest 报 9；计划 2 起跑前实跑确认过。条数不变：本步骤只换取值写法，不加用例）。`canonical()` 那几条比对若因 `grown` 取到不同实体而红，说明残留**确实在改变被测对象** —— 那不是回归，是那处测试本来就是错的，把红的那条 Counterexample 抄下来写进执行日志。
 
 - [ ] **Step 3: 写 `geometry-properties.test.ts`**
 
