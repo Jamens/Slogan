@@ -3116,6 +3116,13 @@ git commit -m "feat: 墙轮廓四角与面积派生"
 
 `packages/core/test/opening-geom.test.ts`。此时还没有 `openingCreate`（Task 7），洞口一律用手写实体 + 一条只 upsert 它的命令塞进真源 —— 与计划 1 `commands.test.ts` 的 `wallWithOpening` 同一手法。
 
+> **Task 6 回填：下面 Step 1 的夹具文本有四处与落地态不同，照抄前先读本文末尾的「Task 6 执行回填」。**
+> **D2** = 跨层用例里 `fake` 必须是 `w1` 的**替身**（`entities.delete(w1.id)` + `set(fake.id, fake)`），两墙并存会先撞 `assertNoSameRay` 的「同向重叠」，本层守卫根本走不到；
+> **D3** = 排序用例的 id 要用 `uuidv7(1)/(2)/(3)` 钉死，`expect(far.id < near.id)` 原文是抛硬币（同毫秒 rand_a 随机）；
+> **F2** = 排序用例还要第三个**同距**洞才走得到 tie-break（没有平距样本时，把比较号整个反转也不会红）；
+> **F3** = 两处 `expect(storeyId).toBeTruthy()` 是恒真空跑，换成含楼层 id 的 `toThrow(new RegExp(...))`（uuid 只含 hex 与 `-`，全角括号不是元字符）。
+> `it` 数仍是 12，`pnpm verify` 仍是 181。helper `addOpening` 因此多了一个**只活在测试里**的可选 `id`。
+
 ```ts
 import { describe, expect, it } from 'vitest';
 import {
@@ -3380,7 +3387,7 @@ describe('deriveStoreyGeometry', () => {
 pnpm vitest run packages/core/test/opening-geom.test.ts 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tail -15
 ```
 
-Expected: FAIL，`does not provide an export named 'openingSpans'`（`deriveStoreyGeometry` 同理）。
+Expected: FAIL，**12 条全红**，报的是运行期 `TypeError: openingSpans is not a function`（`deriveStoreyGeometry` 同理）。Task 6 回填：原写的 `does not provide an export named …` 是错的期望，理由与 Task 5 那条完全相同（入口是 TS 源、vitest 走 esbuild，缺失的具名导出取到 `undefined`，不在链接期抛 `SyntaxError`）—— 见上面 Task 5 执行日志的 D2 段。
 
 - [ ] **Step 3: 实现 `geom/opening.ts`**
 
@@ -3561,12 +3568,13 @@ Expected: `opening-geom.test.ts` 12 passed（分段 9 + 整层 3）。`pnpm veri
 
 - [ ] **Step 6: 变异检查（防"测试考的是空气"）**
 
-1. 删掉 `piecesFromSpans` 首行的 `assertSpansFit(...)` → Expected: 「两洞之间必须留墙垛」与「超出宿主墙抛」两条红。这证明校验真的在建段之前跑，不是靠调用方自觉。
-2. 零长段判据 `span.fromMm > cursor` 改成 `>=` → Expected: 「门洞贴墙起点」红（多出一条 `[0,0]`）。
+1. 删掉 `piecesFromSpans` 首行的 `assertSpansFit(...)` → **实测红 3**（Task 6 回填：原只预言 2 条 —— 漏了「斜墙按浮点轴长判定」，它同样经 `piecesFromSpans` 走校验）。这证明校验真的在建段之前跑，不是靠调用方自觉。
+2. 零长段判据 `span.fromMm > cursor` 改成 `>=` → **实测红 2**：「门洞贴墙起点」＋「斜墙按浮点轴长判定」（原预言只写了第一条；斜墙那条在断言行 `:137` 红，机制同属"该不该产零长段"的判据被动过）。
 3. `assertSpansFit` 的 `cur.fromMm <= prev.toMm` 改成 `<` → Expected: 「两洞之间必须留墙垛」红，而该用例里的 1mm 正对照仍绿。少了正对照，这条变异可以被"改成恒抛"蒙混过去。
 4. `s.toMm > lengthMm` 改成 `>=` → Expected: 「正好收在墙尾合法」红。这盯的是浮点轴长上的开闭区间，不是随手写的比较。
-5. 删掉 `deriveStoreyGeometry` 里 `endsSeen !== 2` 的循环 → Expected: 「跨楼层共享端点」红，其余全部仍绿 —— 这条守卫只在病态文档下起作用，所以必须有一条专门造病的用例。
-6. 删掉 `openingSpans` 末尾的 `.sort(...)` → Expected: 「按 fromMm 升序」红（fixture 刻意让先建的洞在远端，否则排序删了也不红，就是空跑）。
+5. 删掉 `deriveStoreyGeometry` 里 `endsSeen !== 2` 的循环 → **实测红 1**：「跨楼层共享端点」（评审 R1 用 `!== 2` → `> 2` 等价地复现，其余 11 绿）。这条守卫只在病态文档下起作用，所以必须有一条专门造病的用例 —— 病怎么造见上面 D2：`fake` 必须是 `w1` 的**替身**而不是第三面墙，否则 `assertNoSameRay` 先抛，本层的守卫根本走不到。
+6. 删掉 `openingSpans` 末尾的 `.sort(...)` → **实测红 2**：「按 fromMm 升序」**恒红**（设计性覆盖全在这里），另有「两洞之间必须留墙垛」在随机 id 下约 75% 连带红 —— 那是表乱序先撞 `/升序/` 内部错误的机制副红，**不是设计出来的钉子**，别把它当覆盖写进日志。
+7. （Task 6 回填补）**反转排序的 tie 分支**（`a.openingId < b.openingId` 改成 `>`）→ 原夹具下 **0 红、12 全绿**（评审 R10）：没有任何两条洞口共享 `distanceMm`，那个分支一次都走不到。已在排序用例里补第三个同距洞（`uuidv7(3)`），现在反转即红（控制器实测 `1 failed | 11 passed`）。**这条是"平距样本"的通用地雷**：凡断言"按 A 排、A 相等时按 B 排"的排序契约，夹具里就必须真的存在 A 相等的两条 —— 否则第二个键是死代码。
 
 每处改完还原，`git diff` 必须为空。
 
@@ -3579,7 +3587,34 @@ git commit -m "feat: 洞口沿墙定位、墙身分段与整层派生入口"
 
 执行日志写在这里：12 条的实际结果、六处变异各红了哪些用例、斜墙 1414/1415 那条的浮点轴长实测值，以及"1mm 墙垛"正对照是否真的产出了宽度为 1 的中间段。
 
-**留给后续任务的钩子**：`assertSpansFit` 是 Task 7 三条洞口命令的写入前校验；`openingSpans` / `wallQuad` / `memberTrim` 这一批原语是 Task 9 索引的取料口（索引按条目取，不整层调 `deriveStoreyGeometry`，理由写在 Task 9 开头）。谁都不许绕开这批原语另写一套。
+#### Task 6 执行回填（2026-09-26，评审后）
+
+交付：`geom/opening.ts`（新建 100 行：`openingSpans` / `assertSpansFit` / `piecesFromSpans`）、`geom/outline.ts` +49（`deriveStoreyGeometry`）、`index.ts` +1、`test/opening-geom.test.ts`（新建 269 行 / 12 条 = 分段 9 + 整层 3）。提交 `ea055bc`，控制器核对 numstat 只有这四个文件；`pnpm verify` = **181 passed / 17 files**（169 + 12），控制器与评审各自复跑。评审 `task-6-review.md`：**SPEC COMPLIANT / QUALITY APPROVED**，0 Critical / 1 Important / 4 Minor；评审施加 R1–R10 十处变异，逐条 `git checkout --` 还原，结尾 `git status --porcelain` 空。
+
+**简报的三处缺陷（落地已按最小改法处理，计划正文同步改掉）**：
+
+- **D1**：Step 2 的 `Expected: does not provide an export named` 与实测 `TypeError: openingSpans is not a function` 不符 —— 与 Task 5 的 D2 同一个原因，已就地改文（不再要求后人去期待一个不会出现的消息形态）。
+- **D2（跨层夹具会先撞上游的守卫）**：简报原文在同一文档里同时留下 `fake` 与 `w1`，而两者只换起点、`endId` 是同一个点 ⇒ 它们的 end 端**从同一点朝同一方向离开** ⇒ `joint.ts` 的 `assertNoSameRay` 在 `deriveJoints` 阶段就先抛「同向重叠」，本层那条 `endsSeen !== 2` 守卫根本走不到。落地改法是让 `fake` 成为 `w1` 的**替身**（`entities.delete(w1.id); entities.set(fake.id, fake)`），断言与实现一行未动。评审独立验三件事：① 替身后该点只剩 w0.start 与 fake.start 两个成员，方向 `(1,0)` 与 `(0,1)` 不平行、分属两桶，`assertNoSameRay` 桶内比较无从命中，于是流程真走到层守卫；② `grep 接头不在本层` 全仓唯一产地就是 `outline.ts:90`，所以红不可能来自别处；③ 变异 R1（`!== 2` → `> 2`，对该夹具等价于删掉循环）**恰好红这一条**，其余 11 绿 ⇒ 守卫有牙。**这条要记住**：写"派生层自己发现病态文档"的用例时，得先确认它不会先被上游派生的守卫拦下 —— 否则用例红在别的病上，测的其实是空气。
+- **D3（排序用例的预言靠运气）**：简报写 `expect(far.id < near.id)`，而 `uuidv7` 的 rand_a 是同毫秒内的随机位 ⇒ 实现者三次连跑红过一次（并且 M6 到底生不生效全看这一掷）。落地改法是给测试 helper `addOpening` 加一个**只存在于测试里**的可选 `id`，排序用例改用 `uuidv7(1)/(2)`：前 48 位是毫秒时间戳、写在 bytes[0..5] 的最前面，字典序在前 12 个 hex 位就见分晓，**早于一切随机位** ⇒ 有序性由构造成立。评审补了两点：这条测的仍然是 `openingSpans` 的排序契约（文档 id 升序 = [far, near]，期望 [near, far] 恰与 id 序反向，只有按 `fromMm` 排才能得到），且删 `.sort` 的变异 R2 让该用例**恒红**；其余 11 条不传 `id` ⇒ 行为与原状逐字相同。
+
+**变异的实际红集合与简报预言的差（都是简报级"预期写漏"，测试与实现都没错）**：M1（删 `piecesFromSpans` 首行的 `assertSpansFit`）实测红 **3** 条（简报只预言 2 —— 漏了「斜墙按浮点轴长判定」，它也经 `piecesFromSpans` 走校验）；M2（`fromMm > cursor` → `>=`）实测红 **2** 条（同样漏了斜墙那条）。其余 M3/M4/M5 与简报一致，评审复现全表。另有一条简报没列的**运气红**要记：M6（删排序）会让「两洞之间必须留墙垛」那条也红，但那是随机 id 下表乱序先撞 `/升序/` 内部错误的机制副红（约 75% 命中），设计性覆盖全在排序那条 —— 报告自己把它标成"运气、不是设计出来的钉"，评审认可。
+
+**O1 销账（Task 5 留下的义务，本任务清偿）**：评审复现 R4（`deriveWallQuads` 忽略入参 ⇒ `opening-geom` 的「整层派生」`:212` 红，而 `outline.test.ts` 13 条仍全绿，Task 5 的失明被这两条新断言补上）；又自有 R5（把 `allJoints` 误传成过滤过的 `joints` ⇒ **两条红**：整层派生在 `memberTrim` 抛 `/接头表里找不到墙/`、空楼层因过滤表为 `[]` 而 `[] ?? deriveJoints` 不兜底）⇒ **"必须喂未过滤 allJoints"这半也有红点背书**。
+
+**F1（Important，本任务不修，交 Task 7 + Task 10）**：`assertSpansFit` 的界内判据是 `span.fromMm < 0 || span.toMm > lengthMm`，**不检查区间朝向**；而真源的 `Document.validate` 只查 `distanceMm/widthMm` 是整数、不查正负 ⇒ `widthMm ≤ 0` 是"真源合法"的反序 span。单 span 时两道循环全过，`piecesFromSpans` 产出 `[0, from]` 与 `[to, length]` 两段**物理重叠**的墙，而 `Σ段长 + Σ洞口宽 = 轴长` 照样精确成立（wall 3600、span `[500,100]` ⇒ 段 500+3500、span −400、和恰 3600）。**后果：只断言 Σ 恒等式的属性测试可以在真源带着重叠材料时全绿。** 这条与本计划反复出现的"Σ 类恒等式失明"是同一个家族（Task 4 的接缝闭合、Task 5 的 Σ 面积、这里的 Σ 段长），所以修在写入层而不是靠属性兜。
+
+**评审验真、值得留下的两条口径**：① `deriveStoreyGeometry` 零回写 —— 只读 `mustExist/byKind/deriveJoints/deriveWallQuads/piecesFromSpans`，全部返回新数组，`Document` 唯一的改法 `replaceEntities` 在本文件从未被调用；② 浮点不外泄 —— `opening.ts` 根本不产 `Vec2`（纯沿轴标量），浮点轴长只活在 `OpeningSpan`/`WallPiece` 这两个 geom 层接口里，从不流入 `Mm` 类型的实体字段，因此无需 `quantizeMm`；`NaN` 经 `wallAxis.lengthMm` 不可达（整数点 + `hypot` 有限 + 零长墙先抛），只有调用方自己把 NaN 塞进 `lengthMm` 才会让界内与尾段判据双双失明。
+
+**下游义务（Task 7 / 8 / 9 / 10 的简报必须带上）**
+
+- **T7（必须做，含 F1 的修法）**：`openingCreate` / `openingMove` 要 ① 拒绝 `widthMm < 1`（把 F1 的静默通道堵在写入层）；② 自跑跨层检查（`assertSpansFit` **不看楼层**，跨层只存在于 `openingSpans` 的 `TypeError` 里）；③ 界内比较用**浮点轴长** `wallAxis(doc, wall).lengthMm`，`lengthMm` 参数只准来自 `wallAxis`，禁止外部拼 NaN；④ 候选表必须**按 `fromMm` 重排后**再喂 `assertSpansFit`，不许把候选追加在表尾 —— 那会撞上"入参必须升序（内部错误）"那条文案，把内部错误当用户错误抛出去。边界是**刻意的**：贴边 `<=` 判非法、墙尾 `>` 齐平判合法（R6/R7 各钉一头），不许"顺手"统一成 `<`/`>=`。
+- **T8**：接头过滤口径是"成员全在本层"。若将来引入合法跨层共享点，`endsSeen !== 2` 会在**两层都**抛（Task 6 的替身夹具正是这样）——届时改口径本身，不得放宽断言。
+- **T9**：`deriveStoreyGeometry` 每次调用都全档 `deriveJoints` + 全档 `deriveWallQuads` 且每墙两次 `wallAxis`，它是**视图入口**；建索引请按条目用 `openingSpans` / `wallQuad` / `memberTrim`，并先把洞口按 `hostWallId` 建索引（`openingSpans` 是 O(openings)/墙）。若缓存接头表，必须补回四道缺席守卫（`assertNoSameRay` / `requireEqualThrough` / star 抛错 / `assertNoFlip`）。
+- **T10**：生成器用**上下界**排除病态输入而不用 `filter`：`widthMm ≥ 1`、`distanceMm ≥ 0`、`distanceMm + widthMm ≤ 浮点轴长`、`opening.storeyId ≡ 宿主墙.storeyId` 进构造期、同一 point id 不得被两层墙引用。属性预言：Σ 恒等式**之外必须另断**逐段两两不重叠且段在 `[0, 轴长]` 内（F1 的静默通道）；浮点比较一律 `toBeCloseTo`（实例：`Math.hypot(1000,1000)` 与 `Math.SQRT2*1000` 差 1 ULP）；样本数写死。
+- **T10｜tie-break 的确定性**：同距离双洞 ⇒ 结果按 id 升序且两次调用全等。Task 6 已在排序用例里补了平距第三洞（评审 R10 原本把比较号整个反转都测不出，补完后反转比较号即红，控制器实测 `1 failed | 11 passed`）。
+- **计划文本另两处同步修正**：`assertSpansFit` 的"入参升序"内部错误分支可达性 = `piecesFromSpans`/`assertSpansFit` 是公开出口、Task 7 手拼表即撞；派生链自产表永不触发（触发即调用方 bug，文案与行为相配）。
+
+**留给后续任务的钩子**：`assertSpansFit` 是 Task 7 三条洞口命令的写入前校验；`openingSpans` / `wallQuad` / `memberTrim` 这一批原语是 Task 9 索引的取料口（索引按条目取，不整层调 `deriveStoreyGeometry`，理由写在 Task 9 开头）。谁都不许绕开这批原语另写一套。**Task 7 开工前先读上面 T7 那条**：`assertSpansFit` 既不查楼层（跨层只在 `openingSpans` 的 `TypeError` 里）、也不查区间朝向（`widthMm ≤ 0` 在真源合法，会让 Σ 段长恒等式带着重叠材料全绿），这两样都得由命令层补，且候选表要重排后再喂它。
 
 ---
 
