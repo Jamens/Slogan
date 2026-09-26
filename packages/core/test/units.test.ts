@@ -19,6 +19,16 @@ describe('quantizeMm', () => {
     expect(() => quantizeMm(Number.POSITIVE_INFINITY)).toThrow(RangeError);
     expect(() => quantizeMm(Number.NEGATIVE_INFINITY)).toThrow(RangeError);
   });
+
+  it('真源不接受带符号的零：Math.round 的 -0 被归一为 +0', () => {
+    // Math.round(-0.4) 是 -0，而 JSON.stringify(-0) 是 "0"：字节比对看不见它，
+    // 只有内存里的 Object.is / vitest toEqual 会炸，所以断言必须用 Object.is。
+    expect(Object.is(quantizeMm(-0.4), -0)).toBe(false);
+    expect(Object.is(quantizeMm(-0.4), 0)).toBe(true);
+    expect(Object.is(quantizeMm(-0), 0)).toBe(true);
+    expect(Object.is(quantizeMm(0.4), 0)).toBe(true);
+    expect(Object.is(quantizeMm(1e6 + 0.9), 1e6 + 1)).toBe(true);
+  });
 });
 
 describe('assertMm', () => {
@@ -35,6 +45,13 @@ describe('assertMm', () => {
   it('拒绝超出安全整数：超过后加减不再准确', () => {
     expect(() => assertMm(Number.MAX_SAFE_INTEGER + 2, '坐标')).toThrow(RangeError);
     expect(assertMm(Number.MAX_SAFE_INTEGER, '坐标')).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
+  it('校验放行 -0（Number.isInteger(-0) 为真）但返回 +0', () => {
+    expect(Object.is(assertMm(-0, '偏移'), -0)).toBe(false);
+    expect(Object.is(assertMm(-0, '偏移'), 0)).toBe(true);
+    expect(Object.is(assertMm(0, '偏移'), 0)).toBe(true);
+    expect(Object.is(assertMm(-240, '墙厚'), -240)).toBe(true);
   });
 });
 
