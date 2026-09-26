@@ -14,3 +14,4 @@ export * from './commands/wall';
 export * from './geom/vec';
 export * from './model/read';
 export * from './geom/axis';
+export * from './geom/topology';
