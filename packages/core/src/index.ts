@@ -11,3 +11,4 @@ export type * from './model/command';
 export { TransactionLog, affectedIds } from './model/transaction';
 export * from './commands/storey';
 export * from './commands/wall';
+export * from './geom/vec';
