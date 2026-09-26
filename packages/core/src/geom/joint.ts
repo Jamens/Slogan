@@ -65,9 +65,13 @@ function toMember(wall: WallEntity, end: WallEnd, axis: WallAxis): Member {
  * 按无向轴线分组：所有成员的轴线都过共享点，故方向平行即同一条直线。
  *
  * 分组是**贪心且以代表元比对**的：每个成员只与该桶的第一个成员（代表元）比 `isParallel`，
- * 不与桶内其余成员比，所以"平行"在这个桶里不传递。误差量级算过：`PARALLEL_EPS = 1e-9`
- * 是 |sinθ| 的相对容差，整数毫米坐标在 2e5 mm 量级下能落进这个带的最大折角约 2.5e-11 rad，
- * 对应的接缝错位是微米级 —— 整数毫米输出里看不见，故按现状保留，不做两两比对。
+ * 不与桶内其余成员比，所以"平行"在这个桶里不传递。误差量级算过：`PARALLEL_EPS = 1e-9` 卡的是
+ * |sinθ|，所以**能落进同一个桶的最大折角就是这个带本身 ≈ 1e-9 rad**，与坐标量级无关。
+ * 同桶两成员各距代表元 ≤ eps ⇒ 彼此最多差 2·eps ⇒ 一根 2e5 mm 的墙错开 ≈ 4e-4 mm = 0.4 µm，
+ * 整数毫米输出里看不见，故按现状保留、不做两两比对。（误差随墙长线性增长，前提 2e5 mm 是
+ * `vec.ts` 立的约定，`assertMm` 并不强制坐标上限。）
+ * 反方向那个数别混进来：两个不平行的整数方向，|sinθ| ≥ 1/(|a|·|b|)，分量到 2e5 时约 1.25e-11，
+ * 也就是这个带至多吸进 ~80 个互不平行的整数方向 —— 那说的是**暴露面有多大**，不是安全边际。
  */
 function lineGroups(members: readonly Member[]): Member[][] {
   const lines: Array<{ dir: Vec2; items: Member[] }> = [];
@@ -127,8 +131,12 @@ function sideVertex(a: Member, sideA: 1 | -1, b: Member, sideB: 1 | -1): Vec2 {
     b.dir,
   );
   if (hit === null) {
-    // 不可达：两支墙平行时它们同属一条轴线，分类阶段就走不到 corner/tee/cross 的配对；
-    // 这里只是 intersectLines 返回 null 的兜底，不静默退回"按端点平接"
+    // 两墙**真**平行时不可达（同属一条轴线，分类阶段就落不到 corner/tee/cross 的配对）。
+    // 但 `lineGroups` 是贪心分桶：一对夹角小于 eps 的近重合方向，可能各自与"另一桶"的代表元
+    // 差在 eps 内而落进两个桶 —— `assertNoSameRay` 只在桶内逐对比，看不见这一对；
+    // 分类会把它们当成一个极小的 corner 交给我，于是走到这里，而这条抛错就是唯一的出口。
+    // 别当死代码删。它同时是 intersectLines 返回 null 的兜底：宁可抛，
+    // 也不静默退回"按端点平接"（那样图纸上是一个看起来正常、其实错了一整条边的接缝）。
     throw new RangeError(`接头处两侧边线近平行，求不出接缝点：墙 ${a.wallId} 与墙 ${b.wallId}`);
   }
   return hit;
