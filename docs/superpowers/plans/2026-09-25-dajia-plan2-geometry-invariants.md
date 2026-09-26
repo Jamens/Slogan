@@ -7043,7 +7043,20 @@ trim_内侧(self) = (h_other + h_self · cosθ) / sinθ        trim_外侧(self)
 
 1. **随机生成 T 接 / 十字 / 星形。** 随机拓扑要处理"直通两墙必须同厚"（`requireEqualThrough`）、星形必须被拒、同一交点上支墙方向数不可控 —— 生成器的复杂度会超过它能证明的东西。这三类接头的定值证明在 Task 4（分类与斜切量）、Task 5（轮廓面积）、本任务 Step 5（两层房里的两个 T 接）。属性测试里 `checkKinds` 反过来钉"链上永远不该出现 tee/cross/star"，一旦有人把生成器改成产 tee，这条会红着提醒他先读这段。
 2. **一面墙上两樘洞 + 缩墙夹取。** 两樘洞挤不进同一面缩短的墙：`clampOpeningsToWall` 会各自 `Math.floor(L − w)` 贴到末端，于是必然重叠或贴边，`assertSpansFit` 抛 —— 那是**正确行为**，不是可以随机化试探的空间。两樘洞的夹取冲突由 Task 7 的定值用例「夹完撞上」负责；本任务的随机夹取保持"一墙至多一樘"。
-3. **柱、板、标高的几何。** Task 8 的命令层守卫与 Task 9 的脏集合已经覆盖，`src/spatial` 不索引它们。
+3. **柱、板、标高的几何。** `src/spatial` 不索引它们：索引条目只有 `wall` 与 `opening` 两类（Task 9）。**别把这句读成"柱与板已经有人守"**（归属改判第 2、3 条）：本计划只在**创建期**守柱与板（Task 8 的 `columnCreate` / `slabCreate` 守卫），派生层与拖侧后果没人管；三条里只有标高是真被两处守住的（Task 8 的 `assertNoVerticalOverlap` + Task 9 的"改标高 ⇒ 整层脏集合"）。
+
+#### Task 10 下达前的归属改判（覆盖 4626 / 4647 / 5750 / 7000 四处同名指认）
+
+那四处都写在别的任务的执行回填里，写的时候都默认 Task 10 会有一个 `assertTruthSourceInvariants(doc)`、或一个 `addWall` 算子。Task 10 正文里两样都没有 —— 所以先把这四条判掉，别让执行人去猜（计划自己的"以这里为准"惯例）。
+
+1. **`addWall` 不进 `ChainOp`；"新墙挂到既有点"改由测试 14 覆盖。** 7000 那条 T10 ① 与 Step 6 变异 8 那句"前提是 `ChainOp.kind` 里有 `addWall`"三处都不成立：
+   - (a) 那句后面说的"四条里只有两条会红"指的是 Task 9 的**定值**用例，它们跟 `ChainOp` 没有任何关系 —— 摘掉半条闭包它们照红，Task 9 执行回填写的就是实测红四条。
+   - (b) 真缺的不是算子，是**时机**。`runOpsWithIndex` 的索引建在 `drawChain` **之后**，所以即便 `ChainOp` 多一种 `addWall`，索引看到的也只是"一张已经装全墙的表再加一面墙"；而链上第 i 段复用第 i−1 段端点那一幕 —— 索引此生第一次遇到"新构件挂到既有点"的地方 —— 发生在索引还不存在的窗口里。
+   - (c) 给 `arbChainShape` 加闭合段、或给 `ChainOp` 加任意连线，都会破掉关键判断 2 的三条界：闭合段与任意连线的长度、夹角是**派生**量，不在生成器的下界里，而 `MIN_AXIS_MM` 与 `sinθ ≥ 0.49` 是全文件所有"抛/跳"判定的前提。破它的代价远大于收益。
+   **落地的东西**：`drawChain` 多一个可选的每步回调（默认不传 ⇒ 其余 13 条行为逐字不变），索引的出生点挪到空层，画一段建一次 ⇒ 测试 14。它覆盖"新墙挂到既有端点"（每轮 1–4 次 × 40 轮），**不**覆盖"在两个既有端点之间合上一间房"（链不闭合是生成器的既定边界，那条留在 Task 9 的定值用例）。
+2. **`assertTruthSourceInvariants(doc)` 不在本任务，判给计划 4 的读盘校验。** 理由是鉴别力，不是工作量：Task 10 的文档全部由 `dispatch` 命令工厂产出，那份清单里的每一条（引用完整性、`widthMm ≥ 1`、`heightMm ≥ 1`、`sillMm ≥ 0`、门 ⇒ `sillMm = 0`、洞口与宿主同层、不接受 `-0`）在这类文档上要么已被命令层守卫挡死、要么按 4618 那条 F8 的实测**结构不可达** —— 4626 与 4647 自己给的理由就是"只有读盘/手搓能进来"。一条在这台测试能喂给它的任何输入上都不会红的检查器，正是本计划反复罚的那件事（Task 9 变异 3 的 `bruteForce` 与 `query` 同源、Task 4 那三条"错误配对下照样成立"）。清单本身别丢：**4647 的 T10 ⑤ + 5750 的 T10 ③ 合起来就是计划 4 读盘入口的验收清单**，抄过去即可。
+3. **重影柱（ledger 里的 Ruling ㊤）不在本任务，判给计划 3 的拖拽入口。** 它要先回答"拖动一个挂着柱的共享点，柱跟不跟走"（5741–5744 原话：需要的不是补丁而是一条语义裁决）。那是交互语义而不是几何派生问题，而 Task 10 只有一种拖法（`wallMoveEndpoint`）、索引里没有任何柱条目 —— 在这里写断言，等于拿一条测试当场把"柱不跟走"这个**未定**语义钉成期望值，而计划 3 真做拖拽时改的就是它。裁决人从"Task 9"改成"计划 3 的拖拽入口"，理由不变。
+4. **seed 不钉，但必须复现一次（7000 那条 T10 ③ 的实测订正）。** fast-check 4.10.2 的 `fc.assert` **失败时本来就把 seed 与 path 打进错误消息**：本仓实测 `{ seed: -354603730, path: "0:2:0:0:0:1:1", endOnFailure: true }` + `Counterexample: [500]` + `Shrunk 6 time(s)`。所以"失败也不打印 seed"这句是错的，别为它加代码。真缺的只有"每轮跑流不同"这一半，而钉死 seed 等于把 CI 的随机覆盖冻在一条流上 —— 拿覆盖换一个本来就有的东西。**本任务只做一件事**：把一次真实失败（没有就临时改坏一个界造一次）输出里的 `seed` 与 `path` 原样填进 `fc.assert(prop, { seed, path })` 复跑，确认复现同一个反例，然后把这条实测写进执行日志。它是"不钉 seed"这个决定的凭据，不是任何一条断言。
 
 **Files:**
 - Create: `packages/core/test/geometry-properties.test.ts`
@@ -7279,7 +7292,7 @@ Expected: **9 passed**（`properties.test.ts` 里 7 条 `it`，其中「反例�
 
 - [ ] **Step 3: 写 `geometry-properties.test.ts`**
 
-文件长，分三段依次追加（① 预言 → ② Harness 与操作 → ③ 三个 `describe`），中间不提交、不运行 —— 第 ①② 段单独留着会因"导入未使用"过不了 `pnpm typecheck`。
+文件长，分三段依次追加（① 预言 → ② Harness 与操作 → ③ 四个 `describe`），中间不提交、不运行 —— 第 ①② 段单独留着会因"导入未使用"过不了 `pnpm typecheck`。
 
 **这个文件的 import 表里不许出现 `wallAxis` / `wallAxisById` / `awayDir` / `cornerPoint` / `endPoint` / `deriveJoints` 之外的任何 `geom/axis` 与 `geom/joint` 导出**（`dot` / `cross` / `perp` / `advance` / `Vec2` 也不许：它们是 `geom/vec`，但预言用它们就等于把"法向怎么取"这个约定借过来用）。理由见关键判断 1。被 import 的实现侧符号只有：`deriveJoints`、`deriveWallQuads`、`deriveStoreyGeometry`、`openingSpans`、`SpatialIndex` 与八个命令（`wallCreate` / `wallDelete` / `wallMoveEndpoint` / `wallSetThickness` / `openingCreate` / `openingMove` / `openingDelete` / `storeyCreate`）—— 全是**被测对象**。`polygonArea` 不在其中：它就是 `WallQuad.areaMm2` 的算法本身（Task 5 里 `areaMm2: polygonArea(corners)` 一行），在这里拿它比 `areaMm2` 是自己比自己；它该被考的地方是 Task 5 的定值用例，已经考过。
 
@@ -7719,10 +7732,17 @@ const liveOpenings = (h: Harness) =>
  * `forward` 决定共享点落在 start 还是 end：相邻两段 forward 相同 ⇒ 混合角 (end,start)，
  * 不同 ⇒ 同向角 (start,start) / (end,end)。同向角才是 Task 4 那个 bug 的现场。
  */
-function drawChain(shape: ChainShape, stats: OpStats = newStats()): Harness {
+function drawChain(
+  shape: ChainShape,
+  stats: OpStats = newStats(),
+  onStep?: (log: TransactionLog, storeyId: string) => void,
+): Harness {
   const log = new TransactionLog(Document.create(projectId));
   log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: WALL_HEIGHT_MM }));
   const storeyId = log.document.byKind('storey')[0]!.id;
+  // 测试 14 要的是"索引从一张空层开始长大"，所以回调在**一段墙都还没有**时先叫一次。
+  // 其余 13 条都不传 onStep：可选参数保证它们的执行序列逐字不变。
+  if (onStep) onStep(log, storeyId);
   const vertexIds: Array<string | undefined> = [];
   shape.walls.forEach((segment, i) => {
     const near = shape.points[i]!;
@@ -7743,6 +7763,7 @@ function drawChain(shape: ChainShape, stats: OpStats = newStats()): Harness {
     const wall = wallJustCreated(log);
     vertexIds[i] = segment.forward ? wall.startId : wall.endId;
     vertexIds[i + 1] = segment.forward ? wall.endId : wall.startId;
+    if (onStep) onStep(log, storeyId);
   });
   return {
     log,
@@ -8085,7 +8106,7 @@ function runOps(shape: ChainShape, ops: ChainOp[], checkers: Checker[], stats?: 
 2. **`byKind` 按操作类型分开数**。`applied > 0` 只证明跑过 *某种* 操作：`deleteWall` 是 Task 9 双向闭包那条漏网边（删墙 → 邻墙盒子发霉），它一次没跑过而整条属性仍绿，是最容易骗人的空跑。所以测试 5 直接钉 `byKind.deleteWall > 0` 与 `byKind.thickness > 0`，而不是笼统钉 applied。
 3. **`Harness` 里没有索引字段**，`SpatialIndex` 只活在测试 10 的 `runOpsWithIndex` 局部。索引每步要额外建一次整层全量索引才能比对"增量 == 全量"，把它塞进 `CHECK_ALL` 会让真正走全表的测试 5 与测试 11 慢一截却什么都不多证 —— 便宜的检查每步跑，贵的那条单独开一测。曾经往 `Harness` 上挂过一个 `index` 字段，赋值一次、没人读，删了（理由记在下面第 4 条）。
 
-**第 ③ 段：三个 `describe`（13 条）**
+**第 ③ 段：四个 `describe`（14 条）**
 
 ```ts
 // ---------- ③ 用例 ----------
@@ -8640,6 +8661,100 @@ describe('生成器自觉：这个随机空间真长出过我们要的东西吗'
     expect(total.oracleEntries).toBeGreaterThan(0);
   });
 });
+
+// ---------- ③ 段（续三）：索引跟着画墙（测试 14）----------
+
+/**
+ * 全体条目盒的外框，±1mm 余量（口径与 `probeRects.full` 相同，理由写在那儿）。
+ * 不用一个写死的"世界大框"：4000mm 的格子下，±1e6 的框一次要扫 25 万格，
+ * 而本条每步要查 2 + N 个矩形 × 40 轮 —— 外框从条目现取，代价随链长走，不随坐标范围走。
+ */
+function unionBox(entries: readonly IndexEntry[]): Aabb {
+  if (entries.length === 0) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  return {
+    minX: Math.min(...entries.map((e) => e.aabb.minX)) - 1,
+    minY: Math.min(...entries.map((e) => e.aabb.minY)) - 1,
+    maxX: Math.max(...entries.map((e) => e.aabb.maxX)) + 1,
+    maxY: Math.max(...entries.map((e) => e.aabb.maxY)) + 1,
+  };
+}
+
+/**
+ * 测试 14 与测试 10 的分工，一句话：**测试 10 的索引建在链画完之后，所以它只见"改"不见"增"。**
+ * 而"新构件挂到既有端点"正是 Task 9 双向闭包四条漏网边里唯一没被随机覆盖的那条
+ * （`wallCreate` 复用了第 i−1 段的端点 ⇒ 那根老墙在同一点的接头从 `free` 变 `corner`、
+ * 斜切量从零变非零，而老墙**不在** `wallCreate` 的 `affected` 里 —— 它只能从
+ * `dependsOnOf` 的实体回落那一跳被捞回来）。这里把它接到随机链上：每轮 1–4 次复用 × 40 轮。
+ *
+ * 它**不**覆盖"在两个既有端点之间合上一间房"：链不闭合是 `arbChainShape` 的既定边界
+ * （闭合段的长度与夹角是派生量，关键判断 2 的三条界管不到它，见归属改判第 1 条 (c)），
+ * 那一条留在 Task 9 的定值用例里。
+ *
+ * 本条不走 `absorbStats`：它不跑操作序列，`byKind` / `probes` / `clamps` 恒为 0，
+ * 为一个全是零的账本去动 `OpStats` 与 `absorbStats` 两处签名，是 Task 9 评审那条
+ * "挂一个赋值一次、没人读的字段"的同一件事。防它空跑的三个下界用局部计数器。
+ */
+describe('索引跟着画墙：从一张空层开始', () => {
+  it('每画一段 applyAffected 一次：增量 == 全量，且每条目的自查盒 == 暴力扫', () => {
+    let steps = 0;
+    let emptyStarts = 0;
+    let reuseSteps = 0;
+    let partials = 0;
+    fc.assert(
+      fc.property(arbChainShape, (shape) => {
+        let index: SpatialIndex | undefined;
+        let reusedBefore = 0;
+        const step = (log: TransactionLog, storeyId: string): void => {
+          const doc = log.document;
+          const walls = doc.byKind('wall').filter((w) => w.storeyId === storeyId);
+          if (index === undefined) {
+            // 第一次回调 = storeyCreate 之后、一段墙都还没有。Task 9 的 T10 义务 ⑤：
+            // 空层既不能抛，也不能把"这层没墙"和"楼层 id 写错"混成同一个空索引。
+            expect(walls.length).toBe(0);
+            index = SpatialIndex.fromDoc(doc, storeyId);
+            expect(index.size).toBe(0);
+            expect(index.query({ minX: 0, minY: 0, maxX: 0, maxY: 0 })).toEqual([]);
+            emptyStarts++;
+            return;
+          }
+          index.applyAffected(doc, log.affected);
+          const live = index.snapshot();
+          expect(live).toEqual(SpatialIndex.fromDoc(doc, storeyId).snapshot());
+          expect(live.length).toBe(walls.length);
+          for (const entry of live) {
+            // 拿条目自己的盒子当查询矩形：接头两侧的墙盒在共角端互相盖住，
+            // 所以这既是"命中非空"又是"不全表"，一个矩形干两件事，还都是紧的。
+            const hit = index.query(entry.aabb);
+            expect(hit).toEqual(bruteOverlaps(live, entry.aabb));
+            if (hit.length < live.length) partials++;
+          }
+          const full = unionBox(live);
+          expect(index.query(full)).toEqual(live.map((e) => e.id));
+          expect(
+            index.query({
+              minX: full.maxX + 1_000_000,
+              minY: full.minY,
+              maxX: full.maxX + 1_000_001,
+              maxY: full.minY,
+            }),
+          ).toEqual([]);
+          steps++;
+          // 复用数 = 2×墙数 − 不同端点数。链上每加一段必然复用 1 个 ⇒ 严格递增一步。
+          const ends = new Set(walls.flatMap((w) => [w.startId, w.endId]));
+          const reused = walls.length * 2 - ends.size;
+          if (reused > reusedBefore) reuseSteps++;
+          reusedBefore = reused;
+        };
+        drawChain(shape, newStats(), step);
+      }),
+      { numRuns: NUM_RUNS_INDEX },
+    );
+    expect(emptyStarts).toBe(NUM_RUNS_INDEX);
+    expect(steps).toBeGreaterThanOrEqual(2 * NUM_RUNS_INDEX);
+    expect(reuseSteps).toBeGreaterThan(0);
+    expect(partials).toBeGreaterThan(0);
+  });
+});
 ```
 
 **测试 12 抓不到边线配对错，这句话必须写在它旁边。** 把整条链反着画，每个接头的两墙同时换成各自的另一端，`innerSide` 跟着一起翻 —— 配对结构原样保留，所以 Task 4 那个 bug 在这条属性下**全绿**（与 Task 4 的 intro 同一句结论，那里已经写过一次，这里是它的落点）。它真正的位置是另一类病：实现偷偷读了 `forward`、读了 `Joint.members` 的先后、或读了 uuid 序 —— 这三样在反向画里全变了，而输出必须不变。配对错的随机探测器只有一个，就是测试 3 那条按侧比闭式解；定值探测器是 Task 4 的两条「同向起画」、本文件测试 2，与 Step 5 的「同向角定值」。
@@ -8656,7 +8771,7 @@ pnpm vitest run packages/core/test/geometry-properties.test.ts 2>&1 | sed 's/\x1
 pnpm verify
 ```
 
-Expected：本文件 13 passed；`pnpm verify` = Task 9 的 258 + 13 = **271 passed**，0 失败。
+Expected：本文件 14 passed；`pnpm verify` = Task 9 的 258 + 14 = **272 passed**，0 失败。（Step 5 那 8 条落地后，收尾门禁才是 **280 passed / 23 files** —— 别在 Step 4 就去找那个数。）
 
 **把两个墙钟时间抄进执行日志。** 这个文件是计划 2 里最贵的一处：80 次运行 × 最多 18 步，每步跑六个检查器（其中 `checkContours` / `checkOracle` / `checkSpans` 各要派生一次整层）。如果 `geometry-properties.test.ts` 单文件超过 **20 秒**，按这个顺序降档，别乱降：
 
@@ -9110,7 +9225,7 @@ describe('两层住宅：接头与轮廓', () => {
 5. `geom/joint.ts` 的 `deriveJoints` 出口排序：删掉 `byPointId` 那一步 → Expected: `checkKinds`（`joints.map(pointId)` 与 `[...groups.keys()].sort()` 比）红 ⇒ 走 `CHECK_ALL` 的测试 5 与 11 红，Task 4 与 Task 9 的"顺序契约"定值红。**测到排序的不是那一条专门的用例，是每一天的检查** —— 这条是计划开头"派生层按 id 升序"规约的兑现凭据。
 6. `commands/opening.ts` 的 `assertFitsAfterInsert`：整段注释掉 → Expected: **本文件一条都不红**。`checkSpans` 比的是"分段与洞口区间互补"，那是派生自洽，写入守卫拿掉之后派生仍然自洽地把非法区间摊成一片越界的墙身段；红的是 Task 7 的「放不下洞口」「夹完撞上」。与变异 4 同记为非目标防线：写入校验由命令层的定值守，属性测试守的是派生。
 7. `commands/wall.ts` 的 `clampOpeningsToWall`：`Math.floor` → `Math.round` → Expected: 测试 9 红（`recordClamps` 钉的是 `after === floor(轴长 − 宽)`，斜墙轴长带小数时两者差 1），Task 7 的「缩墙」与 Task 6 的斜墙值断言红。960 步里一次都没碰上 `.5` 的概率可以忽略；真碰不到就照 Step 4 的规矩把收缩后的反例抄进日志，别改断言。**这条同时证明测试 9 不是空跑**：`total.clamps > 0` 那行绿而这条变异不红，就说明夹取从来没真的发生过。
-8. `spatial/index.ts` 的 `applyAffected`：删掉 `dirtyIds` 里"共享端点"那一半闭包（即 `for (const dep of this.dependsOnOf(doc, id)) queue.push(dep);`，只留 `expandAffected`）→ Expected: 测试 10 红（增量 != 全量，邻墙盒子发霉），**Task 9 的四条同时红**（「删一面墙」「改一面墙的墙厚」「新建的墙复用既有端点」「在两个既有端点之间合上一间房」，实测记录见 Task 9 执行回填的变异表第 1 行），而「拖拐角」仍绿。这一条把 Task 9 留的那句"双向闭包缺半条就漏邻墙"接到随机链上：随机链每个接头都是共享端点，删半条闭包在 80 × 12 步里必撞。**前提是 `ChainOp.kind` 里有 `addWall`**（Task 9 执行回填的 T10 义务 ①），否则随机链造不出"新建实体挂到既有点上"那一类，四条里只有两条会红。
+8. `spatial/index.ts` 的 `applyAffected`：删掉 `dirtyIds` 里"共享端点"那一半闭包（即 `for (const dep of this.dependsOnOf(doc, id)) queue.push(dep);`，只留 `expandAffected`）→ Expected: 测试 10 红（增量 != 全量，邻墙盒子发霉），**测试 14 同时红**（画第 i 段时那根老墙留在"自由端"的那个盒子和 `fromDoc` 全量对不上），**Task 9 的四条同时红**（「删一面墙」「改一面墙的墙厚」「新建的墙复用既有端点」「在两个既有端点之间合上一间房」；它们是定值用例，摘掉半条闭包必红，实测见 Task 9 执行回填的变异表第 1 行），而「拖拐角」仍绿。这一条把 Task 9 留的那句"双向闭包缺半条就漏邻墙"接到随机链上：随机链每个接头都是共享端点，删半条闭包在 80 × 12 步里必撞。**（原稿这里写的是"前提是 `ChainOp.kind` 里有 `addWall`，否则随机链造不出新建实体挂到既有点上那一类，四条里只有两条会红"—— 三处都不成立：那四条是定值用例、与 `ChainOp` 无关；而 `ChainOp` 加一种 `addWall` 也到不了那一步，因为测试 10 的索引建在链画完**之后**。判由与替代方案（测试 14）见 Step 3 前面的『Task 10 下达前的归属改判』第 1 条。）**
 
 跑完八条**必须回到全绿**再进 Step 7（`git status --porcelain` 只该有本任务那几个测试文件）。
 
@@ -9127,7 +9242,7 @@ EOF
 )"
 ```
 
-执行日志写在这里：13 + 8 条的实际结果与两个墙钟时间（降档了就写降到哪一档、为什么）、八处变异各红了哪些用例（**第 4、6 两条要写明"本文件一条都不红"**，它们是非目标 1 与写入守卫分工的凭据；**第 1、2、3 条要写明各自那批"故意留绿"**：变异 1 不打左折的混合角、变异 2 不动点集与面积、变异 3 才打得到混合角里的右转 —— 三处绿是关键判断 1 与非目标 2 的量化凭据，漏记就等于下次没人知道哪条断言不该单独承重）、Step 5 登记表里有没有与实际跑出来不一致的数（有的话把两个数都抄下来：算错的要改登记表，实现错的是缺陷，走"改实现"那条），以及测试 2 现场演示的那组"错误配对的角点仍然两两重合"的坐标 —— 它是关键判断 1 唯一的可视化证据，别只留一句结论。
+执行日志写在这里：14 + 8 条的实际结果与两个墙钟时间（降档了就写降到哪一档、为什么）、八处变异各红了哪些用例（**第 4、6 两条要写明"本文件一条都不红"**，它们是非目标 1 与写入守卫分工的凭据；**第 1、2、3 条要写明各自那批"故意留绿"**：变异 1 不打左折的混合角、变异 2 不动点集与面积、变异 3 才打得到混合角里的右转 —— 三处绿是关键判断 1 与非目标 2 的量化凭据，漏记就等于下次没人知道哪条断言不该单独承重）、Step 5 登记表里有没有与实际跑出来不一致的数（有的话把两个数都抄下来：算错的要改登记表，实现错的是缺陷，走"改实现"那条），以及测试 2 现场演示的那组"错误配对的角点仍然两两重合"的坐标 —— 它是关键判断 1 唯一的可视化证据，别只留一句结论。
 
 **留给后续计划的钩子**：① 本文件的闭式解预言（`expectedTrims` / `oracleTrims` / `endsByPoint` 三件套，约 90 行）是计划 5 标注尺寸线时唯一的浮点第二证据，计划 5 要把它抽成 `test/oracle-joint.ts` 共享而不是复制 —— 复制的代价在 Step 3 的 `overlaps` 那里演示过（一份判据两处用，变异就打不中）。② `recordClamps` 那套"派发前后各读一次实体、在中间那一刻断言"的写法，是计划 4（MySQL 落库）验"写库前后真源一致"的现成模板。③ `arbChainShape` 只产开放链，闭合环（外框一圈、共享首尾点）由 Step 5 定值覆盖；计划 3 的 2D 视图要做"绕一圈闭合"的交互，就得回来给生成器加 `closed: boolean` 并让 `assertChainBounds` 允许末点复用首点 —— 现在不留这个字段，因为属性测试不需要它就够了。
 
