@@ -5767,15 +5767,27 @@ Step 4 已写明为什么成立。
 
 ### Task 9: AABB 空间索引与受影响子集重建（`spatial/index.ts`）
 
+> **照抄前先读**：本任务正文已在 2026-09-26/27 的执行 + 评审 + 修复轮 1 之后**按落地态订正**过七处 ——
+> ① Step 2 与 Step 4 的 import 表：`advance` 不在 `geom/axis.ts`，它在 `geom/vec.ts`（原文照抄会在 ESM 链接期就死，
+> Step 2"前 10 条转绿"这句根本没法验）；② Step 3 里三条测试期望（门与宿主墙一起被 `queryPoint` 报出、
+> 共角邻墙的盒子把外伸方块整个盖住、拖完之后 `maxX` 仍是 3720）；③ Step 4 的 `dirtyIds` 从"只读条目"改成
+> **条目优先 + 实体回落**的 `dependsOnOf`（修复轮 1 的 C1，见下面解释第 3 点），连带 `wallDeps` / `openingDeps` /
+> `entityDeps` 三个新函数与两处注释；④ Step 3 追加两条 C1 回归用例（`applyAffected` 那一组 5 → 7 条）；
+> ⑤ Step 5 的期望数 22 → **24**、256 → **258**；⑥ Step 6 第 1 条的红名单两条 → **四条**、第 2 条 → 三条、
+> 第 6 条的预言撤回（等价变异，实测 0 红）；⑦ Step 4 的解释从三处变四处。
+> 提交链：`035878e`（实现）→ `c2f9d29`（修复轮 1）→ `3219a4e`（注释订正）。若你的分支上已经有这三个，
+> **不要再照抄一遍** —— 先 `git log --oneline -3`。执行结果与裁决见本节末尾「Task 9 执行回填」。
+
 spec 第 9 节那句话是本任务的全部验收标准：**「派生 AABB 索引，command 后只重建受影响节点局部，支撑命中与拾取」**。计划 3 的 2D 命中、吸附候选点、橡皮筋预览都只问这个索引要候选，不再自己遍历真源；所以本任务的核心不是"快"，而是**局部重建之后的索引必须与整层重建逐条相等** —— 一旦这里悄悄留下旧盒子，计划 3 症状是"点了没反应"，根因却在几万行之外。
 
-**关键判断 1：`dependentsOf` 的闭包不够用，索引必须双向走。** 三条真实的漏网边：
+**关键判断 1：`dependentsOf` 的闭包不够用，索引必须双向走。** 四条真实的漏网边：
 
 1. **删一面墙，邻墙的框会变。** `wallDelete` 的补丁里没有邻墙，邻墙的实体也没变，但它在那个共享端点上的接头从 `corner` 变成了 `free`，斜切量归零 → 梯形变矩形 → 盒子变小。
 2. **改一面墙的墙厚，共角的另一面墙框也会变**（Task 4 的异厚 corner 是偏置斜切，邻墙的 `trim` 取的是对面的半厚）。
 3. `affected` 里根本没有那些"几何变了但实体没变"的墙 —— Task 3 就钉过这条（`affected` 只有那个点）。
+4. **刚建成的构件自己还没有条目**，可它两端挂着的既有邻墙从这一刻起接头从 `free` 变 `corner`，框要重算。这条是落地后评审抓出来的（C1，见本节末尾回填第 3 条）：`wallCreate` 复用 `{pointId}` 时连那个点都不 upsert，所以共享点不在 `affected` 里；而新墙此刻没有 `IndexEntry`，`dependsOn` 也无从读起 —— 上面 1/2/3 三条都是"旧条目的盒子发霉"，只有这一条是"新实体的边根本没人认领"，**从条目里读边的设计看不见它**。
 
-`dependentsOf` 只走真源的**引用关系**（点 → 墙 → 洞口），"两墙共享端点"这条边不在里面。所以本任务把 `expandAffected(doc, seed)` 保持为**纯真源闭包**（Task 7 的口径断言靠它），而 `SpatialIndex` 内部另走一步：把每个条目的 `dependsOn`（墙的两个端点、洞口的宿主墙与那两个端点）也当作边，双向迭代到不动点。
+`dependentsOf` 只走真源的**引用关系**（点 → 墙 → 洞口），"两墙共享端点"这条边不在里面。所以本任务把 `expandAffected(doc, seed)` 保持为**纯真源闭包**（Task 7 的口径断言靠它），而 `SpatialIndex` 内部另走一步：把依赖边（墙的两个端点、洞口的宿主墙与那两个端点）也当作边，双向迭代到不动点。取边是**一条回落链**：条目还在就用条目的 `dependsOn`（被删实体唯一的边来源），条目没有而实体活着就从实体现取（新建实体的那条边只有这里给得出）—— 两步缺任何一步，上面四条里就有对应的几条留下发霉的盒子。
 
 **关键判断 2：一个索引只管一层。** 三层楼的墙在 (x, y) 上完全重叠，2D 视口与 3D 楼层切换的作用域本来就是"当前层"。按层建索引让 `query` 不必带过滤参数，也让上面的漏网边 1 与 2 天然只在本层内闭环 —— 前提正是测试 7 要钉住的那条：**点 seed 的闭包不会跑到别层去**（Task 3 的 `resolvePointRef` 挡住了跨层复用端点）。
 
@@ -6133,9 +6145,9 @@ describe('Aabb 助手', () => {
 import type { EntityId } from '../ids';
 import type { Document } from '../model/document';
 import { dependentsOf } from '../geom/topology';
-import { advance, type WallAxis } from '../geom/axis';
+import type { WallAxis } from '../geom/axis';
+import { advance, type Vec2 } from '../geom/vec';
 import type { OpeningSpan } from '../geom/opening';
-import type { Vec2 } from '../geom/vec';
 ```
 
 ```ts
@@ -6301,28 +6313,44 @@ describe('SpatialIndex.fromDoc 与 query', () => {
   });
 
   it('queryPoint：墙身内、洞口内、墙外空档各得其所', () => {
-    const { log, storeyId, first, second, win } = lCornerWithOpenings();
+    const { log, storeyId, first, second, win, door } = lCornerWithOpenings();
     const index = SpatialIndex.fromDoc(log.document, storeyId);
     // (1000, 0) 在 A 的墙身里，窗在 2000–2900，所以只有 A
     expect(index.queryPoint(1000, 0)).toEqual([first.id]);
     // (2500, 0) 同时在 A 与窗的盒子里：洞口先于宿主墙被点是常识，但两者都该在
     expect(index.queryPoint(2500, 0).sort()).toEqual([first.id, win.id].sort());
-    // (3600, 2000) 只在 B 的盒子里（A 的 y 到 ±120 为止）
-    expect(index.queryPoint(3600, 2000)).toEqual([second.id]);
+    // (3600, 2000) 在 B 的盒子里（A 的 y 到 ±120 为止），同时也在 B 上那樘门的盒子里
+    // （门沿轴 1400–2300、横向 ±120）：宿主墙与门一起报，正是拾取要的那一对候选
+    expect(index.queryPoint(3600, 2000).sort()).toEqual([second.id, door.id].sort());
+    // 只要 B 一家的话取 y 500：门从 1400 才起，A 与窗都到不了这里
+    expect(index.queryPoint(3600, 500)).toEqual([second.id]);
+    // **多报**方向的现场（query 文档注释里第 2 条来源）：(3700, 100) 在 A 的盒子里
+    // （A 的框 x[0,3720] × y[-120,120]），却不在 A 的梯形材料里 —— A 那端的斜切边过
+    // (3480, 120) 与 (3720, -120)，即 x = 3600 - y，所以 y=100 那一行 A 只到 x=3500。
+    // 那一格实际是 B 的材料（B 的框 x[3480,3720]，同一条斜切边，它覆盖 y ≥ 3600 - x）。
+    // AABB 层分不开共角的这两面墙，故 A 在这里是合法的保守候选：宁多不漏，
+    // 精确命中（点在不在这个梯形里）归 scene-2d（计划 3，本计划还没有那一层）。
+    expect(index.queryPoint(3700, 100).sort()).toEqual([first.id, second.id].sort());
     expect(index.queryPoint(500000, 500000)).toEqual([]);
   });
 
   it('墙框来自斜切后的梯形：共角那端超出轴线端点，超出那段仍命中', () => {
-    const { log, storeyId, first } = lCorner();
+    const { log, storeyId, first, second } = lCorner();
     const index = SpatialIndex.fromDoc(log.document, storeyId);
     const box = index.entryOf(first.id)?.aabb;
     if (!box) throw new Error('索引里找不到 A');
-    // corner 的 trim 是 (+120, -120)：一侧内退 120，另一侧外伸 120 → 框宽 3720
-    expect(box.maxX).toBeGreaterThan(3600);
+    // corner 的 trim 是 (+120, -120)：一侧内退 120，另一侧外伸 120 → 框宽 3720。
+    // 这里把 3720 钉死（不只看"大于 3600"）：下面那个 query 的右边界是从 box.maxX 反推的，
+    // 一个"错得自洽"的梯形（Task 5 才抓得住的病）在本文件里不能两条都绿。
+    expect(box.maxX).toBe(3720);
     expect(box.minX).toBe(0);
-    expect(index.query({ minX: 3601, minY: -120, maxX: box.maxX - 1, maxY: 120 })).toEqual([
-      first.id,
-    ]);
+    // 外伸那段（x > 3600）落在 A 的盒子里，网格在那里也必须报出 A：A 的轴线端点在 3600，
+    // 盒子却到 3720，这一问盯的就是"漏报"（Step 6 第 4 条变异红在这里）。
+    // B 自己的盒子是 x[3480,3720] × y[-120,2400]，把整个外伸方块盖住了，
+    // 所以这一问在这副夹具里必然两家一起中 —— 单独只要 A 的矩形问不出来。
+    expect(index.query({ minX: 3601, minY: -120, maxX: box.maxX - 1, maxY: 120 }).sort()).toEqual(
+      [first.id, second.id].sort(),
+    );
     // 孤墙没有这个外伸：同一条墙拆掉邻墙之后，框回到 3600（「删一面墙」那条靠这个差别）
   });
 
@@ -6372,13 +6400,16 @@ describe('SpatialIndex.applyAffected', () => {
   it('拖拐角：affected 只有那个点与被夹的门，索引里两墙两洞口都换过', () => {
     const { log, storeyId, sharedId, first, second, win, door } = lCornerWithOpenings();
     const index = SpatialIndex.fromDoc(log.document, storeyId);
-    const before = index.entryOf(first.id)?.aabb.maxX;
+    const before = index.entryOf(first.id)!.aabb;
     log.dispatch(wallMoveEndpoint({ wallId: first.id, end: 'end', x: 3600, y: 1200 }));
     expect([...log.affected].sort()).toEqual([sharedId, door.id].sort());
     index.applyAffected(log.document, log.affected);
     expectSame(index, log.document, storeyId);
-    // 两面墙都动了：A 变斜、B 变短，盒子不可能原地不动（旧盒子留着就是 3720）
-    expect(index.entryOf(first.id)?.aabb.maxX).not.toBe(before);
+    // 两面墙都动了：A 变斜、B 变短，盒子不可能原地不动。
+    // 比整盒而不比单个分量：A 的外伸角是斜切后的外侧面与 B 的外侧面 x=3720 的交点，
+    // 拖之前拖之后都仍贴在那条竖直线上（实测 maxX 两回都是 3720），
+    // 真正变了的是 minX（0 → -37.947…）、minY（-120 → -113.842…）、maxY（120 → 1286.491…）。
+    expect(index.entryOf(first.id)!.aabb).not.toEqual(before);
     // 拖完之后 (2300, 750) 同时落在 A 的新盒子与那樘窗的盒子里；拖之前那是墙外的空档
     expect(index.queryPoint(2300, 750).sort()).toEqual([first.id, win.id].sort());
     // 而 (1000, 0) 只剩 A 一家：窗沿轴 2000–2900 才起，B 与门都在 x 3480 之外
@@ -6414,6 +6445,76 @@ describe('SpatialIndex.applyAffected', () => {
     index.applyAffected(log.document, log.affected);
     expect(index.entryOf(second.id)!.aabb).not.toEqual(neighbourBefore);
     expectSame(index, log.document, storeyId);
+  });
+
+  it('新建的墙复用既有端点：邻墙那端从 free 变 corner，它的框必须跟着换', () => {
+    // C1 的回归。先只有一面孤立横墙（两端 free）并据此建好索引，然后**在它那个端点上接着画**
+    // 一面竖墙 —— 画房间最普通的动作，计划 3 每一条画墙命令都会走到这里。
+    const { log, storeyId, wall: first } = straightWall();
+    const index = SpatialIndex.fromDoc(log.document, storeyId);
+    const sharedId = first.endId;
+    expect(index.entryOf(first.id)!.aabb).toEqual({ minX: 0, minY: -120, maxX: 3600, maxY: 120 });
+    const second = addWall(log, {
+      start: { pointId: sharedId },
+      end: { x: 3600, y: 2400 },
+      thicknessMm: 240,
+    });
+    // 根因两条，写成断言钉住：复用 {pointId} 时 wallCreate 连那个点都不 upsert，
+    // 共享点因此不在 affected 里；而新墙此刻还没有 IndexEntry，它两端那两条边谁都不认识。
+    expect(log.affected.has(second.id)).toBe(true);
+    expect(log.affected.has(sharedId)).toBe(false);
+    index.applyAffected(log.document, log.affected);
+    expectSame(index, log.document, storeyId);
+    // 邻墙 A 的框从矩形变梯形（maxX 3600 → 3720），与 lCorner 夹具的实测值同一个数
+    expect(index.entryOf(first.id)!.aabb).toEqual({ minX: 0, minY: -120, maxX: 3720, maxY: 120 });
+    expect(index.entryOf(second.id)!.aabb).toEqual({
+      minX: 3480,
+      minY: -120,
+      maxX: 3720,
+      maxY: 2400,
+    });
+  });
+
+  it('在两个既有端点之间合上一间房：affected 只有新墙，两侧邻墙都得重算', () => {
+    // C1 最坏的变体：三边已画好的房间，最后那一面墙两端**都**复用既有点，
+    // 补丁里连一个新点都没有 → affected 就只有一个新墙 id。
+    const { log, storeyId, wall: first } = straightWall();
+    const second = addWall(log, {
+      start: { pointId: first.endId },
+      end: { x: 3600, y: 2400 },
+      thicknessMm: 240,
+    });
+    const third = addWall(log, {
+      start: { pointId: second.endId },
+      end: { x: 0, y: 2400 },
+      thicknessMm: 240,
+    });
+    const index = SpatialIndex.fromDoc(log.document, storeyId);
+    // 合房之前：A 与 C 各有一个 free 端（x=0 那一头），框到 0 为止
+    expect(index.entryOf(first.id)!.aabb).toEqual({ minX: 0, minY: -120, maxX: 3720, maxY: 120 });
+    expect(index.entryOf(third.id)!.aabb).toEqual({ minX: 0, minY: 2280, maxX: 3720, maxY: 2520 });
+    const closing = addWall(log, {
+      start: { pointId: third.endId },
+      end: { pointId: first.startId },
+      thicknessMm: 240,
+    });
+    expect([...log.affected]).toEqual([closing.id]);
+    index.applyAffected(log.document, log.affected);
+    expectSame(index, log.document, storeyId);
+    // 两侧邻墙的两个 free 端同时变成 corner：0 那一头越过共享点外伸 120（-120 = 半厚），
+    // 3720 那一头本来就在角上，不动。这两个数是这次重建的凭据，不是 expectSame 的副产品
+    expect(index.entryOf(first.id)!.aabb).toEqual({
+      minX: -120,
+      minY: -120,
+      maxX: 3720,
+      maxY: 120,
+    });
+    expect(index.entryOf(third.id)!.aabb).toEqual({
+      minX: -120,
+      minY: 2280,
+      maxX: 3720,
+      maxY: 2520,
+    });
   });
 
   it('与本层无关的 id 是空操作：柱、别层的墙与点都不动索引', () => {
@@ -6465,11 +6566,12 @@ describe('SpatialIndex.applyAffected', () => {
 });
 ```
 
-7 + 5 = 12 条，连 Step 1 的 10 条共 22 条。三处要点：
+7 + 7 = 14 条，连 Step 1 的 10 条共 24 条。四处要点：
 
-- `expectSame` 是本任务的脊柱，`snapshot()` 必须可比（条目按 id 升序、字段全是值语义）。四处调用它，覆盖拖拽 / 删除 / 改厚 / 回放四条路径。
+- `expectSame` 是本任务的脊柱，`snapshot()` 必须可比（条目按 id 升序、字段全是值语义）。八处调用它，覆盖拖拽 / 删除 / 改厚 / 新建复用端点 / 合房 / 回放六条路径（回放那条一次调四处：undo、redo、再 undo、redo）。
 - 「删一面墙」的两条断言是**配对**的：`toBeGreaterThan(3600)` 与 `toBe(3600)`。只写 `expectSame` 的话，一个"什么都不重建"的实现也能过（因为测试里从没要求旧盒子是错的）。
 - 「改墙厚」那条先 `expect(expandAffected(...).has(second.id)).toBe(false)`，把"真源闭包不够"这件事写成断言。将来谁把 `dependentsOf` 扩成"墙 → 共角墙"，这条会红并提醒他重新读一遍这里的取舍。
+- 最后两条（「新建的墙复用既有端点」「合上一间房」）是**修复轮 1 补的回归**，盯的是同一类缺陷的两个变体：`wallCreate` 复用 `{pointId}` 时既不 upsert 那个点、新墙自己又没有条目，于是"邻墙那端从 free 变 corner"这件事在 `affected` 里和旧条目里**都查不到**。两条各钉一个 `affected` 口径（`has(sharedId) === false` / `[...affected] === [closing.id]`）和一组邻墙盒子的具体数字（3600 → 3720、0 → −120），因为 `expectSame` 单独担不起：整层重建与局部重建可以一起错。裁决见本节末尾「Task 9 执行回填」第 3 条。
 
 - [ ] **Step 4: 实现 `SpatialIndex`**
 
@@ -6479,14 +6581,14 @@ describe('SpatialIndex.applyAffected', () => {
 import type { EntityId } from '../ids';
 import { assertMm } from '../units/mm';
 import type { Document } from '../model/document';
-import type { OpeningEntity, WallEntity } from '../model/entity';
+import type { Entity, OpeningEntity, WallEntity } from '../model/entity';
 import { mustExist, requireWall } from '../model/read';
 import { dependentsOf } from '../geom/topology';
 import { deriveJoints, memberTrim, type Joint } from '../geom/joint';
-import { advance, wallAxis, wallAxisById, type WallAxis } from '../geom/axis';
+import { wallAxis, wallAxisById, type WallAxis } from '../geom/axis';
+import { advance, type Vec2 } from '../geom/vec';
 import { wallQuad } from '../geom/outline';
 import { openingSpans, type OpeningSpan } from '../geom/opening';
-import type { Vec2 } from '../geom/vec';
 ```
 
 （`assertMm` 被 `assertCellSize` 用掉，`mustExist` 被 `rebuild` 用掉 —— 少一个 `noUnusedLocals` 就红一条，别提前也别漏。）
@@ -6504,6 +6606,36 @@ export interface IndexEntry {
   readonly kind: IndexedKind;
   readonly aabb: Aabb;
   readonly dependsOn: readonly EntityId[];
+}
+
+/**
+ * 一面墙的盒子由哪些 id 决定。条目的 dependsOn 与局部重建的脏闭包**共用这一份定义**：
+ * 各写一遍迟早漂，而漂的方向是"少给一条边"→ 少重建 → 计划 3 点不动。
+ */
+function wallDeps(wall: WallEntity): readonly EntityId[] {
+  return [wall.startId, wall.endId];
+}
+
+/** 一樘洞口的盒子由哪些 id 决定：宿主墙 + 宿主墙那两个端点（端点口径上面那份，不重抄）。 */
+function openingDeps(host: WallEntity): readonly EntityId[] {
+  return [host.id, ...wallDeps(host)];
+}
+
+/**
+ * 从**实体**现取依赖边。唯一的用户是 dirtyIds 的第 2 步回落：刚建成的构件此刻还没有条目，
+ * 它两端挂着的既有邻墙于是没人认领（这就是邻墙盒子发霉的那条路）。
+ * point / column / slab 没有盒子，返空 —— 它们的下游本来就走 expandAffected。
+ * 洞口的宿主墙查不到、或查到了却不是墙时只回 [hostWallId]：这不是兜底，边照走，
+ * 病态文档随后在 openingEntry 里由 requireWall / openingSpans 抛，
+ * 抛错的那一步仍然只有一处（脏闭包不该比盒子派生更严格）。
+ */
+function entityDeps(doc: Document, entity: Entity): readonly EntityId[] {
+  if (entity.kind === 'wall') return wallDeps(entity);
+  if (entity.kind === 'opening') {
+    const host = doc.get(entity.hostWallId);
+    return host?.kind === 'wall' ? openingDeps(host) : [entity.hostWallId];
+  }
+  return [];
 }
 
 export interface SpatialIndexOptions {
@@ -6539,8 +6671,12 @@ function assertQueryable(rect: Aabb): void {
  * 一层的 AABB 均匀网格。spec 第 9 节：command 后只重建受影响节点局部。
  *
  * "局部"的确切口径（别对外吹）：**盒子只为脏条目重算，网格只为脏条目重挂**。
- * 接头表仍然一次派生整层 —— 斜切量是全局性质（Task 4），一面墙的两端各被别的墙牵着，
- * 没有"只重算这一段"的合法做法。
+ * 接头表一次派生**整个文档** —— `deriveJoints(doc)` 吃的是 doc，不看 storeyId：
+ * 斜切量是全局性质（Task 4），一面墙的两端各被别的墙牵着，没有"只重算这一段"的合法做法。
+ * 两条后果都是明账：① 一层的重建是 O(全档墙数)而不是 O(本层墙数)；
+ * ② 别层一个非法接头（同点同向重叠、带台阶的直通、极小夹角翻面、星形交点）会让本层
+ * 这次重建直接抛 —— 与"内部不变式破了就抛、绝不兜底"的口径一致，整层重建同样抛，
+ * 所以这是作用域的账，不是正确性缺口。
  */
 export class SpatialIndex {
   private readonly storeyId: EntityId;
@@ -6558,7 +6694,10 @@ export class SpatialIndex {
     storeyId: EntityId,
     options: SpatialIndexOptions = {},
   ): SpatialIndex {
-    const index = new SpatialIndex(storeyId, assertCellSize(options.cellSizeMm ?? DEFAULT_CELL_SIZE_MM));
+    const index = new SpatialIndex(
+      storeyId,
+      assertCellSize(options.cellSizeMm ?? DEFAULT_CELL_SIZE_MM),
+    );
     index.rebuild(doc);
     return index;
   }
@@ -6615,6 +6754,21 @@ export class SpatialIndex {
     }
   }
 
+  /**
+   * 矩形命中：返回的是**候选**，不是几何证明 —— AABB 相交 ≠ 几何相交。多报来自两处：
+   *
+   * 1. **洞口盒不带斜切**。它是「沿轴区间 × 墙厚」（见 `openingAabb`），而墙的两端被接头
+   *    削成梯形，所以端头被斜掉的那块三角里仍会报出这樘洞口。方向仍安全：斜切只削墙的角、
+   *    不削洞口，洞口盒恒真包含洞口本身（`openingAabb` 那条用例把 ±half 与 to-from=width
+   *    两个边界都钉死了）。
+   * 2. **墙盒是斜切后梯形的包围盒**，共角那一端的外伸方块会整块落进邻墙的盒子里：
+   *    L 角上 A 的框是 x[0,3720]、B 的框是 x[3480,3720]×y[-120,2400]，A 越过轴线端点
+   *    3600 的那一竖条其实全是 B 的材料 —— 这一问在 AABB 层面根本分不开共角的两面墙。
+   *
+   * 保守方向是**宁多不漏**：漏一个候选，计划 3 的症状就是"点了没反应"，根因却在几万行之外；
+   * 多一个候选只是让上层白测一次。精确命中（点在不在这个梯形里、在不在这个洞口矩形里）
+   * 归 `scene-2d`，本计划还没有那一层。
+   */
   query(rect: Aabb): EntityId[] {
     assertQueryable(rect);
     const hits = new Set<EntityId>();
@@ -6639,8 +6793,27 @@ export class SpatialIndex {
   }
 
   /**
-   * 双向闭包：真源反向依赖（expandAffected）∪ 盒子的共享端点（entry.dependsOn）。
-   * 少了后半段，"删一面墙"与"改一面墙的墙厚"两条都会留下发霉的邻墙盒子。
+   * 这个 id 的盒子由哪些 id 决定 —— **一条回落链，两个来源，顺序不能反**：
+   * 1. 索引里还留着条目就用它。这既是**已删除**实体唯一的边来源（`doc.get(id)` 对它已是
+   *    undefined，「删一面墙」那条全靠旧条目把共享端点带出来），也是本次重建那一刻之前
+   *    那张真实生效的依赖图。
+   * 2. 条目不存在而实体还活着，就从实体现取（`entityDeps`）。刚 `wallCreate` /
+   *    `openingCreate` 出来的构件正是这一类：它自己还没有条目，两端却可能挂着既有邻墙。
+   * 只走第 1 步会漏新建实体（邻墙盒子发霉），只走第 2 步会漏被删实体 —— 两步必须留在同一条
+   * 回落链上、由 dirtyIds 里唯一的消费点取边；写成两次独立遍历的话，后者会悄悄替前者干活，
+   * 变异检查（删掉那一行 for）也就再也红不起来了。
+   */
+  private dependsOnOf(doc: Document, id: EntityId): readonly EntityId[] {
+    const entry = this.entries.get(id);
+    if (entry) return entry.dependsOn;
+    const entity = doc.get(id);
+    return entity ? entityDeps(doc, entity) : [];
+  }
+
+  /**
+   * 双向闭包：真源反向依赖（expandAffected）∪ 盒子的共享端点（dependsOnOf：条目优先、实体回落）。
+   * 少了后半段，"删一面墙""改一面墙的墙厚""新建的墙复用既有端点""在既有端点之间合上一间房"
+   * 四条都会留下发霉的邻墙盒子（实测：摘掉下面那行 for，红的正是这四条 + 拖拐角仍绿）。
    */
   private dirtyIds(doc: Document, affected: ReadonlySet<EntityId>): Set<EntityId> {
     const dirty = new Set<EntityId>();
@@ -6649,9 +6822,9 @@ export class SpatialIndex {
       const id = queue.shift()!;
       if (dirty.has(id)) continue;
       dirty.add(id);
-      // 已删除的实体在 doc 里查不到，但它在本索引里的记录还在 —— 它依赖的那些 id 必须入队
-      const entry = this.entries.get(id);
-      if (entry) for (const dep of entry.dependsOn) queue.push(dep);
+      // 盒子的依赖边只有这一个产地（连"本次补丁里的新实体"一起走，见 dependsOnOf）。
+      // "两墙共享端点"这条边不在真源的引用关系里，删掉这一行，四条邻墙发霉的用例同时红。
+      for (const dep of this.dependsOnOf(doc, id)) queue.push(dep);
       for (const dependent of expandAffected(doc, new Set([id]))) {
         if (!dirty.has(dependent)) queue.push(dependent);
       }
@@ -6670,7 +6843,7 @@ export class SpatialIndex {
       id: wall.id,
       kind: 'wall',
       aabb: aabbOfPoints(quad.corners),
-      dependsOn: [wall.startId, wall.endId],
+      dependsOn: wallDeps(wall),
     };
   }
 
@@ -6684,7 +6857,7 @@ export class SpatialIndex {
       id: opening.id,
       kind: 'opening',
       aabb: openingAabb(wallAxisById(doc, wall.id), span),
-      dependsOn: [wall.id, wall.startId, wall.endId],
+      dependsOn: openingDeps(wall),
     };
   }
 
@@ -6701,6 +6874,14 @@ export class SpatialIndex {
   }
 
   private insert(entry: IndexEntry): void {
+    // 这一句是承重的，别当"顺手简化掉"的候选：盒子挪过之后旧格子里那个 id 不会自己消失，
+    // 不先 remove 就永远留着 —— `cells` 只增不减，扫得越来越宽（内存与扫描成本，不是错答案）。
+    // 之所以**没有测试钉得住它**：这件事公开 API 看不见。幽灵成员既不会多报（下面 `query`
+    // 那条精筛用的是**当前** entries 里的盒子，共格条件恰好保证真相交的条目必在矩形所扫的
+    // 某一格里）也不会漏报（insert 与 query 同一个 cellKeys），而 snapshot/size/entryOf/
+    // cellVisits 都不读桶内容。变异检查实测 0 红 ⇒ 等价变异（brief Step 6 第 6 条预测
+    // "expectSame 红"是错的）；将来若给同格子加"按插入序"的优化，它就变成可观察量，届时
+    // 只能加一个只读格子访问器来钉 —— 那得等到真需要它的任务，别为了这条注释先造旁路表。
     this.remove(entry.id);
     this.entries.set(entry.id, entry);
     for (const key of this.cellKeys(entry.aabb)) {
@@ -6729,11 +6910,12 @@ export class SpatialIndex {
 }
 ```
 
-三处解释，都是会被 review 追问的：
+四处解释，都是会被 review 追问的：
 
 - `dirtyIds` 里对每个 id 现调 `expandAffected(doc, new Set([id]))`，看着浪费，其实要的是"从这个 id 出发的真源闭包"，而外层队列已经做了跨 id 的去重。要省这一步就把 `dependentsOf` 摊开自己写一遍 —— 那才是真的重复（"校验只有一份"，Task 6 立的规矩）。
 - `entity.storeyId` 之前必须先排除 `kind === 'storey'`：`StoreyEntity` 没有 `storeyId` 字段，联合类型上直接读会编不过。这一行不是风格问题。
-- `applyAffected` 里 `[...dirty].sort()`：**今天它不影响任何可观察结果** —— `insert` 先 `remove`，`snapshot()` 自己按 id 排序，`query` 也排序，所以先重建谁后重建谁结果一样。仍然排序，是要把"重建顺序跟着 `affected` 这个 Set 的插入序漂移"这件事关在门外：`affected` 的顺序来自命令实现（Task 3 就改过一次），哪天有人拿它打日志、做增量统计，或给 `insert` 加一条"同格子内按插入序排"的优化，这里不会突然变成隐式契约。别把它读成正确性所需 —— Step 6 第 6 条变异删掉 `insert` 的 `remove` 会红，而把 `.sort()` 删掉一条都不会红，这正是本任务想要的差别：该钉的钉住，不该钉的别假装。
+- **依赖边只有一条回落链**（`dependsOnOf`：先查条目、查不到再从实体现取），且 `dirtyIds` 里只有它一个消费点。两步缺任何一步都会漏：只走条目 ⇒ 刚建成的构件自己没条目，它两端的既有邻墙没人认领（「新建的墙复用既有端点」「合上一间房」两条红）；只走实体 ⇒ 被删的实体在 `doc` 里已经是 `undefined`，它的旧边再也拿不到（「删一面墙」红）。写成两次独立遍历更糟：后者会悄悄替前者干活，Step 6 第 1 条变异也就再也红不起来了。
+- `applyAffected` 里 `[...dirty].sort()`：**今天它不影响任何可观察结果** —— `insert` 先 `remove`，`snapshot()` 自己按 id 排序，`query` 也排序，所以先重建谁后重建谁结果一样。仍然排序，是要把"重建顺序跟着 `affected` 这个 Set 的插入序漂移"这件事关在门外：`affected` 的顺序来自命令实现（Task 3 就改过一次），哪天有人拿它打日志、做增量统计，或给 `insert` 加一条"同格子内按插入序排"的优化，这里不会突然变成隐式契约。别把它读成正确性所需 —— Step 6 第 10 条把 `.sort()` 删掉，实测**一条都不红**，这就是上面那句话的凭据。第 6 条（`insert` 去掉开头的 `remove`）实测同样 0 红，但它与第 10 条不是一回事：那条变异确实改了东西（旧格子里留下幽灵 id，`cells` 只增不减），只是**公开 API 看不见**，所以它是**性能纪律**而不是正确性纪律 —— 两处代码注释里各写了这笔账。原 brief 预言第 6 条会让 `expectSame` 红，那是错的，见 Step 6 与「Task 9 执行回填」第 5 条。
 
 - [ ] **Step 5: 全绿**
 
@@ -6745,23 +6927,24 @@ pnpm vitest run packages/core/test/spatial.test.ts 2>&1 | sed 's/\x1b\[[0-9;]*m/
 pnpm verify 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tail -5
 ```
 
-Expected: `spatial.test.ts` 22 passed（expandAffected 7 + Aabb 3 + fromDoc/query 7 + applyAffected 5）。`pnpm verify` = Task 8 的 234 + 22 = 256 passed，0 失败。`lint:deps` 不该有新的话要讲：`spatial/index.ts` 只 import `core` 内部模块，包依赖方向没动。
+Expected: `spatial.test.ts` 24 passed（expandAffected 7 + Aabb 3 + fromDoc/query 7 + applyAffected 7）。`pnpm verify` = Task 8 的 234 + 24 = 258 passed，0 失败。`lint:deps` 不该有新的话要讲：`spatial/index.ts` 只 import `core` 内部模块，包依赖方向没动。
 
 - [ ] **Step 6: 变异检查（防"测试考的是空气"）**
 
 十处逐个改、逐个还原，每次 `git diff` 必须回到空：
 
-1. `dirtyIds` 里删掉 `if (entry) for (const dep of entry.dependsOn) queue.push(dep);` → Expected: 「删一面墙」与「改墙厚」两条红，「拖拐角」仍绿（那个补丁的入口是点，真源闭包已经够）。这就是双向闭包不是多余设计的证据。
-2. `expandAffected` 里删掉 `if (doc.get(id) === undefined) continue;` → Expected: 「已经不在文档里的 id 当 seed」红（`dependentsOf` 的 `mustExist` 抛「实体 不存在」）。
+1. `dirtyIds` 里删掉整条边遍历 `for (const dep of this.dependsOnOf(doc, id)) queue.push(dep);` → Expected: **「删一面墙」「改一面墙的墙厚」「新建的墙复用既有端点」「在两个既有端点之间合上一间房」四条同时红**，「拖拐角」仍绿（那个补丁的入口是点，真源闭包已经够）。这就是双向闭包不是多余设计的证据。
+   （**原文这条指的是 `if (entry) for (const dep of entry.dependsOn) …`、红名单只有两条** —— 修复轮 1 把那行换成了回落链（见上一条解释的第 3 点），红名单随代码形状一起长。实测红点：`删一面墙` 红在 `expected 3720 to be 3600`，`改墙厚` 红在邻墙盒原地不动，两条 C1 回归各红在自己的 `expectSame`。）
+2. `expandAffected` 里删掉 `if (doc.get(id) === undefined) continue;` → Expected: 「已经不在文档里的 id 当 seed」红（`dependentsOf` 的 `mustExist` 抛「实体 不存在」）。**实测还多红两条**：「删一面墙」（`applyAffected → dirtyIds` 对每个 affected id 也调 `expandAffected`，那个已删除的墙 id 当场抛）与「与本层无关的 id 是空操作」（红在 `MISSING`）。同一道守卫在两层各有一个入口，一条 `continue` 守两处。
 3. `aabbIntersects` 的两处 `<=` 改成 `<` → Expected: 「aabbIntersects 用闭区间」红 **且**「query 与暴力遍历在 9 个探针矩形上逐条一致」红，但红的**不是**那九次 `toEqual`：`bruteForce` 与 `query` 吃的是同一个被改坏的函数，两边一起错、比对照样绿。红的是那两条反证（第 9 条探针必须非空 + 非空探针恰好 6 条）。这条变异就是"oracle 与实现同源 ⇒ 测不出东西"的现场教材，也正是那两条反证存在的全部理由。
 4. `cellKeys` 里 x 下界那一行 `Math.floor(rect.minX / ...)` 改成 `Math.ceil(...)`（只改这一处）→ Expected: 「query 与暴力遍历」红（`bruteForce` 不看格子，漏报当场露出来：第 2/3/9 条探针那类贴着格边的盒子查不到），「墙框来自斜切后的梯形」的 `query({minX: 3601, ...})` 跟着红。
    **别把这条换成"`Math.floor` 改 `Math.round`"** —— 那不是一个 bug：`round` 只是把格线从 4000 的整数倍挪到奇数倍，仍然是一个单调的平面划分，insert 与 query 用同一个 key 函数就仍然不漏，唯一变的是 `cellVisits` 的数。写变异要挑"改了就会错"的那一处，不要挑"改了只是不一样"的那一处，否则测试红了也不知道该改代码还是改测试。
 5. `query` 去掉 `aabbIntersects` 精筛（整个格子直接报候选）→ Expected: 「query 与暴力遍历」红（同格不同盒，多报）。这条变异说明精筛不是装饰。
-6. `insert` 去掉开头的 `this.remove(entry.id)` → Expected: 「拖拐角」或「改墙厚」的 `expectSame` 红（旧格子留下幽灵条目，query 多报）。
+6. `insert` 去掉开头的 `this.remove(entry.id)` → **实测 0 红（24 passed），是个等价变异**，原预言「`expectSame` 红（旧格子留下幽灵条目，query 多报）」不成立。两边都取证过（修复轮 1 在新代码形状上重跑，仍 0 红）：幽灵成员只可能让"格子成员集合"变大，而 `query` 报之前用**当前** `entry.aabb` 精筛 —— 真相交的条目必然已经挂在矩形所扫的某一格里（`cellKeys` 对 insert 与 query 同一个函数、闭区间一致），所以既不多报也不漏报；`snapshot()` / `size` / `entryOf` / `cellVisits` 都不读桶内容。它改的是内存与扫描成本（`cells` 里越拖越多的死 id），不是任何可观察结果。**这条变异保留在清单上**，因为它教的是"绿不等于测试有漏洞，先证明行为有没有变"（Global Constraints 的变异仪式第 2 条），而 `insert` 里那八行注释就是它的落地凭据；要把它变成可观察量，得先加一个只读的格子占用访问器 —— 那是为测试造旁路表，本任务不做。
 7. `rebuild` 里删掉 `wall.storeyId === this.storeyId` 判断 → Expected: 「只收本层」红（`size` 与 `snapshot` 都对不上）。
 8. `applyAffected` 里把 `entity.kind === 'opening'` 分支改成 `this.remove(id)`（洞口不重建，只删）→ Expected: 「拖拐角」与「undo/redo 回放」的 `expectSame` 红，「删一面墙」仍绿（那场所删的洞口本来就该消失）。
 9. `rebuild` 里删掉首行的 `mustExist(doc, this.storeyId, '楼层')` → Expected: 「只收本层」的 `toThrow(/楼层 不存在/)` 红（空索引建出来了，一句都不抛）。这条盯的是"静默空索引"，与第 7 条盯的"收错层"是两种病。
-10. `applyAffected` 里把 `[...dirty].sort()` 改成 `[...dirty]` → Expected: **一条都不红**。这不是漏写用例，是 Step 4 第三句解释的凭据：排序不是正确性所需，别让它长成一隐式契约。红了几条就说明上面那段话是编的，回去重写。
+10. `applyAffected` 里把 `[...dirty].sort()` 改成 `[...dirty]` → Expected: **一条都不红**（实测确认：0 红）。这不是漏写用例，是 Step 4 第四句解释的凭据：排序不是正确性所需，别让它长成一隐式契约。红了几条就说明上面那段话是编的，回去重写。
 
 - [ ] **Step 7: 提交**
 
@@ -6770,9 +6953,53 @@ git add packages/core/src/spatial/index.ts packages/core/test/spatial.test.ts pa
 git commit -m "feat: AABB 均匀网格索引与受影响子集重建"
 ```
 
-执行日志写在这里：22 条的实际结果、十处变异各红了哪些用例（第 10 条要写明"确实一条都没红"，它是那段解释的唯一凭据）、`PROBES` 里非空探针到底有几条、以及「改墙厚」那条实测的第二面墙 `aabb` 从什么变成什么（这个数只有跑出来才知道，写下来是给 Task 10 的"两层整合"当参照）。
+执行日志写在这里：24 条的实际结果、十处变异各红了哪些用例（第 10 条要写明"确实一条都没红"，它是那段解释的唯一凭据）、`PROBES` 里非空探针到底有几条、以及「改墙厚」那条实测的第二面墙 `aabb` 从什么变成什么（这个数只有跑出来才知道，写下来是给 Task 10 的"两层整合"当参照）。
 
 **留给后续任务的钩子**：`IndexEntry.dependsOn` 是计划 3 做"高亮这面墙涉及哪些点"的现成材料，别另建一张表。`cellSizeMm` 是构造参数，计划 3 若按缩放级别换网格，接口不动。`storeySetElevation` 的脏集合 = 整层（测试 3 已钉），3D 侧 M1.7 拖动整层直接吃它。
+
+#### Task 9 执行回填（2026-09-27，评审 + 修复轮 1 之后）
+
+提交：`035878e`（实现，3 files / +888）→ `c2f9d29`（修复轮 1：C1 的依赖边回落链 + 两条回归用例 + 两处注释）→ `3219a4e`（注释订正）。
+门禁落地态：`pnpm verify` = **258 passed / 21 files**（= Task 8 的 234 + 24；控制器在 `c2f9d29` 与 `3219a4e` 上各复跑一次，两次 exit=0）。
+`spatial.test.ts` 落地 24 条 = expandAffected 7 + Aabb 助手 3 + `fromDoc`/query 7 + `applyAffected` **7**（简报写的 5）。
+分支是 `plan2-geometry-invariants` 而不是 dispatch 里写的 `main`（起点 HEAD `34b1d0a` 与正文一致，所以按"不建分支、就地在当前检出上工作"执行）；`main` 至今仍是 `470109a`，**push 由用户本人执行**。
+
+**与简报正文的偏离（全部已在上面正文就地订正，照抄本文件会得到落地态）**：
+
+1. **`advance` 的导出方写错了**（Step 2 与 Step 4 两份 import 表，原 `:6136`、`:6486`）。`geom/axis.ts` 只是 `import { advance } from './vec'` 并在内部用，全文件没有 `export … advance`；导出方是 `geom/vec.ts:86`。照抄会在 Step 2 的 vitest 里 **ESM 链接期**就 `does not provide an export named 'advance'`，"前 10 条转绿"这句门槛话无从验起。裁决 Ruling ㊢：派发时带订正，评审后回填。
+2. **三条测试期望与实测几何不符**，改成最小正确形式（用例名与条数一条没动，评审者独立闭式复算后认可）：
+   ① `queryPoint(3600, 2000)` 简报写只回 B，实测**同时回 B 与那樘门**（门盒 x[3480,3720] × y[1400,2300]）—— 这一改反而把"宿主墙与门上洞口一起被报出"写成了断言，正是计划 3 拾取要的那一对候选；另加 `queryPoint(3600, 500)` 保住原本想问的"只在 B 一家"。
+   ② 「墙框来自斜切后的梯形」那问的 `query({minX: 3601, …})` 简报写只回 A，实测**必然两家**：B 的盒子 x[3480,3720] × y[−120,2400] 把 A 的外伸方块整个盖住，这副夹具里问不出"只有 A"的矩形。同条用例把 `box.maxX` 从 `toBeGreaterThan(3600)` 钉成 `toBe(3720)`（否则"错得自洽"的梯形可以让两条都绿）。
+   ③ 「拖拐角」简报比 `aabb.maxX`，实测**拖前拖后都是 3720**（那个外伸角是 A 的斜切外侧面与 B 的外侧面直线 x=3720 的交点，只要 B 还竖直、半厚还是 120，这个 x 就恒定）。改成比整盒 `not.toEqual(before)`，语义更强。实测变的是 minX `0 → -37.94733192202055`、minY `-120 → -113.84199576606166`、maxY `120 → 1286.4911064067353`。
+3. **C1（真缺陷，正文的设计缺口）**：简报的关键判断 1 原本只列了三条漏网边，**三条全是"已存在条目的盒子会发霉"**，没有一条是"新建实体还没有条目"（正文现已补上第 4 条，见上面）。落地后这条路是断的：`wallCreate` 复用 `{pointId}` 时连那个点都不 upsert，共享点因此不在 `affected` 里；而新墙此刻没有 `IndexEntry`，它两端挂着的既有邻墙在 `dirtyIds` 里**没人认领** ⇒ 邻墙那端从 `free` 变 `corner`，盒子却还是矩形。控制器在 `035878e` 上用临时用例实测到 `maxX 3720 → 3600`（局部重建比整层重建少 120），删掉 scratch、`git status` 复原后写进评审记录。修法（Ruling ㊥：只有索引看得见这条边，所以必须在 Task 9 修，不推给 Task 10）：依赖边收成**一条回落链、一个消费点** —— `dependsOnOf`（条目优先，因为被删实体的边只有旧条目记得；查不到再从实体现取，`entityDeps`），边定义本身抽成 `wallDeps` / `openingDeps` 供两处共用（Ruling ㊧：不把评审者给的具体重构形状当命令下达，本轮它自己给的写法也编不过）。Ruling ㊦：本轮允许新增 `it`（Task 8 立的"修复轮不加 `it`"惯例在此让位，因为 C1 必须有"改前红、改后绿"的回归才叫修完），故 22 → 24。
+4. **两条新回归用例**（`新建的墙复用既有端点` / `在两个既有端点之间合上一间房`）各钉一个 `affected` 口径 + 一组邻墙盒子的具体数字：前者 `affected.has(sharedId) === false`、A 的 `maxX 3600 → 3720`；后者 `[...affected] === [新墙 id]`（两端都复用既有点 ⇒ 补丁里连一个新点都没有）、两侧 `minX 0 → -120`。定值断言独立红过一遍，不是躲在 `expectSame` 后面。
+5. **Step 6 的预言错两处**（见下面表格与正文订正）：第 1 条的行引用随 C1 换形状，红名单 2 → 4；第 6 条（`insert` 去掉先 `remove`）原预言"`expectSame` 红"，**实测 0 红，两轮都是** ⇒ 等价变异，实现者与评审者各自给出不多报/不漏报的证明（`cellKeys` 同函数、闭区间一致 ⇒ 真相交必共格；精筛读**当前**盒子；`snapshot`/`size`/`entryOf`/`cellVisits` 都不读桶内容）。它在 `insert` 里换来了八行注释，把这条纪律的性质写清楚：**性能纪律，不是正确性纪律**。
+6. 一处排版：`fromDoc` 里那 103 列的 `new SpatialIndex(…)` 折成三行（仓库源码普遍 ≤100 列；CI 里没有 prettier，纯观感）。
+7. **闸门读法**：正文那些 `| tail -N` 只给观感，**不给退出码**（Task 8 就是这样丢过一次证据）。本任务的复跑一律 `pnpm verify > 文件 2>&1; echo exit=$?`，再 `sed` 去色读尾部。Ruling ㊣ 另记一条：Step 2 之后**不要**拿 `pnpm typecheck` 当门槛（`MISSING` 还没有用户，TS6133 必红），它该绿的地方是 Step 5。
+
+**十处变异的实测红集合**（每处改完跑 `pnpm vitest run packages/core/test/spatial.test.ts`，`cp` 还原后 `cmp` 与 pristine 快照逐字节比对；新文件未入库时 `git diff` 看不见它们，所以 `cmp` 比 `git diff` 强）：
+
+| # | 变异 | 实测 | 与预言 |
+| --- | --- | --- | --- |
+| 1 | 摘掉 `dirtyIds` 里那条边遍历 | 修复前 2 红（删墙 / 改厚），修复后 **4 红**（+ 两条 C1），`拖拐角` 两轮都绿 | 吻合（红名单随形状长） |
+| 2 | `expandAffected` 去掉 `doc.get(id) === undefined` 的 `continue` | **3 红**：「不在文档里的 id 当 seed」（`TypeError: 实体 不存在`）、「删一面墙」、「与本层无关的 id 是空操作」（红在 `MISSING`） | 多红 2 条：同一道守卫在闭包与索引两处各有入口 |
+| 3 | `aabbIntersects` 的 `<=` 改 `<`（四个比较全改） | **2 红**，且**九次 `query === bruteForce` 的 `toEqual` 一次都没红**（两边同源、一起错），红的是两条反证（贴边那条 + "非空探针恰好 6 条"） | 完全吻合，教科书那条成立 |
+| 4 | `cellKeys` 的 x 下界 `floor` 改 `ceil` | **5 红**：探针比对、`queryPoint`、梯形外伸、`cellVisits`、拖拐角 | 预言的两条都红，另多 3 条 |
+| 5 | `query` 去掉精筛 | **3 红**：探针比对、`queryPoint`、拖拐角（`expectSame`） | 精筛不是装饰 ✓ |
+| 6 | `insert` 去掉先 `remove` | **0 红（24 passed）** | **预言错**：等价变异，见上面第 5 条 |
+| 7 | `rebuild` 去掉 `wall.storeyId === this.storeyId` | **2 红**：「只收本层」、「与本层无关的 id 是空操作」（`size` 2 → 4） | 吻合 |
+| 8 | `applyAffected` 的 opening 分支改成只 `remove` | **2 红**：拖拐角、undo/redo 回放；`删一面墙` 与两条 C1 回归绿（那两副夹具没有洞口） | 完全吻合（含"该绿的仍绿"） |
+| 9 | `rebuild` 去掉首行 `mustExist` | **1 红**：「只收本层」的 `toThrow(/楼层 不存在/)`；附带 typecheck 也红（`mustExist` 变没人用的 import → TS6133），所以它不能只靠 vitest 判读 | 吻合 |
+| 10 | `[...dirty].sort()` 去掉 `.sort()` | **0 红** | 吻合，Step 4 第四句解释拿到凭据 |
+
+`PROBES` 九条里**非空 6 条**（1/2/3/6/7/9），与简报注释里写的数字逐字吻合；第 9 条"恰好共边"那条非空，正是变异 3 的靶子。
+「改墙厚」实测的第二面墙：A 横墙厚 240→300 之后，**B 只有 `minY` 从 `-120` 变 `-150`**（异厚 corner 里邻墙沿自身轴的外伸取的是**对面墙的半厚**），`minX/maxX/maxY` 一动不动；A 自己 `{0,-120,3720,120} → {0,-150,3720,150}`。这两个"盒子级"事实给 Task 10 的两层整合当参照，也是计划 3 精确命中层的依据：**AABB 层分不开共角的两面墙，精确命中必须回梯形轮廓**。
+
+**下游义务（可直接粘进 ledger）**：
+
+- **T10**：① `arbitraries.ts` 的 `ChainOp.kind` **必须含 `addWall` 且含"两端都复用既有端点"那一变体**，否则属性测试的随机序列走不到 C1 那条路，本轮加的回归就只是两条定值用例而已；② Ruling ㊤：重影柱（`wallMoveEndpoint` 把挂着柱的点拖到同层另一根柱的坐标上）归本任务的 `assertTruthSourceInvariants(doc)` —— 索引里没有柱条目，既不能容忍也修不了它，而 `expandAffected` 已经给出 `point → column` 这条边；③ Ruling ㊡：`properties.test.ts` 六处 `fc.assert` 没钉 seed、失败也不打印 seed，这是本仓唯一真正不可复现的掷硬币面，顺手补上；④ `properties.test.ts:227` 还在用 `.at(-1)` 取"刚建成的实体"（uuidv7 同毫秒不保证有序），清掉；⑤ 空层（`fromDoc` 在一层还没有墙时）与 `requirePoint` 的抛/跳策略目前无用例；⑥ 两层整合要吃到 `storeySetElevation` 的"脏集合 = 整层"这条（测试 3 已钉）。
+- **终审（本轮有意不修）**：`cellKeys` 没有 key 数量上限（`cellSizeMm: 1` 会让一次 `query` 造出天文数字的 key）；`dirtyIds` 对每个 id 现调 `expandAffected` 保留了 `dependentsOf` 的 `byKind` 全扫形状，楼层 seed 时接近 O(n²)；`assertQueryable` 用 `JSON.stringify` 打印矩形，`NaN` 会显示成 `null`；`applyAffected` 是"边派生边提交"，中途抛错会留下半新半旧的索引（今天没有任何一条路径会在循环里抛：能抛的都在 `deriveJoints`/`openingEntry`，而病态文档在命令层就建不出来）。
+- **计划 3**：`IndexEntry.dependsOn`（墙 = 两端点；洞口 = 宿主墙 + 那两个端点）就是"高亮这面墙涉及哪些点"的现成材料，别另建一张表；`cellSizeMm` 是构造参数，按缩放级别换网格不用动接口；精确命中层要自己解决共角那对面墙（见上面那条盒子级实测）。
 
 ---
 
@@ -8429,7 +8656,7 @@ pnpm vitest run packages/core/test/geometry-properties.test.ts 2>&1 | sed 's/\x1
 pnpm verify
 ```
 
-Expected：本文件 13 passed；`pnpm verify` = Task 9 的 256 + 13 = **269 passed**，0 失败。
+Expected：本文件 13 passed；`pnpm verify` = Task 9 的 258 + 13 = **271 passed**，0 失败。
 
 **把两个墙钟时间抄进执行日志。** 这个文件是计划 2 里最贵的一处：80 次运行 × 最多 18 步，每步跑六个检查器（其中 `checkContours` / `checkOracle` / `checkSpans` 各要派生一次整层）。如果 `geometry-properties.test.ts` 单文件超过 **20 秒**，按这个顺序降档，别乱降：
 
@@ -8883,7 +9110,7 @@ describe('两层住宅：接头与轮廓', () => {
 5. `geom/joint.ts` 的 `deriveJoints` 出口排序：删掉 `byPointId` 那一步 → Expected: `checkKinds`（`joints.map(pointId)` 与 `[...groups.keys()].sort()` 比）红 ⇒ 走 `CHECK_ALL` 的测试 5 与 11 红，Task 4 与 Task 9 的"顺序契约"定值红。**测到排序的不是那一条专门的用例，是每一天的检查** —— 这条是计划开头"派生层按 id 升序"规约的兑现凭据。
 6. `commands/opening.ts` 的 `assertFitsAfterInsert`：整段注释掉 → Expected: **本文件一条都不红**。`checkSpans` 比的是"分段与洞口区间互补"，那是派生自洽，写入守卫拿掉之后派生仍然自洽地把非法区间摊成一片越界的墙身段；红的是 Task 7 的「放不下洞口」「夹完撞上」。与变异 4 同记为非目标防线：写入校验由命令层的定值守，属性测试守的是派生。
 7. `commands/wall.ts` 的 `clampOpeningsToWall`：`Math.floor` → `Math.round` → Expected: 测试 9 红（`recordClamps` 钉的是 `after === floor(轴长 − 宽)`，斜墙轴长带小数时两者差 1），Task 7 的「缩墙」与 Task 6 的斜墙值断言红。960 步里一次都没碰上 `.5` 的概率可以忽略；真碰不到就照 Step 4 的规矩把收缩后的反例抄进日志，别改断言。**这条同时证明测试 9 不是空跑**：`total.clamps > 0` 那行绿而这条变异不红，就说明夹取从来没真的发生过。
-8. `spatial/index.ts` 的 `applyAffected`：删掉 `dirtyIds` 里"共享端点"那一半闭包（只留 `expandAffected`）→ Expected: 测试 10 红（增量 != 全量，邻墙盒子发霉），Task 9 的「改墙厚」红。这一条把 Task 9 留的那句"双向闭包缺半条就漏邻墙"接到随机链上：随机链每个接头都是共享端点，删半条闭包在 80 × 12 步里必撞。
+8. `spatial/index.ts` 的 `applyAffected`：删掉 `dirtyIds` 里"共享端点"那一半闭包（即 `for (const dep of this.dependsOnOf(doc, id)) queue.push(dep);`，只留 `expandAffected`）→ Expected: 测试 10 红（增量 != 全量，邻墙盒子发霉），**Task 9 的四条同时红**（「删一面墙」「改一面墙的墙厚」「新建的墙复用既有端点」「在两个既有端点之间合上一间房」，实测记录见 Task 9 执行回填的变异表第 1 行），而「拖拐角」仍绿。这一条把 Task 9 留的那句"双向闭包缺半条就漏邻墙"接到随机链上：随机链每个接头都是共享端点，删半条闭包在 80 × 12 步里必撞。**前提是 `ChainOp.kind` 里有 `addWall`**（Task 9 执行回填的 T10 义务 ①），否则随机链造不出"新建实体挂到既有点上"那一类，四条里只有两条会红。
 
 跑完八条**必须回到全绿**再进 Step 7（`git status --porcelain` 只该有本任务那几个测试文件）。
 
