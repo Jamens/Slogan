@@ -58,7 +58,7 @@
 计划 1 已建立的（本计划只改 `commands/wall.ts`、`commands/storey.ts`、`model/command.ts` 与 `index.ts`，其余不动）：
 
 ```
-packages/core/src/units/mm.ts        Mm / quantizeMm / assertMm / mmToMeters          （已存在）
+packages/core/src/units/mm.ts        Mm / quantizeMm / assertMm / mmToMeters          （已存在；本计划只为 ±0 归一动它两个返回值，理由见 Task 1 执行回填）
 packages/core/src/ids.ts             EntityId / uuidv7 / isEntityId / timeFromUuid     （已存在）
 packages/core/src/model/entity.ts    Point/Wall/Opening/Storey/Column/Slab 实体        （已存在，不改）
 packages/core/src/model/document.ts  Document / SCHEMA_VERSION / canonical()           （已存在，不改）
@@ -423,6 +423,40 @@ Expected: `零向量归一化直接抛，不返回 NaN` 这条必须红。再临
 git add packages/core/src/geom/vec.ts packages/core/test/vec.test.ts packages/core/src/index.ts
 git commit -m "feat: 派生层浮点向量与直线求交"
 ```
+
+---
+
+#### Task 1 执行回填（2026-09-26，评审后裁决；本任务的权威文本是代码，不是上面那三段）
+
+评审在本任务落地的代码里查出两处会往下游漏的东西，已改并提交为 `6d8ff33`。
+**本节列出的三处计划文本已被代码取代，后面九个任务按代码办，不按本文抄：**
+
+1. **±0 归一从一处扩到全部**（裁决⑤）。本节 `perp` 那份 `{ x: -a.y, y: a.x }`（第 355 行）
+   与它下面那条"用 `Object.is` 才会红"的说法都只是局部。现在 `vec.ts` 里有一个不导出的
+   `noNegZero` + `point()`，`vec / add / sub / scale / normalize / perp / advance` 返回的每个
+   分量都过它，`intersectLines` 经 `advance` 顺带覆盖。理由是行为不是观感：
+   `scale(vec(0,5),-1)` 的 x 实测是 `-0`，而 `Math.atan2(-0,-1) = -π` 与 `Math.atan2(0,-1) = +π`
+   分属两支 —— Task 4 的 cross 分支按"方向角更小的那族当直通"选直通墙，一枚 `-0` 能把分类翻过来。
+   **真源边界一并封了**（这一条动了计划 1 的 `units/mm.ts`，与"文件结构"一节的"已存在，不改"相左，
+   以本节为准）：`quantizeMm` 返回 `Math.round(value) + 0`，`assertMm` 对 `±0` 归一为 `+0`，
+   `mm.ts:8` 那句"`-0.5 → -0`（与 0 全等）"的注释同步改写。因为 `JSON.stringify(-0) === "0"`，
+   一枚进了 `PointEntity` 的 `-0` 能躲过 `canonical()` 与全部逐字节撤销比对，只在内存里的
+   `Object.is` / vitest `toEqual` 下现形 —— 那正是 Task 5 / 8 / 10 的断言方式。
+2. **退化方向轴改为抛**（裁决⑥）。本节第 257 行"`sinOfAngle` 零向量给 0"与第 388 行
+   `intersectLines` 自己重推的平行判据都作废：`sinOfAngle` 现在抛
+   `RangeError('零向量无方向，无法求夹角正弦')`，`isParallel` / `intersectLines` 继承，
+   `intersectLines` 内部改调 `isParallel`（同一判据不留两份）。这是"不做兜底"那条约束赢过计划文本：
+   零长轴是缺陷，不是"恰好平行"。**给 Task 4 的口径变化**：`isParallel` / `intersectLines` 的
+   入参必须是 `normalize` 过的非零向量 —— 而 `wallAxis` 给的就是，命令层也早把零长墙挡在外面，
+   所以 Task 4 的定值与派生都不必为退化情形留分支。
+3. **`angleBetween` 仍把退化折成答案**（`atan2(0,0) → 0`），与第 2 条同源但不在本任务的判据里，
+   留给终审定夺；`dot` / `cross` / `sinOfAngle` 的**标量**返回值也不归一（裁决⑤明确划在范围外，
+   Task 4 只以 `Math.abs` 与阈值比较用它们）。
+
+执行日志写在这里：`vec.test.ts` 14→21 条、`units.test.ts` 7→9 条，`pnpm verify` 91→**100 passed**；
+三处变异（回退 `scale` 的归一 / 把 `sinOfAngle` 折回 0 / 回退 `quantizeMm` 的 `+ 0`）分别红
+2 / 3 / 2 条，均已还原；`{x: -0}` 字面量经 esbuild 的 TS loader 后仍是 `-0`（实测），
+所以那些靠字面量喂 `-0` 的用例不是空气断言。
 
 ---
 
