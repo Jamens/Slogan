@@ -855,7 +855,7 @@ Expected: 退出码 0。若报 `TS6133 'axisLengthMm' is declared but its value 
 pnpm verify 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tail -5
 ```
 
-Expected: 计划 1 的 77 passed 全在（`commands.test.ts` 没被文案改动打破）+ Task 1 的 14 + 本任务 12（read 4 条、axis 8 条），总计 103 passed，0 失败。
+Expected: 计划 1 的 77 passed 全在（`commands.test.ts` 没被文案改动打破）+ Task 1 落地后的 100 条（含其修复轮新增的 9 条：vec 14→21、units 7→9）+ 本任务 12（read 4 条、axis 8 条），总计 112 passed，0 失败。
 
 变异：把 `cornerPoint` 里 `side * half` 改成 `half`（丢掉一侧符号），Expected: `cornerPoint：trim=0 时是平接四角` 必须红。再把 `awayDir(axis,'end')` 写成 `axis.dir`（反向搞错），Expected: `otherEnd / endPoint / awayDir 三件套自洽` 与至少一条 `cornerPoint` 用例红。两次都还原后 `git diff` 为空。
 
@@ -1707,7 +1707,7 @@ pnpm vitest run packages/core/test/topology.test.ts 2>&1 | sed 's/\x1b\[[0-9;]*m
 pnpm verify 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tail -5
 ```
 
-Expected: `topology.test.ts` 26 passed（PointRef 5 + 共享端点查询 3 + dependentsOf 4 + wallCreate 复用 6 + wallMoveEndpoint 7 + wallDelete 1）；`commands.test.ts` 与 `properties.test.ts` 的老条目一条不少，总数 = Task 2 的 103 + 26 = 129 passed，0 失败。`properties.test.ts` 不变式 2 会随机生成"建墙 → 改端点 → 撤销"序列，本任务给它新增的守卫只是多抛错的口子，而它用的全是字面量坐标，因此不应触发 —— 若它变红，先看是不是 `resolveEnd` 把字面量误判成了复用。
+Expected: `topology.test.ts` 26 passed（PointRef 5 + 共享端点查询 3 + dependentsOf 4 + wallCreate 复用 6 + wallMoveEndpoint 7 + wallDelete 1）；`commands.test.ts` 与 `properties.test.ts` 的老条目一条不少，总数 = Task 2 的 112 + 26 = 138 passed，0 失败。`properties.test.ts` 不变式 2 会随机生成"建墙 → 改端点 → 撤销"序列，本任务给它新增的守卫只是多抛错的口子，而它用的全是字面量坐标，因此不应触发 —— 若它变红，先看是不是 `resolveEnd` 把字面量误判成了复用。
 
 - [ ] **Step 6: 变异检查（防"测试考的是空气"）**
 
@@ -2542,7 +2542,7 @@ pnpm vitest run packages/core/test/joint.test.ts 2>&1 | sed 's/\x1b\[[0-9;]*m//g
 pnpm verify 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tail -5
 ```
 
-Expected: `joint.test.ts` 18 passed（分组 3 + 等厚直角 3 + 同向起画 2 + 斜角异厚 2 + tee 4 + cross/star 2 + 确定性 2）。`pnpm verify` 总数 = Task 3 的 129 + 18 = 147 passed，0 失败。
+Expected: `joint.test.ts` 18 passed（分组 3 + 等厚直角 3 + 同向起画 2 + 斜角异厚 2 + tee 4 + cross/star 2 + 确定性 2）。`pnpm verify` 总数 = Task 3 的 138 + 18 = 156 passed，0 失败。
 
 - [ ] **Step 5: 变异检查（防"测试考的是空气"）**
 
@@ -2937,7 +2937,7 @@ pnpm vitest run packages/core/test/outline.test.ts 2>&1 | sed 's/\x1b\[[0-9;]*m/
 pnpm verify 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tail -5
 ```
 
-Expected: `outline.test.ts` 13 passed（polygonArea 2 + 孤墙与斜墙 3 + 接头处的轮廓 5 + 派生入口的契约 3）。`pnpm verify` = 147 + 13 = 160 passed，0 失败。
+Expected: `outline.test.ts` 13 passed（polygonArea 2 + 孤墙与斜墙 3 + 接头处的轮廓 5 + 派生入口的契约 3）。`pnpm verify` = 156 + 13 = 169 passed，0 失败。
 
 **若 `deriveWallQuads(doc, deriveJoints(doc))` 那条比对失败**：先查 `toEqual` 两侧是否对象引用不同但值相同（`toEqual` 只看值，不该失败），再看 `wallQuad` 是否在某条路径上返回了新 `corners` 数组之外的字段差异。
 
@@ -3401,7 +3401,7 @@ pnpm vitest run packages/core/test/opening-geom.test.ts 2>&1 | sed 's/\x1b\[[0-9
 pnpm verify 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tail -5
 ```
 
-Expected: `opening-geom.test.ts` 12 passed（分段 9 + 整层 3）。`pnpm verify` = 160 + 12 = 172 passed，0 失败。
+Expected: `opening-geom.test.ts` 12 passed（分段 9 + 整层 3）。`pnpm verify` = 169 + 12 = 181 passed，0 失败。
 
 - [ ] **Step 6: 变异检查（防"测试考的是空气"）**
 
@@ -4076,7 +4076,7 @@ describe('洞口跟随拉伸', () => {
 });
 ```
 
-第 2 段 15 条 + 第 1 段 11 条 = 本文件 24 条，全计划总数 172 + 24 = 196。
+第 2 段 15 条 + 第 1 段 11 条 = 本文件 24 条，全计划总数 181 + 24 = 205。
 
 - [ ] **Step 3: 跑测试确认失败**
 
@@ -4345,7 +4345,7 @@ pnpm vitest run packages/core/test/commands-opening.test.ts 2>&1 | sed 's/\x1b\[
 pnpm verify 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tail -5
 ```
 
-Expected: `commands-opening.test.ts` 24 passed（openingCreate 11 + move 4 + delete 2 + 跟随 7）。`pnpm verify` = 172 + 24 = 196 passed，0 失败。`lint:deps` 会检查 `commands/opening.ts → geom/opening.ts` 这条新边：包内方向，允许（守卫只管包与包）。
+Expected: `commands-opening.test.ts` 24 passed（openingCreate 11 + move 4 + delete 2 + 跟随 7）。`pnpm verify` = 181 + 24 = 205 passed，0 失败。`lint:deps` 会检查 `commands/opening.ts → geom/opening.ts` 这条新边：包内方向，允许（守卫只管包与包）。
 
 - [ ] **Step 7: 变异检查（防"测试考的是空气"）**
 
@@ -5326,7 +5326,7 @@ pnpm vitest run packages/core/test/ring.test.ts packages/core/test/commands-colu
 pnpm verify 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tail -5
 ```
 
-Expected: `ring.test.ts` 7 passed；`commands-column-slab.test.ts` 21 passed（柱 9 + 板 6 + 楼层 6）。`pnpm verify` = 196 + 7 + 21 + 1（`read.test.ts` 的 `requireStorey`）= 225 passed，0 失败。`commands.test.ts` 的 `/index 重复/` 与 `properties.test.ts` 都不该被新的重叠判据打破：它们的 fixture 全是 `[0,3000)` 单层或 `[0,3000)/[3000,6000)` 贴邻。
+Expected: `ring.test.ts` 7 passed；`commands-column-slab.test.ts` 21 passed（柱 9 + 板 6 + 楼层 6）。`pnpm verify` = 205 + 7 + 21 + 1（`read.test.ts` 的 `requireStorey`）= 234 passed，0 失败。`commands.test.ts` 的 `/index 重复/` 与 `properties.test.ts` 都不该被新的重叠判据打破：它们的 fixture 全是 `[0,3000)` 单层或 `[0,3000)/[3000,6000)` 贴邻。
 
 - [ ] **Step 7: 变异检查（防"测试考的是空气"）**
 
@@ -6335,7 +6335,7 @@ pnpm vitest run packages/core/test/spatial.test.ts 2>&1 | sed 's/\x1b\[[0-9;]*m/
 pnpm verify 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tail -5
 ```
 
-Expected: `spatial.test.ts` 22 passed（expandAffected 7 + Aabb 3 + fromDoc/query 7 + applyAffected 5）。`pnpm verify` = Task 8 的 225 + 22 = 247 passed，0 失败。`lint:deps` 不该有新的话要讲：`spatial/index.ts` 只 import `core` 内部模块，包依赖方向没动。
+Expected: `spatial.test.ts` 22 passed（expandAffected 7 + Aabb 3 + fromDoc/query 7 + applyAffected 5）。`pnpm verify` = Task 8 的 234 + 22 = 256 passed，0 失败。`lint:deps` 不该有新的话要讲：`spatial/index.ts` 只 import `core` 内部模块，包依赖方向没动。
 
 - [ ] **Step 6: 变异检查（防"测试考的是空气"）**
 
@@ -8010,7 +8010,7 @@ pnpm vitest run packages/core/test/geometry-properties.test.ts 2>&1 | sed 's/\x1
 pnpm verify
 ```
 
-Expected：本文件 13 passed；`pnpm verify` = Task 9 的 247 + 13 = **260 passed**，0 失败。
+Expected：本文件 13 passed；`pnpm verify` = Task 9 的 256 + 13 = **269 passed**，0 失败。
 
 **把两个墙钟时间抄进执行日志。** 这个文件是计划 2 里最贵的一处：80 次运行 × 最多 18 步，每步跑六个检查器（其中 `checkContours` / `checkOracle` / `checkSpans` 各要派生一次整层）。如果 `geometry-properties.test.ts` 单文件超过 **20 秒**，按这个顺序降档，别乱降：
 
