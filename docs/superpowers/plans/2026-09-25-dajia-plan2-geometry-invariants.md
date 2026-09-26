@@ -3644,8 +3644,8 @@ git commit -m "feat: 洞口沿墙定位、墙身分段与整层派生入口"
 
 | 规则 | 把关处 | 文案正则 |
 |---|---|---|
-| 四个长度字段是整数毫米 | `openingCreate` / `openingMove` 构造期 | `/整数毫米/` |
-| 宽度、高度为正 | 构造期 `positiveMm` | `/洞口宽度必须为正/`、`/洞口高度必须为正/` |
+| 四个长度字段是整数毫米 | `openingCreate` / `openingMove` 构造期（工厂函数自己抛）。**用例必须断工厂、不能只断 dispatch**：只断 dispatch 的话 `Document.validate` 的整数检查会替 `assertMm` 挡下来，两条消息又都含"整数毫米"，摘掉 `assertMm` 照样全绿（Task 7 修复轮 F4，实测） | `/整数毫米/` |
+| 宽度、高度为正 | `openingCreate` 构造期 `positiveMm`；`openingMove` 在 `build` 里复核真源里已有的宽高（T7①：读盘/手搓进来的零宽洞口不能由命令层盖章搬走）。守卫**不放**在 `requireOpening` 里 —— 那里同时服务 `openingDelete`，放上去坏数据就永远删不掉了（Task 7 修复轮 F1） | `/洞口宽度必须为正/`、`/洞口高度必须为正/` |
 | 窗台非负、门洞窗台为 0 | 构造期 | `/窗台高不能为负/`、`/门洞窗台高必须为 0/` |
 | 沿轴不越界（含负距离） | `assertSpansFit`（经草稿文档跑派生） | `/超出宿主墙/` |
 | 洞口互不重叠、不贴边 | 同上 | `/重叠或贴边/` |
@@ -3655,6 +3655,8 @@ git commit -m "feat: 洞口沿墙定位、墙身分段与整层派生入口"
 | 拉伸后洞口仍住在宿主墙里 | `clampOpeningsToWall` | `/放不下洞口/`、`/重叠或贴边/` |
 
 "同层"那条从写入侧其实造不出来（`openingCreate` 的 `storeyId` 抄宿主墙，不是入参），留着是给手搓文档和计划 4 之后从磁盘读回来的旧数据兜底。
+
+> **Task 7 回填：下面 Step 1/2 的测试代码块与落地态有 7 处不同，Step 7 的变异预言有 3 处错、还漏了 5 个靶子。照抄前先读本文末尾的「Task 7 执行回填」。**
 
 - [ ] **Step 1: 写失败的测试（第 1 段：fixtures 与 `openingCreate`）**
 
@@ -4275,7 +4277,7 @@ describe('洞口跟随拉伸', () => {
 pnpm vitest run packages/core/test/commands-opening.test.ts 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tail -8
 ```
 
-Expected: FAIL，`does not provide an export named 'openingCreate'`（`openingMove` / `openingDelete` 同）。此时 `commands/opening.ts` 还不存在。
+Expected: FAIL，运行期 `TypeError: openingCreate is not a function`（`openingMove` / `openingDelete` 同）。Task 7 回填：原写的 `does not provide an export named 'openingCreate'` 是错的期望，与 Task 5 的 D2、Task 6 的 D1 同因（入口是 TS 源、vitest 走 esbuild，缺失的具名导出取到 `undefined`，不在链接期抛 `SyntaxError`）。此时 `commands/opening.ts` 还不存在。
 
 - [ ] **Step 4: 实现 `commands/opening.ts`**
 
@@ -4377,6 +4379,11 @@ export function openingMove(input: { openingId: EntityId; distanceMm: number }):
     type: 'opening.move',
     build(doc: Document) {
       const opening = requireOpening(doc, input.openingId);
+      // T7① 的另一半：搬动不产生新宽度，但读盘/手搓进来的零宽洞口不能由命令层盖章搬走。
+      // assertFitsAfterInsert 用的派生判据不看区间朝向（Task 6 评审 F1），这一关只能在这里补。
+      // 守卫放在 move 而不是 requireOpening 里 —— 坏数据必须还能删，删除路径不许被它挡住。
+      positiveMm(opening.widthMm, '洞口宽度');
+      positiveMm(opening.heightMm, '洞口高度');
       const moved: OpeningEntity = { ...opening, distanceMm };
       // 同一条校验：改一樘的位置与新建一樘，允许的落点集合必须一模一样
       assertFitsAfterInsert(doc, moved);
@@ -4543,12 +4550,21 @@ Expected: `commands-opening.test.ts` 24 passed（openingCreate 11 + move 4 + del
 七处逐个改、逐个还原，每次 `git diff` 必须回到空：
 
 1. 删掉 `assertFitsAfterInsert` 里 `piecesFromSpans(...)` 那一行 → Expected: 「越出墙尾」「与已有洞口重叠或贴边」「负距离」「移到与另一樘重叠」四条红，而「超过宿主墙高」仍绿。竖向那条不走派生，正因为如此它才需要单独的实现 —— 两条路各自红一半，说明校验确实分了两处、缺一不可。
-2. `positiveMm` 的 `value <= 0` 改成 `value < 0` → Expected: 「宽度或高度为 0」的前两条红，同一用例里的**反证**仍绿。反证常绿是设计如此：它证明派生层本来就抓不到零宽，所以构造期那道守卫删不得。
+2. `positiveMm` 的 `value <= 0` 改成 `value < 0` → Expected: 「宽度或高度为 0 → 抛；反证…」这一条红（`Tests 1 failed / 204 passed`，红形如 `expected [Function] to throw an error`）。Task 7 回填：原写的"前两条红、同一用例里的反证仍绿"在同一条 `it` 里**不可观测** —— 第一条断言就中止，反证那几行根本没跑；"反证常绿"这个设计意图要在两条不同的 `it` 里才看得出来。
 3. `if (input.category === 'door' && sillMm !== 0)` 改成 `sillMm < 0` → Expected: 「门洞窗台非 0」红，其正对照仍绿。
-4. `clampOpeningsToWall` 的 `Math.floor` 改成 `Math.round` → Expected: 「斜墙 1099」红（值断言与派生断言各红一次），其余全绿。这条变异只有斜墙用例抓得到，水平墙全是整数轴长。
-5. `clampOpeningsToWall` 里把"合法不动"那支也 `dirty.push(opening)` → Expected: 只有「拉长墙」的 `affected` 断言红。这是唯一一条盯"守卫会不会多动手"的变异，其它变异都在盯"守卫会不会不动手"。
+4. `clampOpeningsToWall` 的 `Math.floor` 改成 `Math.round` → Expected: 「斜墙 1099」这一条红（`Tests 1 failed / 204 passed`）。这条变异只有斜墙用例抓得到，水平墙全是整数轴长。Task 7 回填：原写的"值断言与派生断言各红一次"不可能成立 —— 命令在 `dispatch` 里就抛了（栈：`assertSpansFit (geom/opening.ts:61) ← clampOpeningsToWall (commands/wall.ts:182) ← build ← dispatch ← test`），那条用例后面两行一次都没跑，所以只有**一次**红。取整这件事真正的红集合见下面第 12 条。
+5. `clampOpeningsToWall` 里把"合法不动"那支也 `dirty.push(opening)` → Expected: 「拉长墙」与「拖拐角」**两条**的 `affected` 断言红（`Tests 2 failed / 203 passed`）。Task 7 回填：原写"只有「拉长墙」红"少算了一条 —— 「拖拐角」里本墙那樘窗没被夹动，它的 `affected` 断言同样盯的是"守卫会不会多动手"。
 6. 注释掉 `wallMoveEndpoint` 末尾那个 `for (const entry of resized)` 循环 → Expected: 「缩墙」「斜墙」「放不下洞口」「夹完撞上」「拖拐角」「撤销拉伸」六条红，「拉长墙」仍绿（它验的就是没改动的情况）。六比一，说明跟随逻辑真的在承重。
 7. 删掉 `clampOpeningsToWall` 末尾的 `assertSpansFit(...)` → Expected: 只有「夹完撞上」红。这条守卫只在"缩墙后排不开两樘"时起作用，不专门造病就永远不红。
+
+Task 7 修复轮补的五个靶子（评审 5 条 Important 里 F1–F4/F6 各对应一个"修复前 205 全绿"的盲区；`ca21447`）。**这五条是本轮真正的产出**：前七条盯的是"守卫会不会不动手"，这几条盯的是"新守卫的边界有没有人看着"。
+
+8. `openingMove` 的 `build` 里摘掉两条 `positiveMm` → Expected: 「宽度或高度为 0 → 抛；反证…」红（`expected [Function] to throw an error`）。修复前 205 全绿：一条零宽洞口能被搬动并盖章，`deriveStoreyGeometry` 交出 `[[+0,300],[-700,3600]]` —— 3600 的墙上长出 4300 的料并与另一段物理重叠，而 `Σ段长 + Σ洞宽 = 轴长` 照样精确成立（本计划第三个"Σ 类恒等式失明"）。
+9. `wall.ts` 的 `if (opening.distanceMm + opening.widthMm <= newLengthMm)` 改成 `<` → Expected: 「缩墙」红（`affected` 凭空多一个洞口 id，而它的 `distanceMm` 一个字节没变）。修复前 205 全绿，且这**不是等价变异**。
+10. `openingMove` 的 `assertMm(input.distanceMm, …)` 换成裸赋值 → Expected: 「浮点入参在构造期就抛」红。**坑在这里**：如果那条断言写成 `expect(() => log.dispatch(openingMove({…100.5}))).toThrow(/整数毫米/)`，摘掉 `assertMm` 之后仍然 24 全绿 —— `Document.validate` 的整数检查会替它挡下来，两条消息又都含"整数毫米"。必须断**工厂函数自己**抛（`expect(() => openingMove({…})).toThrow(/整数毫米/)`），四个字段一样各来一次（第 11 条）。
+11. `openingCreate` 的 `assertMm` 同样换成裸赋值 → Expected: 同一条用例红（`Tests 1 failed / 23 passed`）。修复前简报从未预言，实测 205 全绿。
+12. 夹洞写回的 `Math.floor(newLengthMm - opening.widthMm)` 去掉取整 → Expected: 「斜墙」「新墙比洞口还短…夹到 0 的边界两支」「撤销拉伸：一次拖拽夹两樘」**三条**红（`Tests 3 failed / 21 passed`）。这条是"绕过 `quantizeMm` 写回真源"的唯一落点，浮点一旦漏进去，`Document.validate` 在 `dispatch` 里就抛。
+13. 夹洞表摘掉 `.sort` → Expected: 「往回夹会让两樘撞上」**恒红**（连跑 5 次 5 次红，形如 `expected [Function] to throw error matching /重叠或贴边/ but got 'assertSpansFit 需要按 fromMm 升序的洞口表（内部错误）'`）。修复前是 8 次跑红 5 次 —— 那条用例的两樘洞口用随机 id，"id 序恰与几何序反向"全凭运气。修法是把夹具换成钉死的时间戳（`uuidv7(2)@1000` + `uuidv7(1)@2000`）并加一条 `expect(far.id < near.id).toBe(true)` 守卫夹具本身；**别把这条推给 Task 10 的属性测试**，属性测试只能提高命中率，不能让它不可能漏（失效模式是把合法拖法判成内部错误，Task 9 的索引正建在这条之上）。
 
 - [ ] **Step 8: 提交**
 
@@ -4560,6 +4576,80 @@ git commit -m "feat: 洞口命令与拉伸墙时洞口跟随"
 执行日志写在这里：24 条的实际结果、七处变异各红了哪些用例、斜墙那条实测的 `lengthMm` 与 `distanceMm`，以及「拖拐角」里 `affected` 到底是不是恰好两个 id。
 
 **留给后续任务的钩子**：`resized` 这张表就是 Task 9 的 `expandAffected` 要自己算出来的东西 —— 命令层知道哪些墙变了，索引层不知道，所以 Task 9 必须沿 `dependentsOf` 迭代到不动点。两边口径在这里对一次：`resized` 里的墙 ∪ 被夹的洞口 ⊆ `expandAffected(doc, { pointId })`（后者更大，还包含没被夹动的那樘窗：多重建不会错，少重建会）。Task 9 要把这句话写成断言，用本任务「拖拐角」那个文档当输入。闭包出不出本层由 Task 3 的 `resolvePointRef` 决定（端点不能跨层复用），Task 9 把它写成一条用例而不是当作前提。
+
+#### Task 7 执行回填（2026-09-26，评审后）
+
+交付 `745d29e`（`commands/opening.ts` +122 / `commands/wall.ts` +68−1 / `index.ts` +1 /
+`commands-opening.test.ts` +609）+ 修复轮 `ca21447`（`opening.ts` +5 / 测试 +127−35）。
+`pnpm verify` = **205 passed / 18 files**，`commands-opening.test.ts` 24 条（openingCreate 11 /
+move 4 / delete 2 / 跟随 7），修复轮**没有新增 `it`**。
+
+评审 Verdict：`NOT SPEC COMPLIANT`（唯一不合规点 = T7① 的 `openingMove` 半边）+
+`0 Critical / 5 Important / 5 Minor`。修复轮把 SPEC 那一半补上，并把 F2–F6 五条"边界一次没红过"
+全变成确定性红（靶子与实测红集合见上面 Step 7 的第 8–13 条）。
+
+**Step 1 / Step 2 的测试代码块有 7 处与落地态不同（照抄前先读，别改回去）**：
+
+1. 「建门洞」尾部多 5 行：`before = canonical()` → `undo()` → `canonical() === before` →
+   `get(made.id)` 为 `undefined` → `redo()` 后距离回来。spec 5.5 的可逆性对"新建"这一支
+   此前只被一个跑完即删的临时文件证明过（F5）。
+2. 「宽度或高度为 0 → 抛；反证」：手搓的零宽洞口从内联字面量提成 `negative` 常量，
+   尾部多 4 件事 —— `new TransactionLog(hacked)` 装回可写日志、`openingMove` 抛
+   `/洞口宽度必须为正/`、`distanceMm` 仍是 1000（没被盖章搬走）、`openingDelete` 同一樘**成功**。
+   最后那件是 F1 修法的一部分：守卫放 `openingMove` 而不是 `requireOpening`，否则坏数据删不掉。
+3. 「浮点入参在构造期就抛」：先建一樘真洞口（`depth` 因此从 2 变 3），
+   断言改成**工厂函数自己抛**，并覆盖 `distanceMm`/`widthMm`/`heightMm`/`sillMm` 四个字段
+   加 `openingMove` 一次；`byKind('opening')).toEqual([])` 换成 `canonical()` 逐字节比对（F4）。
+4. 「缩墙」尾部同距离（x=3000）再拖一次，断 `distanceMm` 仍 2100 且 `affected` 只剩 `wall.endId`（F3）。
+5. 「新墙比洞口还短」标题加"夹到 0 的边界两支各自钉住"，尾部补 (899, 41) 抛 `/放不下洞口/`
+   与 (899, 59) 夹到 `+0`（`Object.is(d, 0)` 真、`Object.is(d, -0)` 假）两支（F6）。
+   **顺带订正报告 §8 的一处措辞**：`Math.floor` 对 `(-1, 0)` 给的是 **−1** 不是 −0
+   （`-0` 出自 `Math.trunc`/`Math.ceil`），而 `x - x` 恒为 `+0` ⇒ −0 根本进不到这条路径。
+6. 「往回夹会让两樘撞上」：新增测试 helper `putOpening(log, wall, { id, distanceMm, widthMm })`
+   （照 Task 6 D3 的手法，用裸 `log.dispatch({ type, build })` 贴指定 id 的洞口），
+   两条洞口换成 `uuidv7(2)@1000` + `uuidv7(1)@2000`，并加 `expect(far.id < near.id).toBe(true)`
+   钉住"本用例确实在反向序上"（F2）。
+7. 「撤销拉伸」整个换成"一次拖拽夹两樘"的形状（共享点拖到 (2400, 800)：A 3600→2529.82、
+   B 2400→2000，窗 2000→1629、门 1400→1100，`affected` 恰三个 id），
+   断逆补丁把**每一条**旧距离都带回来；原形状（一次夹一樘）的覆盖在「拖拐角」里没丢（F5）。
+
+**记账（本轮不修，别再考后人）**：
+
+- **F8**：`openingCreate` 里 `mustExist(doc, wall.storeyId, '楼层')`（`commands/opening.ts:80`）
+  注释掉 → 205 全绿，而且今天**不可能**有红：仓里没有 `storeyDelete`，`wallCreate` 又要求楼层存在
+  ⇒ "墙的楼层不存在"从写入侧造不出来。这是**结构不可达支**（等价变异），与 Task 6 的
+  「不同层」那一格同一类：都挂给计划 4 的读盘用例，不是漏洞。
+- **F9**：`Document.validate` 不禁止带符号零（`Number.isInteger(-0)` 为真），而 `units/mm.ts`
+  明文说真源不接受带符号的零；`JSON.stringify(-0) === "0"` ⇒ `canonical()` 看不见它。
+  Task 7 新代码产不出 −0（见上面第 5 条），这是**上游账**：
+  最小修法是在 `document.ts` 的整数检查上加 `|| Object.is(value, -0)` → 抛中文错误，
+  归计划 4 读盘入口或 Task 10 的 `assertTruthSourceInvariants`。
+- 评审给的更彻底修法"把 `distance + width <= newLengthMm` 从 `geom/opening.ts` 导出成
+  `spanOverflows(span, lengthMm)`，命令层只调不复述" **没做**：它动的是 Task 6 的公开出口，
+  而第 9 条变异现在已有确定性红。留给 Task 8/9 顺路（规则复述两遍，漂的永远是没人看的那一遍）。
+
+**下游义务（覆盖 Task 6 回填里同名的那几条，以这里为准）**：
+
+- **T8**：任何改 `wall.heightMm` 或 `storey.heightMm` 的命令，写前必须**整表复核**该层全部洞口的
+  `sillMm + heightMm ≤ 宿主墙高`，并复用 `assertFitsAfterInsert` 的草稿文档套路，别写第二份竖向规则。
+  今天"搬/缩墙造不出洞口高出宿主墙"只因为全仓没有任何命令改墙高（`grep heightMm commands/*` 只有
+  `wallCreate` 与 `storeyCreate` 写它）—— 这条随时会被 T8 打破。
+- **T9**：`wallMoveEndpoint.affected` = 被拖的点 ∪ **真被夹动**的洞口；轴长变了但洞口没被夹动的那面墙，
+  其 id 不在 `affected` 里（「拉长墙」与「缩墙」第二轮那一次拖钉的就是这个），
+  所以 `expandAffected` 必须自己走 `dependentsOf(point) → walls → openings` 到不动点。
+  要收的两种形态：一次拖拽夹**两樘**（「撤销拉伸」现在是这一形状的现成夹具）与
+  "洞口远端齐平墙尾 ⇒ 不该进 `affected`"（「缩墙」尾部）。简报那句集合口径用「拖拐角」文档写成断言；
+  闭包不出本层由 `resolvePointRef` 决定，写成用例。
+- **T10**：① 随机文档 + 随机拖端点后断言**永不出现** `/内部错误/`（排序前提的通用网，
+  **不代替**第 13 条那个确定性夹具）；② 断 `Σ段长 + Σ洞宽 = 轴长` **且段两两不物理重叠、段在 `[0, 轴长]` 内**
+  （F1 朝向洞的属性层补法 —— 本计划第三个 Σ 失明）；③ 生成"非整数轴长 + 洞口越界"的拖法，
+  把 `distanceMm = floor(新轴长 − 宽)` 写成预言；④ 断 `Object.is(预测轴长, wallAxis(afterDoc, wall).lengthMm)`
+  （夹洞路径的预测/派生同式性今天只靠注释维系）；⑤ 出一份 `assertTruthSourceInvariants(doc)`
+  （引用完整性 + `widthMm ≥ 1` + `heightMm ≥ 1` + `sillMm ≥ 0` + 门 ⇒ `sillMm = 0` +
+  `storeyId === hostWall.storeyId` + 不接受 `-0`），计划 4 读盘时调用一次。
+  **理由**：`Document` 不查引用完整性，而 `openingSpans` 按 `hostWallId !== wall.id` 过滤
+  ⇒ 一樘宿主指向非墙的洞在整层派生里**根本不存在**（不报错、不进段表），比零宽更安静；
+  属性测试只能覆盖"命令能造的形状"，覆盖不到读盘数据。
 
 ---
 
