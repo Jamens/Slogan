@@ -12,3 +12,5 @@ export { TransactionLog, affectedIds } from './model/transaction';
 export * from './commands/storey';
 export * from './commands/wall';
 export * from './geom/vec';
+export * from './model/read';
+export * from './geom/axis';

@@ -1,8 +1,10 @@
 import { uuidv7, type EntityId } from '../ids';
 import { assertMm, quantizeMm, type Mm } from '../units/mm';
+import { mustExist, requirePoint, requireWall } from '../model/read';
+import { wallAxis } from '../geom/axis';
 import type { Command } from '../model/command';
 import type { Document } from '../model/document';
-import type { Entity, OpeningEntity, PointEntity, WallEntity } from '../model/entity';
+import type { OpeningEntity, PointEntity, WallEntity } from '../model/entity';
 
 export interface WallCreateInput {
   storeyId: EntityId;
@@ -13,30 +15,6 @@ export interface WallCreateInput {
   elevationOffsetMm?: Mm;
   loadBearing?: boolean;
   material?: string;
-}
-
-function mustExist(doc: Document, id: EntityId, label: string): Entity {
-  const entity = doc.get(id);
-  if (!entity) throw new TypeError(`${label} 不存在：${id}`);
-  return entity;
-}
-
-function requireWall(doc: Document, wallId: EntityId): WallEntity {
-  const entity = mustExist(doc, wallId, '墙');
-  if (entity.kind !== 'wall') throw new TypeError(`${wallId} 不是墙，是 ${entity.kind}`);
-  return entity;
-}
-
-function requirePoint(doc: Document, id: EntityId, label: string): PointEntity {
-  const entity = mustExist(doc, id, label);
-  if (entity.kind !== 'point') throw new TypeError(`${label} 不是 point 实体：${id}`);
-  return entity;
-}
-
-function axisLengthMm(doc: Document, wall: WallEntity): number {
-  const a = requirePoint(doc, wall.startId, '墙起点');
-  const b = requirePoint(doc, wall.endId, '墙终点');
-  return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
 /** 共享端点与接头吸附属计划 2，这里总是新建两个端点。 */
@@ -51,6 +29,7 @@ export function wallCreate(input: WallCreateInput): Command {
   if (x0 === x1 && y0 === y1) {
     throw new RangeError(`零长墙：两端点量化后同为 (${x0}, ${y0})`);
   }
+  // 量化后的坐标已知，直接算，不查 doc（保持"构造时就拒"的时序）
   const lengthMm = Math.hypot(x1 - x0, y1 - y0);
   if (thicknessMm >= lengthMm) {
     throw new RangeError(
@@ -99,7 +78,7 @@ export function wallSetThickness(input: { wallId: EntityId; thicknessMm: Mm }): 
     build(doc: Document) {
       const wall = requireWall(doc, input.wallId);
       if (thicknessMm <= 0) throw new RangeError(`墙厚必须为正，收到 ${thicknessMm}`);
-      if (thicknessMm >= axisLengthMm(doc, wall)) {
+      if (thicknessMm >= wallAxis(doc, wall).lengthMm) {
         throw new RangeError(`墙厚 ${thicknessMm} 不小于墙长，轮廓会自相交`);
       }
       return { upsert: [{ ...wall, thicknessMm }], remove: [] };
