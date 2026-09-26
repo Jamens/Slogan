@@ -299,7 +299,8 @@ export class SpatialIndex {
 
   /**
    * 双向闭包：真源反向依赖（expandAffected）∪ 盒子的共享端点（dependsOnOf：条目优先、实体回落）。
-   * 少了后半段，"删一面墙""改一面墙的墙厚""在既有端点之间合上一间房"三条都会留下发霉的邻墙盒子。
+   * 少了后半段，"删一面墙""改一面墙的墙厚""新建的墙复用既有端点""在既有端点之间合上一间房"
+   * 四条都会留下发霉的邻墙盒子（实测：摘掉下面那行 for，红的正是这四条 + 拖拐角仍绿）。
    */
   private dirtyIds(doc: Document, affected: ReadonlySet<EntityId>): Set<EntityId> {
     const dirty = new Set<EntityId>();
@@ -309,7 +310,7 @@ export class SpatialIndex {
       if (dirty.has(id)) continue;
       dirty.add(id);
       // 盒子的依赖边只有这一个产地（连"本次补丁里的新实体"一起走，见 dependsOnOf）。
-      // "两墙共享端点"这条边不在真源的引用关系里，删掉这一行，三条邻墙发霉的用例同时红。
+      // "两墙共享端点"这条边不在真源的引用关系里，删掉这一行，四条邻墙发霉的用例同时红。
       for (const dep of this.dependsOnOf(doc, id)) queue.push(dep);
       for (const dependent of expandAffected(doc, new Set([id]))) {
         if (!dirty.has(dependent)) queue.push(dependent);
