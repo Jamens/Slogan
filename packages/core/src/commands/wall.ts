@@ -8,6 +8,7 @@ import {
   resolvePointRef,
   type PointRef,
 } from '../geom/topology';
+import { assertSpansFit, type OpeningSpan } from '../geom/opening';
 import type { Command } from '../model/command';
 import type { Document } from '../model/document';
 import type { Entity, OpeningEntity, WallEntity } from '../model/entity';
@@ -131,6 +132,57 @@ export function wallSetThickness(input: { wallId: EntityId; thicknessMm: Mm }): 
   };
 }
 
+/** 平距时的 tie-break：与 geom/opening.ts 的 openingSpans 同一条规矩（id 升序，不看创建顺序）。 */
+function byIdAsc(a: EntityId, b: EntityId): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * 该墙缩到 newLengthMm 以后，把挂在它上面的洞口沿轴往起点方向夹回来。
+ * 只减 distanceMm，绝不动 widthMm —— 洞口宽度是产品尺寸，静默改窄比报错危险。
+ * 夹完必须复核整表：往回夹会让两樘撞上（新墙长排不开它们），那种拖动施工上不成立。
+ * 复核用 Task 6 的 assertSpansFit，不在这里重写区间规则。
+ * 只有真被夹动的才进 upsert：affected 是"这次到底改了什么"的记录，
+ * 每次拖动都重述全部洞口会把它稀释成噪音（用例「拉长墙」盯着这条）。
+ */
+function clampOpeningsToWall(
+  doc: Document,
+  wall: WallEntity,
+  newLengthMm: number,
+  upsert: Entity[],
+): void {
+  const final: OpeningEntity[] = [];
+  const dirty: OpeningEntity[] = [];
+  for (const opening of doc.byKind('opening')) {
+    if (opening.hostWallId !== wall.id) continue;
+    if (opening.distanceMm + opening.widthMm <= newLengthMm) {
+      final.push(opening);
+      continue;
+    }
+    // floor 不是随手写的：轴长是浮点（斜墙 1999.698），round 会舍到墙外去
+    const maxDistanceMm = Math.floor(newLengthMm - opening.widthMm);
+    if (maxDistanceMm < 0) {
+      throw new RangeError(
+        `墙 ${wall.id} 缩到 ${Math.round(newLengthMm)}mm，放不下洞口 ${opening.id}` +
+          `（宽 ${opening.widthMm}）：请先改小或删掉这个洞口`,
+      );
+    }
+    const clamped: OpeningEntity = { ...opening, distanceMm: maxDistanceMm };
+    final.push(clamped);
+    dirty.push(clamped);
+  }
+  if (dirty.length === 0) return;
+  // 必须自己排序：这张表是拼出来的，没经过 openingSpans，喂给 assertSpansFit 的升序前提
+  // 不排就成立不了 —— 那时"内部错误"会以用户错误的样子抛出去。
+  const spans: OpeningSpan[] = final
+    .map((o) => ({ openingId: o.id, fromMm: o.distanceMm, toMm: o.distanceMm + o.widthMm }))
+    .sort((a, b) => a.fromMm - b.fromMm || byIdAsc(a.openingId, b.openingId));
+  // 这里不查楼层：洞口不是新数据，只是把真源里已有的东西重述一遍。
+  // 跨层洞口的判定仍归 openingSpans，在 deriveStoreyGeometry 里守。
+  assertSpansFit(wall.id, newLengthMm, spans);
+  upsert.push(...dirty);
+}
+
 export function wallMoveEndpoint(input: {
   wallId: EntityId;
   end: WallEnd;
@@ -151,12 +203,19 @@ export function wallMoveEndpoint(input: {
       // 被拖的这面墙自己也要查：计划 1 只让 wallCreate / wallSetThickness 管墙厚与轴长的关系，
       // 拖端点是第三条能改轴长的路。少了这一条，把 3600 长的 240 墙拖到 200 就成功了，
       // 而 Task 5 的轮廓会自相交 —— 真源里绝不能留这种东西。
+      // 轴长一律按"补丁应用之后"的两个端点算：Math.hypot 与 wallAxis 的 length 同式，
+      // 所以这里的预测值与派生层事后重算的值逐位相同，夹回来的洞口不会差 1mm。
       const selfLengthMm = Math.hypot(x - anchor.x, y - anchor.y);
       if (wall.thicknessMm >= selfLengthMm) {
         throw new RangeError(
           `移动端点会让墙 ${wall.id} 的墙厚 ${wall.thicknessMm} 不小于轴长 ${Math.round(selfLengthMm)}，轮廓会自相交`,
         );
       }
+      // 端点一动，所有共享它的墙轴长都变了。逐面守卫，同时把新轴长记下来给洞口跟随用：
+      // affected 只有那一个点，靠它找不到这些墙（Task 9 的扩脏闭包就是为这个存在的）。
+      const resized: Array<{ wall: WallEntity; lengthMm: number }> = [
+        { wall, lengthMm: selfLengthMm },
+      ];
       // 共享端点：这一动会带走所有指着同一个点的墙。逐面按同样的规矩检查，
       // 绝不允许把邻墙拖成零长或非法轮廓 —— 真源里不留坏几何，抛错比画歪便宜得多。
       for (const inc of incidentWallEnds(doc, moving.id, wall.id)) {
@@ -173,8 +232,16 @@ export function wallMoveEndpoint(input: {
             `移动端点会让墙 ${neighbour.id} 的墙厚 ${neighbour.thicknessMm} 不小于轴长 ${Math.round(lengthMm)}，轮廓会自相交`,
           );
         }
+        resized.push({ wall: neighbour, lengthMm });
       }
-      return { upsert: [{ ...moving, x, y }], remove: [] };
+      const upsert: Entity[] = [{ ...moving, x, y }];
+      // resized 的顺序确定（本墙在前，邻墙按 byKind 的 id 升序），所以补丁逐字节可重放。
+      // 各墙的洞口互不相干，顺序不影响文档：canonical() 按 id 排实体、按键名排序，
+      // 顺序只体现在 affected 这个 Set 的迭代序上（Task 9 遍历它重建索引时要能复现）。
+      for (const entry of resized) {
+        clampOpeningsToWall(doc, entry.wall, entry.lengthMm, upsert);
+      }
+      return { upsert, remove: [] };
     },
   };
 }
