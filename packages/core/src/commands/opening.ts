@@ -103,6 +103,11 @@ export function openingMove(input: { openingId: EntityId; distanceMm: number }):
     type: 'opening.move',
     build(doc: Document) {
       const opening = requireOpening(doc, input.openingId);
+      // 搬动不产生新宽度，但读盘/手搓进来的负宽洞口不能由命令层盖章搬走：
+      // assertFitsAfterInsert 用的派生判据不看区间朝向（Task 6 F1），这一关只能在这里补。
+      // 守卫放在 move 而不是 requireOpening 里 —— 坏数据必须还能删，删除路径不许被它挡住。
+      positiveMm(opening.widthMm, '洞口宽度');
+      positiveMm(opening.heightMm, '洞口高度');
       const moved: OpeningEntity = { ...opening, distanceMm };
       // 同一条校验：改一樘的位置与新建一樘，允许的落点集合必须一模一样
       assertFitsAfterInsert(doc, moved);
