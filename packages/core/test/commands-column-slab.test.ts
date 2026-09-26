@@ -169,10 +169,10 @@ describe('columnCreate', () => {
         }),
       ),
     ).toThrow(/柱高必须为正/);
+    // 浮点这条直接断言**工厂**抛，不套 log.dispatch：Document.validate 的整数检查也含
+    // 「整数毫米」，套上 dispatch 就分不清是命令层拦的还是落库层拦的（Task 7 栽过一次）
     expect(() =>
-      log.dispatch(
-        columnCreate({ storeyId, at: { x: 0, y: 0 }, widthMm: 400.5, depthMm: 400 }),
-      ),
+      columnCreate({ storeyId, at: { x: 0, y: 0 }, widthMm: 400.5, depthMm: 400 }),
     ).toThrow(/整数毫米/);
     expect(log.depth).toBe(depth);
     expect(log.document.byKind('column')).toHaveLength(0);
@@ -343,9 +343,10 @@ describe('slabCreate', () => {
     expect(() =>
       log.dispatch(slabCreate({ storeyId, boundary: RECT_CORNERS, thicknessMm: 0 })),
     ).toThrow(/板厚必须为正/);
-    expect(() =>
-      log.dispatch(slabCreate({ storeyId, boundary: RECT_CORNERS, thicknessMm: 120.5 })),
-    ).toThrow(/整数毫米/);
+    // 同柱那条：浮点板厚直接问工厂，dispatch 版会被 Document.validate 的同款文案顶掉
+    expect(() => slabCreate({ storeyId, boundary: RECT_CORNERS, thicknessMm: 120.5 })).toThrow(
+      /整数毫米/,
+    );
   });
 
   it('撤销整块板：自建的点消失，复用的点保留', () => {
