@@ -19,3 +19,6 @@ export * from './geom/topology';
 export * from './geom/joint';
 export * from './geom/outline';
 export * from './geom/opening';
+export * from './geom/ring';
+export * from './commands/column';
+export * from './commands/slab';

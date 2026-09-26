@@ -113,3 +113,31 @@ export function intersectLines(p: Vec2, dir: Vec2, q: Vec2, other: Vec2): Vec2 |
   const t = cross(sub(q, p), other) / cross(dir, other);
   return advance(p, dir, t);
 }
+
+/**
+ * 闭线段是否相交（端点相接与共线重叠都算）。环的自交判据要的就是"闭"这一档语义：
+ * 差一点点就算漏，画出来的轮廓是破的。
+ *
+ * 这里**不引入 EPS**：调用方给的恒是真源里的整数毫米，叉积量级 4e8 远在 double 精确区内，
+ * 共线就是 cross === 0。浮点输入才需要容差判据，那属于计划 5 的环规范化。
+ */
+export function segmentsIntersect(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2): boolean {
+  const o1 = cross(sub(a2, a1), sub(b1, a1));
+  const o2 = cross(sub(a2, a1), sub(b2, a1));
+  const o3 = cross(sub(b2, b1), sub(a1, b1));
+  const o4 = cross(sub(b2, b1), sub(a2, b1));
+  // 严格相交：两条线段的两个端点各在对方两侧（0 与任何非零都"不同号"，端点落在线上会被下面兜住）
+  if (Math.sign(o1) !== Math.sign(o2) && Math.sign(o3) !== Math.sign(o4)) return true;
+  const within = (a: Vec2, b: Vec2, p: Vec2): boolean =>
+    Math.min(a.x, b.x) <= p.x &&
+    p.x <= Math.max(a.x, b.x) &&
+    Math.min(a.y, b.y) <= p.y &&
+    p.y <= Math.max(a.y, b.y);
+  // 共线：只有落进另一条线段的包围盒里才算碰上了
+  return (
+    (o1 === 0 && within(a1, a2, b1)) ||
+    (o2 === 0 && within(a1, a2, b2)) ||
+    (o3 === 0 && within(b1, b2, a1)) ||
+    (o4 === 0 && within(b1, b2, a2))
+  );
+}

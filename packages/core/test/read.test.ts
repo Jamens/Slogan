@@ -4,6 +4,7 @@ import {
   TransactionLog,
   mustExist,
   requirePoint,
+  requireStorey,
   requireWall,
   storeyCreate,
   uuidv7,
@@ -29,7 +30,7 @@ function logWithOneWall(): TransactionLog {
   return log;
 }
 
-describe('model/read 的三个断言', () => {
+describe('model/read 的四个断言', () => {
   it('mustExist 缺失时抛中文 label + id', () => {
     const log = logWithOneWall();
     expect(() => mustExist(log.document, MISSING, '楼层')).toThrow(/楼层 不存在/);
@@ -52,5 +53,14 @@ describe('model/read 的三个断言', () => {
     const log = logWithOneWall();
     const wall = log.document.byKind('wall')[0]!;
     expect(requirePoint(log.document, wall.startId, '墙起点').x).toBe(0);
+  });
+
+  it('requireStorey 对非楼层实体抛「不是楼层，是 <kind>」，缺失抛中文 label', () => {
+    const log = logWithOneWall();
+    const wall = log.document.byKind('wall')[0]!;
+    expect(() => requireStorey(log.document, wall.id)).toThrow(/不是楼层，是 wall/);
+    expect(() => requireStorey(log.document, MISSING)).toThrow(/楼层 不存在/);
+    // 正常路径：楼层实体原样返回 —— 柱高默认值就靠这一步拿到 heightMm
+    expect(requireStorey(log.document, log.document.byKind('storey')[0]!.id).heightMm).toBe(3000);
   });
 });
