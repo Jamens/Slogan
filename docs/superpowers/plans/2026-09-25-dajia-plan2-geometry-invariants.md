@@ -48,6 +48,7 @@
 - `Node >= 24`，包管理器锁定 pnpm。
 - 仓库行尾 `.gitattributes` 必须是 `* text=auto eol=lf`（已存在，勿改）。
 - 每个任务结束时 `pnpm verify` 必须全绿才允许提交。
+- **派生层与它的测试里，手写 `Vec2` 字面量一律走 `vec()`**（`geom/vec.ts` 导出的那枚构造器），不写 `{ x: …, y: … }`。理由不是观感：`geom/vec.ts` 把 `-0` 归一成 `+0`，而 `Object.is(-0, 0)` 为 `false`、vitest 的 `toEqual`/`toBe` 就用它 —— 裸字面量算出的 `-0` 会让 Task 4/5/8/10 红在符号上而不是几何上，`{ x: -a.x, y: -a.y }` 这种取负写法在水平/垂直墙上必踩。计划文本里留着的两处（Task 1 的 `perp`、Task 2 的 `awayDir`）已在代码里改掉，见 Task 1 执行回填。
 - 测试里禁止"空跑恒真"：属性测试必须 `expect(executed).toBe(numRuns)` 钉住样本量；生成器优先靠上下界构造排除非法值，不用 `filter`（计划 1 Task 9 已确立此规）。
 - **`uuidv7` 在同一毫秒内不保证单调**（`ids.ts` 的注释写明了，计划 1 的 `ids.test.ts` 还专门有一条「同毫秒不保证有序（已知边界，排序靠命令序列）」钉住它）。因此本计划的测试**禁止**用 `byKind(...).at(-1)` 或 `[1]` 取"刚建的那个实体" —— 那等于掷硬币，同一毫秒建两面墙时有约一半概率取错。取新建实体一律用 `log.affected`（`dispatch` 之后它正好是这次补丁写入的 id 集合）；要按楼层取实体就按 `storeyId` / `index` 过滤。派生层的顺序契约一律写成"**id 升序**"（也就是 `byKind` 给的顺序），不写"创建顺序"。计划 1 落地的 `properties.test.ts:227` 有此写法残留（那里不会误红，但取到的不是它以为的那面墙），Task 10 顺手改掉。
 
@@ -430,6 +431,8 @@ git commit -m "feat: 派生层浮点向量与直线求交"
 
 评审在本任务落地的代码里查出两处会往下游漏的东西，已改并提交为 `6d8ff33`。
 **本节列出的三处计划文本已被代码取代，后面九个任务按代码办，不按本文抄：**
+（同一处约定在 Task 2 也改过一次：`awayDir` 的 `{ x: -dir.x, y: -dir.y }` 字面量已换成过 `vec()`，
+所以**派生层里任何手写 `Vec2` 字面量都得走 `vec()`** —— 这条规矩归 Global Constraints，不看本节也该守。）
 
 1. **±0 归一从一处扩到全部**（裁决⑤）。本节 `perp` 那份 `{ x: -a.y, y: a.x }`（第 355 行）
    与它下面那条"用 `Object.is` 才会红"的说法都只是局部。现在 `vec.ts` 里有一个不导出的
@@ -793,7 +796,9 @@ export function endPoint(axis: WallAxis, end: WallEnd): Vec2 {
 
 /** 从该端点指向墙内部的单位方向。接头算的就是"这个端点上，墙往哪走"。 */
 export function awayDir(axis: WallAxis, end: WallEnd): Vec2 {
-  return end === 'start' ? axis.dir : { x: -axis.dir.x, y: -axis.dir.y };
+  // 走 vec() 而不是裸字面量：水平墙的 `-axis.dir.y` 给出 -0，而派生层约定不出现 -0
+  // （Task 1 执行回填第 1 条）。取负本身照旧，不做兜底。
+  return end === 'start' ? axis.dir : vec(-axis.dir.x, -axis.dir.y);
 }
 
 /**
