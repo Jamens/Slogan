@@ -149,19 +149,31 @@ describe('洞口区间与墙身分段', () => {
     const { log, wall } = oneWall({ x: 0, y: 0 }, { x: 6000, y: 0 });
     // id 必须钉死：uuidv7 同毫秒内不单调（ids.ts 的 12 位 rand_a 是随机的），
     // 拿"先建的洞 id 更小"当预言就是抛硬币 —— 这条原文照抄时三次连跑红过一次。
-    // 前 48 位是毫秒时间戳、决定字典序，给两个固定毫秒值就让 far.id < near.id 恒成立。
+    // 前 48 位是毫秒时间戳、决定字典序，给三个固定毫秒值就让 far.id < near.id < tied.id 恒成立。
     const far = addOpening(log, wall, { distanceMm: 4000, widthMm: 600, id: uuidv7(1) });
     const near = addOpening(log, wall, { distanceMm: 500, widthMm: 600, id: uuidv7(2) });
+    // 第三个洞与 near 的 fromMm **相同**：没有平距样本，tie-break 那个分支一次都走不到，
+    // 把比较号整个反转也不会红（Task 6 评审的 R10 实测 12 条全绿）。本用例只调 openingSpans，
+    // 不调 piecesFromSpans，所以两片重叠在这里是合法的夹具材料 —— 排序契约要的就是平距。
+    const tied = addOpening(log, wall, { distanceMm: 500, widthMm: 300, id: uuidv7(3) });
     // 先建的洞在远端、id 也排在前：结果顺序同时与建序和 id 升序相反，否则这条排序是空跑
     expect(far.id < near.id).toBe(true);
-    expect(openingSpans(log.document, wall).map((s) => s.openingId)).toEqual([near.id, far.id]);
+    expect(openingSpans(log.document, wall).map((s) => s.openingId)).toEqual([
+      near.id,
+      tied.id,
+      far.id,
+    ]);
   });
 
   it('洞口与宿主墙不同层：抛（真源不校验引用，派生层必须查）', () => {
     const { log, wall, storeyId } = oneWall({ x: 0, y: 0 }, { x: 3600, y: 0 });
-    addOpening(log, wall, { distanceMm: 100, widthMm: 600, storeyId: uuidv7() });
-    expect(() => openingSpans(log.document, wall)).toThrow(/两者必须同层/);
-    expect(storeyId).toBeTruthy();
+    const alien = uuidv7();
+    addOpening(log, wall, { distanceMm: 100, widthMm: 600, storeyId: alien });
+    // 消息里点名两个楼层 id 才是有用的预言：`toBeTruthy()` 那种空跑断言（Task 6 评审 F3）
+    // 对任何实现变异都恒绿。uuid 只含 hex 与 '-'，直接进正则安全。
+    expect(() => openingSpans(log.document, wall)).toThrow(
+      new RegExp(`属于楼层 ${alien}，宿主墙 .* 属于楼层 ${storeyId}：两者必须同层`),
+    );
   });
 
   it('assertSpansFit 要求入参升序：乱序直接抛，不静默漏检重叠', () => {
@@ -263,7 +275,14 @@ describe('deriveStoreyGeometry', () => {
     entities.delete(w1.id);
     entities.set(fake.id, fake);
     const bad = Document.replaceEntities(log.document, entities);
-    expect(() => deriveStoreyGeometry(bad, storey1)).toThrow(/接头不在本层/);
-    expect(storeyId).toBeTruthy();
+    // 消息点名"被派生的那一层"才算预言（Task 6 评审 F3：原来的 `expect(storeyId).toBeTruthy()`
+    // 是恒真的空跑，唯一作用是喂 noUnusedLocals）。同一个病态共享点让**两层都**少一个接头，
+    // 于是两层各抛一次、消息里的楼层号跟着变 —— 这两条一起钉住守卫打的是被派生的那一层。
+    expect(() => deriveStoreyGeometry(bad, storey1)).toThrow(
+      new RegExp(`端点接头不在本层（楼层 ${storey1}）`),
+    );
+    expect(() => deriveStoreyGeometry(bad, storeyId)).toThrow(
+      new RegExp(`端点接头不在本层（楼层 ${storeyId}）`),
+    );
   });
 });
