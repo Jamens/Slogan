@@ -16,3 +16,4 @@ export * from './model/read';
 export * from './geom/axis';
 export * from './geom/topology';
 export * from './geom/joint';
+export * from './geom/outline';
