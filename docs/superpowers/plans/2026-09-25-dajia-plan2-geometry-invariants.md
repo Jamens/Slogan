@@ -2323,6 +2323,32 @@ function lineGroups(members: readonly Member[]): Member[][] {
   return lines.map((l) => l.items);
 }
 
+/**
+ * 同一线族里出现**同向**的两个墙端 = 两条完全重叠的墙带（用户在同一个点上朝同一方向画了两笔）。
+ * `lineGroups` 按无向方向折桶，所以这种输入会落到 `collinear`（members.length === 2 时 trim 全 0），
+ * 甚至藏进 tee/cross 的"直通两墙"里 —— 分类照样给出合法的缝，图纸上却是双份材料，
+ * 而 Task 10 的 Σ 面积恒等是**逐墙**的，双份材料两边同时成立、抓不到它（执行回填第 1 条）。
+ * 所以这一层拦：非法即抛，且在分类**之前**抛，collinear / tee / cross / star 一律覆盖。
+ * 三个以上成员同线不必特判：两条射线放三个端点，鸽笼原理保证必有一对同向，逐对检查自然命中。
+ */
+function assertNoSameRay(pointId: EntityId, members: readonly Member[]): void {
+  for (const line of lineGroups(members)) {
+    for (let i = 0; i < line.length; i += 1) {
+      for (let j = i + 1; j < line.length; j += 1) {
+        const a = line[i]!;
+        const b = line[j]!;
+        if (dot(a.away, b.away) > 0) {
+          const coSame = line.filter((m) => dot(m.away, a.away) > 0).length;
+          throw new RangeError(
+            `接头 ${pointId} 有 ${coSame} 个墙端在同一点同向重叠（墙 ${a.wallId} 的 ${a.end} 端与墙 ${b.wallId} 的 ${b.end} 端朝同一方向离开该点），` +
+              `S1 不支持：请把其中一面墙挪开或删掉`,
+          );
+        }
+      }
+    }
+  }
+}
+
 function kindOf(members: readonly Member[]): JointKind {
   if (members.length === 1) return 'free';
   const lines = lineGroups(members);
@@ -2405,13 +2431,33 @@ interface Trim {
 }
 
 function trimsFor(pointId: EntityId, kind: JointKind, members: readonly Member[]): Trim[] {
-  const base: Trim[] = members.map(() => ({ left: 0, right: 0 }));
-  const at = (m: Member): number => members.indexOf(m);
+  // 一格一成员：put 直接查表，不每次写回都 members.indexOf(m) 线性找下标
+  const slots = new Map<Member, Trim>();
+  const base: Trim[] = members.map((m) => {
+    const t: Trim = { left: 0, right: 0 };
+    slots.set(m, t);
+    return t;
+  });
   const put = (m: Member, side: 1 | -1, hit: Vec2): void => {
-    const t = base[at(m)]!;
+    const t = slots.get(m)!;
     const v = trimOf(m, hit);
     if (side === 1) t.left = v;
     else t.right = v;
+  };
+  /**
+   * 平接斜切：把支墙两侧都切到直通墙朝它的那一面上，故两侧**同号**（不是 corner 的一正一负）。
+   * tee 与 cross 共用这一块。**本任务早期的文本把这两处逐字写了两遍**，而重复正是
+   * 那次假变异的产地：把 `const face` 提到 cross 的循环外、被循环内的块级声明遮蔽，
+   * 实现等价、18 条全绿（见 Step 5 变异 4 与执行回填第 2 条）。抽成单一实现后
+   * face 只有一个产地，"提到循环外"这种遮蔽写法在结构上不再存在。
+   * face 逐支墙算：两支墙分居直通墙两侧时共用一个 face 会把其中一支切到**背面**去
+   * （trim 变负，轮廓穿过横带、与直通墙重叠）。
+   */
+  const putFlatJoin = (stem: Member, through: Member): void => {
+    const face = faceSide(through, stem);
+    for (const side of [1, -1] as const) {
+      put(stem, side, sideVertex(stem, side, through, face));
+    }
   };
 
   switch (kind) {
@@ -2436,10 +2482,8 @@ function trimsFor(pointId: EntityId, kind: JointKind, members: readonly Member[]
       const through = lines.find((l) => l.length === 2)!;
       const stem = lines.find((l) => l.length === 1)![0]!;
       requireEqualThrough(pointId, through);
-      const face = faceSide(through[0]!, stem);
-      for (const side of [1, -1] as const) {
-        put(stem, side, sideVertex(stem, side, through[0]!, face));
-      }
+      // 直通两墙同轴同厚，它们的 face 侧面是同一条物理直线，故取 through[0] 与顺序无关
+      putFlatJoin(stem, through[0]!);
       return base;
     }
     case 'cross': {
@@ -2447,16 +2491,12 @@ function trimsFor(pointId: EntityId, kind: JointKind, members: readonly Member[]
       const [l1, l2] = [lines[0]!, lines[1]!];
       const through = lineAngle(l1[0]!.dir) <= lineAngle(l2[0]!.dir) ? l1 : l2;
       const stemLine = through === l1 ? l2 : l1;
+      // 只要求**真直通那一族**同厚。两支臂被直通带隔开、彼此从不同时接触，
+      // 支族异厚画出的是"带台阶的平接"（北臂切到 y=1120、南臂切到 y=880，无缝无重叠），
+      // 是合法图纸 —— 本行原来还有一句 requireEqualThrough(pointId, stemLine)，
+      // 那是过拒，评审后删掉，见 Task 4 执行回填第 3 条。
       requireEqualThrough(pointId, through);
-      requireEqualThrough(pointId, stemLine);
-      for (const stem of stemLine) {
-        // face 必须逐支墙算：两支墙分居直通墙的两侧，共用一个 face 会把其中一支
-        // 切到直通墙的**背面**去（trim 变负，轮廓穿过横带、与直通墙重叠）。
-        const face = faceSide(through[0]!, stem);
-        for (const side of [1, -1] as const) {
-          put(stem, side, sideVertex(stem, side, through[0]!, face));
-        }
-      }
+      for (const stem of stemLine) putFlatJoin(stem, through[0]!);
       return base;
     }
     case 'star':
@@ -2470,8 +2510,11 @@ function trimsFor(pointId: EntityId, kind: JointKind, members: readonly Member[]
 /**
  * 轮廓翻面守卫：同一侧的两端角点不能越过彼此，否则四边形自相交，
  * 图纸上就是一个蝴蝶结。夹角极小时斜切量会爆（cot(θ/2) → ∞），这里兜住。
+ *
+ * 轴长吃 `deriveJoints` 已经算好的那张 axis 表，不回查文档（原文是 `wallAxisById`，
+ * 见执行回填第 6 条：那顺手做的楼层存在性检查本来就归 `model/read` 与命令层管）。
  */
-function assertNoFlip(doc: Document, joints: readonly Joint[]): void {
+function assertNoFlip(axes: ReadonlyMap<EntityId, WallAxis>, joints: readonly Joint[]): void {
   const ends = new Map<EntityId, Partial<Record<WallEnd, JointMember>>>();
   for (const joint of joints) {
     for (const m of joint.members) {
@@ -2484,9 +2527,12 @@ function assertNoFlip(doc: Document, joints: readonly Joint[]): void {
     const start = slot.start;
     const end = slot.end;
     if (!start || !end) throw new RangeError(`墙 ${wallId} 的接头成员不齐（内部错误）`);
-    const axis = wallAxisById(doc, wallId);
+    // 不可达：axes 与 ends 的键都来自同一个 doc.byKind('wall') 循环，按构造必然命中
+    const axis = axes.get(wallId)!;
     for (const side of ['trimLeftMm', 'trimRightMm'] as const) {
       const sum = start[side] + end[side];
+      // 用 >= 而不是 >：合计恰好等于轴长时该侧两端角点重合在同一点，四边形退化成一条线 ——
+      // 与越过彼此同样画不出轮廓，所以"等于"这一合法边界是**故意**非法的，别改成 >
       if (sum >= axis.lengthMm) {
         throw new RangeError(
           `墙 ${wallId} 在 ${side === 'trimLeftMm' ? '+normal' : '-normal'} 侧的两端斜切量合计 ${Math.round(sum)} ` +
@@ -2504,8 +2550,12 @@ function assertNoFlip(doc: Document, joints: readonly Joint[]): void {
  */
 export function deriveJoints(doc: Document): Joint[] {
   const groups = new Map<EntityId, Member[]>();
+  // 顺手攒一张 axis 表给 assertNoFlip：它原来用 wallAxisById 回查文档，那是把同一面墙
+  // 再派生一遍，还要顺带做楼层存在性检查 —— 一个几何守卫没资格判"这份文档的引用完不完整"
+  const axes = new Map<EntityId, WallAxis>();
   for (const wall of doc.byKind('wall')) {
     const axis = wallAxis(doc, wall);
+    axes.set(wall.id, axis);
     for (const end of ['start', 'end'] as const) {
       const pointId = endPointId(wall, end);
       const list = groups.get(pointId);
@@ -2517,6 +2567,8 @@ export function deriveJoints(doc: Document): Joint[] {
   const joints: Joint[] = [...groups.entries()]
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([pointId, members]) => {
+      // 先拦同向重叠，再分类：见 assertNoSameRay 的注释（collinear / tee / cross 一律覆盖）
+      assertNoSameRay(pointId, members);
       const kind = kindOf(members);
       const trims = trimsFor(pointId, kind, members);
       return {
@@ -2570,10 +2622,11 @@ Expected: `joint.test.ts` 18 passed（分组 3 + 等厚直角 3 + 同向起画 2
 1. `kindOf` 里把 `lineGroups(members).length === 1` 判据删掉（即 collinear 也当 corner 处理）→ Expected: 「共线直通给 collinear」红。
 2. corner 分支退回"同侧配对"：把 `const sb = innerSide(b, a)` 改成 `const sb = sa`（两墙都取自己的第 `sa` 条边线）→ Expected: 「start-start：接缝是另一条对角」与「end-end：同一个物理直角反过来画」两条红，而等厚直角的三条与「60° 异厚」**全绿**。那四条都是 start/end 混合角，同侧配对在那里恰好也对 —— 这个对照就是要写进执行日志的结论：**只测混合角，等于没测这条规则**。
 3. tee 分支里 `faceSide` 恒定返回 `1` → Expected: 「支墙朝南时切到南面」红，而「支墙两个角点都落在直通墙的北面上」仍绿。正因为有朝南那一条，"面朝支墙"这个判据才不是恒真。
-4. cross 分支把 `const face = faceSide(through[0]!, stem)` 提到 `for (const stem …)` 外面、只按 `stemLine[0]` 算一次 → Expected: 「十字：方向角更小的那族当直通」红（必有一支臂被切到直通墙的背面，trim 变 -120）。红的是北臂还是南臂取决于 uuidv7 的排序，**这种"红哪条看运气"就是实现读了成员顺序的警报**，执行日志里要写清楚。
+4. cross 分支把 face 改成"整族共用一个"（落地后的形状里就是 `putFlatJoin(stem, through[0]!)` 之外再传一个预先算好的 face）→ Expected: 「十字」红（必有一支臂被切到直通墙的背面，trim 变 -120）。**这条变异原本不是这样写的**：原文是"把 `const face = faceSide(through[0]!, stem)` 提到 `for (const stem …)` 外面"，而 tee 与 cross 当时是两块逐字重复的代码，`for` 块内还留着一个块级 `const face` 把提上去的值**遮蔽**掉 ⇒ 实现一字未变、18 条全绿。那是一个假变异被误记成测试有漏洞，详见执行回填第 2 条与 Global Constraints 的「变异检查的仪式」。红哪条臂仍取决于 uuidv7 排序，**这种"红哪条看运气"就是实现读了成员顺序的警报**，执行日志里要写清楚。
 5. 删掉 `assertNoFlip` 调用 → Expected: 「夹角小到轮廓翻面」红。
-6. `requireEqualThrough` 直接 return → Expected: 「直通两墙厚度不同」红。
+6. `requireEqualThrough` 直接 return → Expected: 「直通两墙厚度不同」红。注意它现在只管**直通那一族**：cross 的两支臂异厚是合法图纸（带台阶的平接），那条过拒的支族检查已删，反证是「十字」用例里北臂 400 / 南臂 120 那一组数值。
 7. `innerSide` 恒定返回 `1` → Expected: 与 2 同一组红（start-start、end-end 两条），其余 corner 用例全绿 —— 因为其余 fixture 的两墙内侧本来就都是 `+normal` 侧。这跟 2 红得一样不是巧合：`sa = sb = 1` 就是"同侧配对"本身。两处变异一起写进日志，用来说明**旧有四条 corner 用例对"配对规则"的覆盖是零**。
+8. `assertNoSameRay` 的调用注释掉 → Expected: 只有钉同向重叠那一例红（落地是「共线直通给 collinear」里折进去的三组夹具）。**别把比较号 `> 0` 改成 `> 0.5` 当变异**：桶内两成员是同向或反向的单位向量，dot 恒为 ±1，那是个**等价变异**，按构造必绿（执行回填第 4 条）。要动就翻极性成 `< 0`：那是"拒绝合法的反向直通"，Expected: collinear + tee 三条 + 厚度不同 + 十字 共六条红。
 
 每处改完还原，`git diff` 必须为空。
 
@@ -2589,6 +2642,23 @@ git commit -m "feat: 墙接头分类与斜切量派生"
 ② start-start / end-end 两条同向起画的用例，是不是本任务里唯一能区分"内侧配对"与"同侧配对"的东西 —— 是的话把这条结论留在日志里，后面谁想把 `innerSide` 换回 `side` 都会撞上它。
 
 **留给后续任务的钩子**：Task 5 的 `deriveStoreyGeometry` 每个墙端调一次 `memberTrim`；十字接头按本任务的规则是"一族方头、一族切到面线"，图纸上不会出现重叠块 —— 计划 3 的 2D 视图无需为此特判。
+
+#### Task 4 执行回填（2026-09-26，评审 + 修复轮 1 后裁决；本任务的权威文本是代码 `0e83570`，不是上面那几段 fence）
+
+落地的东西与上面的文本有九处不同。前六处是计划文本自己的错，后三处是执行时才看清的性质。每一条都在代码里验过，照抄 fence 会把它们抹掉：
+
+1. **同向共线的重叠墙，分类表会静默放过**（Critical，评审 F1）。文本的 `kindOf` 把 `lines.length === 1` 一律判 `collinear`、trim 全 0，而 `lineGroups` 按**无向**方向折桶 —— 同一个点上两堵墙朝**同一射线**出去，落进同一个桶，于是"合法直通"，图纸上是两条完全压在一起的墙带。契约里的 `collinear` 说的是**反向**共线拼成一条连续带，同向是另一回事。落地新增 `assertNoSameRay`：**组内逐对** `dot(a.away, b.away) > 0` 即抛，且跑在 `kindOf` **之前**，所以 collinear / tee / cross / star 一律覆盖（同向那一对还能藏进 tee 的"直通两墙"里，落地测试专门造了这一例）。
+   三处不可达的判据顺手补了注释，但**别把 `sideVertex` 那条当死代码删**，理由见第 7 条。
+2. **tee 与 cross 两块"平接斜切"在文本里逐字重复**，而重复是一起执行事故的产地：变异 4 第一次跑是**假绿** —— 把 `const face` 提到 `for` 外，块内那个块级 `const face` 把它遮蔽掉了，实现一字未变。落地抽成 `putFlatJoin(stem, through)`，face 只有一个产地，"提到循环外"这种遮蔽写法在结构上不再存在；重做的变异（把 face 当参数传进去、cross 只按 `stemLine[0]` 算一次）确实红了「十字」。规约升进 Global Constraints 的「变异检查的仪式」。
+3. **`cross` 要求支族两臂同厚是过拒**（评审 F3）。两支臂被直通带隔开、从不同时接触，各自平接到自己那一面，异厚画出的是"带台阶的平接"（北臂切到 y=1120、南臂切到 y=880，无缝无重叠），是合法图纸。落地删掉 `requireEqualThrough(pointId, stemLine)`，直通族那条保留。反证折进「十字」用例：北臂 400 / 南臂 120，断言两支各自 `trim = [120, 120]`（平接量只由直通墙半厚决定，与支臂自己的厚度无关）、两角点同在一条面线上、`|x − 1000|` 等于**自己**的半厚。把那条删掉的检查加回去，恰好红这一例，报错文案是「直通两墙厚度不同（120 / 400）」—— 说的并不是这一对墙。
+4. **等价变异要认出来**：把 `> 0` 改成 `> 0.5` 不是变异。桶内两成员要么同向要么反向，`dot` 恒为 ±1，改阈值什么都改不了，按构造必绿。这类"改了只是不一样"的靶子在本任务出现了一次，规约在 Global Constraints 与 Task 9 变异表处各立过一回。要动这条判据就翻极性成 `< 0`（拒绝合法的反向直通）：落地实测红六条（collinear + tee 三条 + 厚度不同 + 十字）。
+5. **star 那条用例的夹具在文本里不成立**（同 Task 3 第 6 条那个"看起来对"的坐标）。第一臂 `{x: 2000, y: 0}` 与 A 的轴线**共线**，那个点只有两条方向线、三个墙端 ⇒ 分类是合法 `tee`，`toThrow(/star/)` 永远打不到 star 分支。落地把两臂改成 `(2000, 900)` 与 `(1000, 900)`，三条真方向线，`kindOf` 才落到 star。**Task 10 若复用那段"三臂"坐标，一并核**。
+6. **`assertNoFlip` 不再回查文档**（评审 F7）。文本用 `wallAxisById(doc, wallId)` 取轴长，那是把同一面墙再派生一遍，还要顺带做楼层存在性检查 —— 一个几何守卫没资格判"这份文档的引用完不完整"。落地改吃 `deriveJoints` 顺手攒的 axis 表。**附带的行为差异要说清**：`deriveJoints` 从此不再对"墙指向已删楼层"抛「楼层 不存在」。评审核过不可达：`commands/storey.ts` 只导出 `storeyCreate`（没有删楼层的命令），而 `wallCreate.build` 第一行就查楼层，任何命令序列（含撤销/重做）都造不出那种文档，只有手搓 `Patch.remove` 能；且那项检查原本就跑在所有几何之后。
+7. **贪心分桶让"近平行"与"精确平行"分家**。`lineGroups` 只与桶代表元比 `isParallel`，"平行"在桶里不传递 ⇒ 一对夹角小于 `PARALLEL_EPS` 的近重合方向可能被拆进**两个**桶。后果有两条：① 第 1 条那个同向判据只在桶内逐对比，看不见被拆开的近同向对 —— 但那种输入会被当成一个极小的 corner 交给 `sideVertex`，在那里抛「近平行」，或把 trim 爆到 1e8 量级由 `assertNoFlip` 拦下，**不存在静默窗口**（翻面判据的作用域约 (h_a+h_b)/L ≈ 8.6e-4 rad，比 1e-9 那个带宽六个数量级）；② 所以 `sideVertex` 那条抛错**不是死代码**，`faceSide` / `innerSide` 那两条要的是 `facing === 0` 即**精确**平行，而精确平行必同桶，那两条才真的不可达。三条注释的措辞按这个区分写。
+8. **一元负号在 TS7 下过不了类型**：文本的 `put(a, -sa, b, -sb)` 把 `1 | -1` 展宽成 `number` ⇒ 三处 `TS2345`。落地用私有的 `otherSide(side: 1 | -1): 1 | -1`（与 `axis.ts` 的 `otherEnd` 同款），语义与变异 2 / 7 的语义都不受影响。
+9. **两处 `noUnusedLocals` 与一处空跑断言**：文本的两个解构里 `sharedId` 取了不读（`TS6133` 是编译错误）；`expect(sharedId).toBeTruthy()` 是 Global Constraints 明令禁止的空跑断言，换成三条有鉴别力的（该点在接头表里的 kind 确为 `corner`、全图唯一的非 free、接头总数 3），并把"组内成员按墙 id 升序、同墙 start 先于 end"这条**顺序契约**并进同一条用例钉住（Task 5 要按它铺轮廓顶点）。
+
+**执行日志**：`joint.test.ts` **18** 条（分组 3 + 等厚直角 3 + 同向起画 2 + 斜角异厚 2 + tee 4 + cross/star 2 + 确定性 2），`pnpm verify` = 138 + 18 = **156 passed**（15 files，0 失败，441ms）。实现 `6f06ea7` + `9b31c39`；评审判定 Spec ✅ / 质量不过（1 Critical + 2 Important + 3 Minor）；修复轮 1 = `0e83570`，逐条复审 **六项全部 ADDRESSED、无新增 Critical/Important**；复审揪出的两处注释级错误（第 1、7 条里的量级论证写反了分子分母）由控制方就地改在 `8fda192`（不动行为、不动条数）。变异八处逐个红、逐个还原（`git diff` 归零），其中第 4 条的原始写法是一次假变异 —— 它留在文本里作为反面教材，别再照抄。
 
 ---
 
