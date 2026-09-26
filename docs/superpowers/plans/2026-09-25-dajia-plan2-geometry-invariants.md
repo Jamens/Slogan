@@ -48,7 +48,7 @@
 - `Node >= 24`，包管理器锁定 pnpm。
 - 仓库行尾 `.gitattributes` 必须是 `* text=auto eol=lf`（已存在，勿改）。
 - 每个任务结束时 `pnpm verify` 必须全绿才允许提交。
-- **派生层与它的测试里，手写 `Vec2` 字面量一律走 `vec()`**（`geom/vec.ts` 导出的那枚构造器），不写 `{ x: …, y: … }`。理由不是观感：`geom/vec.ts` 把 `-0` 归一成 `+0`，而 `Object.is(-0, 0)` 为 `false`、vitest 的 `toEqual`/`toBe` 就用它 —— 裸字面量算出的 `-0` 会让 Task 4/5/8/10 红在符号上而不是几何上，`{ x: -a.x, y: -a.y }` 这种取负写法在水平/垂直墙上必踩。计划文本里留着的两处（Task 1 的 `perp`、Task 2 的 `awayDir`）已在代码里改掉，见 Task 1 执行回填。
+- **派生层与它的测试里，算出来的 `Vec2` 一律走 `vec()` 拼装**（`geom/vec.ts` 导出的那枚构造器），不写 `{ x: …, y: … }`。理由不是观感：`geom/vec.ts` 把 `-0` 归一成 `+0`，而 `Object.is(-0, 0)` 为 `false`、vitest 的 `toEqual`/`toBe` 就用它 —— 裸字面量算出的 `-0` 会让 Task 4/5/8/10 红在符号上而不是几何上，`{ x: -a.x, y: -a.y }` 这种取负写法在水平/垂直墙上必踩。**范围只到"分量是算出来的"那一类**（取负、相减、缩放之后拼装），两类不算违例：① 纯整数常量夹具（`vec(0, 0)` 与 `{ x: 0, y: 0 }` 谁都造不出 `-0`，按可读性选）；② 测试里**故意**喂 `-0` 的用例 —— Task 1 那几条 ±0 用例正是靠裸 `{ x: -0, … }` 才能把一个 `-0` 送进构造器，写成 `vec(-0, …)` 等于把要验的东西先归一掉，那条测试就空跑了。计划文本里留着的两处（Task 1 的 `perp`、Task 2 的 `awayDir`）已在代码里改掉，见 Task 1 执行回填。
 - 测试里禁止"空跑恒真"：属性测试必须 `expect(executed).toBe(numRuns)` 钉住样本量；生成器优先靠上下界构造排除非法值，不用 `filter`（计划 1 Task 9 已确立此规）。
 - **`uuidv7` 在同一毫秒内不保证单调**（`ids.ts` 的注释写明了，计划 1 的 `ids.test.ts` 还专门有一条「同毫秒不保证有序（已知边界，排序靠命令序列）」钉住它）。因此本计划的测试**禁止**用 `byKind(...).at(-1)` 或 `[1]` 取"刚建的那个实体" —— 那等于掷硬币，同一毫秒建两面墙时有约一半概率取错。取新建实体一律用 `log.affected`（`dispatch` 之后它正好是这次补丁写入的 id 集合）；要按楼层取实体就按 `storeyId` / `index` 过滤。派生层的顺序契约一律写成"**id 升序**"（也就是 `byKind` 给的顺序），不写"创建顺序"。计划 1 落地的 `properties.test.ts:227` 有此写法残留（那里不会误红，但取到的不是它以为的那面墙），Task 10 顺手改掉。
 
@@ -728,6 +728,7 @@ export function requirePoint(doc: Document, id: EntityId, label: string): PointE
 
 ```ts
 import type { EntityId } from '../ids';
+import type { Mm } from '../units/mm';
 import type { Document } from '../model/document';
 import { mustExist, requirePoint, requireWall } from '../model/read';
 import type { WallEntity } from '../model/entity';
@@ -749,7 +750,7 @@ export interface WallAxis {
   /** perp(dir)：逆时针 90°，墙的左侧 */
   readonly normal: Vec2;
   readonly lengthMm: number;
-  readonly thicknessMm: number;
+  readonly thicknessMm: Mm;
 }
 
 export function wallAxis(doc: Document, wall: WallEntity): WallAxis {
@@ -8022,6 +8023,16 @@ Expected：本文件 13 passed；`pnpm verify` = Task 9 的 256 + 13 = **269 pas
 1. `NUM_RUNS_OPS` 80 → 50（连带把测试 13 那句概率下界改成 2⁻⁵⁰）；
 2. `NUM_RUNS_INDEX` 40 → 25；
 3. **不动 `NUM_RUNS_LIGHT`** —— 那 200 次是测试 3/4/12 的样本量，砍它等于砍覆盖，而它们恰恰是最便宜的（只画链、不跑序列）。
+
+**降一档要连带动哪些下界**（先对这张表再改常数；只改常数就以为完事了，留下的是一笔过期的账）：
+
+| 常数 | 写成符号的下界（改常数自动跟着走，别手改） | 写成字面量的（必须同批改，否则绿的是过期数字） |
+| --- | --- | --- |
+| `NUM_RUNS_OPS` = 80 | 序列类那五条 `byKind.* > 0` 与四条 `probes.* > 0`（只要求"跑到过"，≥1 轮就成立）；`total.clamps > 0`；`expect(replays).toBeGreaterThanOrEqual(NUM_RUNS_OPS * 7)` | ①「80 次 × 平均 12 步 = 960 步里一次都不落到某个 kind，约 (5/6)^960 ≈ 1e-78」那句注释 —— 12 是 `arbChainOps` 的 `minLength: 6, maxLength: 18` 的均值，6 种 kind 由 `fc.constantFrom` 等概率取 ⇒ 降 50 就把 960 改成 600、把 1e-78 重算一遍；②测试 13 的 2⁻⁸⁰（同一段散文里那句"80 轮全走同一边"），降到 50 就是 2⁻⁵⁰ |
+| `NUM_RUNS_INDEX` = 40 | `index.compared / empty / partial / pruned / hits` 五条 `> 0` | 无 —— 所以这一档最便宜，改完不用回头看 |
+| `NUM_RUNS_LIGHT` = 200 | `expect(runs).toBe(NUM_RUNS_LIGHT)`（等号哨兵，证明这轮真跑满了）；`entries >= 2 * NUM_RUNS_LIGHT`；两处 `quads >= 2 * NUM_RUNS_LIGHT` | 无 —— 真降它时红只会来自"200 轮里每链至少 2 段"这个前提不够密，不来自过期字面量，这正是第 3 条不许动它的代价对照 |
+
+顺带把 `960` 这笔账钉死在这里，免得下一个人以为它是实测步数：它是 **期望值**（80 × 12），实际总步数落在 80 × 6 = 480 与 80 × 18 = 1440 之间。注释用期望值算概率下界是保守方向 —— 步数越少、"(5/6)^步数"越大、"一次都没落到某个 kind"的概率上界越高，所以 480 步时仍有 (5/6)^480 ≈ 1e-39，结论不变。
 
 如果红在某个 Counterexample 上，先读收缩后的最小反例再判断归属：消息是 `assertPremises` / `assertChainBounds` 那几条中文（带实测数字）的，是**前提破了**，改生成器或改界，不许改断言；消息是 `expect` 的期望值不符的，是 `src/` 缺陷，按 Global Constraints 那条走"改实现、记执行日志"。
 
