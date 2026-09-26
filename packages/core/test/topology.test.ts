@@ -119,7 +119,10 @@ describe('PointRef 与 resolvePointRef', () => {
     log.dispatch(storeyCreate({ projectId, index: 1, elevationMm: 3000, heightMm: 3000 }));
     const s1 = storeyByIndex(log, 1);
     expect(s1).not.toBe(s0);
-    // 手工造一个属于楼层 1 的点：opening/column 的命令还没实现，点也不能凭空长出来
+    // 手工造一个属于楼层 1 的点：只为把"异层的点"单独摆出来给 resolvePointRef 判。
+    // 注意"点不能凭空长出来"这说法到 Task 3 之后已经不成立：wallCreate({ storeyId: s1, … })
+    // 就会在楼层 1 上长出点，所以这条跨层拒绝完全能从真 dispatch 里投出来。
+    // 真正留给 Task 10 的是**两层墙网**的整合（两层各有一张互相引用的网），不是这条守卫。
     const p: PointEntity = { kind: 'point', id: uuidv7(), storeyId: s1, x: 800, y: 800 };
     const doc = Document.replaceEntities(
       log.document,
@@ -254,9 +257,10 @@ describe('dependentsOf', () => {
     expect(dependentsOf(x.doc, x.first.id)).toEqual([x.openingId]);
   });
 
-  it('楼层 → 该层墙与洞口（Task 8 的 storey.setElevation 靠它找下游）', () => {
+  it('楼层 → 该层全部构件（墙/洞口/柱/板）', () => {
     const x = docWithEverything();
-    // 楼层的下游是该层全部构件：柱与板也挂着 storeyId，漏了它们 Task 8 就漏算下游
+    // 楼层的下游是该层全部构件：柱与板也挂着 storeyId，漏了它们 Task 8 的
+    // storey.setElevation 就漏算下游
     expect(new Set(dependentsOf(x.doc, storey0(x.log)))).toEqual(
       new Set([
         ...x.doc.byKind('wall').map((w) => w.id),

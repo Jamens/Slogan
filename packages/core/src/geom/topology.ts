@@ -84,6 +84,11 @@ export function sharedPointIds(doc: Document): EntityId[] {
  * 闭包（迭代到不动点）是调用方的事 —— Task 9 的局部重建要的是"点脏 → 墙脏 → 墙上洞口也脏"，
  * 在这一层里塞递归会让本函数没法单测。
  * 计划 1 的 `wallDelete.stillReferenced` 是它的特例（"还有没有人引用，有则不许删点"）。
+ *
+ * 返回顺序 = 下面各个 for 循环的书写顺序（Set 的插入序），且每一类内部按 id 升序：
+ * 点 → 墙 → 柱 → 板；墙 → 洞口；楼层 → 墙 → 洞口 → 柱 → 板。
+ * `incidentWallEnds` 与 `sharedPointIds` 已各自写明顺序，这里同样写明：Task 9 的重建闭包
+ * 会把它拼进日志，顺序不明就等于日志不可比对（id 升序来自 doc.byKind，不是创建顺序）。
  */
 export function dependentsOf(doc: Document, id: EntityId): EntityId[] {
   const entity = mustExist(doc, id, '实体');
