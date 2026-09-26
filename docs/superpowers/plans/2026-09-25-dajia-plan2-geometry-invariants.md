@@ -2713,8 +2713,13 @@ function build(
   return log;
 }
 
-/** 以 {pointId} 复用端点追加一面墙，返回新墙 id。 */
-function append(log: TransactionLog, startId: string, end: { x: number; y: number }, thicknessMm: number) {
+/**
+ * 以 {pointId} 复用端点追加一面墙，返回新墙 id。
+ * 取新墙靠 affected，不靠 byKind 下标（同毫秒 uuidv7 不保证单调，见 Global Constraints）。
+ * Task 5 回填：本 helper 原缺 `: string`，而 tee/obliqueL 两处按 `stem.wallId` / `b.wallId`
+ * 读它 —— 与 lCorner 当 id 用自相矛盾，照抄会撞 TS2339。三处已统一成"返回 id"。
+ */
+function append(log: TransactionLog, startId: string, end: { x: number; y: number }, thicknessMm: number): string {
   const storeyId = log.document.byKind('storey')[0]!.id;
   log.dispatch(
     wallCreate({ storeyId, start: { pointId: startId }, end, thicknessMm, heightMm: 3000 }),
@@ -2744,7 +2749,7 @@ function tee() {
   const hub = log.document.byKind('wall')[0]!.endId;
   append(log, hub, { x: 2000, y: 0 }, 240);
   const stem = append(log, hub, { x: 1000, y: 800 }, 120);
-  return { log, hub, stem: stem.wallId };
+  return { log, hub, stem };
 }
 
 /** 十字：四臂皆终于 P(1000,1000)，全厚 240。 */
@@ -2768,7 +2773,7 @@ function obliqueL() {
   const log = build([{ start: { x: -2000, y: 0 }, end: { x: 0, y: 0 }, thicknessMm: 370 }]);
   const a = log.document.byKind('wall')[0]!;
   const b = append(log, a.endId, { x: -1000, y: 1732 }, 200);
-  return { log, a: a.id, b: b.wallId };
+  return { log, a: a.id, b };
 }
 
 /** 严格凸：四个叉积同号，共线角（叉积为 0）也算不合格。 */
@@ -2951,7 +2956,7 @@ describe('派生入口的契约', () => {
 pnpm vitest run packages/core/test/outline.test.ts 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | tail -15
 ```
 
-Expected: FAIL，`does not provide an export named 'deriveWallQuads'`（`wallQuad` / `polygonArea` 同理）。
+Expected: FAIL，**13 条全红**（Task 5 回填：原写"`does not provide an export named 'deriveWallQuads'`"是错的期望）。实测报的是运行期 `TypeError: polygonArea is not a function` 与 `deriveWallQuads is not a function or its return value is not iterable` —— 测试经 `@dajia/core` 这个 barrel 拿到的是值为 `undefined` 的具名导出，esbuild 转译后不在链接期抛 `SyntaxError`。**RED 的实质成立**（新 API 一个都不存在、13/13 红），只是失败的消息形态与这里写的不一样；以后写"红在导出不存在"这类期望时按这条的实际形态记。
 
 - [ ] **Step 3: 实现 `geom/outline.ts`**
 
@@ -3034,11 +3039,16 @@ Expected: `outline.test.ts` 13 passed（polygonArea 2 + 孤墙与斜墙 3 + 接�
 
 - [ ] **Step 5: 变异检查（防"测试考的是空气"）**
 
-1. `wallQuad` 里第 4 个角点把 `startTrim.trimRightMm` 写成 `startTrim.trimLeftMm`（左右两侧串味）→ Expected: 「直角 L：两墙共用同一条接缝边」红，「T 接：支墙轮廓止于直通墙面线」红（tee 两侧同号所以不红 —— 正是这对照说明两条测试盯的是不同的错）。
-2. 把环序改成 `[c0, c2, c1, c3]`（角点错序）→ Expected: 「四个 fixture 的 11 面墙轮廓全部严格凸」红，且面积类用例跟着红。
-3. `polygonArea` 去掉 `Math.abs` → Expected: 「凸多边形恒正，且与顶点起点无关」红（逆序环给负），「孤墙」红（本环序是顺时针）。
-4. `deriveWallQuads` 的 `joints ?? deriveJoints(doc)` 改成 `joints ?? []` → Expected: 所有走默认路径的用例红在 `/找不到/`，证明默认参数真的在派生接头，而不是拿空表兜底假装平接。
-5. 把 `memberTrim(table, wall.id, 'start')` 与 `'end'` 互换 → Expected: 「直角 L」两条红、「T 接」红。
+1. `wallQuad` 里第 4 个角点把 `startTrim.trimRightMm` 写成 `startTrim.trimLeftMm`（左右两侧串味）→ **实测红 3**：「直角 L 共边」「直角 L 面积」「60° 异厚 L」；「T 接」绿（支墙 `trimLeft === trimRight`，对它是数学 no-op）。原预言把「T 接」写成红、又在同一句括号里说不红 —— 括号对，主句错。
+2. 把环序改成 `[c0, c2, c1, c3]`（角点错序）→ **实测红 8**（凸性 + 面积类 + 共边一起红），覆盖面比原预言（只点名凸性与"面积类跟着红"）大得多。
+3. `polygonArea` 去掉 `Math.abs` → **实测红 7**（原预言只点名 2 条：「凸多边形恒正」「孤墙」）。同样失明于覆盖面。
+4. `deriveWallQuads` 的 `joints ?? deriveJoints(doc)` 改成 `joints ?? []` → **实测红 10，绿 3**。绿的 3 条 = `polygonArea` 两条 + 「墙指向不存在的点」。原预言"所有走默认路径的用例红"过头了一条，因为**那条用例断的错根本不出自轮廓派生**：见下面 M4 的机制说明。
+5. 把 `memberTrim(table, wall.id, 'start')` 与 `'end'` 互换 → **实测红 2**：「直角 L 共边」「T 接」；「直角 L 面积」绿。原预言"直角 L 两条红"错。
+6. （Task 5 回填补的两条对照，简报没有）**M6** 四角 `trimLeftMm`/`trimRightMm` 整体对调 → 只红 1 条（「直角 L 共边」）；**M7** 环序轮转 `[c1,c2,c3,c0]`（面积、凸性全不变）→ 红 3 条（孤墙、直角 L、T 接）。M7 是"环序契约不止是注释"的证据，M6 是下面 Σ 面积盲区的证据。
+
+**M4 为什么有一条仍绿（别再归因成"outline.ts 的 wallAxis 先抛"）**：未变异时 `outline.ts` 的 `deriveWallQuads` 在 `.map()` **之前**就跑了 `deriveJoints(doc)`，而 `joint.ts` 的派生循环里也调 `wallAxis` —— 所以「墙指向不存在的点」那条断到的 `墙终点 不存在` 出自 `joint.ts`；施加 M4 后 `deriveJoints` 不再跑，抛点才落到 `outline.ts` 自己的 `wallAxis`。**同一条中文消息，两个产地**，所以"仍绿"的判定对，机制描述要写对。
+
+**Σ 面积盲区（Task 5 最重要的测试学结论，Task 10 必读）**：`wallQuad` 四角展开后鞋带给出 `Area = 墙厚 × (轴长 − Σt/2)`，`Σt = tL_start + tL_end + tR_start + tR_end` —— 任何**保和的重排**（start↔end、left↔right）面积逐字不变，凸性也看不见（梯形仍凸）。M5/M6 实测印证：只有**位置化的角点 `toEqual`** 能看见侧别/端别错配，而今天全仓库这样的钉子只有三条（`outline.test.ts` 的孤墙、直角 L、T 接），且全部建立在轴对齐整数坐标上。结论：Task 10 的 Σ 面积属性**永远**抓不到侧别错配，那条按侧比对闭式解的预言不可删、不可"简化成比面积"（另见 Task 4 执行回填里 `innerSide` 的同一段论证）。
 
 每处改完还原，`git diff` 必须为空。
 
@@ -3049,9 +3059,36 @@ git add packages/core/src/geom/outline.ts packages/core/test/outline.test.ts pac
 git commit -m "feat: 墙轮廓四角与面积派生"
 ```
 
-执行日志写在这里：13 条的实际结果、五处变异各红了哪些用例、以及"斜切保面积"这条在 60° 异厚角上是否真的与 `轴长 × 墙厚` 吻合（`toBeCloseTo(…, 6)` 通过即可，别只看绿不看数）。
+#### Task 5 执行回填（2026-09-26，评审后）
 
-**留给后续任务的钩子**：`deriveStoreyGeometry` 在 Task 6 补进本文件 —— 它要同时消费轮廓、接头与洞口分段，早一步写就得留空字段。
+交付：`packages/core/src/geom/outline.ts`（新建 57 行）、`packages/core/test/outline.test.ts`（新建 271 行 / 13 条）、`src/index.ts` +1 行导出。提交 `2050fc5`，只含这三个文件；`pnpm verify` = **169 passed / 16 files**（156 + 13），控制器与评审各自复跑确认。
+
+**13 条的实际结果**：RED 阶段 13/13 红（新 API 一个都不存在），GREEN 阶段 13/13 绿。用例分布与简报预期逐条一致：`polygonArea` 2 + 孤墙与斜墙 3 + 接头处的轮廓 5 + 派生入口的契约 3。四个 fixture 全在本文件内、未从 `joint.test.ts` import 任何东西（改坏只红一个文件）；11 面墙严格凸那条写死 `checked === 11`，无空跑。
+
+**"斜切保面积"在 60° 异厚角上到底成不成立**（这条必须写实数，不能只记"绿了"）：临时 `console.log` 取到的实测是 —— 厚墙 A（轴长恰 2000、厚 370）`areaMm2 = 740000` 与 `轴长 × 墙厚` **逐位相同**（差 0）；薄墙 B（轴长 `hypot(1000,1732)` = 1999.9559…、厚 200）`399991.1999031978` 对闭式 `399991.19990319794`，差 `-1.16e-10` mm²、相对误差 ≈3e-16，落在双精度舍入里，**不是靠 `toBeCloseTo` 的容差蒙绿**。同时两墙接缝角点 `A[1].y = 185` 与 `B[0].y = 185.00000000000003` 差 ≈3e-14 ⇒ **斜角下的"共点"是浮点意义而非逐位**，所以本文件的逐位 `toEqual` 只用在直角 L / T 接这类轴对齐整数 fixture 上（这条已升格成 Task 10 的义务 O2）。探针跑完即还原，校验和回到基线 `7e1e6630…`。
+
+**变异的实际红集合与简报预言的差**（简报 Step 5 五条预言里三条错，全部是**简报层**缺陷，代码未改；详见上面 Step 5 的改文）：M1 红 3（简报把「T 接」写成红，而同一句括号又说不红 —— 括号对）；M2 红 8（简报只点名凸性 + 面积，覆盖面低估）；M3 红 7（简报只点名 2 条）；M4 红 10 绿 3（简报"所有默认路径都红"过头一条）；M5 红 2（简报"直角 L 两条红"错，只有共边那条）。评审独立重跑五处 + 补两条探针（M6 左右整体对调 → 只红 1；M7 环序轮转 → 红 3），红集合与报告逐条一致。
+
+**M4 那条为什么绿 —— 别把抛点归因错**：报告原文写"`deriveWallQuads` 先 `wallAxis` 后 `memberTrim`，所以 `墙终点 不存在` 仍先抛"，这个机制是**错的**：未变异时 `outline.ts:52` 的 `deriveJoints(doc)` 在 `.map()` **之前**执行，所以「墙指向不存在的点」断到的消息产自 `joint.ts:341-342` 的派生循环；只有施加 M4 之后抛点才落到 `outline.ts:54` 自己的 `wallAxis`。同一条中文消息、两个产地 —— 判定（仍绿）不受影响，但机制写错会让下一个人以为轮廓层是那条错误的守门人。
+
+**评审裁定（0 Critical / 1 Important / 4 Minor，SPEC COMPLIANT + QUALITY APPROVED）**
+
+- **裁定 1（`append` 编译失败）**：简报的 `append()` 同时做两件事 —— ① 靠 `wallCreate({ start: { pointId } })` 复用共享端点，② 从 `log.affected` 取新墙。落地态两件都原样保留，**变的只有返回形状**（`string` 而非 `{ wallId }`），而返回形状不参与任何断言（`quadOf(log, wallId)` 收 id，`lCorner` 本来也当 id 用）→ 用例没有被悄悄削弱，五处变异全部仍可触发。附带查清一件值得记的事：`wall.ts:80-114` 的 `wallCreate.build` 复用 `pointId` 时连点都不 upsert，所以一次 `wallCreate` 的 `affected` 里**恰好一面墙**，那个"取第一个墙"的循环是确定性的，不存在"悄悄拿到旧墙、用例其实考的是空气"。
+- **裁定 2（落地测试是否仍在分辨）**：是。简报声称要钉的每一件事都至少被一条红测试钉住。**唯一没有红测试支撑的行为是"显式传入的 `joints` 被用上"** —— 见下面 F1。
+- **裁定 3（Σ 面积盲区）**：盲区是真的，但只吞掉面积/凸性类断言；per-end（M5 红 2）与 per-side（M6 红 1）由**位置化角点** `toEqual` 钉住了，故 Task 5 不需补断言（简报钉死 13 条 + 计数链 169，私自加 `it` 才是违例）。风险是这条防线**只有一个点**且完全依赖整数坐标 → 义务 O2 交给 Task 10。
+- **裁定 4（`joints?` 可选参数）**：显式表路径**没有**被任何测试行为化地验证（把 `joints ?? deriveJoints(doc)` 改成彻底忽略参数 → 13/13 仍绿，因为 `outline.test.ts:246` 那条两侧同源）。可接受答案是"Task 6 owns it"（`joints` 的唯一设计目的就是 Task 6 的整层入口），但必须落进 ledger 并写进 Task 6 的简报 → 义务 O1。
+- **附加两项**：① Task 5 的 fixture 没有一个违反 Task 4 的 `assertNoSameRay`（它是**桶内**检查；`obliqueL` 的两墙 `dot = +0.5 > 0` 但不平行故不同桶 —— 这条要记：若哪天有人把 `assertNoSameRay` 改成跨桶比 dot，这个合法 60° L 会红，而红是错的）；② **环序契约不是只有注释**：三条按下标的四元组 `toEqual` 把它钉住了，轮转 `[c1,c2,c3,c0]`（面积、凸性全不变）实测红 3 条。
+
+**下游义务（Task 6 / 8 / 10 的简报必须带上这几条）**
+
+- **O1（Task 6）**：`deriveStoreyGeometry` 只准把**未经过滤的** `allJoints = deriveJoints(doc)` 喂给 `deriveWallQuads`，按层裁剪必须发生在**返回值**上。误传 layer-filtered 表分两种后果：① 传 `deriveStoreyGeometry` 里那张 `const joints = allJoints.filter(...)`（它只服务于 `StoreyGeometry.joints` 字段）—— `deriveWallQuads` 遍历的是 `doc.byKind('wall')` 全部墙，被丢掉的别层墙端查不到成员 ⇒ 抛 `/接头表里找不到墙 …（内部错误）/`，而**单楼层 fixture 上这种错传完全隐形**（filter 是 no-op），只有两层 fixture 能暴露；② 若传的是"按成员删过但 Joint 骨架还在"的表，成员数一变 `kindOf` 就把 cross 降级成 tee、tee 降级成 corner ⇒ 斜切量**静默算错**，轮廓开裂或重叠，一条异常都不抛。另：`joints` 非空时 `deriveJoints` 根本不跑，`assertNoSameRay` / `requireEqualThrough` / star 抛错 / `assertNoFlip` 四道守卫全部缺席 ⇒ 这张表必须来自同一个 `doc` 的同一次 `deriveJoints`，不许修补、不许跨文档缓存复用。Task 6 还须补一条证明"参数真被消费"的用例，最小形式：`expect(() => deriveWallQuads(doc, [])).toThrow(/接头表里找不到墙/)`。
+- **O2（Task 10）**：Σ 面积属性（8,140,800 那条）对 start/end 与 left/right 错配**结构性失明**（`Area = 墙厚 × (轴长 − Σt/2)`）⇒ 按侧比对闭式解的那条预言不可删、不可"简化成比面积"；跨墙角点的逐位 `toEqual` 只允许出现在轴对齐整数 fixture 上（60° 实测共点差 ≈3e-14）。
+- **O3（Task 10）**：环序 `[0=start+, 1=end+, 2=end−, 3=start−]`（`[0,3]` 同端、`[1,2]` 同端）目前只被三条整数 fixture 顺带钉住，而计划 3 的描边按下标走一圈 ⇒ `quadEndCorners` 必须显式按 `(end, side) → 下标` 比对，把注释契约升格为断言契约。
+- **O4（Task 8）**：`polygonArea` 对 <3 点返回 0 而不抛（简报明文，且 Task 5 路径上不可达）⇒ 判板环合法性必须先过 `assertSimpleRing`，否则退化环"面积正常"。
+- **O5（顺序契约，Task 6 / 9 可直接受益）**：`deriveWallQuads` 的输出序列 == `doc.byKind('wall')` == 墙 id 升序；Task 6 的 `.filter((q) => ids.has(q.wallId))` 保序，Task 9 可以直接 `new Map(quads.map(q => [q.wallId, q]))` 而不必再排。`WallQuad` **没有** `storeyId` 字段（`WallAxis` 有），按层取轮廓只能自己按 `wall.storeyId` 过滤 —— 与 `deriveJoints` 同一条限制。
+- **O6（性能）**：`wallQuad` 是公开原语，Task 9/10 可直接拿 `axis + 两端 JointMember` 调；`memberTrim` 是 O(成员总数) 的线性查表，谁要在循环里逐墙调它，请像 `deriveWallQuads` 一样一次建表一次查。
+
+**留给后续任务的钩子**：`deriveStoreyGeometry` 在 Task 6 补进本文件 —— 它要同时消费轮廓、接头与洞口分段，早一步写就得留空字段。**它传 `deriveWallQuads` 的那张表必须是未过滤的 `allJoints`**（按层裁剪发生在返回值上），理由与误传的两种静默后果见上面 O1；Task 6 的简报必须原样带上这条。
 
 ---
 
@@ -3085,13 +3122,16 @@ import {
   Document,
   TransactionLog,
   assertSpansFit,
+  deriveJoints,
   deriveStoreyGeometry,
+  deriveWallQuads,
   openingSpans,
   piecesFromSpans,
   storeyCreate,
   uuidv7,
   wallAxisById,
   wallCreate,
+  type Joint,
   type OpeningEntity,
   type WallEntity,
 } from '@dajia/core';
@@ -3272,6 +3312,25 @@ describe('deriveStoreyGeometry', () => {
     expect(g0.joints).toHaveLength(2);
     expect(g1.joints).toHaveLength(2);
     expect(g0.joints.every((j) => j.members.every((m) => m.wallId === w0.id))).toBe(true);
+
+    // ---- Task 5 回填 O1：钉住"传进来的接头表真被消费" ----
+    // 评审实测：把 outline.ts 的 `joints ?? deriveJoints(doc)` 改成彻底忽略入参，Task 5 的 13 条全绿
+    //（那条显式传参的用例两侧同源，对"参数是否被读"这个维度结构性失明）。补在这里而不是新开一条
+    // `it` —— Task 6 的 it 数（12）与计数链 181 是计划级契约。
+    expect(() => deriveWallQuads(log.document, [])).toThrow(/接头表里找不到墙/);
+    // 更强的预言：喂一张改过 trim 的表，角点必须跟着动（用的是这张表，不是重新派生出来的那份）
+    const patched: Joint[] = deriveJoints(log.document).map((joint) => ({
+      ...joint,
+      members: joint.members.map((m) =>
+        m.wallId === w0.id
+          ? { ...m, trimLeftMm: m.trimLeftMm + 500, trimRightMm: m.trimRightMm + 500 }
+          : m,
+      ),
+    }));
+    const moved = deriveWallQuads(log.document, patched).find((q) => q.wallId === w0.id)!;
+    // w0 是 (0,0)→(3600,0) 厚 240 的自由端墙：+500 内退发生在 start 端的 +normal 侧 ⇒ (500, 120)
+    expect(moved.corners[0]).toEqual({ x: 500, y: 120 });
+    expect(moved.corners[1]).toEqual({ x: 3100, y: 120 });
   });
 
   it('楼层不存在抛；空楼层给三个空集合而不是抛', () => {
@@ -3470,6 +3529,12 @@ export function deriveStoreyGeometry(doc: Document, storeyId: EntityId): StoreyG
       );
     }
   }
+  // Task 5 回填 O1：这里必须喂**未过滤的** allJoints，按层裁剪发生在返回值上。
+  // 误传上面那张 joints（filter 过的）在单楼层 fixture 上完全隐形（filter 是 no-op），
+  // 多楼层才抛 /接头表里找不到墙/；若传"按成员删过但骨架还在"的表，更坏：成员数一变
+  // kindOf 就把 cross 降级成 tee、tee 降级成 corner，斜切量静默算错而一条异常都不抛。
+  // 另：joints 非空时 deriveJoints 不跑，assertNoSameRay / requireEqualThrough / star 抛错 /
+  // assertNoFlip 四道守卫随之缺席 —— 所以这张表只能来自同一个 doc 的同一次 deriveJoints。
   const quads = deriveWallQuads(doc, allJoints).filter((q) => ids.has(q.wallId));
   const pieces = walls.flatMap((wall) =>
     piecesFromSpans(wall.id, wallAxis(doc, wall).lengthMm, openingSpans(doc, wall)),
@@ -6474,8 +6539,9 @@ trim_内侧(self) = (h_other + h_self · cosθ) / sinθ        trim_外侧(self)
 
 **关键判断 1 的补（Task 4 执行回填，别把它读成"Task 10 兜底"）**：上面那三条"照样成立"说的是**错误的边线配对**。还有第四条本任务**结构上看不到**的缺陷：**同一个点上两堵墙朝同一条射线画**。Task 4 评审时我曾对用户说"Task 10 的 Σ 面积恒等会把它抓出来（重叠被算两次）"，那句话是**错的**，两处凭据：
 
-- Σ 那条是**逐墙恒等式**，不是并集面积（本文件第 6479 行与第 7963 行的注释都写死了这一点）。同向重叠的两堵墙各自仍是 `轴长 × 墙厚`，逐墙求和不会因为它们在纸上压在一起而变化 ⇒ 没有任何 Σ 断言能看见它。
-- 更硬的一条：本任务的生成器**根本产不出那个形状**。关键判断 2 把转角限死在 |turn| ∈ [30°, 150°]（第 6408 行），相邻两段永远不平行 ⇒ 链上同一个点的两成员永远判成 `corner`，`collinear` 分支一次都走不到。
+- Σ 那条是**逐墙恒等式**，不是并集面积（本文件 Task 10 属性表里"Σ 轮廓面积"那行与 `8,140,800` 那条用例的注释都写死了这一点）。同向重叠的两堵墙各自仍是 `轴长 × 墙厚`，逐墙求和不会因为它们在纸上压在一起而变化 ⇒ 没有任何 Σ 断言能看见它。
+- 更硬的一条：本任务的生成器**根本产不出那个形状**。关键判断 2 把转角限死在 |turn| ∈ [30°, 150°]（见上一条规原文），相邻两段永远不平行 ⇒ 链上同一个点的两成员永远判成 `corner`，`collinear` 分支一次都走不到。
+- **Task 5 回填的第二块盲区（O2，与本节同一条 Σ 断言有关，别混成一件）**：`wallQuad` 四角展开后鞋带给出 `Area = 墙厚 × (轴长 − Σt/2)`，只依赖四个 trim 的**和** ⇒ 任何"保和的重排"（start↔end 互换、左右整体对调）面积逐字不变，凸性也看不见（梯形仍凸）。这是 Task 5 用 M5（红 2）/M6（红 1）实测出来的：**能看见侧别与端别的只有位置化的角点比对**，而 Task 5 那种整数 fixture 上的逐位 `toEqual` 只有三条钉子。所以本任务那条**按侧**比对闭式解的预言（上面 6506 那两行 `trim_内侧/trim_外侧` 与凹/凸角点公式）是本计划里唯一能覆盖侧别错配的东西 —— **不可删、不可"简化成比面积"、不许改成只比 Σ**。配套 O3：环序 `[0=start+, 1=end+, 2=end−, 3=start−]` 必须在 `quadEndCorners` 里显式按 `(end, side) → 下标` 比对（`[0,3]` 同端、`[1,2]` 同端），因为计划 3 的描边按下标走一圈，而 Task 5 的环序今天只被整数 fixture 顺带钉住。另：跨墙共点在斜角下只能容差比（60° 实测 y 差 ≈3e-14），别把逐位 `toEqual` 推广到非轴对齐 fixture。
 
 所以"同向重叠必须在派生层就抛"这条守卫的证据只能来自 **Task 4 自己**（`joint.ts` 的组内判据 + 定值用例 + 它的变异检查），Task 10 既不是它的兜底、也不许在日志里写成"已由属性测试覆盖"。它同时是本计划"oracle 与被测实现同源 ⇒ 测不出东西"这个主题的第二块教材（第一块是 Task 9 变异 3，`bruteForce` 与 `query` 共用 `aabbIntersects`）：一条性质听起来像证据，跟它真能区分对错是两件事，要拿"改了会不会红"去问。
 
