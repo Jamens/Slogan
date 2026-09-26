@@ -403,6 +403,13 @@ describe('SpatialIndex.fromDoc 与 query', () => {
     expect(index.queryPoint(3600, 2000).sort()).toEqual([second.id, door.id].sort());
     // 只要 B 一家的话取 y 500：门从 1400 才起，A 与窗都到不了这里
     expect(index.queryPoint(3600, 500)).toEqual([second.id]);
+    // **多报**方向的现场（query 文档注释里第 2 条来源）：(3700, 100) 在 A 的盒子里
+    // （A 的框 x[0,3720] × y[-120,120]），却不在 A 的梯形材料里 —— A 那端的斜切边过
+    // (3480, 120) 与 (3720, -120)，即 x = 3600 - y，所以 y=100 那一行 A 只到 x=3500。
+    // 那一格实际是 B 的材料（B 的框 x[3480,3720]，同一条斜切边，它覆盖 y ≥ 3600 - x）。
+    // AABB 层分不开共角的这两面墙，故 A 在这里是合法的保守候选：宁多不漏，
+    // 精确命中（点在不在这个梯形里）归 scene-2d（计划 3，本计划还没有那一层）。
+    expect(index.queryPoint(3700, 100).sort()).toEqual([first.id, second.id].sort());
     expect(index.queryPoint(500000, 500000)).toEqual([]);
   });
 
@@ -411,8 +418,10 @@ describe('SpatialIndex.fromDoc 与 query', () => {
     const index = SpatialIndex.fromDoc(log.document, storeyId);
     const box = index.entryOf(first.id)?.aabb;
     if (!box) throw new Error('索引里找不到 A');
-    // corner 的 trim 是 (+120, -120)：一侧内退 120，另一侧外伸 120 → 框宽 3720
-    expect(box.maxX).toBeGreaterThan(3600);
+    // corner 的 trim 是 (+120, -120)：一侧内退 120，另一侧外伸 120 → 框宽 3720。
+    // 这里把 3720 钉死（不只看"大于 3600"）：下面那个 query 的右边界是从 box.maxX 反推的，
+    // 一个"错得自洽"的梯形（Task 5 才抓得住的病）在本文件里不能两条都绿。
+    expect(box.maxX).toBe(3720);
     expect(box.minX).toBe(0);
     // 外伸那段（x > 3600）落在 A 的盒子里，网格在那里也必须报出 A：A 的轴线端点在 3600，
     // 盒子却到 3720，这一问盯的就是"漏报"（Step 6 第 4 条变异红在这里）。
@@ -515,6 +524,76 @@ describe('SpatialIndex.applyAffected', () => {
     index.applyAffected(log.document, log.affected);
     expect(index.entryOf(second.id)!.aabb).not.toEqual(neighbourBefore);
     expectSame(index, log.document, storeyId);
+  });
+
+  it('新建的墙复用既有端点：邻墙那端从 free 变 corner，它的框必须跟着换', () => {
+    // C1 的回归。先只有一面孤立横墙（两端 free）并据此建好索引，然后**在它那个端点上接着画**
+    // 一面竖墙 —— 画房间最普通的动作，计划 3 每一条画墙命令都会走到这里。
+    const { log, storeyId, wall: first } = straightWall();
+    const index = SpatialIndex.fromDoc(log.document, storeyId);
+    const sharedId = first.endId;
+    expect(index.entryOf(first.id)!.aabb).toEqual({ minX: 0, minY: -120, maxX: 3600, maxY: 120 });
+    const second = addWall(log, {
+      start: { pointId: sharedId },
+      end: { x: 3600, y: 2400 },
+      thicknessMm: 240,
+    });
+    // 根因两条，写成断言钉住：复用 {pointId} 时 wallCreate 连那个点都不 upsert，
+    // 共享点因此不在 affected 里；而新墙此刻还没有 IndexEntry，它两端那两条边谁都不认识。
+    expect(log.affected.has(second.id)).toBe(true);
+    expect(log.affected.has(sharedId)).toBe(false);
+    index.applyAffected(log.document, log.affected);
+    expectSame(index, log.document, storeyId);
+    // 邻墙 A 的框从矩形变梯形（maxX 3600 → 3720），与 lCorner 夹具的实测值同一个数
+    expect(index.entryOf(first.id)!.aabb).toEqual({ minX: 0, minY: -120, maxX: 3720, maxY: 120 });
+    expect(index.entryOf(second.id)!.aabb).toEqual({
+      minX: 3480,
+      minY: -120,
+      maxX: 3720,
+      maxY: 2400,
+    });
+  });
+
+  it('在两个既有端点之间合上一间房：affected 只有新墙，两侧邻墙都得重算', () => {
+    // C1 最坏的变体：三边已画好的房间，最后那一面墙两端**都**复用既有点，
+    // 补丁里连一个新点都没有 → affected 就只有一个新墙 id。
+    const { log, storeyId, wall: first } = straightWall();
+    const second = addWall(log, {
+      start: { pointId: first.endId },
+      end: { x: 3600, y: 2400 },
+      thicknessMm: 240,
+    });
+    const third = addWall(log, {
+      start: { pointId: second.endId },
+      end: { x: 0, y: 2400 },
+      thicknessMm: 240,
+    });
+    const index = SpatialIndex.fromDoc(log.document, storeyId);
+    // 合房之前：A 与 C 各有一个 free 端（x=0 那一头），框到 0 为止
+    expect(index.entryOf(first.id)!.aabb).toEqual({ minX: 0, minY: -120, maxX: 3720, maxY: 120 });
+    expect(index.entryOf(third.id)!.aabb).toEqual({ minX: 0, minY: 2280, maxX: 3720, maxY: 2520 });
+    const closing = addWall(log, {
+      start: { pointId: third.endId },
+      end: { pointId: first.startId },
+      thicknessMm: 240,
+    });
+    expect([...log.affected]).toEqual([closing.id]);
+    index.applyAffected(log.document, log.affected);
+    expectSame(index, log.document, storeyId);
+    // 两侧邻墙的两个 free 端同时变成 corner：0 那一头越过共享点外伸 120（-120 = 半厚），
+    // 3720 那一头本来就在角上，不动。这两个数是这次重建的凭据，不是 expectSame 的副产品
+    expect(index.entryOf(first.id)!.aabb).toEqual({
+      minX: -120,
+      minY: -120,
+      maxX: 3720,
+      maxY: 120,
+    });
+    expect(index.entryOf(third.id)!.aabb).toEqual({
+      minX: -120,
+      minY: 2280,
+      maxX: 3720,
+      maxY: 2520,
+    });
   });
 
   it('与本层无关的 id 是空操作：柱、别层的墙与点都不动索引', () => {
