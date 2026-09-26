@@ -1738,6 +1738,20 @@ git commit -m "feat: 共享端点进真源与移动端点的邻墙守卫"
 - `wallMoveEndpoint` 的 `affected` 只有那个点。Task 9 的索引局部重建必须把 affected 沿 `dependentsOf` 迭代到不动点，否则拖完拐角，旧墙几何还留在网格里。
 - 洞口跟随拉伸属 Task 7：现在拖墙不会检查宿主洞口是否被挤出墙外，因为还没有命令能建洞口（`opening.create` 未实现），手搓的洞口 + 拉伸这条路径在测试里到不了。Task 7 实现 `openingCreate` 时必须同时补上这条守卫和它的测试。
 
+#### Task 3 执行回填（2026-09-26，评审后裁决；本任务的权威文本是代码 `7f7e143`，不是上面那几段 fence）
+
+上面 Task 3 的文本里有五处自相矛盾，实现者在没有提示的情况下全部发现，并一律往"更严"的方向改对（没有一条放松断言）。逐条记在这里，免得下一个人照 fence 抄回去：
+
+1. **第 968 行 `Omit<WallCreateInput, 'storeyId'>` 编译不过** —— `heightMm` 是必填（`commands/wall.ts:21`），而所有 `addWall` 调用点只给 `{ start, end, thicknessMm }`；把 `heightMm` 补进调用点又撞 `TS2783`（它排在 `...spec` 之前）。落地是 `Omit<WallCreateInput, 'storeyId' | 'heightMm'>`（`topology.test.ts:66`），层高由 fixture 补齐，语义不变。
+2. **第 1047 行那条 `toEqual([...])` 是掷硬币**，第 1077 行给的理由（"`byKind('wall')` 按 id 升序，所以顺序就是创建顺序"）**与 Global Constraints 里 uuidv7 那条直接矛盾**。实测 300 次 `lCorner`：两面墙 300/300 落在同一毫秒，`byKind` 把后建的排前面 **155/300** 次。落地写法（`topology.test.ts:145-151`）= `toHaveLength(2)` + wallId 集合 + 逐个 `find(...).end` 钉端点角色：顺序无关，而变异 5（删掉 `startId` 那一支）照样红。
+3. **第 1203 行那句撤销断言永远不可能成立**：`afterFirst` 取在 undo **之前**（那时 L 形还在），却在 undo 之后断 `canonical()).toBe(afterFirst)` —— 按原文只有在"undo 什么都没做却返回 true"时才绿，它断的是自己名字的反面。落地（`topology.test.ts:301-313`）：先存 L 形快照，undo 后断"回到单墙"（1 墙 / 2 点 / `sharedPointIds` 空），redo 后断 `canonical()` 逐字节等于那份快照 —— 重做若新建点必带新 id，快照就变，所以钉得更死。
+4. **第 1245 / 1302 / 1329 行的 `log.depth` 应为 3**：`lCorner()` 自己就压了三笔（建层 + 两面墙）。意图（抛掉的 dispatch 不入栈）没变，绝对数字按 fixture 纠正；另有走 `buildLog + addWall` 的那条仍是 2，本来就对。
+5. **第 1501 行 `case 'storey'` 扫 wall/opening/column/slab 四类，而它自己的测试期望只列两类** —— 该断言必红。实现照文本（Task 8 改标高要的是该层全部下游，漏一类就是漏算），测试期望补上柱与板；用例名"该层墙与洞口"因此低估了断言范围，改名并入 Task 4 的实现轮。
+6. 第 1062 行 `expect(sharedId).toBeTruthy()` 是全局约束明令禁止的空跑断言，换成 `expect(first.startId).not.toBe(sharedId)`（`topology.test.ts:165`）—— 它才真正排除"两端同点的退化墙也能过前两条"。**同一个坑在第 2226 行（Task 4 的确定性用例）又出现一次，Task 4 一并处理。**
+7. 两条顺序契约钉死（评审与实现者各自独立提出）：**`incidentWallEnds` 返的是 id 升序，不是创建顺序**，Task 4 判"谁当直通"不能靠下标；`wallMoveEndpoint.affected` 只有那一个点，Task 9 的局部重建要自己沿 `dependentsOf` 迭代到不动点。
+
+**执行日志**：新增 **26** 条（与 Step 5 的 5+3+4+6+7+1 逐段对上），`pnpm verify` = 112 + 26 = **138 passed**（14 files，0 失败）；`topology.test.ts` 单文件 **17ms**，vitest 全量 **473ms**。五处变异逐个红、逐个还原（`git diff` 归零），另加一条"把本墙守卫改成恒抛"的变体，用它证明 300mm 正对照确有牙齿。计划 1 的 `commands.test.ts` 14 条与 `properties.test.ts` 9 条一条不少。评审 Approved（0 Critical / 0 Important / 10 Minor，其中 7 条进终审清单）。
+
 ---
 
 ### Task 4: 接头分类与斜切量（geom/joint.ts）
