@@ -1,4 +1,5 @@
 import type { EntityId } from '../ids';
+import type { Mm } from '../units/mm';
 import type { Document } from '../model/document';
 import { mustExist, requirePoint, requireWall } from '../model/read';
 import type { WallEntity } from '../model/entity';
@@ -20,7 +21,7 @@ export interface WallAxis {
   /** perp(dir)：逆时针 90°，墙的左侧 */
   readonly normal: Vec2;
   readonly lengthMm: number;
-  readonly thicknessMm: number;
+  readonly thicknessMm: Mm;
 }
 
 export function wallAxis(doc: Document, wall: WallEntity): WallAxis {

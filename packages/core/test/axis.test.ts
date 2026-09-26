@@ -77,7 +77,13 @@ describe('WallAxis', () => {
     expect(awayDir(axis, 'start')).toEqual({ x: 1, y: 0 });
     expect(awayDir(axis, 'end')).toEqual({ x: -1, y: 0 });
     expect(awayDir(axis, 'start')).not.toBe(awayDir(axis, 'end'));
-    expect(wall.startId).not.toBe(wall.endId);
+    // 两端点必须是不同的点 id —— 说的是本导出的事，不是 fixture 的事
+    expect(endPointId(wall, 'start')).not.toBe(endPointId(wall, 'end'));
+    // 竖直墙：dir 的 x 分量是 0，取负给出 -0。上面那条只钉得住水平墙的 y 分量。
+    const { log: vlog } = buildWalls([{ start: { x: 0, y: 0 }, end: { x: 0, y: 5000 }, thicknessMm: 240 }]);
+    const vaxis = axisOf(vlog, 0);
+    expect(awayDir(vaxis, 'start')).toEqual({ x: 0, y: 1 });
+    expect(awayDir(vaxis, 'end')).toEqual({ x: 0, y: -1 });
   });
 
   it('cornerPoint：trim=0 时是平接四角，trim>0 时沿轴内退', () => {
@@ -113,7 +119,14 @@ describe('WallAxis', () => {
       new Map([...log.document.entities].filter(([id]) => id !== wall.startId)),
     );
     expect(() => wallAxisById(broken, wall.id)).toThrow(/墙起点 不存在/);
-    expect(storeyId).toBeTruthy();
+    // 楼层没被 filter 掉：上面那抛来自端点查找，而不是 axis.ts 的 楼层 守卫先短路
+    expect(broken.get(storeyId)).toBeDefined();
+    // 反向：删掉楼层后必须撞在 楼层 守卫上 —— 它是 wallAxisById 比 wallAxis 多出的不变式
+    const noStorey = Document.replaceEntities(
+      log.document,
+      new Map([...log.document.entities].filter(([id]) => id !== storeyId)),
+    );
+    expect(() => wallAxisById(noStorey, wall.id)).toThrow(/楼层 不存在/);
   });
 
   it('两端点重合的墙抛零方向（防 normalize 崩在别处）', () => {
@@ -136,6 +149,6 @@ describe('WallAxis', () => {
       material: 'brick',
     };
     const bad = Document.replaceEntities(doc, new Map([...doc.entities, [degenerate.id, degenerate]]));
-    expect(() => wallAxisById(bad, degenerate.id)).toThrow(/两端点重合|零长/);
+    expect(() => wallAxisById(bad, degenerate.id)).toThrow(/两端点重合/);
   });
 });
