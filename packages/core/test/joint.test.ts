@@ -117,6 +117,38 @@ describe('分组只认拓扑', () => {
       expect(m.trimLeftMm).toBe(0);
       expect(m.trimRightMm).toBe(0);
     }
+
+    // 上面是**反向**配对的一正：一墙的 end 遇另一墙的 start，两墙拼成一条连续带。
+    // 不变式 3 还要钉住同向那一例 —— 同一个点上两个墙端朝同一方向离开，那是两条完全
+    // 重叠的墙带（用户在同一个点上朝同一方向画了两笔）。lineGroups 只按无向方向折桶，
+    // 所以这种输入本身就会落到 collinear（trim 全 0）、什么也不报，必须由 assertNoSameRay
+    // 在分类之前抛。合法命令就造得出它：wallCreate 只查零长与"墙厚不小于轴长"，
+    // wallMoveEndpoint 也不查射线唯一性，resolvePointRef 只看楼层归属。
+    const sameRay = build([
+      { start: { x: 1000, y: 0 }, end: { x: 2000, y: 0 }, thicknessMm: 240 },
+    ]);
+    const sameRayA = sameRay.document.byKind('wall')[0]!;
+    appendWall(sameRay, sameRayA.startId, { x: 3000, y: 0 }, 240);
+    expect(() => deriveJoints(sameRay.document)).toThrow(/同向重叠/);
+
+    // 鸽笼：同一条线上三个墙端（一反向两同向）不需要专门分支，逐对检查自然命中
+    const threeOnOneLine = build([
+      { start: { x: 0, y: 0 }, end: { x: 1000, y: 0 }, thicknessMm: 240 },
+    ]);
+    const threeA = threeOnOneLine.document.byKind('wall')[0]!;
+    appendWall(threeOnOneLine, threeA.endId, { x: 2000, y: 0 }, 240);
+    appendWall(threeOnOneLine, threeA.endId, { x: 3000, y: 0 }, 240);
+    expect(() => deriveJoints(threeOnOneLine.document)).toThrow(/同向重叠/);
+
+    // 同向那一对还能藏在 tee 形状里（x 族两个同向成员 + 一根支墙）。少了守卫，
+    // 它们会被当成 tee 的"直通两墙"，requireEqualThrough 反而夸这两面墙同厚合规
+    const insideTee = build([
+      { start: { x: 1000, y: 0 }, end: { x: 2000, y: 0 }, thicknessMm: 240 },
+    ]);
+    const insideTeeHub = insideTee.document.byKind('wall')[0]!.startId;
+    appendWall(insideTee, insideTeeHub, { x: 3000, y: 0 }, 240);
+    appendWall(insideTee, insideTeeHub, { x: 1000, y: 800 }, 120);
+    expect(() => deriveJoints(insideTee.document)).toThrow(/同向重叠/);
   });
 });
 
@@ -422,6 +454,47 @@ describe('cross 与 star', () => {
       const yRight = cornerPoint(axis, m.end, -1, m.trimRightMm).y;
       expect(yLeft).toBe(yRight); // 平接：两角点同在直通墙的一个面上
       expect(Math.abs(yLeft - 1000)).toBe(120); // 北面 1120 或南面 880，二选一
+    }
+
+    // 支族两臂**异厚**同样是合法图纸：它们被直通带隔开、彼此从不接触，各自平接到自己
+    // 那一面，缝闭合且只留一个台阶（北臂切到 y=1120、南臂切到 y=880，中间是 240 厚的横带）。
+    // 计划文本的 cross 分支还额外要求支族同厚（requireEqualThrough(pointId, stemLine)），
+    // 那句「直通两墙厚度不同」描述的并不是这一对墙，等于用一条不成立的规矩拒掉合法图纸。
+    const stepped = build([
+      { start: { x: 0, y: 1000 }, end: { x: 1000, y: 1000 }, thicknessMm: 240 },
+    ]);
+    const steppedWest = stepped.document.byKind('wall')[0]!;
+    const steppedHub = steppedWest.endId;
+    const steppedEast = appendWall(stepped, steppedHub, { x: 2000, y: 1000 }, 240);
+    const steppedNorth = appendWall(stepped, steppedHub, { x: 1000, y: 2000 }, 400);
+    const steppedSouth = appendWall(stepped, steppedHub, { x: 1000, y: 0 }, 120);
+    const steppedJoint = jointsAt(stepped, steppedHub);
+    expect(steppedJoint.kind).toBe('cross');
+    expect(steppedJoint.members).toHaveLength(4);
+    const steppedJoints = deriveJoints(stepped.document);
+    // 直通族（两面 240 的横墙）仍然方头，且它才是"直通两墙同厚"那条规矩管的那一对
+    for (const [throughWall, throughEnd] of [
+      [steppedWest, 'end'],
+      [steppedEast, 'start'],
+    ] as const) {
+      const trim = memberTrim(steppedJoints, throughWall.id, throughEnd);
+      expect([trim.trimLeftMm, trim.trimRightMm]).toEqual([0, 0]);
+    }
+    // 两支臂：faceY = 它自己那一面的面线，half = 它自己的半厚（台阶由这个差值构成）
+    for (const [stem, faceY, half] of [
+      [steppedNorth, 1120, 200],
+      [steppedSouth, 880, 60],
+    ] as const) {
+      const axis = wallAxisById(stepped.document, stem.id);
+      const trim = memberTrim(steppedJoints, stem.id, 'start');
+      // 平接量只由直通墙半厚决定（120），与支臂自己的厚度无关 —— 与 tee 那条同源
+      expect([trim.trimLeftMm, trim.trimRightMm]).toEqual([120, 120]);
+      const left = cornerPoint(axis, 'start', 1, trim.trimLeftMm);
+      const right = cornerPoint(axis, 'start', -1, trim.trimRightMm);
+      expect(left.y).toBe(right.y); // 两角点同在一条面线上：无缝、不穿过横带
+      expect(left.y).toBeCloseTo(faceY, 9);
+      expect(Math.abs(left.x - 1000)).toBeCloseTo(half, 9);
+      expect(Math.abs(right.x - 1000)).toBeCloseTo(half, 9);
     }
   });
 
