@@ -178,7 +178,7 @@ describe('columnCreate', () => {
     expect(log.document.byKind('column')).toHaveLength(0);
   });
 
-  it('同一个点上不能有两根柱 → /已有柱/；换个坐标就行（正对照）', () => {
+  it('同坐标两柱 → /已有柱/（判据是坐标 + 同层，不看点 id）；换坐标、换层都放行（正对照）', () => {
     const { log, storeyId, sharedId } = lCorner();
     log.dispatch(
       columnCreate({ storeyId, at: { pointId: sharedId }, widthMm: 400, depthMm: 400 }),
@@ -190,10 +190,34 @@ describe('columnCreate', () => {
       ),
     ).toThrow(/已有柱/);
     expect(log.document.canonical()).toBe(before);
+    // 正对照一：换个坐标就行
     log.dispatch(
       columnCreate({ storeyId, at: { x: 100, y: 100 }, widthMm: 400, depthMm: 400 }),
     );
     expect(log.document.byKind('column')).toHaveLength(2);
+    // 红：同一对**坐标**再来一次 —— 入参给的是字面量，所以这是个全新 pointId，
+    // 但真源里它和上一根柱落在同一个 (100, 100) 上，图纸上就是重影。
+    // 旧判据比 pointId 相等时这一发全然是瞎的（上一条只复用同一个 id，盯不住）。
+    const beforeSameXY = log.document.canonical();
+    expect(() =>
+      log.dispatch(
+        columnCreate({ storeyId, at: { x: 100, y: 100 }, widthMm: 500, depthMm: 500 }),
+      ),
+    ).toThrow(/已有柱/);
+    expect(log.document.canonical()).toBe(beforeSameXY);
+    // 正对照二（钉住"同层"这半边）：计划 3 的柱网逐层复用同一平面坐标，
+    // 二层同一根轴线上的柱不是重影 —— 删掉 storeyId 过滤就会在这一发误红
+    log.dispatch(storeyCreate({ projectId, index: 1, elevationMm: 3000, heightMm: 3000 }));
+    log.dispatch(
+      columnCreate({
+        storeyId: storeyByIndex(log, 1),
+        at: { x: 100, y: 100 },
+        widthMm: 400,
+        depthMm: 400,
+      }),
+    );
+    expect(log.document.byKind('column')).toHaveLength(3);
+    expect(log.document.byKind('point')).toHaveLength(5);
   });
 
   it('复用别层的点 → 抛（与墙共用 resolvePointRef 那条判据）', () => {
@@ -214,14 +238,29 @@ describe('columnCreate', () => {
   it('楼层不存在 / 拿墙当楼层 → 两道中文各抛一次，柱一根都不许留下', () => {
     const { log, first } = lCorner();
     const depth = log.depth;
+    // heightMm 必须显式给：省略时 column.ts 要拿 storey.heightMm 兜底，
+    // 删掉 requireStorey 后这一发会崩在 `undefined.heightMm` 上 —— 红是 JS 的 TypeError，
+    // 证不到"这道中文契约在起作用"（Task 8 评审 F4）
     expect(() =>
       log.dispatch(
-        columnCreate({ storeyId: MISSING, at: { x: 0, y: 0 }, widthMm: 400, depthMm: 400 }),
+        columnCreate({
+          storeyId: MISSING,
+          at: { x: 0, y: 0 },
+          widthMm: 400,
+          depthMm: 400,
+          heightMm: 4000,
+        }),
       ),
     ).toThrow(/楼层 不存在/);
     expect(() =>
       log.dispatch(
-        columnCreate({ storeyId: first.id, at: { x: 0, y: 0 }, widthMm: 400, depthMm: 400 }),
+        columnCreate({
+          storeyId: first.id,
+          at: { x: 0, y: 0 },
+          widthMm: 400,
+          depthMm: 400,
+          heightMm: 4000,
+        }),
       ),
     ).toThrow(/不是楼层，是 wall/);
     // requireStorey 是 build 的第一行：抛在建点之前，所以点数与日志深度都该原地不动
@@ -434,9 +473,11 @@ describe('storeySetElevation', () => {
     expect(() =>
       log.dispatch(storeyCreate({ projectId, index: 1, elevationMm: 2999, heightMm: 3000 })),
     ).toThrow(/标高重叠/);
-    // index 重复走不到标高判据：两条判据各管一件事，顺序也不能反
+    // index 重复走不到标高判据：两条判据各管一件事，顺序也不能反。
+    // 标高故意给 1500（[1500, 4500) 与一层 [0, 3000) 重叠 1500mm），让这一发**同时**违反两条
+    // 判据 —— 给 9000 时它只违反 index 查重，把两段检查上下调换也什么都红不出来。
     expect(() =>
-      log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 9000, heightMm: 3000 })),
+      log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 1500, heightMm: 3000 })),
     ).toThrow(/index 重复/);
     expect(log.document.canonical()).toBe(before);
     expect(log.document.byKind('storey')).toHaveLength(1);

@@ -266,7 +266,8 @@ describe('wallDelete', () => {
           id: uuidv7(),
           storeyId,
           // 故意只挂终点：让"查柱"与"查板"两条分支各自决定一个点的生死，
-          // 否则起点被柱和板同时引用，漏查板也能蒙过。板的边界点数 S1 不校验。
+          // 否则起点被柱和板同时引用，漏查板也能蒙过。板边界点数与环合法性从 Task 8 起由 slabCreate
+          // 校验：这个 1 顶点边界只有绕开命令层的手写裸补丁才留得住，能拒它的最早也要到计划 4 落库。
           boundaryPointIds: [wall.endId],
           thicknessMm: 120,
           elevationOffsetMm: 0,

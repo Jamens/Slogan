@@ -59,7 +59,7 @@ describe('assertSimpleRing', () => {
     expect(() => assertSimpleRing('板', crossed)).toThrow(/自交/);
   });
 
-  it('相邻边只查非相邻对：共顶点不算相交', () => {
+  it('segmentsIntersect 是闭段语义：共顶点算相交；环判据靠跳过相邻对挡在门外', () => {
     // RECT 的四条边两两在顶点相接，上面第一条已经证明整环通过；
     // 这里直接盯 segmentsIntersect 本身，防止它"返回恒真"混过环判据。
     expect(segmentsIntersect(vec(0, 0), vec(10, 0), vec(5, -5), vec(5, 5))).toBe(true);
