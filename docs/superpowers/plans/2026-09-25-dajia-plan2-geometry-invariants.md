@@ -4655,6 +4655,15 @@ move 4 / delete 2 / 跟随 7），修复轮**没有新增 `it`**。
 
 ### Task 8: 柱、楼板与楼层标高（`column.create` / `slab.create` / `storey.setElevation`）
 
+> **照抄前先读**：本任务正文已在 2026-09-26 的执行 + 评审 + 修复轮之后**按落地态订正**过五处 ——
+> ① `columnCreate` 的同点判据从"按 `pointId` 相等"改成"按坐标 + 同层"（连带守卫结构、`requirePoint` 与那条注释）；
+> ② 两条「整数毫米」断言从 `log.dispatch(...)` 改问工厂本身；③ 柱的「楼层不存在」用例补 `heightMm: 4000`；
+> ④ `storeyCreate` 那发的标高 `9000 → 1500`；⑤ ring 与柱的两条用例名。
+> 测试辅助函数 `addWall` 的 `Omit<WallCreateInput, 'storeyId' | 'heightMm'>` 是编译必需的订正（原文 TS2783 + TS2741）。
+> Step 7 的九条预言全部带上了实测红集合与四条修复轮新靶子。若你的分支上已经有 `a8fd5a4`/`2da49e3`/`1d32c73`，
+> **不要再照抄一遍** —— 先 `git log --oneline -3`。执行结果与裁决见本节末尾「Task 8 执行回填」。
+
+
 spec 第 5.5 节把这三条命令划进"数据模型与命令已实现、S1 不提供 UI"那一档：柱 UI 随 S3，楼板随 S2，而 3D 视口在 M1.7 唯一的写路径就是 `storey.setElevation`（spec 第 7 节）。D1 要求结构语义一开始就在真源里，所以本任务不能推给后续计划。
 
 **关键判断：柱与板没有任何派生层，命令层就是唯一的门。** 墙有 Task 3–6 那一串守卫，`deriveStoreyGeometry` 兜在后面；柱与板在计划 2 里不进任何派生出口（Task 9 的索引只管墙，柱网与楼板命中留给计划 3），所以命令构造期与 `build` 期不拦下来的坏数据，会一路躺到计划 5 的图纸上。这就是本任务唯一那条"重"的地方 —— 板的边界环要自己判合法性：
@@ -4753,7 +4762,7 @@ describe('assertSimpleRing', () => {
     expect(() => assertSimpleRing('板', crossed)).toThrow(/自交/);
   });
 
-  it('相邻边只查非相邻对：共顶点不算相交', () => {
+  it('segmentsIntersect 是闭段语义：共顶点算相交；环判据靠跳过相邻对挡在门外', () => {
     // RECT 的四条边两两在顶点相接，上面第一条已经证明整环通过；
     // 这里直接盯 segmentsIntersect 本身，防止它"返回恒真"混过环判据。
     expect(segmentsIntersect(vec(0, 0), vec(10, 0), vec(5, -5), vec(5, 5))).toBe(true);
@@ -5030,16 +5039,16 @@ describe('columnCreate', () => {
         }),
       ),
     ).toThrow(/柱高必须为正/);
+    // 浮点这条直接断言**工厂**抛，不套 log.dispatch：Document.validate 的整数检查也含
+    // 「整数毫米」，套上 dispatch 就分不清是命令层拦的还是落库层拦的（Task 7 栽过一次）
     expect(() =>
-      log.dispatch(
-        columnCreate({ storeyId, at: { x: 0, y: 0 }, widthMm: 400.5, depthMm: 400 }),
-      ),
+      columnCreate({ storeyId, at: { x: 0, y: 0 }, widthMm: 400.5, depthMm: 400 }),
     ).toThrow(/整数毫米/);
     expect(log.depth).toBe(depth);
     expect(log.document.byKind('column')).toHaveLength(0);
   });
 
-  it('同一个点上不能有两根柱 → /已有柱/；换个坐标就行（正对照）', () => {
+  it('同坐标两柱 → /已有柱/（判据是坐标 + 同层，不看点 id）；换坐标、换层都放行（正对照）', () => {
     const { log, storeyId, sharedId } = lCorner();
     log.dispatch(
       columnCreate({ storeyId, at: { pointId: sharedId }, widthMm: 400, depthMm: 400 }),
@@ -5051,10 +5060,34 @@ describe('columnCreate', () => {
       ),
     ).toThrow(/已有柱/);
     expect(log.document.canonical()).toBe(before);
+    // 正对照一：换个坐标就行
     log.dispatch(
       columnCreate({ storeyId, at: { x: 100, y: 100 }, widthMm: 400, depthMm: 400 }),
     );
     expect(log.document.byKind('column')).toHaveLength(2);
+    // 红：同一对**坐标**再来一次 —— 入参给的是字面量，所以这是个全新 pointId，
+    // 但真源里它和上一根柱落在同一个 (100, 100) 上，图纸上就是重影。
+    // 旧判据比 pointId 相等时这一发全然是瞎的（上一条只复用同一个 id，盯不住）。
+    const beforeSameXY = log.document.canonical();
+    expect(() =>
+      log.dispatch(
+        columnCreate({ storeyId, at: { x: 100, y: 100 }, widthMm: 500, depthMm: 500 }),
+      ),
+    ).toThrow(/已有柱/);
+    expect(log.document.canonical()).toBe(beforeSameXY);
+    // 正对照二（钉住"同层"这半边）：计划 3 的柱网逐层复用同一平面坐标，
+    // 二层同一根轴线上的柱不是重影 —— 删掉 storeyId 过滤就会在这一发误红
+    log.dispatch(storeyCreate({ projectId, index: 1, elevationMm: 3000, heightMm: 3000 }));
+    log.dispatch(
+      columnCreate({
+        storeyId: storeyByIndex(log, 1),
+        at: { x: 100, y: 100 },
+        widthMm: 400,
+        depthMm: 400,
+      }),
+    );
+    expect(log.document.byKind('column')).toHaveLength(3);
+    expect(log.document.byKind('point')).toHaveLength(5);
   });
 
   it('复用别层的点 → 抛（与墙共用 resolvePointRef 那条判据）', () => {
@@ -5075,14 +5108,29 @@ describe('columnCreate', () => {
   it('楼层不存在 / 拿墙当楼层 → 两道中文各抛一次，柱一根都不许留下', () => {
     const { log, first } = lCorner();
     const depth = log.depth;
+    // heightMm 必须显式给：省略时 column.ts 要拿 storey.heightMm 兜底，
+    // 删掉 requireStorey 后这一发会崩在 `undefined.heightMm` 上 —— 红是 JS 的 TypeError，
+    // 证不到"这道中文契约在起作用"（Task 8 评审 F4）
     expect(() =>
       log.dispatch(
-        columnCreate({ storeyId: MISSING, at: { x: 0, y: 0 }, widthMm: 400, depthMm: 400 }),
+        columnCreate({
+          storeyId: MISSING,
+          at: { x: 0, y: 0 },
+          widthMm: 400,
+          depthMm: 400,
+          heightMm: 4000,
+        }),
       ),
     ).toThrow(/楼层 不存在/);
     expect(() =>
       log.dispatch(
-        columnCreate({ storeyId: first.id, at: { x: 0, y: 0 }, widthMm: 400, depthMm: 400 }),
+        columnCreate({
+          storeyId: first.id,
+          at: { x: 0, y: 0 },
+          widthMm: 400,
+          depthMm: 400,
+          heightMm: 4000,
+        }),
       ),
     ).toThrow(/不是楼层，是 wall/);
     // requireStorey 是 build 的第一行：抛在建点之前，所以点数与日志深度都该原地不动
@@ -5192,9 +5240,10 @@ describe('slabCreate', () => {
     expect(() =>
       log.dispatch(slabCreate({ storeyId, boundary: RECT_CORNERS, thicknessMm: 0 })),
     ).toThrow(/板厚必须为正/);
-    expect(() =>
-      log.dispatch(slabCreate({ storeyId, boundary: RECT_CORNERS, thicknessMm: 120.5 })),
-    ).toThrow(/整数毫米/);
+    // 同柱那条：浮点板厚直接问工厂，dispatch 版会被 Document.validate 的同款文案顶掉
+    expect(() => slabCreate({ storeyId, boundary: RECT_CORNERS, thicknessMm: 120.5 })).toThrow(
+      /整数毫米/,
+    );
   });
 
   it('撤销整块板：自建的点消失，复用的点保留', () => {
@@ -5276,9 +5325,11 @@ describe('storeySetElevation', () => {
     expect(() =>
       log.dispatch(storeyCreate({ projectId, index: 1, elevationMm: 2999, heightMm: 3000 })),
     ).toThrow(/标高重叠/);
-    // index 重复走不到标高判据：两条判据各管一件事，顺序也不能反
+    // index 重复走不到标高判据：两条判据各管一件事，顺序也不能反。
+    // 标高故意给 1500（[1500, 4500) 与一层 [0, 3000) 重叠 1500mm），让这一发**同时**违反两条
+    // 判据 —— 给 9000 时它只违反 index 查重，把两段检查上下调换也什么都红不出来。
     expect(() =>
-      log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 9000, heightMm: 3000 })),
+      log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 1500, heightMm: 3000 })),
     ).toThrow(/index 重复/);
     expect(log.document.canonical()).toBe(before);
     expect(log.document.byKind('storey')).toHaveLength(1);
@@ -5366,7 +5417,7 @@ import { assertMm, quantizeMm, type Mm } from '../units/mm';
 import type { Command } from '../model/command';
 import type { Document } from '../model/document';
 import type { ColumnEntity, Entity, PointEntity } from '../model/entity';
-import { requireStorey } from '../model/read';
+import { requirePoint, requireStorey } from '../model/read';
 import { isExistingPoint, resolvePointRef, type PointRef } from '../geom/topology';
 
 export interface ColumnCreateInput {
@@ -5403,24 +5454,42 @@ export function columnCreate(input: ColumnCreateInput): Command {
       const storey = requireStorey(doc, input.storeyId);
       const existing = resolvePointRef(doc, at, input.storeyId);
       const pointId = existing?.id ?? uuidv7();
-      // 一根柱占一个点：同点两柱在图纸上是重影，在 3D 里是 z-fighting，在算量里是双份混凝土。
-      for (const column of doc.byKind('column')) {
-        if (column.pointId === pointId) {
-          throw new RangeError(`该点已有柱 ${column.id}（点 ${pointId}）：一个点上不能立两根柱`);
-        }
-      }
       const upsert: Entity[] = [];
+      let landing: PointEntity;
       // 建不建新点看**入参形态**而不是 existing === null：两者等价（resolvePointRef 只对坐标
-      // 字面量返回 null），但这个写法让 TS 把 at 收窄成 {x, y}，免掉一条修道路断言
-      if (!isExistingPoint(at)) {
-        const created: PointEntity = {
+      // 字面量返回 null），但这个写法让 TS 把 at 收窄成 {x, y}，免掉一条修道路断言。
+      // 复用那一支的 `!` 是同一条推理的另一半（这里 existing 必然非空），与 slab.ts 里
+      // resolvePointRef(...)! 是同一个例外，不是兜底。
+      if (isExistingPoint(at)) {
+        landing = existing!;
+      } else {
+        landing = {
           kind: 'point',
           id: pointId,
           storeyId: input.storeyId,
           x: quantizeMm(at.x),
           y: quantizeMm(at.y),
         };
-        upsert.push(created);
+        upsert.push(landing);
+      }
+      // 一根柱占一个坐标：同坐标两柱在图纸上是重影，在 3D 里是 z-fighting，在算量里是双份混凝土。
+      // 判据取**坐标 + 同层**，不取 pointId —— 同一个 (x, y) 给两次字面坐标就会新建出第二个点
+      // 实体，id 相等那条对这种重影全然是瞎的（板侧 geom/ring.ts 按坐标查重，柱侧按 id 查，
+      // 一起提交的两个文件自相矛盾）。候选坐标直接取 landing.x/y，也就是真源里那对整数毫米，
+      // 判据与真源不许有两套口径。
+      // 限定同层是给计划 3 的柱网留的：柱网逐层复用同一平面坐标，不限定就会把
+      // "二层同一根轴线上的柱"判成重影。层内柱指着的东西必须是真实存在的点，
+      // 所以拿 requirePoint 断言（悬空引用是内部不变式被破坏，抛，不 continue）。
+      for (const column of doc.byKind('column')) {
+        if (column.storeyId !== input.storeyId) continue;
+        const owner = requirePoint(doc, column.pointId, '柱落点');
+        if (owner.x === landing.x && owner.y === landing.y) {
+          // 两边都是整数毫米 → 精确相等比较，不引入 epsilon
+          throw new RangeError(
+            `该坐标已有柱 ${column.id}（点 ${column.pointId}，落在 (${owner.x}, ${owner.y})）：` +
+              `同一层的同一个坐标上不能立两根柱`,
+          );
+        }
       }
       const column: ColumnEntity = {
         kind: 'column',
@@ -5617,11 +5686,15 @@ Expected: `ring.test.ts` 7 passed；`commands-column-slab.test.ts` 21 passed（�
 2. 删掉非相邻边循环 → Expected: 只有「自交」红，且它内部的 `polygonArea === 9000000` 仍绿 —— 少了那行面积反证，这条变异能被"改用面积判据"蒙混。
 3. 把 `if (j === i + 1 || (i === 0 && j === n - 1)) continue;` 整行删掉 → Expected: 「矩形通过」与「凹 L 形通过」全红（相邻边共享端点，`segmentsIntersect` 按闭段语义如实报真相交）。这条盯的是"跳过相邻对"这个设计本身，不是判据够不够严。
 4. `storeySetElevation` 里删掉 `assertNoVerticalOverlap` → Expected: 只有「与上层重叠」红。
-5. 把 `assertNoVerticalOverlap` 的 `from < to` 改成 `from <= to` → Expected: 「正好贴邻合法」那条红（贴邻被误判成重叠）。这就是半开区间的代价，必须有一条正对照盯着它。
-6. `columnCreate` 的同点查重循环改成 `continue`（即永不命中）→ Expected: 「同一个点上不能有两根柱」红，其正对照仍绿。
-7. `slabCreate` 的 `upsert` 去掉 `!doc.get(p.id)` 过滤（复用的点也重述）→ Expected: 「混排复用与新建」的 `affected.size === 3` 与 `has(sharedId) === false` 红。
-8. `storeyCreate` 里删掉 `assertNoVerticalOverlap` → Expected: 只有「storeyCreate 也拒绝重叠楼层」的前半红，`/index 重复/` 那条仍绿（两条判据各管一件事，顺序也不能反：index 查重先，标高查重叠后）。
-9. 分别删掉 `columnCreate` 与 `slabCreate` 的 `requireStorey` 那行 → Expected: 各自新加的那条「楼层不存在 / 拿墙当楼层」红。这一条是这两个命令里唯一一道楼层检查，没有它，`storeyId` 写错会一路躺到 `affected` 与索引里 —— 也是上一版测试的真实缺口（Step 3 之所以从 19 条加到 21 条）。
+5. 把 `assertNoVerticalOverlap` 的 `from < to` 改成 `from <= to` → Expected（原写法）: 「正好贴邻合法」那条红。**实测红得多**：3 个文件 8 条红（本任务 4 条 + `opening-geom.test.ts` 3 条 + `topology.test.ts` 1 条）。这不是判据错了，而是**判据共用之后本来就该这样** —— 全仓每一个"第二层"夹具都是正好贴邻（`[3000,6000)` 对 `[0,3000)`），把贴邻判成重叠必然全线误拒。评审据此确认：现在由 4 个文件的夹具钉着半开区间语义，远强于原本预测的单条。这就是"半开区间必须有正对照盯着"的代价与收益。
+6. `columnCreate` 的同点查重循环改成 `continue`（即永不命中）→ Expected（原写法）: 「同一个点上不能有两根柱」红，其正对照仍绿。**两处订正**：① 用例名已改成「同坐标两柱 …（判据是坐标 + 同层，不看点 id）」，因为旧名"同一个点"与新增的坐标形态子用例矛盾（那两个落点是**不同的点实体**）；② "正对照仍绿"在同一个 `it` 里**不可观测** —— vitest 首个断言失败即中止，红之后的行一次都不跑。它由另一条独立用例作证：「同坐标两柱」里的**正对照一**（换坐标放行）与**正对照二**（换层放行，红在 `toHaveLength(3)` 与 `toHaveLength(5)`）。
+7. `slabCreate` 的 `upsert` 去掉 `!doc.get(p.id)` 过滤（复用的点也重述）→ Expected: 「混排复用与新建」的 `affected.size === 3` 与 `has(sharedId) === false` 红。**订正**：两条预测里只有第一条被观测到 —— `expected 4 to be 3`，随后同一条 `it` 中止，`has(sharedId)`（下一行）对本变异是**冗余断言**；`撤销整块板…` 仍绿（重述未改动的点，撤销后照样逐字节相同）。这条变异红的是"补丁里多了一条没改动的实体"，红不在撤销语义上。
+8. `storeyCreate` 里删掉 `assertNoVerticalOverlap` → Expected: 「storeyCreate 也拒绝重叠楼层」的前半红，`/index 重复/` 那条仍绿（两条判据各管一件事，顺序也不能反：index 查重先，标高查重叠后）。**坑在原用例写法**：第二条子调用原本给 `elevationMm: 9000`，那一发**只**违反 index 查重，于是把两段检查上下调换也什么都红不出来 —— "`/index 重复/` 仍绿"是平凡地绿，不是证据。已改成 `1500`（同时违反两条，只有排在前面的 index 能答），变异「两段对调」实测红在 `:481`，报 `楼层标高重叠：… 占 1500–4500 …`。全仓**只有这一条**用例能区分先后（`commands.test.ts:52-58` 用的是贴邻 3000，对调后仍绿）。
+9. 分别删掉 `columnCreate` 与 `slabCreate` 的 `requireStorey` 那行 → Expected: 各自新加的那条「楼层不存在 / 拿墙当楼层」红。**柱那一发原本是"崩红"不是"契约红"**：夹具省略 `heightMm` 时，摘掉 `requireStorey` 后代码会崩在 `undefined.heightMm` 上，红来自 JS TypeError，中文正则 `/楼层 不存在/` 撞不上它 —— 会红，但证不到"这道中文契约在起作用"。已给两条调用都补 `heightMm: 4000`：判据在时照样从 `requireStorey` 第一行抛，判据摘掉时 `heightMm ?? storey.heightMm` 短路、**根本不抛**，于是红在「expected [Function] to throw an error」。板那一发原本就是强形（悬空 `storeyId` 直接落库，L3 浮出）。
+10. （修复轮新增）摘掉 `columnCreate` / `slabCreate` 的 `assertMm`，而浮点断言仍套在 `log.dispatch` 上 → Expected: **21 全绿**（实测），因为 `Document.validate` 的整数检查会替它答，两条文案都含「整数毫米」。改问工厂之后 → `Tests 2 failed | 19 passed (21)`。**通用规矩**：断"某道校验在"时，先问有没有下游会替它红（Task 7 修复轮第 10 条的同一条）。
+11. （修复轮新增）`column.ts` 的守卫退回按 `column.pointId === landing.id` 判（保留 `storeyId` 过滤）→ Expected: **只有**坐标形态那条子用例红（`commands-column-slab.test.ts:206`，`expected [Function] to throw an error`），`:191` 那条复用同一 id 的仍绿。这一条就是评审 Important #1 描述的"瞎"，也是改名之后用例里两个正对照存在的理由。
+12. （修复轮新增）摘掉 `column.ts:70` 的 `if (column.storeyId !== input.storeyId) continue;` → Expected: 只有**跨层正对照**那条红（`:211`），形态是未捕获 `RangeError: 该坐标已有柱 …（落在 (100, 100)）`。若没有这一发正对照，"同层限定"这半边任何人都能悄悄删掉。
+13. （修复轮新增，实测**无红**，记账）把 `column.ts:71` 的 `requirePoint(doc, column.pointId, '柱落点')` 换成 `doc.get(column.pointId)` + `if (!owner) continue` → **234 全绿**。`requirePoint` 函数本身由 `read.test.ts` 5 条钉着，但**这个调用点的"抛 vs 跳过"策略没有任何用例盯着**。留给 Task 10 的引用完整性属性层（与 Task 7 的 F8/L3、F9 同一批读盘账）。
 
 - [ ] **Step 8: 提交**
 
@@ -5633,6 +5706,62 @@ git commit -m "feat: 柱与楼板命令、环判据与楼层标高重叠守卫"
 执行日志写在这里：29 条（7 + 21 + 1）的实际结果、九处变异各红了哪些用例，以及 `column.ts` 与 `slab.ts` 落地后有没有残留 `as { ... }` 这类修道路断言（Step 4 的要求是加 `requireStorey` + 用 `isExistingPoint` 收窄，一处都不许留；`slab.ts` 里 `resolvePointRef(...)!` 那个 `!` 是例外，Step 4 里写明了它为什么成立）。
 
 **留给后续任务的钩子**：Task 9 的索引只吃墙与洞口（按条目取 `wallQuad` / `memberTrim` / `openingSpans` 那批原语），柱与板不进网格 —— 但 `queryPoint` 到了计划 3 必须能命中柱（点式构件），那时再扩 `SpatialIndex` 的入仓类型，本计划不预留空接口。`expandAffected` 对柱与板的行为要单独验：柱只依赖一个点，板依赖一圈点，两者的反向依赖边计划 1 的 `dependentsOf` 已经覆盖（Task 3 的 `dependentsOf` 用例里就有柱/板引用点的情形），Task 9 直接复用。
+
+#### Task 8 执行回填（2026-09-26，评审 + 修复轮之后）
+
+提交：`a8fd5a4`（实现，11 个文件）→ `2da49e3`（test-only：浮点断言改问工厂）→ `1d32c73`（修复轮 1：柱判据 + 三条判据的测试补强）。
+门禁落地态：`pnpm verify` = **234 passed / 20 files**（控制器自己复跑，并在同一 HEAD 上连跑 6 次全绿；
+`it` 数与简报一致：ring 7 / `columnCreate` 9 / `slabCreate` 6 / `storeySetElevation` 6 / `read.test.ts` +1，修复轮净增 0 条 `it`）。
+`column.ts` 与 `slab.ts` 落地后**没有任何 `as { ... }` 修道路断言**；留下的两处 `!` 是
+`slab.ts:46` 与 `column.ts:50` 的 `existing!`，同一条推理（`resolvePointRef` 只对坐标字面量返回 `null`），
+Step 4 已写明为什么成立。
+
+**与简报正文的偏离（全部已在上面正文就地订正，照抄本文件会得到落地态）**：
+
+1. `columnCreate` 的"同点两柱"判据从**按 `pointId` 相等**改为**按坐标 + 同层**，守卫扫描用 `requirePoint` 断言既存在柱的落点。
+   原因见 Step 7 第 11 条的变异：按 id 判时，同一对字面坐标给两次就长出两根柱（新点实体、不同 id），判据全然看不见，
+   而**同一次提交里板侧 `geom/ring.ts` 是按坐标查重的** —— 两个文件自相矛盾。柱与板没有任何派生层，命令层就是唯一的门。
+   随带的结构调整：`upsert` 与 `landing` 建点提前到守卫之前（候选坐标与真源共用同一份 `quantizeMm` 结果，不留第二套口径），
+   时序仍安全，因为 `dispatch` 在 `build` 返回前不落任何补丁，且用例里有 `canonical()` 逐字节断言钉住"被拒的那发什么都没写"。
+   **`requirePoint` 而不是 `doc.get(...) + continue`**：计划 1 第 9 节禁兜底；误拒风险由顺序挡掉 —— `storeyId` 过滤先于解析，
+   别层的悬空引用走不到这一行，而同层内命令层造不出悬空（`wallDelete` 不回收仍被柱引用的点，`commands.test.ts:246-282`）。
+2. 三条中文断言的**夹具与用例名**改动：`heightMm: 4000` 补齐（否则柱的 `requireStorey` 红是 JS 崩红）、
+   `storeyCreate` 那发的标高 `9000 → 1500`（否则"index 查重先生效"是平凡地绿）、
+   ring 用例改名（旧名把断言说反）、柱用例改名（旧名"同一个点"与新增的坐标形态子用例矛盾）。
+3. 两处**编不过/跑不动**的简报正文：`addWall` 的 `Omit<WallCreateInput, 'storeyId'>` + 硬写 `heightMm: 3000`
+   是 TS2783 + 两个调用点 TS2741（`WallCreateInput.heightMm` 必填），改为 `Omit<…, 'storeyId' | 'heightMm'>`；
+   Step 7 第 5/6/7/8/9 条的红集合与"单 `it` 内可观测性"按实测订正（见上）。
+4. 浮点「整数毫米」两条从 `log.dispatch(...)` 改问**工厂本身**（Step 7 第 10 条给了两边的实测计数）。
+
+**已知未闭合（不是"留给下一个人当空气"，是显式裁决）**：柱的坐标不变式目前**只在创建期成立**。
+`wallMoveEndpoint` 会改写共享点的 `(x, y)` 且只咨询墙，因此一次合法拖拽可以把 B 柱的落点搬到同层 A 柱的坐标上，
+真源里长出守卫正要禁的那个重影。本轮不修，因为它需要的不是补丁而是一条语义裁决 ——
+"拖动一个挂着柱的点"算不算移动那根柱？在拖里加"同坐标已有柱"会把"墙端落进柱位"这个真实工况一起拒掉。
+**归 Task 9**：它是 `wallMoveEndpoint.affected` 与索引的下游消费者，必须明确自己建的索引里允许存在重影柱，
+或者由它把拖侧守卫补上（那时 `dependentsOf` 已经给出柱的反向依赖边）。
+
+**下游义务（可直接粘进 ledger）**：
+
+- **T9**：① 上面那条重影语义要一次裁决；② `column.ts:69` 每次建柱 `byKind('column')` 排序 + 全扫 ⇒ 整层柱网 O(n²)，
+  要不要按点建桶由索引层决定，别在索引里重新推导柱几何；③ 柱/板不入网格（简报非目标），`expandAffected` 直接复用
+  `dependentsOf` 的现成分支。
+- **T10**：① 整数毫米扫描从"只 dispatch 墙"扩到 `column.create` / `slab.create` / `storey.setElevation`；
+  ② 随机命令序列全撤销后逐字节还原要覆盖这三条命令（今天只有逐条 `canonical()` 断言，属性层无证）；
+  ③ `assertTruthSourceInvariants(doc)` 里加"同层同坐标不得有两根柱"与"两个不同 `pointId` 落在同一坐标 ⇒ 板环非法"
+  （Step 3 的 M11 账：板构造期只按 `pointId` 去重，环判据的重复顶点支在 `slabCreate` 路径上不可达）；
+  ④ 上面 Step 7 第 13 条：`column.ts:71` 的抛/跳策略无用例；
+  ⑤ `properties.test.ts` 六处 `fc.assert` **没有钉 seed、失败也不打印 seed** —— 那是本仓唯一真正不可复现的掷硬币面，
+  顺手把 seed 打印出来。
+- **终审（本轮有意不修的 3 条 Minor + 4 条 out-of-scope）**：`positiveMm` 现在散在 4 处
+  （`column.ts:21-24` 有名函数、`slab.ts:21`、`wall.ts:126`、`storey.ts:40` 内联），三处就是阈值，提到 `units/mm.ts` 共用；
+  `wall.ts:77` 仍是 `mustExist(…, '楼层')`，"拿墙当楼层"对柱/板拒、对墙静默接受（收窄既有命令需要自己的用例）；
+  `SlabCreateInput.boundary` 可变且按引用捕获（与 `wall.ts` 的 `input.start/end` 同一既有模式，单点改会不一致）；
+  `TransactionLog.dispatch` 在 `build` 抛错时留下上一次的 `lastAffected`（计划 3 增量重建的坑）；
+  `storey.ts:21` 的 `assertNoVerticalOverlap` 是模块私有（计划 4 需要共享版，别复制第二份规则）；
+  `slab.ts:25` 与 `ring.ts:14` 在 `label='板边界'`、`length=2` 时文案逐字符相同（`test:326` 说不出哪一层答的，
+  现靠 `ring.test.ts:68-69` 直接盯判据自身那份）。
+
+---
 
 ---
 
