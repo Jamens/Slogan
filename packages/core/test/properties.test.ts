@@ -10,8 +10,8 @@ import {
   wallDelete,
   wallMoveEndpoint,
   wallSetThickness,
-  type PointEntity,
   type WallCreateInput,
+  type WallEntity,
 } from '@dajia/core';
 import { arbThickness, arbWallShape } from './arbitraries';
 
@@ -26,6 +26,25 @@ function freshStorey(): { log: TransactionLog; storeyId: string } {
 
 function withStorey(storeyId: string, shape: WallShape): WallCreateInput {
   return { storeyId, ...shape };
+}
+
+/**
+ * 取刚 dispatch 出来的那面墙。不许用 `byKind('wall').at(-1)`：byKind 按 id 升序，
+ * 同毫秒的 uuidv7 不保证有序，at(-1) 拿到的是"id 最大的墙"而不是"刚建的墙"。
+ */
+function wallJustCreated(log: TransactionLog): WallEntity {
+  for (const id of log.affected) {
+    const entity = log.document.get(id);
+    if (entity?.kind === 'wall') return entity;
+  }
+  throw new TypeError('最近一次 dispatch 没有新建墙');
+}
+
+/** 点的坐标：靠判别式而不是 cast。点不在真源里就抛，别让下一行炸成 undefined.x。 */
+function pointXY(log: TransactionLog, id: string): { x: number; y: number } {
+  const entity = log.document.get(id);
+  if (entity?.kind !== 'point') throw new TypeError(`真源里点 ${id} 不存在或不是 point`);
+  return { x: entity.x, y: entity.y };
 }
 
 /**
@@ -92,7 +111,7 @@ describe('不变式 2：随机命令序列全撤销后逐字节还原', () => {
             const target = walls[pick % walls.length]!;
             if (pick === 0) {
               // 相对锚点偏移，保证永不可能与另一端点重合（否则命令层会抛）
-              const anchor = log.document.get(target.startId) as PointEntity;
+              const anchor = pointXY(log, target.startId);
               log.dispatch(
                 wallMoveEndpoint({
                   wallId: target.id,
@@ -224,15 +243,18 @@ describe('不变式 4：没有旁路能把非法值写进真源', () => {
             fractionalInputs++;
           }
           log.dispatch(wallCreate(withStorey(storeyId, shape)));
-          const wall = log.document.byKind('wall').at(-1)!;
-          const anchor = log.document.get(wall.startId) as PointEntity;
+          const wall = wallJustCreated(log);
+          const anchor = pointXY(log, wall.startId);
           // 同样用相对锚点偏移：绝对坐标有极小概率正好落在 start 上，命令层会抛零长墙，
           // 那是生成器的运气问题不是被测代码的缺陷，不该让它变成红测试。
           const { dx, dy } = FRACTIONAL_OFFSETS[i % FRACTIONAL_OFFSETS.length]!;
           log.dispatch(
             wallMoveEndpoint({ wallId: wall.id, end: 'end', x: anchor.x + dx, y: anchor.y + dy }),
           );
-          const grown = log.document.byKind('wall').at(-1)!;
+          // 移动端点不新建墙：读回来必须还是同一面。这里若换成 wallJustCreated 会抛，
+          // 那本身就是"wallMoveEndpoint 只改点不改墙"的断言。
+          const grown = log.document.get(wall.id);
+          if (grown?.kind !== 'wall') throw new TypeError(`墙 ${wall.id} 拉伸后读不回来`);
           log.dispatch(wallSetThickness({ wallId: grown.id, thicknessMm: 50 }));
         }
         for (const entity of log.document.entities.values()) {
