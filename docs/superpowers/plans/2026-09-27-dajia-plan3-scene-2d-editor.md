@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
-> **状态：本计划展开了 Task 1–5。** Task 6–7 的边界与验收口径列在末尾，正文尚未展开成可执行步骤 —— **补齐前不得进入执行**（Task 1 起就要改根 `typecheck` 与 `vitest.config.ts`，跑到 Task 5 才发现缺口的代价是把前四步的闸门重跑一遍）。
+> **状态：本计划展开了 Task 1–6。** 只剩 Task 7（楼层切换 + 属性面板）的边界与验收口径列在末尾，正文尚未展开成可执行步骤 —— **补齐前不得进入执行**（Task 1 起就要改根 `typecheck` 与 `vitest.config.ts`，跑到 Task 5 才发现缺口的代价是把前四步的闸门重跑一遍）。Task 6 的 27 行 `--draw-shot` 判据、DR1–DR8 那张改坏表里标"按 throw 文案推"的每一行，都要在真窗口跑过之后把实测红字回填（编写期跑不了：`apps/desktop` 的 renderer 与 `scripts/desktop-shot.mjs` 要 Task 3 之后才存在）。
 
 **Goal:** 把 `@dajia/scene-2d` 从一行 stub 推进到「在真窗口里看得见一层平面、点得中构件」：视口仿射、绘制指令表、命中与选中，全部保持 DOM-free 可单测；像素是否真上屏由一次性截图回读证明，不靠人眼。
 
@@ -32,25 +32,29 @@
 |---|---|---|
 | `vitest.config.ts` | 补 `@dajia/scene-2d` 等三个 alias（现在只有 core/protocol，测试 import 包名会解析不到） | T1 |
 | `packages/scene-2d/tsconfig.json` | 让 scene-2d 进 typecheck（**现在根 `typecheck` 脚本只跑 core/protocol/desktop，scene-2d 的类型错误无人拦**） | T1 |
-| `package.json`（根） | `typecheck` 串上 scene-2d | T1 |
+| `package.json`（根） | `typecheck` 串上 scene-2d；**T6 加** `"draw-shot"`（`shot`/`pick-shot`/`edit-shot` 三条一字不动） | T1 |
 | `packages/scene-2d/src/viewport.ts` | 整数毫米 ↔ 屏幕像素仿射：`Viewport` / `mmToPx` / `pxToMm` / `panBy` / `zoomAt` / `fitViewport` | T1 |
 | `packages/scene-2d/test/viewport.test.ts` | 上面那个的可红测试（含 2 条属性） | T1 |
 | `packages/scene-2d/src/demo.ts` | `demoHouse()`：无持久化时的样例两层房，命令现场建，desktop 与测试共用同一份几何 | T2 |
 | `packages/scene-2d/src/drawlist.ts` | `buildDrawList(doc, storeyId, viewport, selection)` → `DrawOp[]`；`fitStorey(...)` → 该层的初始视口 | T2 |
 | `packages/scene-2d/test/drawlist.test.ts` | 指令表的结构与不变式 | T2 |
-| `packages/scene-2d/src/pick.ts` | 命中测试：`PICK_TOL_PX` / `distanceToSegmentPx` / `pickAt` / `pickOne` / `probeTarget`（靶子 = 指令表，容差 = 屏幕像素） | T4 |
-| `packages/scene-2d/test/pick.test.ts` | 命中的判据：容差两侧、回边、层序压倒距离、去重、NaN 守卫、2 条属性 | T4 |
-| `packages/scene-2d/src/index.ts` | 出口（现在是 `export const SCENE_2D_PACKAGE = 'scene-2d';` 一行 stub） | T1 起逐个补 |
-| `packages/scene-2d/src/handles.ts` | 拖拽的屏幕侧全部纯函数：`HANDLE_COLOR`/`PREVIEW_COLOR`/`PIXEL_CHANNEL_TOL`/`HANDLE_RADIUS_PX`、`moveTargetOf`（px→mm 唯一出口）、`dragHandlesOf`、`pickHandle`、`legalDrop`（试跑 core 的 `build` 当合法性预言）、`dragProbe`、`pointSnapshot` | T5 |
-| `packages/scene-2d/test/handles.test.ts` | 12 条：把手只给选中的墙、顺序与插入序无关、并列按 key、NaN、`legalDrop` 三条（含"坏的是邻墙"）、探针四性质、快照键集合、三种颜色互相分得开 | T5 |
+| `packages/scene-2d/src/pick.ts` | 命中测试：`PICK_TOL_PX` / `distanceToSegmentPx` / `pickAt` / `pickOne` / `probeTarget`（靶子 = 指令表，容差 = 屏幕像素）。**T6 起**：候选点扫描抽成文件内私有 `uniqueHitOf`，新增出口 `pickPxOf`（给"点某构件的中点"这一发像素用） | T4 |
+| `packages/scene-2d/test/pick.test.ts` | 命中的判据：容差两侧、回边、层序压倒距离、去重、NaN 守卫、2 条属性。**T6 +3 条 ⇒ 18 条** | T4 |
+| `packages/scene-2d/src/index.ts` | 出口（现在是 `export const SCENE_2D_PACKAGE = 'scene-2d';` 一行 stub） | T1 起逐个补；T6 加 `snapping` / `editing` 两行 |
+| `packages/scene-2d/src/snapping.ts` | 五档吸附（端点/中点/垂足/正交/15°）：`SNAP_TOL_PX`/`ANGLE_TOL_DEG`/`SNAP_COLOR`/`SNAP_MARK_HALF_PX`、`snapFieldOf`、`snapFromCursor`、`dropTargetOf`、`pointRefOf`；T5 的 `MoveTarget` 三件套（`MoveTarget`/`quantizeTarget`/`moveTargetOf`）从 `handles.ts` 迁到这里 | T6 |
+| `packages/scene-2d/test/snapping.test.ts` | 吸附的判据 28 条（含 2 条属性）：分组压倒距离、并列按 `ownerId`、档位互斥、`excludeMm`、NaN | T6 |
+| `packages/scene-2d/src/editing.ts` | 工具态与画墙草稿：`Tool`、`draftAtPress`/`moveDraft`/`draftRefs`/`legalWallCreate`/`draftCommand`、`newWallDefaults`、`planDelete`/`pruneSelection`、`lastCreatedWall`、`wallProbe`（六道筛） | T6 |
+| `packages/scene-2d/test/editing.test.ts` | 编辑判据 30 条（含 1 条属性）：草稿三态、删除四色出口、`unsupported`、探针六筛与自洽 | T6 |
+| `packages/scene-2d/src/handles.ts` | 拖拽的屏幕侧全部纯函数：`HANDLE_COLOR`/`PREVIEW_COLOR`/`PIXEL_CHANNEL_TOL`/`HANDLE_RADIUS_PX`、`dragHandlesOf`、`pickHandle`、`legalDrop`（试跑 core 的 `build` 当合法性预言）、`dragProbe`、`pointSnapshot`。**T5 的 `moveTargetOf` 三件套 T6 迁往 `snapping.ts`**；`DragHandle` 补 `anchorMm`；`dragProbe` 的落点改吃 `dropTargetOf`，并新增出口 `handleDropTarget` | T5 |
+| `packages/scene-2d/test/handles.test.ts` | 12 条：把手只给选中的墙、顺序与插入序无关、并列按 key、NaN、`legalDrop` 三条（含"坏的是邻墙"）、探针四性质、快照键集合、三种颜色互相分得开。**T6 +7 条 ⇒ 19 条**（合成把手补 `anchorMm`；配色那条从三色列成四色；`moveTargetOf` 那句换成恒等式） | T5 |
 | `packages/core/test/commands-drag.test.ts` | 7 条：柱跟走（对象同一性）/ 重影柱抛错 / 同一句文案的第二个产地 / 跨层正对照 / 原地拖不抛 / `end:'start'` 角色反转两条 | T5 |
 | `packages/core/src/geom/topology.ts` | 加 `assertNoGhostColumn(doc, storeyId, at, exceptPointId?)` —— 判据从 `columnCreate` 里搬出来，第二个产地是拖动落点复核 | T5 |
 | `apps/desktop/electron.vite.config.ts` | renderer 侧补 `@dajia/core` + `@dajia/scene-2d` 的 alias（scene-2d 源码里 import 的是裸说明符） | T3 |
-| `apps/desktop/src/renderer/src/PlanCanvas.tsx` | 一块 canvas：量尺寸 → `fitStorey` → `buildDrawList` → 刷；并挂 `window.__dajiaDebug`。**T4 起**：选中进绘制、`onPointerDown` 走 `pickOne`、`opsRef` 让钩子读刷上屏那份、`DebugReport` 补 `selectedIds`/`selectedPx`/`pick`/`selectedAfterBlank`。**T5 起**：`paintHandles` + `paintPreview` 两个专用画家、window 级 `pointermove/up/cancel` 状态机、`Ctrl+Z`/`Ctrl+Shift+Z`、`DebugReport` 再补 12 个字段（`revision`/`depth`/`canUndo`/`canRedo`/`lastError`/`handlePx`/`previewPx`/`previewNearCursorPx`/`points`/`edit`/`lastDrop`/`lastKeyEvent`） | T3 |
-| `apps/desktop/src/renderer/src/stores/editorStore.ts` | zustand：`TransactionLog`、当前层、视口。**T5 起**：`revision` 扳机（只在成功后 +1）、`lastError`、`drag` 态、`dispatch` 的 `catch`。**选中集不在这儿** —— spec 明令 selection 不进真源/撤销栈 | T3 |
-| `apps/desktop/src/renderer/src/stores/selectionStore.ts` | zustand：`ids: ReadonlySet<string>` + `select`/`toggle`/`clear`，每次给新 Set。**没有 node 测试**（`apps/` 不在 vitest include 里，也没 jsdom），正确性由 `--pick-shot` 在真窗口钉 | T4 |
-| `apps/desktop/src/main/index.ts` | 加 `--shot <path>`：`executeJavaScript('window.__dajiaDebug()')` → 写 JSON → `app.exit(code)`。**T4 加** `--pick-shot`：`sendInputEvent` 点探针给的两个点 + 条件轮询。**T5 加** `--edit-shot`：`pressPx`/`movePx`/`releasePx`/`keyCombo` 八步拖拽 + 撤销重做，每步读数分别留档；`argPath(flag)` 让开关与路径成对 | T3 |
-| `scripts/desktop-shot.mjs` | 起 Electron 跑一次回读，按判据打 PASS/FAIL；**不进 `pnpm verify`**（CI 的 ubuntu 无 xvfb）。`--pick` 多四条（共 10 PASS）、`--edit` 多十四条（共 20 PASS） | T3 |
+| `apps/desktop/src/renderer/src/PlanCanvas.tsx` | 一块 canvas：量尺寸 → `fitStorey` → `buildDrawList` → 刷；并挂 `window.__dajiaDebug`。**T4 起**：选中进绘制、`onPointerDown` 走 `pickOne`、`opsRef` 让钩子读刷上屏那份、`DebugReport` 补 `selectedIds`/`selectedPx`/`pick`/`selectedAfterBlank`。**T5 起**：`paintHandles` + `paintPreview` 两个专用画家、window 级 `pointermove/up/cancel` 状态机、`Ctrl+Z`/`Ctrl+Shift+Z`、`DebugReport` 再补 12 个字段（`revision`/`depth`/`canUndo`/`canRedo`/`lastError`/`handlePx`/`previewPx`/`previewNearCursorPx`/`points`/`edit`/`lastDrop`/`lastKeyEvent`）。**T6 起**：`paintSnapMarker` 第四色画家 + 第 6 个像素桶、模式分支（`W` 进拉墙 / `Escape` 两级退场 / `Delete`+`Backspace` 删除）、拖拽落点改走 `handleDropTarget`、`DebugReport` 再补 9 个字段（`tool`/`draft`/`snapMarkPx`/`lastCreate`/`deletedIds`/`unsupportedIds`/`selectionAfterDelete`/`lastHotkey`/`draw`） | T3 |
+| `apps/desktop/src/renderer/src/stores/editorStore.ts` | zustand：`TransactionLog`、当前层、视口。**T5 起**：`revision` 扳机（只在成功后 +1）、`lastError`、`drag` 态、`dispatch` 的 `catch`。**T6 起**：`tool` / `draft` 两格 + `setTool` / `setDraft` / `dispatchBatch`。**选中集不在这儿** —— spec 明令 selection 不进真源/撤销栈 | T3 |
+| `apps/desktop/src/renderer/src/stores/selectionStore.ts` | zustand：`ids: ReadonlySet<string>` + `select`/`toggle`/`clear`，每次给新 Set。**T6 加** `retain`（删除后给选中剪枝）。**没有 node 测试**（`apps/` 不在 vitest include 里，也没 jsdom），正确性由 `--pick-shot` 在真窗口钉 | T4 |
+| `apps/desktop/src/main/index.ts` | 加 `--shot <path>`：`executeJavaScript('window.__dajiaDebug()')` → 写 JSON → `app.exit(code)`。**T4 加** `--pick-shot`：`sendInputEvent` 点探针给的两个点 + 条件轮询。**T5 加** `--edit-shot`：`pressPx`/`movePx`/`releasePx`/`keyCombo` 八步拖拽 + 撤销重做，每步读数分别留档；`argPath(flag)` 让开关与路径成对。**T6 加** `--draw-shot`：`runDrawShot` 十六步（进模式 → 按下吸端点 → 移动 → Escape → 原地松手被拒 → 真建一面墙 → 拉墙模式删除沉默 → Escape 退模式 → 点新墙 → Backspace 删 → 撤销 → 重做 → 终态探针回基线逐字相等），加 `DrawReportShape` | T3 |
+| `scripts/desktop-shot.mjs` | 起 Electron 跑一次回读，按判据打 PASS/FAIL；**不进 `pnpm verify`**（CI 的 ubuntu 无 xvfb）。`--pick` 多四条（共 10 PASS）、`--edit` 多十五条（共 21 PASS）、**T6 `--draw` 多二十一条（共 27 PASS）** | T3 |
 
 ---
 
@@ -804,7 +808,7 @@ describe('绘制指令表', () => {
 - [ ] **Step 3: 跑测试确认红在"没有 buildDrawList"**
 
 Run: `npx vitest run packages/scene-2d/test/drawlist.test.ts > /tmp/t2-red.log 2>&1; echo exit=$?`
-Expected: exit≠0，红在解析/导出缺失（`does not provide an export named 'buildDrawList'`）。
+Expected: exit≠0，红在**函数不存在**上：`TypeError: ... buildDrawList is not a function` 一类。**订正（2026-09-28，Task 6 编写时实测机制后回填）**：原稿这里写的是"红在解析/导出缺失（`does not provide an export named 'buildDrawList'`）"，那个形状在 vitest 5 的 SSR 转译下**不会**出现 —— `export *` 里缺的名字不会在链接期抛 `SyntaxError`，它是 `undefined`，到调用那一行才炸（凭据见 Task 6 Step 4 的订正与实测）。判据不变：红必须落在"拿不到函数"上，**不许**红在断言值上。
 
 - [ ] **Step 4: 写 `drawlist.ts`**
 
@@ -1817,7 +1821,7 @@ describe('命中测试 —— 样例两层房', () => {
 - [ ] **Step 2: 跑到红**
 
 Run: `npx vitest run packages/scene-2d/test/pick.test.ts > /tmp/t4-red.log 2>&1; echo exit=$?`
-Expected: exit≠0，红在解析/导出缺失（`does not provide an export named 'pickAt'`）。**不许**出现"`probeTarget` 那条绿了"—— 导出不存在时任何断言都拿不到函数。
+Expected: exit≠0，红在**函数不存在**上：`TypeError: ... pickAt is not a function` 一类。**订正（2026-09-28，Task 6 编写时实测机制后回填）**：原稿写的是"红在解析/导出缺失（`does not provide an export named 'pickAt'`）"，vitest 5 的 SSR 转译不会在链接期抛那个 `SyntaxError` —— `export *` 里缺的名字是 `undefined`，到调用那一行才炸（凭据见 Task 6 Step 4 的订正与实测）。**不许**出现"`probeTarget` 那条绿了"—— 导出不存在时任何断言都拿不到函数。
 
 - [ ] **Step 3: 写 `pick.ts`（并给 `drawlist.ts` 加 `DRAW_LAYERS`）**
 
@@ -2053,7 +2057,7 @@ Expected: exit=0，**`Tests 15 passed`**（`Test Files 1 passed`；Step 1 的 `i
 7. `better` 去掉距离比较，只比层序（同层保留先来的那条）→ 「去重留最近的」必须红（4 变 6）。
 8. 删掉 `pickAt` 入口的 `Number.isFinite` 守卫 → 「NaN 点击点返回空表」必须红（NaN 会命中第一条指令）。
 9. `sort` 去掉 `ownerId` 那一路 → 「洗牌不改变结果」的属性必须红（同层同距离时稳定排序跟着数组顺序走）；`owners` 那条同距离定值同样会红。
-10. `probeTarget` 的 `hits.length !== 1` 改成 `hits.length < 1` → 「probeTarget 只接受唯一命中的候选点」必须红在 `expect(probe.clickPx).toEqual({ x: 200, y: 40 })`（放宽筛选后探针拿到的是被洞口线压住的 (200, 0)）。样例房那条 `probeTarget` 用例**不会**红 —— 它的第一个候选边本来就唯一，所以 R4 的牙齿全靠这条合成用例。别把它当装饰删。
+10. `probeTarget` 的 `hits.length !== 1` 改成 `hits.length < 1` → 「probeTarget 只接受唯一命中的候选点」必须红在 `expect(probe.clickPx).toEqual({ x: 200, y: 40 })`（放宽筛选后探针拿到的是被洞口线压住的 (200, 0)）。样例房那条 `probeTarget` 用例**不会**红 —— 它的第一个候选边本来就唯一，所以 R4 的牙齿全靠这条合成用例。别把它当装饰删。（**Task 6 Step 3 之后这段住在 `uniqueHitOf` 里** —— 那段候选点扫描被抽成文件内私有函数，`probeTarget` 与新的 `pickPxOf` 各吃它一次；改坏的位置跟着改名，红法与红在哪一条用例一字不变，凭据见 Task 6 Step 3 的 PK13。）
 
 反向哨兵两条，**必须还绿**：
 
@@ -3452,7 +3456,9 @@ Expected: exit=0，`Test Files 2 passed`、`Tests 19 passed`（core 7 + scene-2d
 8. `legalDrop` 换成"只判被拖这面墙自己"（自己算 `hypot(target, anchor) > thickness`）→ 第三条用例必须红（`stem` 被拖成零长那个落点被判成 true）。**这条是 D3 的全部理由**：屏幕上自己算判据，算的永远是"我这一面"。
 9. `PROBE_OFFSETS` 最前面插一条 `{ x: 0, y: 0 }` → 探针那条必须红在 `[p.targetMm.x, p.targetMm.y]).not.toEqual([point.x, point.y])`（靶子原地不动，撤销/重做判据全成空转）。
 10. 摘掉 `snapPx`（`fromPx`/`toPx`/`anchorPx` 直接返回 `mmToPx` 的浮点，`targetMm` 仍由它算）→ 「三枚像素全为整数」那三条必须红。它是 `--edit-shot` 第 3 步"落点逐字相等"的地基：主进程发事件前必定 `Math.round`，探针不给整数就是拿浮点跟主进程对赌。
+    **订正（2026-09-28 实测，Task 6 Step 5 跑同一处改坏时量出来的）**：在样例房那把尺子上这一条**一条都不红** —— `fitStorey(…, 1200, 900, 60)` 给的是 `0.125 px/mm`，百米毫米的坐标取整前后本来就是同一个数，那三句"整数"断言在 T5 的文件里是**空转的**（假绿）。真正咬 `snapPx` 的牙齿是 Task 6 Step 5 新加的那份 1200×901 尺子（`781/6240` px/mm，用例自己带一句"现场自证原生像素是浮点"），改坏编号 HC2，八个进程恒红。所以：**T5 执行到这一条时"改坏了还绿"是预期内的**，不许为此放宽别的判据、也不许在这里现造一份分数尺子（那是 Task 6 的活）；这一条在 T5 的清单里留作**已登记的无证改坏**，凭据由 HC2 补上。
 11. 探针的像素↔毫米**反向**对调（`targetMm = moveTargetOf(v, h.atPx)`、`toPx = mmToPx(v, h.atMm)`）→ 两条必须同时红：「三枚像素全为整数」（`toPx` 是浮点）与「落点必然合法」（落点退回原地，`legalDrop` 那条判的是原地）。反向哨兵：它对"干脆把两个字段都返回原坐标"这类整段写反的改动有牙齿，而第 10 条只在 `snapPx` 内部。
+    **同上一条的订正**：这两半里只有「落点必然合法」在样例房真有牙（落点退回原地 ⇒ `legalDrop` 给 false，与比例无关）；「三枚像素全为整数」在 0.125px/mm 下照样空转。Task 6 Step 5 的 HC3 跑的是同一处改坏、在 19 条的文件上实测 `14/5` 五处同时红，多出来的三处全是那一步新加的夹具与用例。
 12. `dragProbe` 删掉 `pickOne(ops, fromPx)?.ownerId !== h.wallId` 那一句 → **不保证红**：接头处哪面墙赢取决于每次现建的 uuidv7，样例房这局可能本来就选中它。它的凭据在 Step 6 —— `--edit-shot` 里"按在把手上即选中那面墙"那条判据（`selectedAfterPress === edit.wallId`）必须成立，那是真窗口里同一份文档上的确定断言。改了不红，也不许反过来删探针那句。
 13. `pointSnapshot` 删掉 `storeyId` 过滤 → 快照那条必须红在键集合（别层的点漏进来）。
 14. `pointSnapshot` 的循环只收 `wall.startId` → 同一条必须红在键集合（少一半）；`for (const id of [startId, endId])` 换成 `for (const id of [wall.startId, wall.startId])` 也一样红。
@@ -3461,7 +3467,7 @@ Expected: exit=0，`Test Files 2 passed`、`Tests 19 passed`（core 7 + scene-2d
 17. `wall.ts` 调用处不传 `exceptPointId` → G5 必须红（原地拖报"该坐标已有柱"）。
 18. 判据从坐标比较改成 `column.pointId === point.id` 比较 → G2 必须红（两根柱两个点、同一坐标 ⇒ 瞎了），既有 `commands-column-slab.test.ts` 的 `/已有柱/` 那条也会红。
 
-1–2、4–11、13–18 里任何一条"改坏了还绿"，说明那条断言写空了，就地补到能红为止；第 3、7 两条反过来，**必须还绿**（它们测的是"改动没坏但也没变"这一类）。**一条不会红的测试比没有测试更糟**，而一条"以为在守、其实没守"的防御代码比没有更糟 —— 3、7 两条就是专门写来把这两件事分开的。第 12 条按"改坏不一定红、凭据在 Step 6"处理。把每条命令与关键红字写进提交信息。
+1–2、4–9、13–18 里任何一条"改坏了还绿"，说明那条断言写空了，就地补到能红为止；第 3、7 两条反过来，**必须还绿**（它们测的是"改动没坏但也没变"这一类）。**一条不会红的测试比没有测试更糟**，而一条"以为在守、其实没守"的防御代码比没有更糟 —— 3、7 两条就是专门写来把这两件事分开的。第 12 条按"改坏不一定红、凭据在 Step 6"处理。**第 10 条与第 11 条的"三枚像素全为整数"那半按"无证改坏"处理**：2026-09-28 实测在样例房那把 0.125px/mm 的尺子上取整前后本来就是同一个数，T5 跑到那儿"改坏了还绿"是预期内的（订正原文在那两条下面）—— 不许为了让它红而在 T5 里现造分数尺子或放宽别的断言，那颗牙齿由 Task 6 Step 5 的 HC2/HC3 补上；第 11 条的另一半（「落点必然合法」）仍然必须红。把每条命令与关键红字写进提交信息。
 
 - [ ] **Step 5: desktop —— `revision` 扳机、把手状态机、两个画家**
 
@@ -4642,9 +4648,5441 @@ git commit -m "feat: 拖端点改墙：屏幕像素落到真源，撤销栈全�
 
 ---
 
-## 尚未展开的任务边界（补齐后才进执行）
+### Task 6: 拉新墙、删除构件、四类吸附
 
-- **Task 6 拉新墙 + 删除 + 吸附**：`snapping.ts`（端点/中点/垂足/15°/正交，按优先级）；`wallCreate` 复用既有端点时必须走 `{ pointId }` 引用，否则共享端点退化成一堆独立点、接头全断（计划 2 Task 3 的 `resolvePointRef` 就是这条的守卫）。**T5 留下的两个接缝归它**：① 吸附的插入点已选定 —— `moveTargetOf` 之后、`dispatch` 之前那一行（见 D4）；② 撤销掉"正被选中的构件"时屏幕上会留一个不存在的构件的把手（D7 的代价），随删除一起做。
+**Files:**
+- Create: `packages/scene-2d/src/snapping.ts`（五档吸附 + `MoveTarget` 三件套从 `handles.ts` 迁进来）
+- Create: `packages/scene-2d/src/editing.ts`（工具态、画墙草稿、删除计划、新建回来的墙）
+- Create: `packages/scene-2d/test/snapping.test.ts`（**28 条 `it`**，含 2 条属性）
+- Create: `packages/scene-2d/test/editing.test.ts`（**30 条 `it`**，含 1 条属性）
+- Modify: `packages/scene-2d/src/pick.ts`（把 `probeTarget` 的候选点扫描抽成文件内私有 `uniqueHitOf`，新增出口 `pickPxOf`）
+- Modify: `packages/scene-2d/test/pick.test.ts`（+3 条 ⇒ 18）
+- Modify: `packages/scene-2d/src/handles.ts`（`MoveTarget`/`quantizeTarget`/`moveTargetOf` 迁出、`DragHandle` 补 `anchorMm`、`dragProbe` 改吃吸附后的毫米、**新增出口 `handleDropTarget`**）
+- Modify: `packages/scene-2d/test/handles.test.ts`（+7 条 ⇒ 19；合成把手 `handleAt` 补一行 `anchorMm`；末条配色判据从三色列成四色；T5 那句 `moveTargetOf(view, p.toPx) === p.targetMm` **换成恒等式**，见"既有写法"第 3 条）
+- Modify: `packages/scene-2d/src/index.ts`（两行出口）
+- Modify: `apps/desktop/src/renderer/src/stores/editorStore.ts`（状态加 `tool`、`draft` 两格，出口加 `setTool`、`setDraft`、`dispatchBatch`）
+- Modify: `apps/desktop/src/renderer/src/stores/selectionStore.ts`（新增 `retain`，给删除后的选中剪枝用）
+- Modify: `apps/desktop/src/renderer/src/PlanCanvas.tsx`（吸附标记画家、第 6 个像素桶、模式分支、四条新快捷键、`DebugReport` 补 9 个字段）
+- Modify: `apps/desktop/src/main/index.ts`（`--draw-shot`：`runDrawShot` 十六步 + `DrawReportShape`）
+- Modify: `scripts/desktop-shot.mjs`（`modeOf()` + `wantDraw` + 判据段）
+- Modify: `package.json`（根：`"draw-shot"`）
+- **core 一行都不改**：`wallCreate` 的 `{ pointId }` 复用、`wallDelete` 的级联与孤儿点判定、`openingDelete` 全在计划 1/2 落好了。本任务只是把它们接到屏幕上，所以**没有任何 core 测试要加**（`337 → 405` 全部落在 scene-2d：28 + 30 + 3 + 7）。
+
+**先落八条裁决。** 末尾边界表给 Task 6 留的两个接缝（吸附插入点、撤销掉正被选中的构件）在这里判掉，判据写进代码与测试，不许留在纸面。
+
+| # | 问题 | 裁决 | 理由与代价 |
+|---|---|---|---|
+| S1 | 吸附容差按毫米还是按屏幕像素？ | **按屏幕像素，且直接沿用 `PICK_TOL_PX`（= 8）**：`SNAP_TOL_PX = PICK_TOL_PX`。角度档（15°/正交）另外受这条像素上限约束 | `pick.ts` 顶部那句理由是现成的：毫米容差钉的是世界尺寸，放大 k 倍它在屏幕上就宽 k 倍 —— 吸附手感必须与命中手感同源，否则"点得中"与"吸得上"是两个数，用户没法形成预期。角度档若没有这条上限，`ANGLE_TOL_DEG` 的楔形会随离锚点的距离线性张开（8000mm 外 3° ≈ 420mm），落点会"跳"到光标之外几十像素 —— 那不是吸附，是抢方向盘。**代价**：极度缩小时（`pxPerMm` 逼近 `viewport.ts` 的 `MIN_PX_PER_MM`）8px 换算是很大的毫米数，吸附会把整张图吃光。这是 `pick` 本来就有的性质（缩小后什么都点得中），不是本任务新引入的；`--draw-shot` 的判据全是"取整像素反算毫米"的自洽对账，不依赖绝对手感。 |
+| S2 | 五档靶子（端点 / 中点 / 垂足 / 15° / 正交）怎么排？轴网交点要不要做？ | **两级判据：先分组，组内看距离**。组 0 = 吸到**已有的东西**（端点/中点/垂足），组 1 = 吸到**方向**（正交/15°），组 0 永远压过组 1；组内先比 `distPx`，再比 `PRIORITY`（端点 0 < 中点 1 < 垂足 2 < 正交 3 < 15° 4），最后比 `ownerId`。**轴网交点整档不做**，写进 T7 边界 | 分组在前、距离在后的顺序不能反：**同组之间**舍近求远是最反直觉的吸附行为（光标压在垂足上却因为"端点优先级高"被吸回 4px 外的端点），而**跨组**时"吸到既有几何"必须赢过"吸到一个方向"—— 屏幕上 0.5px 外的正交落点抢走 0.7px 外的真源端点，等于把"对齐到那一枚点"让位给"大致水平"，用户看不见这 0.2px 的差别，却会在一松手之后发现墙没接到点上。优先级真正要管的只剩两类并列：① 一枚坐标既是 A 墙端点又是 B 墙中点；② 两面平行墙的同档位候选与光标**逐位等距**（`hypot(0,4)` 那种二进制精确值）。两类都必须由 `ownerId` 收尾，否则"谁赢"取决于数组序 —— `reversed(field)` 前后结果逐字相等是这条全序的凭据。**轴网交点不做**的理由不是"来不及"：交点要把同层墙按方向分族、两两求 `intersectLines`，`vec.ts` 那条"平行返回 null，绝不返回 Infinity/NaN"要在 UI 侧逐条兜住，而它给用户的收益是"能对着墙的中线拉齐" —— 那是**约束/对齐线**功能，属本任务之外的产品决定。代价：T7 若要对齐，得回去补这一档并给 `intersectLines` 的 null 分支写用例。 |
+| S3 | 15° 与正交会不会同时命中同一个方向？谁给哪种语义？ | **档位互斥**：15° 档只考虑**非轴对齐**的 15° 倍数（15/30/45/60/105…），四条轴（0/90/180/270）整档让给正交。**正交用"保坐标"语义**（水平 ⇒ `y = anchor.y`，竖直 ⇒ `x = anchor.x`），15° 用"保距离旋转"语义 | 两档若都收轴方向，同一发光标会造出**两个不同的落点**：保坐标给 `(raw.x, anchor.y)`，旋转给 `(anchor.x + round(L), anchor.y)`（`L = hypot(dx, dy)`），第二根坐标相同、第一根恒差 `round(L) − |dx| ≥ 0` ⇒ **正交那一发永远不比旋转远**，胜负由 `distPx` 决定（正交赢），`snapKind` 的读数则由"量化把 `round(L)` 甩到 3px 还是 4px"决定。互斥把这条从"靠量化运气"变成"靠构造"：画一条 4000 的水平墙，落点必须是逐字的 `(4000, 0)`，`snapKind` 必须是 `'ortho'`。**代价**：这条互斥在单测里**抓不到红**（改坏清单第 7 条实测：摘掉 `n % 6 === 0` 那一句，28 条全绿）—— 它是语义判据不是胜负判据，所以给它写一条"看起来能红"的用例就是假绿。它在真窗口里的影子是 `--draw-shot` 的 `snapKind` 读数（Step 7 判据 D3）。 |
+| S4 | 吸附插在拖拽路径的哪一处？会不会把 T5 的 `--edit-shot` 拖红？ | **插在 `moveTargetOf` 之后、`dispatch` 之前**（T5 D4 预留的那一行），实现成 `dropTargetOf(v, cursorPx, anchorMm, field, opts)` 这一个出口。三条纪律：① 只有 `pointermove` 走吸附，`pointerdown` 那一发仍是裸 `moveTargetOf`；② 探针与 renderer 吃**同一个** `dropTargetOf`（同一个锚点、同一个排除集）；③ 预览线恒画到裸光标，吸附点单独用第四色标出来 | 三条各堵一处 T5 判据的红：① 若按下就吸，`--edit-shot` 第 7 步（在把手上原地按下即松手 ⇒ `outcome === 'noop'`）里那个"落点等于真源现值"的等式会被吸附改写，"零移动不发命令"（D4）当场失效 —— 所以按下那一支**保持 T5 原样**，吸附只加在 `onMove` 里，那 21 行判据一字不改；② 若探针自己按 `atMm + offset` 算毫米，第 3 步那句"松手落点逐字等于探针给的毫米"就变成两个不同函数的比对，硬 throw 会随机红；③ 若预览线画到吸附点，第 2 步的 `previewNearCursorPx > 0` 在吸附发生时数是 0（线端离开光标 8px 就出 ±2px 窗口）。**代价**：屏幕上"临时线的终点"与"真会落下的点"可以差 8px —— 这是**看得见的取舍**，所以必须有第四个标记点把吸附位置显式画出来（S8），否则用户只知道"拖不动到我想去的地方"。 |
+| S5 | 删除怎么发？级联与孤儿点归谁？ | **`planDelete` 只发两条规则**：选中的墙 → `wall.delete`；选中的洞口且**宿主墙不在本次删除集里** → `opening.delete`。派发顺序是**先洞口后墙**。剪枝不预测补丁内容，事后拿真源问一遍 | `wallDelete.build` 自己就会收掉 `hostWallId === wall.id` 的全部洞口，再自己判端点还有没有人引用（`stillReferenced` 查墙、柱、板）。所以"删墙时顺手把它的洞口 `openingDelete` 一遍"是**多余且有害**的：墙先删掉之后那些洞口已经不存在，第二条命令 `requireOpening` 直接抛，`dispatchBatch` 就在半途留下半套状态。反过来（先删全部选中洞口再删墙）也**不写**"先删宿主墙的洞口"这一支，因为对没被选中的洞口它毫无意义、对被选中的洞口它只是把真源已有的级联复述一遍 —— 复述的规则一定会漂，漂掉的永远是没人看的那一遍（`commands/opening.ts` 顶部那句"命令层绝不复述区间规则"同一条理由）。顺序排成"洞口在前"是为了**撤销的可读性**：撤销栈顶是 `wall.delete`，一次 Ctrl+Z 就把"墙 + 它自己级联掉的洞口"整组还原（`invertPatch` 按前像重插），而不是先还回一樘无主的洞口。代价：一次删除 = **多步撤销**（N 面墙 + M 樘独立洞口），不是"一个事务"；`TransactionLog` 没有批事务概念，这属计划 4 的真源决定（见转下游）。 |
+| S6 | 谁读 `log.affected`？新建的墙怎么拿回来？ | **`lastCreatedWall(doc, affected, storeyId)` 是 renderer 侧第一个读者，三条纪律写进类型注释**：只在 `dispatch` 成功分支里同步读、读完立刻 `doc.get(id)` 复核、不许缓存 | 全局约束那句"取新建实体只认 `affected` + `kind` 判别式"到本任务才真的有 UI 读者。为什么必须复核：读过源码，`undo()` 里 `lastAffected = affectedIds(entry.patch)` 用的是**前向补丁**的 id —— 撤销掉一次 `wall.create` 之后，`affected` 里**仍然**列着那面墙的 id，而 `doc.get(id)` 已经是 `undefined`。少那一句复核，"新建即选中"会指着一面不存在的墙，屏幕上就是一个不存在的构件的把手与选中态（正是 D7 留的那个接缝）。代价：`affected` 的语义是"最近一次触及的 id"，不是"新出现的 id"，所以调用方永远要把文档当第二票 —— 这条要写在函数头上，否则 T7 的第二次读者会重犯。 |
+| S7 | `wallProbe` 为什么必须让起点吸到既有端点上？ | **必须吸**（`start.snap?.kind === 'endpoint'` 且 `start.snap.pointId !== null`），终点必须**不引别人的点**（`end.snap === null \|\| end.snap.pointId === null`） | 起点复用让这一发真的走 `{ pointId }` 引用（边界表那条硬要求：不复用则接头全断），于是 `--draw-shot` 的判据能在真窗口里证"新建的墙与既有墙共享一枚点"；终点全新建，删掉这面墙时它带走**恰好一枚**孤儿点，`pointCount` 的账才是整数。注意这条筛**不是"终点什么都不许吸"** —— 探针的候选全是轴对齐的，正交档必然命中，那是保坐标、不引点，允许且无害。只有终点引了既有点，`wallDelete` 才会判定那枚点仍被引用而留下它，删除判据就从"数得清"变成"要看运气"。共享端点的删除在单元侧另有判据（`editing.test.ts` 里"墙与它的洞口一起选中"与"筛 ② 单独说话"两条）。代价：探针能挑的落点变少，样例房一层挑不出合法落点时返回 `null`，闸门在第 0 步就抛「探针给不出可画的空白落点」—— 抛错比放宽筛条件诚实。 |
+| S8 | 第四色 `SNAP_COLOR` 的像素桶到底证明了什么？ | **只证明"那一刻确实吸附了"**，不证明"吸到了哪里" | 按构造，吸附点离光标不超过 `SNAP_TOL_PX`（S1），而 T5 的 5 号桶（`previewNearCursorPx`）用的 ±2px 窗口**比它小** —— 于是不存在任何一个像素窗口既能把标记点和别的像素分开、又不会在"标记点其实跑到 8px 外"时红。硬要写这种窗口就是假绿。所以 `snapMarkPx` 是**整幅画布上橙色像素的总数**，判据只有 `> 0` / 比较，位置的对账一律走毫米（`points` 快照与 `draft.endMm`）。代价：`--draw-shot` 的"吸上了"是存在性凭据；"吸对了"由 `snapping.test.ts` 的 28 条与 D4 那条毫米逐字判据负责。**这条桶的两个使用条件**（写 Step 7 的判据时必须照办）：样例房这份 `fitStorey` 实测 `pxPerMm = 0.125` ⇒ 8px 容差 = 64mm。**① `> 0` 那一侧不是"挑个近靶子停下"，是按构造成立**：`WALL_PROBE_OFFSETS` 那十发偏移（`editing.ts:321-332`）全是轴对齐或 45°，而 S3 的档位互斥把四条轴整档给正交、45° 整档留给 15°；候选毫米是"锚点毫米 + 整百米毫米"，`intPx` 的取整误差 ≤ 0.5px，远小于 8px 容差 ⇒ **方向档对每一发候选都会命中**。2026-09-28 实测（探针选中的起点 `(4000,3000)` × 那十发偏移，逐发问一遍 `dropTargetOf`）：**十发的 `snap` 全部非空、`distPx` 全部逐字为 `0`**，档位分布 `ortho` 1 / `angle15` 4 / `foot` 3 / `endpoint` 1 / `midpoint` 1（后四发分别被筛 ② 或筛 ④ 换掉，与这条无关）。所以第 2、3 步的 `snapMarkPx > 0` 判的是"标记画家真的在画"，不是"今天运气好吸上了"；**反过来，判据不许写成"吸到了哪个位置"**（那由毫米侧的 `end.mm === probe.endMm` 与 D4 的逐字对账负责）。**② `=== 0` 那一侧只在"既无草稿也无拖拽"的时刻成立**：起始读数、第 4 步 Escape 之后、第 15 步终态。它判的是画家**没有**在别处留下橙色 —— 只要 `draft === null && drag === null`，`paintSnapMarker` 就没有入参可画。别把它写成"离靶子够远所以没吸上"的证据：64mm 这个数在 0.125px/mm 下太容易越过，用它当凭据等于等一个不会来的红。两步读的是同一个 `snapMarkPx`，判据方向相反 —— 这正是 S8"只证存在、不证位置"的用法。 |
+
+**本任务会改到 T4/T5 的六处既有写法**（逐条列出来，免得执行时以为是笔误）：
+
+1. **`pick.ts` 的候选点扫描**：`probeTarget` 里那段"多边形取长边中点 / 线取中点 / `hits.length !== 1` 就换下一个"抽成文件内私有 `uniqueHitOf(ops, ownerId, minEdgePx)`，`probeTarget` 与新的出口 `pickPxOf` 各吃它一次。**T4 Step 5 第 10 条改坏的位置随之改名**：原文"`probeTarget` 的 `hits.length !== 1` 改成 `hits.length < 1`"读作"`uniqueHitOf` 的 `hits.length !== 1`"，红法与红在哪一条用例**一字不变**（T4 的两条靶子用例都还从 `probeTarget` 走进 `uniqueHitOf`）。
+2. **`handles.ts` 的 `DragHandle` 加一个字段 `anchorMm`**（另一端那对整数毫米，与既有 `anchorPx` 同产地）：纯加字段。T5 的 12 条把手用例判的都不是"字段集合恰好如此"，所以不红；**`handles.test.ts` 里合成的 `handleAt` 必须补 `anchorMm: { x: px, y: py }` 一行** —— 那是构造期缺字段的编译错误，不是判据变化。`DragProbe` **不加字段**（S4 ①：按下不吸 ⇒ 探针的 `targetMm` 仍由 `dropTargetOf` 给，形状不变）。
+3. **`handles.ts` 的 `dragProbe` 落点算法**：`moveTargetOf(v, toPx)` 换成 `handleDropTarget(v, toPx, h, field)`（= `dropTargetOf(v, toPx, h.anchorMm, field, { excludeMm: h.atMm })`，场在 `dragProbe` 入口取一次，**签名一字不改**，T5 那 12 条用例的调用点全都不受影响），排除的是**被拖那枚点的坐标**（不是 `pointId`，见 `SnapOptions` 那段注释），且 `legalDrop` 判的是**吸附之后**那对毫米。
+   **原计划文本在这里写过一句错话，订正如下**：原文断言"`handles.test.ts` 里那句 `expect(moveTargetOf(view, p.toPx)).toEqual(p.targetMm)` **照样绿**，因为样例房在 0.125px/mm 下探针落点距任何靶子都 > 8px"。实测**不成立**：样例房那把被挑中的把手，其候选落点里有 14/160 发被 15° 档改写（最大 6.97px），那句话十个进程红 2 个 —— 它判的是"探针没吃吸附"，而本任务让探针吃了吸附，所以它**必须换掉**，不是"照样绿"。换成同一个纯函数的自比对（`handleDropTarget(view, p.toPx, 同一把把手, 同一个场).mm === p.targetMm`，恒成立），判据从"落点等于裸毫米"升级为"探针与 renderer 同一个调用"。新增用例里有专门判"落点内容"的两条（吸上了什么、合法性判在哪一侧），牙齿在它们身上。
+4. **`handles.test.ts` 末条配色判据**：三色列成四色（多 `SNAP_COLOR`），判据本身一字不改。这是**加一格**，不是放宽 —— 它让新颜色也过同一把尺。
+5. **`PlanCanvas.tsx` 的 `Buckets` / `NO_PIXELS` / `countPixels`**：多第 6 个桶 `snapMarkPx`。`countPixels` 的**签名不变**（S8 已定：橙色桶不带位置窗口），所以 T5 的两处调用点与 5 条像素判据一行不动。
+6. **`apps/desktop/src/main/index.ts` 的 `whenReady` 分支** 与 **`scripts/desktop-shot.mjs` 的 `electronArgs` 三元式**：各加第四个开关 `--draw-shot`。`--edit-shot` 的 21 行 PASS 与 `--pick-shot` 的 10 行、`--shot` 的 6 行**判据一字不改**（新增的全是加字段与加读数）。
+
+**Interfaces:**
+- Consumes：
+  - `@dajia/core`：`wallCreate(input: WallCreateInput)`（`start`/`end` 是 `PointRef = {x,y} | {pointId}`）、`wallDelete({wallId})`、`openingDelete({openingId})`、`wallMoveEndpoint({wallId,end,x,y})`、`incidentWallEnds(doc, pointId)`、`resolvePointRef(doc, ref, storeyId)`、`isExistingPoint`、`endPointId`、`wallAxisById`、`requirePoint`、`requireStorey`、`quantizeMm`、`vec/advance/length`、`type Document`、`type Command`、`type EntityId`、`type PointRef`、`type Vec2`、`type WallEnd`、`type WallEntity`
+  - T1–T5：`Viewport`/`Px`/`mmToPx`/`pxToMm`/`viewportOf`/`fitStorey`、`DrawOp`/`Selection`/`buildDrawList`、`PICK_TOL_PX`/`pickOne`/`pickAt`/`probeTarget`、`DragHandle`/`dragHandlesOf`/`pickHandle`/`legalDrop`/`DragProbe`/`dragProbe`/`pointSnapshot`、`demoHouse`、`Document`/`TransactionLog`/`storeyCreate`/`wallCreate`/`openingCreate`/`uuidv7`
+- Produces：
+  ```ts
+  // snapping.ts（Task 5 的 MoveTarget 三件套搬到这里，handles.ts 改为 import）
+  export interface MoveTarget { readonly x: number; readonly y: number }
+  export function quantizeTarget(v: Vec2): MoveTarget;
+  export function moveTargetOf(v: Viewport, cursorPx: Px): MoveTarget;
+  export const SNAP_TOL_PX: number;              // === PICK_TOL_PX，S1
+  export const ANGLE_TOL_DEG: 3;                 // S3
+  export const SNAP_COLOR = '#ff8a00';           // S8：第四色，吸附标记
+  export const SNAP_MARK_HALF_PX: 2.5;           // 5×5 实心方块的半径，与把手同量级
+  export type SnapKind = 'endpoint' | 'midpoint' | 'foot' | 'ortho' | 'angle15';
+  export type SnapPointKind = 'endpoint' | 'midpoint';
+  export interface SnapPoint { readonly kind: SnapPointKind; readonly mm: MoveTarget
+    readonly pointId: string | null; readonly ownerId: string }
+  export interface SnapAxis { readonly ownerId: string; readonly startMm: MoveTarget
+    readonly dir: Vec2; readonly lengthMm: number }
+  /** 一层的吸附场：静态点 + 轴线。垂足与角度档的候选**不在场里**，按光标现算。 */
+  export interface SnapField { readonly points: readonly SnapPoint[]; readonly axes: readonly SnapAxis[] }
+  export interface SnapResult { readonly kind: SnapKind; readonly pointId: string | null
+    readonly mm: MoveTarget; readonly distPx: number }
+  export interface DropTarget { readonly raw: MoveTarget; readonly mm: MoveTarget
+    readonly snap: SnapResult | null }
+  export interface SnapOptions { readonly excludeMm?: MoveTarget | null }
+  export const EMPTY_SNAP_FIELD: SnapField;
+  export function snapFieldOf(doc: Document, storeyId: string): SnapField;
+  export function snapFromCursor(v: Viewport, cursorPx: Px, raw: MoveTarget,
+    anchorMm: MoveTarget | null, field: SnapField, opts?: SnapOptions): SnapResult | null;
+  export function dropTargetOf(v: Viewport, cursorPx: Px, anchorMm: MoveTarget | null,
+    field: SnapField, opts?: SnapOptions): DropTarget;
+  export function pointRefOf(mm: MoveTarget, snap: SnapResult | null): PointRef;
+
+  // editing.ts
+  export type Tool = 'select' | 'wall';
+  export const NEW_WALL_THICKNESS_MM = 240;      // 本层没有墙可参照时的**厚度**兜底；高度直读楼层 `heightMm`，不设兜底
+  export const MIN_WALL_LENGTH_MM = 500;         // 只筛 `wallProbe` 的候选；用户那一路的下限是 core 那两道（零长、墙厚不小于墙长），T7 的数值输入才把它搬进交互路径
+  export interface NewWallDefaults { readonly thicknessMm: number; readonly heightMm: number }
+  export function newWallDefaults(doc: Document, storeyId: string): NewWallDefaults;
+  export interface DraftPoint { readonly mm: MoveTarget; readonly px: Px
+    readonly snap: SnapResult | null }
+  export interface DraftWall { readonly storeyId: string; readonly start: DraftPoint
+    /** 裸光标：临时线**恒**画到这里（S4 第三条纪律），不是吸附点。 */
+    readonly cursorPx: Px; readonly end: DropTarget; readonly legal: boolean }
+  /** 按下那一发：锚点恒给 null（S3 —— 按下不许自动变正交）。 */
+  export function draftAtPress(v: Viewport, px: Px, field: SnapField): DraftPoint;
+  /** 草稿两端 → 命令入参：吸到既有点才复用（`pointRefOf` 是唯一的判据）。 */
+  export function draftRefs(draft: DraftWall): { readonly start: PointRef; readonly end: PointRef };
+  /** 终点以起点为锚求落点，并排掉起点坐标；返回**新对象**（renderer 比引用决定重绘）。 */
+  export function moveDraft(doc: Document, draft: DraftWall, v: Viewport, cursorPx: Px,
+    field: SnapField): DraftWall;
+  /** 合法性 = 拿真命令试跑一次（`legalDrop` 同一条 D3 纪律：屏幕上不重写守卫）。 */
+  export function legalWallCreate(doc: Document, draft: DraftWall): boolean;
+  /** 只认 `legal` 一色：false ⇒ null；true 时不 catch（漂了就是程序错误，该红不该被咽）。 */
+  export function draftCommand(draft: DraftWall, defaults: NewWallDefaults): Command | null;
+  export type DeleteOutcome = 'ok' | 'empty' | 'ignored-in-wall-mode' | 'unsupported';
+  export interface DeletePlan { readonly outcome: DeleteOutcome
+    readonly commands: readonly Command[]; readonly commandTypes: readonly string[]
+    readonly candidateIds: readonly EntityId[]; readonly unsupported: readonly EntityId[] }
+  export function planDelete(doc: Document, storeyId: string, tool: Tool,
+    ids: Iterable<EntityId>): DeletePlan;
+  export function pruneSelection(doc: Document, storeyId: string, ids: Iterable<EntityId>): EntityId[];
+  export interface LastCreatedWall { readonly wallId: EntityId; readonly storeyId: EntityId
+    readonly startId: EntityId; readonly endId: EntityId }
+  export function lastCreatedWall(doc: Document, affected: ReadonlySet<EntityId>,
+    storeyId: string): LastCreatedWall | null;
+  export interface WallProbe { readonly startPx: Px; readonly startMm: MoveTarget
+    readonly startPointId: EntityId; readonly endPx: Px; readonly endMm: MoveTarget
+    readonly midPx: Px; readonly lengthMm: number; readonly defaults: NewWallDefaults }
+  /** 场与默认值都在函数内现问（签名里没有它们）：探针与 renderer 因此走同一条通路。 */
+  export function wallProbe(doc: Document, storeyId: string, ops: readonly DrawOp[],
+    v: Viewport): WallProbe | null;
+
+  // pick.ts 追加
+  export function pickPxOf(ops: readonly DrawOp[], ownerId: string): Px | null;
+
+  // handles.ts 追加（S4 ② 的落地形状：锚点与排除只有这一处可写）
+  export function handleDropTarget(v: Viewport, cursorPx: Px, h: DragHandle,
+    field: SnapField): DropTarget;
+  // DragHandle 多一个字段：另一端那对整数毫米，与 anchorPx 同产地（角度档吃毫米，命中吃像素）
+  //   readonly anchorMm: MoveTarget;
+  ```
+  renderer 侧：`useEditor()` 变成 `{ log, storeyId, viewport, revision, lastError, drag, tool, draft, setViewport, setDrag, setTool, setDraft, dispatch, dispatchBatch, undo, redo }`；`useSelection()` 补 `retain`；`window.__dajiaDebug()` 的 `DebugReport` 补 `tool` / `draft` / `snapMarkPx` / `lastCreate` / `deletedIds` / `unsupportedIds` / `selectionAfterDelete` / `lastHotkey` / `draw` 九个字段；`pnpm draw-shot`。**T5 那条拖拽通路本任务只动一处落点**：`onMove` 里的 `targetMm: moveTargetOf(viewport, px)` 换成 `handleDropTarget(viewport, px, 那把把手, 场).mm` —— 代价是拖拽状态里得带上按下那把把手（或按下时取好的那一份场），因为锚点与排除都长在把手身上。按下分支（S4 ①：不许吸）、零移动那条 `noop` 判据、`--edit-shot` 那 21 行**一字不改** —— `--draw-shot` 若逼着回头改它们，就是 S4 ① 的代价没付掉（见转下游）。
+
+  **Task 6 不往 `handles.ts` 里塞删除，也不往 `snapping.ts` 里塞草稿状态**：`snapping.ts` 只回答"这一发光标落在哪"，`editing.ts` 只回答"这一发要不要发命令"，`handles.ts` 只回答"哪一枚点可以拖"。三件事各自有测试文件，PlanCanvas 只做装配（T4/T5 的"一条绘制通路 + 屏幕侧零判据"纪律在这里继续生效）。
+
+  T7 对它们的依赖：`newWallDefaults` 是"数值输入"要替换掉的唯一占位入口；`pointRefOf` 是"新建即共享端点"这条拓扑纪律在屏幕侧的唯一出口；`planDelete` 的 `unsupported` 是 T7 补 `columnDelete`/`slabDelete`/`storeyDelete` 时唯一要接的口子（补完之后 `DeletePlan.unsupported` 在样例房里恒空，那条用例要跟着改成"柱"—— 别删用例，改判据）。
+
+  **本任务实测出来的两条差额，交给 T7 收口，别在 UI 侧私自补**：① `legalDrop` 只试跑命令的 `build`，**不跑 `deriveStoreyGeometry`** ⇒ "把一枚共享点拖成星形接头（≥3 个方向过同一点）"会被预言为合法、在松手重绘时由派生层抛 `RangeError`。S1 的构造暂时让屏幕走不到那一发（把手都来自已有墙，方向数不会凭空 +1），但"复制墙 / 批量拖"一接上就可达 —— 真要补的是 core 侧的派生复核，不是 UI 再算一遍接头分类（复述派生规则必漂）。② 极小比例下吸附会**改写位移本身**，但那一档 `dragProbe` 拿不到落点。本段原句写的是"探针的落点会吸到别面墙的中点"，实测不成立，订正如下。测量条件：样例房一层、16 把把手 × 5 发偏移 = 80 发、`viewportOf(1200, 900, { pxPerMm, center: 拟合中心 })`（2026-09-28 实测，逐档重复稳定）：
+
+| `pxPerMm` | 8px 换成 | `dragProbe` | 80 发里落点 ≠ 名义落点 | 最大偏差 | 吸到别墙中点 | 单发容差内静态候选 |
+|---|---|---|---|---|---|---|
+| 0.05 | 160mm | `(8000, 6800)`（= 偏移） | 22 | 8mm | 1 | 1 |
+| 1/64 | 512mm | `(8000, 6776)`（拖 800 得 776） | 67 | 434mm | 2 | 1 |
+| 0.01 | 800mm | `(8000, 6800)` | 23 | 800mm | 2 | 2 |
+| 0.001 | 8000mm | **null** | 79 | 3800mm | 15 | **16** |
+| 1e-4 / 1e-6 | 80m / 8km | **null** | 0（80 发全塌回原地） | — | 0 | 0 |
+
+三句话读这张表：① 偏差从 `1/64` 那一档就开始出现，且探针自己那一发也躲不掉（`ortho` 把 y 钉在**量化后的裸落点**上，512mm 容差下换算不再落在整数毫米上，"向上拖 800mm"于是给 776mm）；② `0.001` 那一档"谁离光标近"已经没有区分力 —— 一枚光标 8px 内躺着 16 枚静态候选，胜负落到 `PRIORITY` 再落到 `ownerId`，15 发吸的是**别面墙的中点**，最大偏差 3800mm；③ 但 `dragProbe` 在这两档都返回 `null`（恒等筛把塌回原地的那 80 发全筛掉，合法性筛把 3800mm 那种落点筛掉），闸门在第 0 步抛「探针给不出可画的空白落点」——**所以这条代价在一次性闸门里表现为抛错，不表现为拖出怪落点**；真会拖出怪落点的是用户在极小比例下的手动拖拽，那是屏幕侧没有任何一条判据会红的。S1 已把这条记成"容差按像素"的代价；T7 若给缩放加下限（`MIN_PX_PER_MM = 1e-6` 太宽，按这张表 ≥ 0.05 才算手感可用），就在这里把它关掉。
+
+- [ ] **Step 1: scene-2d —— 先写吸附的失败测试**
+
+`packages/scene-2d/test/snapping.test.ts`（**28 条 `it`，含 2 条属性**，全是 node 里跑的纯函数 —— `snapping.ts` 只吃文档 + 视口 + 像素，不碰 canvas）。整份文件如下，**逐字照抄**：里面的注释是判据的一部分，删掉注释的执行人就无法判断某一句断言为什么在那儿。
+
+```ts
+import { describe, expect, it } from 'vitest';
+import * as fc from 'fast-check';
+import {
+  Document,
+  TransactionLog,
+  advance,
+  isExistingPoint,
+  length,
+  quantizeMm,
+  requirePoint,
+  resolvePointRef,
+  storeyCreate,
+  uuidv7,
+  vec,
+  wallAxisById,
+  wallCreate,
+  type PointRef,
+  type WallEntity,
+} from '@dajia/core';
+import {
+  ANGLE_TOL_DEG,
+  EMPTY_SNAP_FIELD,
+  PICK_TOL_PX,
+  SNAP_TOL_PX,
+  demoHouse,
+  dropTargetOf,
+  fitStorey,
+  mmToPx,
+  moveTargetOf,
+  pointRefOf,
+  snapFieldOf,
+  snapFromCursor,
+  viewportOf,
+  type MoveTarget,
+  type Px,
+  type SnapField,
+  type SnapResult,
+  type Viewport,
+} from '@dajia/scene-2d';
+
+const house = demoHouse();
+const view = fitStorey(house.doc, house.lowerStoreyId, 1200, 900, 60);
+const field = snapFieldOf(house.doc, house.lowerStoreyId);
+const lowerWalls = house.doc.byKind('wall').filter((w) => w.storeyId === house.lowerStoreyId);
+const lowerPointIds = new Set(lowerWalls.flatMap((w) => [w.startId, w.endId]));
+
+/** 整数毫米生成器：真源只收这个形状，属性不许拿浮点当输入。 */
+const mmInt = fc.integer({ min: -20000, max: 20000 });
+
+/**
+ * 角度档专用的小视口：`pxPerMm` 取 0.05 ⇒ 8px 容差 = 160mm。样例房那一份 `fitStorey` 给的是
+ * 0.125px/mm（8px = 64mm），在它上面构造"偏 2.5° 但离锚点 8000mm"那一发要算的舍入太多，
+ * 红的时候分不清是角度档坏了还是像素上限坏了。角度档的用例一律在 `av` 上跑，靶子档的用例在 `view` 上跑。
+ */
+const av = viewportOf(1000, 800, { pxPerMm: 0.05, center: vec(1500, 1500) });
+
+/** 光标就停在这对整数毫米的像素上：`snapFromCursor` 拿到的 raw 与 cursorPx 因此逐字自洽。 */
+const pxOf = (mm: MoveTarget, v: Viewport): Px => mmToPx(v, vec(mm.x, mm.y));
+
+/** 静态表里落在这一对坐标上的档位（排序后比，数组序不是判据）。 */
+const kindsAt = (fd: SnapField, x: number, y: number): string[] =>
+  fd.points
+    .filter((p) => p.mm.x === x && p.mm.y === y)
+    .map((p) => `${p.kind}`)
+    .sort();
+
+/** 把两个池子的扫描序整个倒过来：并列判据是全序的话，答案不许变。 */
+const reversed = (fd: SnapField): SnapField => ({
+  points: [...fd.points].reverse(),
+  axes: [...fd.axes].reverse(),
+});
+
+/** 独立的一层（无墙），给角度档当"没有别的靶子"的对照组。 */
+function synthStorey(): { log: TransactionLog; storeyId: string } {
+  const projectId = uuidv7();
+  const log = new TransactionLog(Document.create(projectId));
+  log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+  let storeyId = '';
+  for (const id of log.affected) {
+    if (log.document.get(id)?.kind === 'storey') storeyId = id;
+  }
+  if (storeyId === '') throw new TypeError('affected 里没有新建的楼层');
+  return { log, storeyId };
+}
+
+/**
+ * 建一面墙并把实体取回来。**不许** `byKind('wall').at(-1)`（全局约束：uuidv7 同毫秒不单调），
+ * 也不许拿入参里的坐标去 `doc.get` —— 字面坐标那一支的点 id 是命令内部新建的，外面根本拿不到。
+ */
+function wallAt(log: TransactionLog, storeyId: string, start: PointRef, end: PointRef): WallEntity {
+  log.dispatch(wallCreate({ storeyId, start, end, thicknessMm: 240, heightMm: 3000 }));
+  for (const id of log.affected) {
+    const entity = log.document.get(id);
+    if (entity?.kind === 'wall') return entity;
+  }
+  throw new TypeError('affected 里没有新建的墙');
+}
+
+/** 极坐标转整数毫米（度、y 朝上）。只用来**造测试输入**，判据一律不吃它。 */
+function mmAtAngle(deg: number, radiusMm: number): MoveTarget {
+  const rad = (deg * Math.PI) / 180;
+  return { x: quantizeMm(Math.cos(rad) * radiusMm), y: quantizeMm(Math.sin(rad) * radiusMm) };
+}
+
+/** 一对毫米的绝对角度（度，[0,360)）。判"落在哪条射线上"用。 */
+function degOf(mm: MoveTarget): number {
+  const d = (Math.atan2(mm.y, mm.x) * 180) / Math.PI;
+  return d < 0 ? d + 360 : d;
+}
+
+describe('吸附靶子表', () => {
+  it('端点表 = 本层墙端点的去重集，坐标逐枚直读真源', () => {
+    const eps = field.points.filter((t) => t.kind === 'endpoint');
+    // 样例房一层八枚：四个角 + 拐角 (4000,0) + 中段 (4000,3000) + partWest 挪出来的 (800,3000) + partEast 外端 (7000,3000)
+    expect(lowerPointIds.size).toBe(8);
+    expect(eps).toHaveLength(8);
+    // 去重：拐角 (4000,0) 被三面墙共享，只能有一条候选
+    expect(new Set(eps.map((t) => t.pointId)).size).toBe(8);
+    for (const t of eps) {
+      expect(t.pointId).not.toBeNull();
+      const point = requirePoint(house.doc, t.pointId as string, '端点');
+      expect(t.mm).toEqual({ x: point.x, y: point.y }); // 整数毫米直读真源，不做任何 px ↔ mm 往返
+      expect(Number.isInteger(t.mm.x) && Number.isInteger(t.mm.y)).toBe(true);
+    }
+  });
+
+  it('中点每面墙一条，坐标是沿轴一半处的量化毫米，且 pointId 为 null', () => {
+    const mids = field.points.filter((t) => t.kind === 'midpoint');
+    expect(lowerWalls).toHaveLength(8);
+    expect(mids).toHaveLength(8);
+    for (const t of mids) {
+      expect(t.pointId).toBeNull(); // 中点不是真源里的点：`{pointId}` 复用那一支对它无意义
+      const axis = wallAxisById(house.doc, t.ownerId);
+      const mid = advance(axis.start, axis.dir, axis.lengthMm / 2);
+      expect(t.mm).toEqual({ x: quantizeMm(mid.x), y: quantizeMm(mid.y) });
+    }
+    // 样例房全是正交墙，中点必然正好是整数毫米 —— 这一句把"量化"与"直接抄浮点"在样例上区分开
+    expect(mids.map((t) => t.mm)).toContainEqual({ x: 2000, y: 0 });
+  });
+
+  it('楼层过滤：二层的端点一枚都不许进一层的表', () => {
+    const upper = snapFieldOf(house.doc, house.upperStoreyId);
+    const upperIds = new Set(upper.points.filter((t) => t.kind === 'endpoint').map((t) => t.pointId));
+    expect(upperIds.size).toBe(8); // 素材自证：二层自己有靶子，否则下面全部断言恒真
+    expect(upper.axes).toHaveLength(8); // 轴线也按层筛：别层的轴当吸附轨道会让落点吸到另一层去
+    for (const id of upperIds) {
+      expect(lowerPointIds.has(id as string)).toBe(false);
+    }
+    for (const t of field.points) {
+      // 反向对照（两个方向都判，摘掉层过滤才一定红）：一层的表里也不该有二层的点
+      if (t.pointId === null) continue;
+      expect(upperIds.has(t.pointId)).toBe(false);
+    }
+  });
+
+  it('同一坐标既是端点又是中点：并列（各差 0px）时优先级赢，且洗牌不改变答案', () => {
+    const { log, storeyId } = synthStorey();
+    wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    const b = wallAt(log, storeyId, { x: 2000, y: 0 }, { x: 6000, y: 0 });
+    const f = snapFieldOf(log.document, storeyId);
+    // 静态表只有两枚（端点 + 中点）；同坐标的两枚垂足是**按光标现算**的，所以表里不列
+    // （『楼层过滤』那条的 axes 长度自证它们有来源）
+    expect(kindsAt(f, 2000, 0)).toEqual(['endpoint', 'midpoint']);
+    const cursor = mmToPx(view, vec(2000, 0));
+    const first = snapFromCursor(view, cursor, { x: 2000, y: 0 }, null, f);
+    expect(first?.kind).toBe('endpoint'); // 四发并列（各差 0px）⇒ 端点（0）赢中点（1）与两枚垂足（2）
+    expect(first?.pointId).toBe(b.startId);
+    expect(first?.distPx).toBeLessThan(1e-9);
+    expect(snapFromCursor(view, cursor, { x: 2000, y: 0 }, null, reversed(f))).toEqual(first);
+  });
+});
+
+describe('光标 → 吸附结果', () => {
+  it('光标压在端点上：kind / pointId / mm 三样都对，落点就是真源那枚点', () => {
+    const cursor = pxOf({ x: 8000, y: 6000 }, view); // 样例房东北角，一枚共享端点
+    const snap = snapFromCursor(view, cursor, { x: 8000, y: 6000 }, null, field);
+    expect(snap?.kind).toBe('endpoint');
+    expect(snap?.pointId).not.toBeNull();
+    expect(snap?.mm).toEqual({ x: 8000, y: 6000 });
+    expect(snap?.distPx).toBeLessThanOrEqual(SNAP_TOL_PX);
+  });
+
+  it('容差边界含等于：差 8.000px 吸、差 8.5px 不吸（改成 < 时第一句红）', () => {
+    const base = pxOf({ x: 0, y: 0 }, view); // 样例房西南角
+    const toward = (dPx: number): Px => ({ x: base.x + dPx, y: base.y });
+    // raw 恒写 {0,0}：容差判的是**光标到吸附点**的像素距离，与 raw 量化到哪儿无关
+    expect(snapFromCursor(view, toward(SNAP_TOL_PX), { x: 0, y: 0 }, null, field)?.kind).toBe('endpoint');
+    expect(snapFromCursor(view, toward(SNAP_TOL_PX + 0.5), { x: 0, y: 0 }, null, field)).toBeNull();
+    // 8.000px 那一发本身就是 `<=` 与 `<` 的分界（hypot(8,0) 是二进制精确值，不靠浮点余量）
+    expect(snapFromCursor(view, toward(SNAP_TOL_PX - 0.5), { x: 0, y: 0 }, null, field)?.kind).toBe('endpoint');
+  });
+
+  it('容差沿用 PICK_TOL_PX：屏幕上"点得中一条线"与"吸得上一个点"是同一个手感', () => {
+    expect(SNAP_TOL_PX).toBe(PICK_TOL_PX);
+  });
+
+  it('垂足比端点近时距离赢，且同距的正交档把功劳让给对象档', () => {
+    const { log, storeyId } = synthStorey();
+    wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    const v = viewportOf(1000, 800, { pxPerMm: 0.02, center: vec(2000, 0) }); // 8px = 400mm
+    const list = snapFieldOf(log.document, storeyId);
+    const raw = { x: 200, y: 8 };
+    const snap = snapFromCursor(v, pxOf(raw, v), raw, null, list);
+    // 端点 (0,0) 离光标 200.16mm = 4.0px（在容差内！），垂足 (200,0) 离 8mm = 0.16px
+    // ⇒ 端点优先级更高（0 < 2），但垂足近 25 倍 —— 距离赢，落点必须回到轴上
+    expect(snap?.kind).toBe('foot');
+    expect(snap?.mm).toEqual({ x: 200, y: 0 });
+    expect(snap?.pointId).toBeNull();
+    // 素材自证：换成"只看优先级"的写法时它抓得到东西（端点确实在容差之内）
+    const ep = list.points.find((t) => t.kind === 'endpoint' && t.mm.x === 0);
+    expect(ep).toBeDefined();
+    // 同一发再加锚点 (0,0)：偏 2.29° 在 ANGLE_TOL_DEG 之内 ⇒ 正交档给出**同一枚**落点，
+    // 组判据必须把功劳记给对象档（否则 --draw-shot 的 snapKind 读数会随机在两种之间跳）
+    const noAnchor = snapFromCursor(v, pxOf(raw, v), raw, null, list);
+    const withAnchor = snapFromCursor(v, pxOf(raw, v), raw, { x: 0, y: 0 }, list);
+    expect(noAnchor?.kind).toBe('foot');
+    expect(withAnchor?.kind).toBe('foot');
+    expect(withAnchor?.mm).toEqual({ x: 200, y: 0 });
+    expect(withAnchor?.distPx).toBe(noAnchor?.distPx); // 同一发候选，锚点不许把距离改掉
+  });
+
+  it('超出容差 ⇒ null，且 dropTargetOf 原样给 raw', () => {
+    const base = pxOf({ x: 0, y: 0 }, view);
+    // 往西南**外**的对角方向走 9px：沿轴方向走会被垂足档接住（它离光标恒 ≤ 半像素），
+    // 那不是容差判据能测的方向 —— 垂足候选又被 t 的上下界挡在墙外（见下一条）。
+    const far: Px = { x: base.x - SNAP_TOL_PX - 1, y: base.y + SNAP_TOL_PX + 1 };
+    const raw = moveTargetOf(view, far);
+    expect(snapFromCursor(view, far, raw, null, field)).toBeNull();
+    const drop = dropTargetOf(view, far, null, field);
+    expect(drop.snap).toBeNull();
+    expect(drop.mm).toEqual(raw);
+    expect(drop.raw).toEqual(raw);
+  });
+
+  it('垂足：光标落在斜墙轴线外侧，吸到轴上且不越过墙端', () => {
+    const { log, storeyId } = synthStorey();
+    wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 4000 });
+    const v = viewportOf(1000, 800, { pxPerMm: 0.1, center: vec(2000, 2000) });
+    const list = snapFieldOf(log.document, storeyId);
+    const raw = { x: 2000, y: 2050 };
+    const snap = snapFromCursor(v, pxOf(raw, v), raw, null, list);
+    // 4050/2 = 2025：垂足的精确解（斜率 1 的轴上它正好是坐标平均），量化后逐字钉得住
+    expect(snap?.mm).toEqual({ x: 2025, y: 2025 });
+    expect(snap?.kind).toBe('foot');
+    expect(snap?.pointId).toBeNull();
+    // 该墙的中点 (2000,2000) 离光标 50mm = 5px、垂足离 35.4mm = 3.5px ⇒ 这一发同时证了"距离赢"
+    expect(snap?.distPx).toBeLessThan(5);
+  });
+
+  it('垂足不许越过墙端：光标落在轴延长线外侧 ⇒ 整档没有候选', () => {
+    const { log, storeyId } = synthStorey();
+    wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 4000 });
+    const v = viewportOf(1000, 800, { pxPerMm: 0.1, center: vec(2000, 2000) });
+    const list = snapFieldOf(log.document, storeyId);
+    const raw = { x: 4100, y: 4100 };
+    // 沿轴 t = 5798mm > 轴长 5656.9mm ⇒ 该墙的 foot 候选被 t 的上下界挡掉；
+    // 最近的端点 (4000,4000) 离光标 14.1px > 8px ⇒ 什么都没有。摘掉 t 上界会吸出一枚"墙外垂足"。
+    expect(snapFromCursor(v, pxOf(raw, v), raw, null, list)).toBeNull();
+    // 素材自证：把 t 上界放开的实现会在这一发上给出 kind 'foot' 且落点在墙外 —— 轴长是 5656.9mm
+    const axis = wallAxisById(log.document, list.points[0]!.ownerId);
+    expect(axis.lengthMm).toBeLessThan(5700);
+  });
+
+  it('空层（本层没有墙）⇒ 表是空的，dropTargetOf 恒等', () => {
+    const { log, storeyId } = synthStorey();
+    const list = snapFieldOf(log.document, storeyId);
+    expect(list.points).toEqual([]);
+    expect(list.axes).toEqual([]);
+    const cursor = { x: 400, y: 300 };
+    const drop = dropTargetOf(view, cursor, null, list);
+    expect(drop.mm).toEqual(moveTargetOf(view, cursor));
+    expect(drop.snap).toBeNull();
+  });
+
+  it('NaN 光标抛 RangeError；NaN 像素一个候选都不许赢', () => {
+    expect(() => dropTargetOf(view, { x: Number.NaN, y: 5 }, null, field)).toThrow(RangeError);
+    // raw 有限、cursorPx 是 NaN ⇒ 所有 distPx 都是 NaN。写成 `if (dist > tol) continue` 时
+    // NaN > tol 是 false ⇒ 第一条候选会被当成命中（T4 第 8 条、T5 pickHandle 那条同款病）。
+    expect(snapFromCursor(view, { x: Number.NaN, y: Number.NaN }, { x: 0, y: 0 }, null, field)).toBeNull();
+  });
+
+  it('对象档永远压过方向档：端点在 0.7px、正交在 0.5px，赢的仍是端点', () => {
+    const cursor = pxOf({ x: 0, y: 0 }, view);
+    // 往屏幕左上各偏 0.5px ⇒ 裸落点 (-4, -4)：它在 southWest 与 west 两条轴的**墙外侧**
+    // （t = -4 < 0），所以垂足档这一发给不出候选，场上只剩端点与正交两档。
+    const off: Px = { x: cursor.x - 0.5, y: cursor.y + 0.5 };
+    const raw = moveTargetOf(view, off);
+    // 素材自证：裸落点确实不是 (0,0)，否则这条什么都没判
+    expect(raw).not.toEqual({ x: 0, y: 0 });
+    const drop = dropTargetOf(view, off, { x: 4000, y: 0 }, field);
+    expect(drop.snap?.kind).toBe('endpoint');
+    expect(drop.snap?.mm).toEqual({ x: 0, y: 0 }); // 端点（对象档）赢，不是正交的 (-4, 0)
+    expect(drop.raw).toEqual(raw); // 但 raw 原样保留：预览线仍画到光标
+  });
+
+  it('并列判据到底只剩 ownerId：同档位、同距离、坐标不同的两枚候选，倒序扫描给同一个落点', () => {
+    const { log, storeyId } = synthStorey();
+    wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    wallAt(log, storeyId, { x: 0, y: 8 }, { x: 4000, y: 8 });
+    // pxPerMm = 1 ⇒ 光标 (2000, 4) 到两条轴的中点各差 4px，且 `hypot(0, 4)` 是二进制精确值
+    // —— 距离**逐位相等**，不是"近似相等"。这一格是 ownerId 那一级唯一的用武之地。
+    const v = viewportOf(1000, 800, { pxPerMm: 1, center: vec(2000, 4) });
+    const f = snapFieldOf(log.document, storeyId);
+    const raw = { x: 2000, y: 4 };
+    const cursor = mmToPx(v, vec(raw.x, raw.y));
+    const first = snapFromCursor(v, cursor, raw, null, f);
+    const flipped = snapFromCursor(v, cursor, raw, null, reversed(f));
+    // 素材自证：赢的是并列两枚里的一枚，且真有一发命中（否则下面两句恒真）
+    expect(first?.kind).toBe('midpoint'); // 中点（1）压过两枚垂足（2），同档位同距离 ⇒ 只剩 id
+    expect(Math.abs((first?.distPx ?? 0) - 4)).toBeLessThan(0.01);
+    expect([[2000, 0], [2000, 8]]).toContainEqual([first!.mm.x, first!.mm.y]);
+    // 判据只许比"倒序前后相等"，**不许**钉死哪一枚赢：两面墙每次现建 uuidv7，谁小不一定。
+    expect(flipped).toEqual(first);
+  });
+});
+
+describe('角度档：15° 与正交', () => {
+  it('正交走"保坐标"语义：横向吸 y、纵向吸 x，落点是逐字整数', () => {
+    const anchor = { x: 0, y: 0 };
+    const horiz = snapFromCursor(av, pxOf({ x: 3000, y: 60 }, av), { x: 3000, y: 60 }, anchor, EMPTY_SNAP_FIELD);
+    // 旋转保距语义会给 (3001, 0)（半径 3000.6 转平后 x 变 3000.6）：差 1mm 就红，两种语义彻底分得开
+    expect(horiz?.kind).toBe('ortho');
+    expect(horiz?.pointId).toBeNull();
+    expect(horiz?.mm).toEqual({ x: 3000, y: 0 });
+    expect(Math.abs((horiz?.distPx ?? 0) - 3)).toBeLessThan(0.01);
+    const vert = snapFromCursor(av, pxOf({ x: 60, y: 3000 }, av), { x: 60, y: 3000 }, anchor, EMPTY_SNAP_FIELD);
+    expect(vert?.mm).toEqual({ x: 0, y: 3000 }); // 纵向保 y：x 归到锚点的 x
+  });
+
+  it('15° 走"保距旋转"语义：落在 45° 射线上、半径不变、位移在容差之内', () => {
+    const anchor = { x: 0, y: 0 };
+    const raw = { x: 1000, y: 1035 }; // 45.98°：离 45° 只 0.98°，离最近的轴还 44°
+    const snap = snapFromCursor(av, pxOf(raw, av), raw, anchor, EMPTY_SNAP_FIELD);
+    expect(snap?.kind).toBe('angle15');
+    expect(snap?.pointId).toBeNull();
+    // 旋转语义给的是浮点半径上的量化值 ⇒ 钉性质不钉字面量（正交那一发是整数，才许钉字面量）
+    expect(Math.abs(degOf(snap!.mm) - 45)).toBeLessThan(0.05);
+    const radiusMm = length(vec(snap!.mm.x, snap!.mm.y));
+    expect(Math.abs(radiusMm - length(vec(raw.x, raw.y)))).toBeLessThan(1.5);
+    expect(snap!.distPx).toBeLessThanOrEqual(SNAP_TOL_PX);
+  });
+
+  it('档位互斥：离 45° 2.9° 给 angle15，离轴 2.3° 给 ortho，90 的倍数不属于 15° 档', () => {
+    const near45 = snapFromCursor(
+      av,
+      pxOf({ x: 904, y: 1000 }, av),
+      { x: 904, y: 1000 },
+      { x: 0, y: 0 },
+      EMPTY_SNAP_FIELD,
+    );
+    expect(near45?.kind).toBe('angle15');
+    const nearAxis = snapFromCursor(
+      av,
+      pxOf({ x: 3000, y: 124 }, av),
+      { x: 3000, y: 124 },
+      { x: 0, y: 0 },
+      EMPTY_SNAP_FIELD,
+    );
+    // 素材自证：它同时落在两条 15° 线的 3° 楔形里 —— 45° 那一发差 2.63°，比正交的 2.38° 还近
+    expect(degOf({ x: 3000, y: 124 }) - 0).toBeGreaterThan(2.3);
+    expect(45 - degOf({ x: 3000, y: 124 })).toBeGreaterThan(2.6);
+    // S3 的牙齿：若 15° 档也收 90 的倍数，这一发会被"旋转保距"抢先（它位移更小），落点就不是整数 0
+    expect(nearAxis?.kind).toBe('ortho');
+    expect(nearAxis?.mm).toEqual({ x: 3000, y: 0 });
+  });
+
+  it('角度容差是 ANGLE_TOL_DEG：偏 2.90° 吸、偏 3.18° 不吸（两侧各留 0.1° 余量，不赌浮点边界）', () => {
+    const anchor = { x: 0, y: 0 };
+    const inside = mmAtAngle(47.9, 1350);
+    const outside = mmAtAngle(48.2, 1350);
+    expect(degOf(inside) - 45).toBeGreaterThan(2.8); // 素材自证：真的在容差内侧
+    expect(degOf(outside) - 45).toBeGreaterThan(3.1); // 素材自证：真的越过了容差
+    expect(snapFromCursor(av, pxOf(inside, av), inside, anchor, EMPTY_SNAP_FIELD)?.kind).toBe('angle15');
+    // 外侧那一发的半径只 1350mm ⇒ 45° 候选离光标约 75mm = 3.8px，**在像素容差之内**：
+    // 所以它被拒只能是角度判据干的，这条用例因此测的是 ANGLE_TOL_DEG 而不是 S1 的上限。
+    expect(snapFromCursor(av, pxOf(outside, av), outside, anchor, EMPTY_SNAP_FIELD)).toBeNull();
+    expect(ANGLE_TOL_DEG).toBe(3);
+  });
+
+  it('角度档也受 SNAP_TOL_PX 上限：同是偏 2.5°，半径 8000mm 不吸、2000mm 吸', () => {
+    const anchor = { x: 0, y: 0 };
+    const far = mmAtAngle(32.5, 8000); // 离 30° 差 2.502°（在 3° 之内），但楔形张开 349mm = 17.5px
+    expect(snapFromCursor(av, pxOf(far, av), far, anchor, EMPTY_SNAP_FIELD)).toBeNull();
+    const near = mmAtAngle(32.5, 2000); // 同一个角度、同一个档位：位移只有 87mm = 4.4px
+    expect(snapFromCursor(av, pxOf(near, av), near, anchor, EMPTY_SNAP_FIELD)?.kind).toBe('angle15');
+    // 这一对把"上限"与"角度判据"分开了：只有半径变、角度不变 ⇒ 红的只能怪上限
+    expect(degOf(far) - 30).toBeGreaterThan(2.4);
+    expect(degOf(near) - 30).toBeGreaterThan(2.4);
+  });
+
+  it('落点与锚点重合 ⇒ 无方向，角度档不给候选也不抛', () => {
+    const anchor = { x: 1000, y: 2000 };
+    expect(snapFromCursor(av, pxOf(anchor, av), anchor, anchor, EMPTY_SNAP_FIELD)).toBeNull();
+  });
+
+  it('1mm 的极短位移：正交档照给，落点就是那 1mm，且不许漏出 -0', () => {
+    const anchor = { x: 0, y: 0 };
+    const snap = snapFromCursor(av, pxOf({ x: 1, y: 0 }, av), { x: 1, y: 0 }, anchor, EMPTY_SNAP_FIELD);
+    expect(snap?.kind).toBe('ortho');
+    expect(snap?.mm).toEqual({ x: 1, y: 0 });
+    // `anchor.y - 0` 与 `-0` 在 Object.is 下不等，而 mmToPx 会把它带进屏幕（vec.ts 的 ±0 纪律）
+    expect(Object.is(snap?.mm.y, -0)).toBe(false);
+  });
+
+  it('anchorMm 为 null ⇒ 只有靶子档，画墙以外的场合不许被角度档牵走', () => {
+    const raw = { x: 3000, y: 60 };
+    expect(snapFromCursor(av, pxOf(raw, av), raw, null, EMPTY_SNAP_FIELD)).toBeNull();
+  });
+});
+
+describe('落点出口与复用引用', () => {
+  it('dropTargetOf 是 moveTargetOf 之后的同一发：连问两次逐字节相同，落点是像素的不动点', () => {
+    const cursor = pxOf({ x: 0, y: 0 }, view); // 样例房西南角：端点 + 两条轴的垂足同时在这里
+    const first = dropTargetOf(view, cursor, { x: 8000, y: 6000 }, field);
+    expect(first.raw).toEqual(moveTargetOf(view, cursor));
+    expect(first.mm).toEqual({ x: 0, y: 0 });
+    expect(first.snap?.kind).toBe('endpoint'); // 三发并列（各差 0px）⇒ 优先级只在这一刻说话
+    expect(dropTargetOf(view, cursor, { x: 8000, y: 6000 }, field)).toEqual(first);
+    // 不动点：吸附点再过一次 `moveTargetOf` 不许漂（S4 与 --edit-shot「落点逐字相等」的地基）
+    expect(moveTargetOf(view, mmToPx(view, vec(first.mm.x, first.mm.y)))).toEqual(first.mm);
+  });
+
+  it('拖端点时排掉"原地那一枚"：不排除会吸回自己，排除后这一发什么都没有', () => {
+    const { log, storeyId } = synthStorey();
+    const w = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    const list = snapFieldOf(log.document, storeyId);
+    const raw = { x: 0, y: 0 };
+    const cursor = pxOf(raw, view);
+    // 不排除：端点与该墙起点处的垂足全部重合在原地 ⇒ 拖不动（屏幕上表现为一松手墙没动）
+    expect(snapFromCursor(view, cursor, raw, { x: 4000, y: 0 }, list)?.kind).toBe('endpoint');
+    // 排除的是**坐标**而不是 pointId：那一枚点是端点、又是它自己轴线的 t=0 垂足，还正好在
+    // 锚点 (4000,0) 往回的水平射线上 —— 只按 id 排除会漏掉后两发。
+    expect(snapFromCursor(view, cursor, raw, { x: 4000, y: 0 }, list, { excludeMm: raw })).toBeNull();
+    expect(w.startId).not.toBe('');
+  });
+
+  it('属性：任意光标下落点恒为整数毫米、离光标不超过 SNAP_TOL_PX，非端点档不给 pointId', () => {
+    fc.assert(
+      fc.property(
+        fc.record({
+          x: mmInt,
+          y: mmInt,
+          dx: fc.double({ min: -20, max: 20, noNaN: true }),
+          dy: fc.double({ min: -20, max: 20, noNaN: true }),
+        }),
+        ({ x, y, dx, dy }) => {
+          const base = pxOf({ x, y }, view);
+          const drop = dropTargetOf(view, { x: base.x + dx, y: base.y + dy }, { x: 0, y: 0 }, field);
+          expect(Number.isInteger(drop.mm.x) && Number.isInteger(drop.mm.y)).toBe(true);
+          if (drop.snap !== null) {
+            expect(drop.snap.distPx).toBeLessThanOrEqual(SNAP_TOL_PX);
+            if (drop.snap.kind !== 'endpoint') expect(drop.snap.pointId).toBeNull();
+            expect(drop.mm).toEqual({ x: drop.snap.mm.x, y: drop.snap.mm.y });
+          } else {
+            expect(drop.mm).toEqual(drop.raw);
+          }
+        },
+      ),
+      { numRuns: 400 },
+    );
+  });
+
+  it('pointRefOf 只认 `pointId` 非 null 那一支：吸到中点也必须新建点', () => {
+    const mid: SnapResult = { kind: 'midpoint', pointId: null, mm: { x: 2000, y: 0 }, distPx: 0 };
+    const ref = pointRefOf(mid.mm, mid);
+    expect(ref).toEqual({ x: 2000, y: 0 });
+    expect(isExistingPoint(ref)).toBe(false);
+    // 素材自证：`snap !== null` 不是复用判据，`snap.pointId !== null` 才是。放宽一个字面量，
+    // 上面两句同时红 —— 而命令层拿到的是 `{ pointId: null }`，`resolvePointRef` 当场抛。
+    expect(pointRefOf(mid.mm, { ...mid, pointId: lowerWalls[0]!.startId })).toEqual({
+      pointId: lowerWalls[0]!.startId,
+    });
+  });
+
+  it('属性：pointRefOf 与 resolvePointRef 同一口径 —— 吸到既有点就复用它，否则才新建', () => {
+    const existingId = lowerWalls[0]!.startId;
+    fc.assert(
+      fc.property(fc.record({ x: mmInt, y: mmInt, reuse: fc.boolean() }), ({ x, y, reuse }) => {
+        const snap: SnapResult | null = reuse
+          ? { kind: 'endpoint', pointId: existingId, mm: { x, y }, distPx: 0 }
+          : null;
+        const ref = pointRefOf({ x, y }, snap);
+        if (snap === null) {
+          expect(isExistingPoint(ref)).toBe(false);
+          expect(ref).toEqual({ x, y });
+          // 字面量那一支：resolvePointRef 必返 null，命令层才会真的新建点
+          expect(resolvePointRef(house.doc, ref, house.lowerStoreyId)).toBeNull();
+          return;
+        }
+        expect(isExistingPoint(ref)).toBe(true);
+        expect(ref).toEqual({ pointId: existingId });
+        // 复用那一支必须真能被真源解析回来：解析不到就是"屏幕上以为复用了，真源里另建了一枚点"
+        expect(resolvePointRef(house.doc, ref, house.lowerStoreyId)?.id).toBe(existingId);
+      }),
+      { numRuns: 200 },
+    );
+  });
+});
+```
+
+**为什么是 `SnapField` 而不是一个扁平的靶子数组**（执行时最容易"顺手简化"回 `SnapTarget[]` 的一处）：端点与中点是**存在真源里的坐标**，可以预先列成表；垂足是"光标到轴线的正投影"，它随光标变，静态表里根本没有这一行；正交与 15° 连坐标都不属于文档，只属于"锚点 + 方向"。所以场分成两个池子 —— `points`（静态）与 `axes`（几何），五档里只有端点与中点从 `points` 取，垂足按 `axes` 现算（`footOf`），角度档吃 `anchorMm`。把 `axes` 也预先量化成一串静态点，斜墙的垂足就会吸出"离轴 1mm 以内、但不在轴上"的落点，『垂足：光标落在斜墙轴线外侧』与『垂足不许越过墙端』两条会一起红。
+
+**两条写测试前先定死的规矩**，它们决定了上面每条断言的形状：
+
+① **`distPx` 永不进 `toEqual`。** 它是两次 `mmToPx` 之差，而 `mmToPx` 里是 `(origin.y - y) * pxPerMm`，`pxPerMm` 又不是二进制有限小数 ⇒ 同一个"3px"会算成 `2.9999999999999574`。位置一律写成 `toBeLessThan` / `toBeLessThanOrEqual` / 夹一个 `Math.abs(...) < 0.01`；**毫米**才许逐字钉（`quantizeMm` 之后是整数）。
+
+② **垂足档离一切同轴候选都近。** 中点、端点都在它所在墙的轴线上，而垂足就是"光标到轴线的正投影" ⇒ 只要光标靠得够近，垂足的 `distPx` 恒 ≤ 同一条轴上任何靶子的 `distPx`（等号只在光标恰好落在那点上时成立）。所以"靶子之间谁赢"的用例必须**自带一个垂足对照**，否则测的是投影不是排序 —— 『垂足比端点近时距离赢』与『对象档永远压过方向档』两条就是按这条各挑了一个方向。
+
+**排序判据的形状**（S2 的落地，`takeBest` 里那四行 `if`）：先比**组**（端点/中点/垂足 = 吸到已有的东西，正交/15° = 吸到方向，组 0 永远压过组 1），组内先比 `distPx`，再比 `PRIORITY`（端点 0 < 中点 1 < 垂足 2 < 正交 3 < 15° 4），最后比 `ownerId`。四级判据必须构成**全序**，否则并列时"谁赢"取决于扫描序 —— 测试里 `reversed(field)`（两个池子各自整个倒过来扫）与原场的结果必须逐字节相等，那一句就是全序的凭据，也是 Step 2 第 6 条改坏的靶子。
+
+> **属性为什么仍然要有**（它抓不到随机搜的东西，但抓得到实现退化）：`numRuns: 400` 落在 40001² 的整数网格上，撞上"跳变超过 8px"那一发的概率约千分之几，所以**这条属性的红不靠随机**。它靠的是三件事：① 落点必须是整数毫米（量化漏在任一档，浮点落点会以每秒一次的频率撞到）；② `drop.mm` 与 `drop.snap.mm` 必须同源（吸附点被二次改写就红）；③ 非端点档不许带 `pointId`（把靶子表的 `pointId` 抄进角度档的结果里，200 次里必撞）。Step 2 的第 12、13 条改坏就是①②两句的**实测见证**：那两条改坏之后 27 条手搭用例全绿，只有属性红 —— 手搭用例挑的是"吸附对不对"，属性挑的是"出口有没有把吸附带出去"。反过来第 16 条（垂足不量化）只红手搭用例、属性还绿，因为样例房全是正交墙 ⇒ 属性的覆盖面等于它那一份靶子场的覆盖面。
+
+**Step 1 的 `it` 合计 28 条**（吸附靶子表 4 + 光标→吸附 11 + 角度档 8 + 落点出口与复用 5；其中 2 条属性在最后一段）。
+
+Run: `npx vitest run packages/scene-2d/test/snapping.test.ts > /tmp/t6-red.log 2>&1; echo exit=$?`
+Expected: exit≠0，红在**函数不存在**上，不在断言值上 —— 机制见 Task 6 Step 4 那条订正：vitest 走 SSR 转译，`export *` 里缺的名字不会在链接期抛 `SyntaxError: The requested module '@dajia/scene-2d' does not provide an export named '…'`，它变成 `undefined`，到**调用那一行**才炸成 `TypeError: … is not a function`（2026-09-28 在临时工程里对 `editing.ts` 的十个新出口实测过这个形状）。**不许**是断言失败：`demoHouse` / `fitStorey` / `viewportOf` / `mmToPx` / `moveTargetOf` / `PICK_TOL_PX` 到本任务都已经存在，只有 `snapping.ts` 的 11 个出口（`snapFieldOf`、`snapFromCursor`、`dropTargetOf`、`pointRefOf`、`EMPTY_SNAP_FIELD`、`SNAP_TOL_PX`、`ANGLE_TOL_DEG` 与四个类型）是新的；红的是既有函数、或红在断言值上，就说明 Step 1 的材料有问题（多半是把某个新名字写成了既有名字），先回头核对再进 Step 2。
+
+> 这份测试与下面 Step 2 那份实现，在 2026-09-27 于一份临时工程里一起跑过：`Test Files 1 passed`、`Tests 28 passed`，`tsc --noEmit`（`strict` + `noUncheckedIndexedAccess` + `noUnusedLocals` + `verbatimModuleSyntax`）无错，Step 2 那份 16 条改坏的清单是**逐条跑出来的红字**（临时工程不是仓库）。仓库里 `packages/scene-2d/` 到本任务之前只有 T1–T5 落下的文件，所以 **Step 2 的 `Tests 28 passed` 仍以仓内日志为准** —— 这段记录只说明"这 28 条与那 16 条红不是纸面推演"。
+
+- [ ] **Step 2: scene-2d —— 实现 `snapping.ts`，跑绿，再逐条改坏**
+
+`packages/scene-2d/src/snapping.ts` 整份新建。它的依赖只有三行 —— `@dajia/core`、`./viewport`、`./pick`（容差沿用 `PICK_TOL_PX`），**不依赖 `./handles`**：方向是 `handles → snapping`（拖把手也要吸附），反过来就成环。文件里同时落地 Task 5 D4 预留的那一行：`MoveTarget` / `quantizeTarget` / `moveTargetOf` 从 `handles.ts` 搬到这里，"像素换算毫米"与"毫米落到哪一档"因此住在同一个文件，全模块只剩两个出口能把光标变成坐标 —— `moveTargetOf`（裸落点：临时线、探针的 `raw`）与 `dropTargetOf`（吸附后的落点：唯一进 `dispatch` 的那一支）。第二条 px→mm 的路一旦长出，D4 就作废了，所以这两行不是"顺手放的"，是**必须放在一起**的。
+
+```ts
+import {
+  quantizeMm,
+  requirePoint,
+  wallAxisById,
+  type Document,
+  type PointRef,
+  type Vec2,
+} from '@dajia/core';
+import { mmToPx, pxToMm, type Px, type Viewport } from './viewport';
+import { PICK_TOL_PX } from './pick';
+
+/**
+ * 屏幕像素 → 真源整数毫米的**唯一**通路（Task 5 D4 预留的那一行在这里落地）。
+ *
+ * `MoveTarget` / `moveTargetOf` 原本住在 `handles.ts`，Task 6 把它们搬进来：吸附必须插在
+ * "像素换算毫米"之后（D4），而换算与吸附分居两个文件就会长出第二条 px→mm 的路 ——
+ * 那正是 D4 禁止的东西。搬完之后，全模块只有两个出口会把光标变成落点：
+ * `moveTargetOf`（裸落点，只给临时线与探针的 raw 用）与 `dropTargetOf`（吸附后的落点，
+ * 只给 dispatch 用）。
+ */
+
+/** 落在真源上的整数毫米。与 core 的 `Vec2` 结构相同，但语义是"已过 quantizeMm"。 */
+export interface MoveTarget {
+  readonly x: number;
+  readonly y: number;
+}
+
+/**
+ * 浮点毫米 → 整数毫米。`quantizeMm` 的 `Math.round(v) + 0` 顺手把 -0 归一成 +0，
+ * 所以任何一对候选坐标比较之前都先过这里 —— 否则 `Object.is(-0, 0)` 为 false，
+ * "正交档没动 y"会在锚点 y 恰为 0 时被判成动了。
+ */
+export function quantizeTarget(v: Vec2): MoveTarget {
+  return { x: quantizeMm(v.x), y: quantizeMm(v.y) };
+}
+
+/**
+ * 屏幕像素 → 真源整数毫米（D4）。非有限输入由 `quantizeMm` 直接抛 RangeError：
+ * 指针事件的坐标恒为有限数，真出 NaN 说明上面有人算了个 0/0 —— 那种东西静默兜成 0
+ * 就是"一拖就飞到原点"，比当场崩掉难查得多。调用方（PlanCanvas 的落点分支）整段包在
+ * try/catch 里报 `lastError`。
+ */
+export function moveTargetOf(viewport: Viewport, cursorPx: Px): MoveTarget {
+  return quantizeTarget(pxToMm(viewport, cursorPx));
+}
+
+/**
+ * 吸附容差沿用命中容差：屏幕上"点得中一条线"与"吸得上一个点"必须是同一个手感，
+ * 否则用户没法形成预期（`pick.ts` 顶部那段"毫米容差放大 k 倍就宽 k 倍"的理由在这里同样成立）。
+ *
+ * **代价**：极度缩小时 8px 换算是很大的毫米数，吸附会把整张图吃光 —— 那是 `pick` 本来就有的
+ * 性质（缩小后什么都点得中），不是这里新引入的。
+ */
+export const SNAP_TOL_PX = PICK_TOL_PX;
+
+/** 角度档（正交 / 15°）的角容差，单位是**度**。 */
+export const ANGLE_TOL_DEG = 3;
+
+/**
+ * 吸附标记的第四色（S8）。它在闸门里只承担一句话："那一刻确实吸附了" —— `snapMarkPx` 数的是
+ * 全画布上这个颜色的像素总数，判据 `> 0` / 两发比较，**位置一律走毫米对账**。
+ * 为什么不给它一个位置窗口：按构造吸附点离光标不超过 `SNAP_TOL_PX`（8px），而 T5 那五个桶用的
+ * 是 ±2px 窗口 —— 不存在任何一个窗口既能把标记点和别的像素分开、又不会在"标记真的跑到 8px 外"
+ * 时红。硬写那种窗口就是假绿。
+ */
+export const SNAP_COLOR = '#ff8a00';
+
+/** 标记是 5×5 实心方块（Step 7 的 `paintSnapMarker` 照这个画）：与把手（`HANDLE_RADIUS_PX = 4.5`）同量级、不同尺寸，屏幕上两枚标记分得开。 */
+export const SNAP_MARK_HALF_PX = 2.5;
+
+/** 五档吸附。前三种吸到**已有的东西**上，后两种吸到**方向**上。 */
+export type SnapKind = 'endpoint' | 'midpoint' | 'foot' | 'ortho' | 'angle15';
+
+/** 静态点表里出现的两种档：垂足与角度档的候选按光标现算，不可能预先列出（见 `SnapField`）。 */
+export type SnapPointKind = 'endpoint' | 'midpoint';
+
+/** 表里的一枚候选点。`ownerId` 只用于并列破序，不给语义。 */
+export interface SnapPoint {
+  readonly kind: SnapPointKind;
+  readonly mm: MoveTarget;
+  /** 端点才有：它是真源里那一枚点，`{ pointId }` 复用全靠这个值非 null。中点为 null。 */
+  readonly pointId: string | null;
+  readonly ownerId: string;
+}
+
+/** 一面墙的轴线：垂足档把它当"无限长直线里的一段"来投影。 */
+export interface SnapAxis {
+  readonly ownerId: string;
+  /** 轴起点。整数毫米（`wallAxisById` 的 start 直接读自 `requirePoint`），这里只做形状转换。 */
+  readonly startMm: MoveTarget;
+  /** 单位向量 start→end（浮点，只用于投影，永不写回真源）。 */
+  readonly dir: Vec2;
+  readonly lengthMm: number;
+}
+
+/** 一层的吸附场。`fitStorey` 一次、拖动开始时取一次，`pointermove` 里只读不建。 */
+export interface SnapField {
+  readonly points: readonly SnapPoint[];
+  readonly axes: readonly SnapAxis[];
+}
+
+/** 吸附结果。`distPx` 是**光标到吸附点**的像素距离，恒 ≤ `SNAP_TOL_PX`。 */
+export interface SnapResult {
+  readonly kind: SnapKind;
+  readonly pointId: string | null;
+  readonly mm: MoveTarget;
+  readonly distPx: number;
+}
+
+/** 一发光标的完整答案：裸落点 + 吸附后的落点 + 命中的那一档（没吸到就是 null）。 */
+export interface DropTarget {
+  readonly raw: MoveTarget;
+  readonly mm: MoveTarget;
+  readonly snap: SnapResult | null;
+}
+
+export interface SnapOptions {
+  /**
+   * 排掉**这一对坐标**的所有候选（不是排掉 pointId）：拖一枚端点时，原地那枚点既是端点
+   * 候选、又是它自己那条轴线上 t=0 的垂足候选，只按 id 排会漏掉垂足那一发 —— 表现是
+   * "一松手墙没动"。
+   */
+  readonly excludeMm?: MoveTarget | null;
+}
+
+/** 只按角度档时用这一份：没有既有几何可吸，但仍然要正交 / 15°。 */
+export const EMPTY_SNAP_FIELD: SnapField = { points: [], axes: [] };
+
+/** 先分组（对象档永远压过方向档），组内先比距离，再比档位，最后比 ownerId。 */
+const GROUP: Record<SnapKind, number> = { endpoint: 0, midpoint: 0, foot: 0, ortho: 1, angle15: 1 };
+const PRIORITY: Record<SnapKind, number> = {
+  endpoint: 0,
+  midpoint: 1,
+  foot: 2,
+  ortho: 3,
+  angle15: 4,
+};
+
+/**
+ * 本层的端点（按 pointId 去重）+ 每面墙的中点 + 每面墙的轴线。
+ *
+ * 去重是必须的：样例房一层有六枚共享端点，不去重就是"同一个点六个候选、六个 ownerId"，
+ * 并列破序会挑出任意一面墙，`pointId` 却全都一样 —— 结果对，过程没法测。
+ * 柱/板的顶点、洞口中心不在表里：Task 8 的柱要加端点档时改这里，不在 UI 侧另搭一份。
+ */
+export function snapFieldOf(doc: Document, storeyId: string): SnapField {
+  const points: SnapPoint[] = [];
+  const axes: SnapAxis[] = [];
+  const seen = new Set<string>();
+  for (const wall of doc.byKind('wall')) {
+    // 别层的墙一枚靶子都不给：两层的坐标区间会重叠（上下层同位置），
+    // 漏了这行就会把一层的落点吸到另一层的点上 —— `resolvePointRef` 那一句跨层抛错
+    // 紧接着会把一发无害的吸附变成命令层异常。
+    if (wall.storeyId !== storeyId) continue;
+    // 零长墙在 `wallCreate` / `wallMoveEndpoint` 那两道正数定值闸外就已经进不来真源，
+    // 所以 `wallAxisById` 的"两端点重合"抛错在这里不可达（真打进来就是真源坏了）。
+    const axis = wallAxisById(doc, wall.id);
+    axes.push({
+      ownerId: wall.id,
+      startMm: { x: axis.start.x, y: axis.start.y },
+      dir: axis.dir,
+      lengthMm: axis.lengthMm,
+    });
+    for (const pointId of [wall.startId, wall.endId]) {
+      if (seen.has(pointId)) continue;
+      seen.add(pointId);
+      const point = requirePoint(doc, pointId, '吸附端点');
+      points.push({
+        kind: 'endpoint',
+        // 直读真源，不做任何 px ↔ mm 往返：吸上去的坐标必须和点上存的逐字相同，
+        // 否则"复用"会顺手把那枚点挪走零点几毫米。
+        mm: { x: point.x, y: point.y },
+        pointId,
+        ownerId: wall.id,
+      });
+    }
+    // 手写轴 start + dir·(L/2)：和 `SnapAxis` 用同一套浮点算法，中点与垂足不会漂出半个像素。
+    const half = axis.lengthMm / 2;
+    points.push({
+      kind: 'midpoint',
+      mm: quantizeTarget({ x: axis.start.x + axis.dir.x * half, y: axis.start.y + axis.dir.y * half }),
+      pointId: null,
+      ownerId: wall.id,
+    });
+  }
+  return { points, axes };
+}
+
+/** 取最优的内部形状 = `SnapResult` + `ownerId`：并列破序要用，但它不属于对外的落点结论。 */
+interface Scored {
+  readonly kind: SnapKind;
+  readonly pointId: string | null;
+  readonly mm: MoveTarget;
+  readonly ownerId: string;
+  readonly distPx: number;
+}
+
+/** 候选生成器的返回：吸附点与档位，`distPx` 由 `consider` 现算。 */
+interface Ranked {
+  readonly kind: SnapKind;
+  readonly pointId: string | null;
+  readonly mm: MoveTarget;
+  readonly ownerId: string;
+}
+
+/**
+ * 取最优。三条不许商量的性质：
+ * ① 非有限 `distPx` 一个都不许赢 —— NaN 比较恒 false，写成 `if (dist > tol) continue`
+ *    会把第一条候选当成命中（T4 第 8 条、T5 `pickHandle` 那条同款病）；
+ * ② 严格 `<` 才换，所以并列时留下的是**先扫到**的那一枚 —— 扫描序与输入数组的序无关性由
+ *    "并列判据全序化（group → distPx → PRIORITY → ownerId）"保证，`ownerId` 是 uuidv7，
+ *    `byKind` 又已按 id 升序，故同一次扫描里两枚并列候选的 ownerId 不可能相等；
+ * ③ 越界（> SNAP_TOL_PX）在这里统一挡，五个候选生成器都不必各自判容差。
+ */
+function takeBest(best: Scored | null, cand: Scored | null): Scored | null {
+  if (cand === null || !Number.isFinite(cand.distPx) || cand.distPx > SNAP_TOL_PX) return best;
+  if (best === null) return cand;
+  if (GROUP[cand.kind] !== GROUP[best.kind]) return GROUP[cand.kind] < GROUP[best.kind] ? cand : best;
+  if (cand.distPx !== best.distPx) return cand.distPx < best.distPx ? cand : best;
+  if (PRIORITY[cand.kind] !== PRIORITY[best.kind]) {
+    return PRIORITY[cand.kind] < PRIORITY[best.kind] ? cand : best;
+  }
+  return cand.ownerId < best.ownerId ? cand : best;
+}
+
+/**
+ * 光标 → 吸附结果。五档各造候选，`takeBest` 挑。
+ *
+ * `raw` 是**已经量化过**的裸落点（调用方给 `moveTargetOf` 的结果）：角度档要的是"光标在
+ * 世界里的位置"，用它而不是再用一次 cursorPx，才能保证落点是像素的不动点 ——
+ * 同一发光标问两次必须得同一个数，否则 `--edit-shot` 那句"松手落点逐字等于探针给的毫米"
+ * 会随机红。
+ *
+ * `anchorMm` 为 null 时角度档整段不参与：拖洞口、拖把手以外的场合没有"从哪儿出发"这回事。
+ */
+export function snapFromCursor(
+  viewport: Viewport,
+  cursorPx: Px,
+  raw: MoveTarget,
+  anchorMm: MoveTarget | null,
+  field: SnapField,
+  opts: SnapOptions = {},
+): SnapResult | null {
+  const exclude = opts.excludeMm ?? null;
+  // 五个档位先各造候选、合成一个池子，再统一排序：分开比五趟"谁更近"要把这条判据抄五遍，
+  // 而漏抄的那一遍永远不会红（它只在两档同时命中的那一格才说话）。
+  // 池子里留 null 是"这一档没命中"，不是"没有候选点" —— 过滤只发生在下面那一趟循环里。
+  const pool: (Ranked | null)[] = [];
+  for (const p of field.points) pool.push(p);
+  for (const axis of field.axes) pool.push(footOf(axis, raw));
+  if (anchorMm !== null) {
+    // 一律走裸算术，不调 core 的 sub/scale/advance/add：那些助手每个返回值都把 -0 归一成
+    // +0，但**输入参数**里的 -0 会原样参与乘法，`-0 * 0` 仍是 -0，最后 `anchor.x + (-0)`
+    // 把 -0 带进落点。绕开它们，这条就不必存在第二份。
+    const dx = raw.x - anchorMm.x;
+    const dy = raw.y - anchorMm.y;
+    // 落点与锚点重合 ⇒ 无方向。不调 normalize / atan2：前者抛"零向量无法归一化"，
+    // 后者 atan2(0,0) = 0 ⇒ 会凭空造出一枚"水平正交"候选（『落点与锚点重合 ⇒ 无方向』那条钉的就是这条）。
+    if (dx !== 0 || dy !== 0) {
+      const theta = Math.atan2(dy, dx);
+      pool.push(orthoOf(anchorMm, raw, theta));
+      pool.push(angle15Of(anchorMm, theta, Math.hypot(dx, dy)));
+    }
+  }
+  let best: Scored | null = null;
+  for (const cand of pool) {
+    if (cand === null) continue;
+    if (exclude !== null && cand.mm.x === exclude.x && cand.mm.y === exclude.y) continue;
+    const p = mmToPx(viewport, cand.mm);
+    best = takeBest(best, {
+      kind: cand.kind,
+      pointId: cand.pointId,
+      mm: cand.mm,
+      ownerId: cand.ownerId,
+      distPx: Math.hypot(cursorPx.x - p.x, cursorPx.y - p.y),
+    });
+  }
+  if (best === null) return null;
+  // 剥掉 ownerId：它只是并列判据，不是"吸到了谁"的结论（结论是 kind + mm + pointId）。
+  return { kind: best.kind, pointId: best.pointId, mm: best.mm, distPx: best.distPx };
+}
+
+/**
+ * 垂足：光标（量化后的 `raw`）到轴线那段**线段**的正投影。
+ * `t` 的上下界不能省 —— 放开它就会吸到轴延长线上，画出一条"对着空气齐"的墙。
+ * 投影长度不量化，所以端点判定比真正垂线的参数范围宽一整个 |Δraw|：光标离墙端 1mm 时
+ * 仍可能给出一枚墙外垂足，而它比端点更近，于是赢。误差 < 1mm 且永远被端点吸收，不补。
+ */
+function footOf(axis: SnapAxis, raw: MoveTarget): Ranked | null {
+  const dx = raw.x - axis.startMm.x;
+  const dy = raw.y - axis.startMm.y;
+  const t = dx * axis.dir.x + dy * axis.dir.y;
+  if (t < 0 || t > axis.lengthMm) return null;
+  return {
+    kind: 'foot',
+    pointId: null,
+    mm: quantizeTarget({ x: axis.startMm.x + axis.dir.x * t, y: axis.startMm.y + axis.dir.y * t }),
+    ownerId: axis.ownerId,
+  };
+}
+
+const DEG = 180 / Math.PI;
+const QUADRANTS = [0, 90, 180, 270];
+
+/** 偏离最近一条轴 ≤ ANGLE_TOL_DEG ⇒ 把那根坐标钉到锚点上（**保坐标**语义，S3）。 */
+function orthoOf(
+  anchor: MoveTarget,
+  raw: MoveTarget,
+  theta: number,
+): Ranked | null {
+  let best: { readonly deg: number; readonly q: number } | null = null;
+  for (const q of QUADRANTS) {
+    const d = Math.abs(((theta * DEG - q + 540) % 360) - 180);
+    if (d <= ANGLE_TOL_DEG && (best === null || d < best.deg)) best = { deg: d, q };
+  }
+  if (best === null) return null;
+  return {
+    kind: 'ortho',
+    pointId: null,
+    // 横向保 y、纵向保 x：另一根坐标取自裸落点（不是光标），所以"保坐标"与"保距离旋转"
+    // 在判据上分得开（角度档那一段里 1mm 位移的用例就是钉这条的）。
+    mm: best.q % 180 === 0 ? { x: raw.x, y: anchor.y } : { x: anchor.x, y: raw.y },
+    ownerId: 'ortho',
+  };
+}
+
+/**
+ * 偏离最近的 15° 倍数 ≤ ANGLE_TOL_DEG ⇒ 绕锚点**保距旋转**到那条射线上。
+ * 90 的倍数整档让给正交（S3）：两档同时收轴方向会给出两个不同的点，而按距离算旋转那一发
+ * 永远更近 —— 于是"画一条 4000 的水平墙"会得到 3997.8，屏幕上看不出来、真源里是一枚
+ * 永远对不齐的坐标。
+ */
+function angle15Of(
+  anchor: MoveTarget,
+  theta: number,
+  radius: number,
+): Ranked | null {
+  const deg = ((theta * DEG + 360) % 360);
+  const n = Math.round(deg / 15);
+  if (n % 6 === 0) return null; // 0 / ±90 / 180 / 270 ⇒ 正交档的地盘
+  const target = n * 15;
+  if (Math.abs(deg - target) > ANGLE_TOL_DEG) return null;
+  const rad = (target * Math.PI) / 180;
+  return {
+    kind: 'angle15',
+    pointId: null,
+    mm: quantizeTarget({
+      x: anchor.x + radius * Math.cos(rad),
+      y: anchor.y + radius * Math.sin(rad),
+    }),
+    ownerId: 'angle15',
+  };
+}
+
+/**
+ * 一发光标的落点：`moveTargetOf` 之后紧接的一步，也是 dispatch 前最后一站。
+ * 没吸到时 `mm` 就是 `raw`（同一次 `moveTargetOf` 的结果，不是再算一遍）。
+ */
+export function dropTargetOf(
+  viewport: Viewport,
+  cursorPx: Px,
+  anchorMm: MoveTarget | null,
+  field: SnapField,
+  opts: SnapOptions = {},
+): DropTarget {
+  const raw = moveTargetOf(viewport, cursorPx);
+  const snap = snapFromCursor(viewport, cursorPx, raw, anchorMm, field, opts);
+  return { raw, mm: snap === null ? raw : snap.mm, snap };
+}
+
+/**
+ * 落点 → 命令入参的端点。**吸到既有点就复用它**，否则才新建 —— 真源里存"两个坐标相同的点"
+ * 永远合不上接头（`topology.ts` 顶部那句），所以这一句是拓扑闭合在屏幕侧的唯一出口。
+ */
+export function pointRefOf(mm: MoveTarget, snap: SnapResult | null): PointRef {
+  if (snap !== null && snap.pointId !== null) return { pointId: snap.pointId };
+  // 显式抄两个字段，不 return mm：PointRef 的字面量那一支只认 x/y，多带字段会被
+  // `isExistingPoint` 的 `'pointId' in ref` 判据以外的地方读到。
+  return { x: mm.x, y: mm.y };
+}
+```
+
+`packages/scene-2d/src/index.ts` 末尾追加一行（与 T2/T4/T5 同形）：
+
+```ts
+export * from './snapping';
+```
+
+> **`MoveTarget` 与 `moveTargetOf` 是从 `handles.ts` 整段搬进来的，不是"两边各留一份"**（本任务第 7 处既有改动）。若有人只加不改，`export * from './handles'` 与 `export * from './snapping'` 会导出两个同名成员，TS 报 `Module './snapping' has already exported a member named 'MoveTarget'` —— 这条红是好事，它比"重复导出被静默去重"诚实得多。搬完之后 `handles.ts` 顶部那条 `quantizeMm`（core）与 `pxToMm`（viewport）的 import 变成未用，`noUnusedLocals` 会当场拦住（Step 5 的 diff 里有这两行的删除）。
+
+Run: `npx vitest run packages/scene-2d/test/snapping.test.ts > /tmp/t6-green.log 2>&1; echo exit=$?`
+Expected: exit=0，**`Tests 28 passed`**（`Test Files 1 passed`；Step 1 的 `it` 共 28 条，2 条属性在其中）。数对不上就是有用例被跳过或被合并，别改期望值，先查日志。
+
+逐条改坏，每条做完立刻改回来（下面 16 条的**红在哪一条是 2026-09-27 实测的**，不是推演）：
+
+1. 删掉 `snapFieldOf` 里的 `if (wall.storeyId !== storeyId) continue;` → 三条同时红：『端点表 = 本层墙端点的去重集』（8 枚变 16 枚）、『中点每面墙一条』（同理）、『楼层过滤：二层的端点一枚都不许进一层的表』。**这条是全场最贵的一处**：漏了层过滤，一层的落点会吸到二层的点上，紧接着 `resolvePointRef` 的跨层 `TypeError` 把一发无害的吸附变成命令层异常。
+2. 删掉 `takeBest` 第一句里的 `!Number.isFinite(cand.distPx)` → 『NaN 光标抛 RangeError；NaN 像素一个候选都不许赢』必须红。`NaN > tol` 是 `false` ⇒ 不跳过 ⇒ 第一条候选被当成命中。与 T4 改坏第 8 条、T5 改坏第 5 条同款病，三次都是同一个写法。
+3. `cand.distPx > SNAP_TOL_PX` 改成 `>=` → 『容差边界含等于』必须红在第一句。这一发红得干净是因为 `hypot(8, 0)` 是二进制精确值 —— 容差边界不许靠浮点余量蒙。
+4. 删掉 `takeBest` 里比较 `GROUP` 那一行（只按距离排） → 『对象档永远压过方向档』必须红（0.5px 的正交抢走 0.707px 的端点，落点变成 `(-4, 0)`）。
+5. `distPx` 与 `PRIORITY` 两段互换（先看档位再看距离） → 两条红：『垂足比端点近时距离赢…』（落点退回 `(0,0)` 那枚端点）与『垂足：光标落在斜墙轴线外侧』（中点 `(2000,2000)` 压过 3.5px 外的垂足）。**4 与 5 是同一对方向**：4 撤掉组判据，5 撤掉组内距离，两个方向各红一次，合起来才是 S2 的形状。
+6. `takeBest` 最后一行 `return cand.ownerId < best.ownerId ? cand : best;` 改成 `return best;`（并列时留先扫到的那枚） → 『并列判据到底只剩 ownerId』必须红在 `expect(flipped).toEqual(first)`。这条用例是**唯一**走到第四级判据的输入（两面平行墙、光标正落在两条轴线的等距线上、`hypot(0,4)` 逐位相等），摘掉它不会连带崩别的用例，也不会被别的用例抓到。
+7. 删掉 `angle15Of` 的 `if (n % 6 === 0) return null;`（让 15° 档也收 0/90/180/270） → **一条都不红，且这是正确的**。理由要写进注释：同一档位里正交落点与旋转落点共用同一根坐标（`y` 都等于 `anchor.y`），另一根相差 `round(L) − |dx| ≥ 0` ⇒ **正交恒不比旋转远**，距离判据自己就会把旋转挡掉。所以 `n % 6 === 0` 那一句不是胜负判据，是 `snapKind` 的**语义**判据（画水平墙时读数恒为 `'ortho'`，不会随量化在 `'ortho'`/`'angle15'` 之间抖）。**别为它补一条抓不到的用例**，也别反过来删掉那句 —— 它的凭据是这句引理，`--draw-shot` 的 `snapKind` 读数（Step 7）是它在真窗口里唯一的影子。
+8. `orthoOf` 的落点从"保坐标"改成"保距旋转"（与 `angle15Of` 同一套 cos/sin） → 两条红：『正交走"保坐标"语义』（`(3000, 0)` 变 `(3001, 0)`）与『档位互斥』。这两条用例当初就是为了把两种语义在**字面量**上分开来才那么写的。
+9. `footOf` 的 `if (t < 0 || t > axis.lengthMm)` 只留下界 → 『垂足不许越过墙端』红（吸出轴延长线上的"墙外垂足"）。
+10. 同一条只留上界（放开 `t < 0`） → 『对象档永远压过方向档』红：裸落点 `(-4,-4)` 会在西侧轴上吸出 `(0,-4)` 那枚 0.5px 的墙外垂足，把 0.707px 的端点压掉。**两个界各有各的牙齿，不许只补一个** —— 第 9 条抓不到这一发，第 10 条也抓不到第 9 条那一发。
+11. `snapFromCursor` 的排除判据加上 `cand.kind === 'endpoint'`（只排端点、漏掉垂足） → 『拖端点时排掉"原地那一枚"』必须红在第二句（原地那枚 t=0 垂足还在 ⇒ 一松手墙没动）。这就是 `excludeMm` 按**坐标**而不是按 `pointId` 的全部理由。
+12. `dropTargetOf` 的 `mm: snap === null ? raw : snap.mm` 改成恒 `raw` → 红的是**属性**那条（`drop.mm` 与 `drop.snap.mm` 必须同源，②句）。手搭的『dropTargetOf 是 `moveTargetOf` 之后的同一发』反而**还绿** —— 它那一发光标正好压在 `(0,0)` 的像素上，`raw` 与吸附点同值。**这就是属性存在的意义**：随机 400 发里有吸得上的，就必然抓到"吸了却没落地"。
+13. `moveTargetOf` 去掉量化（`pxToMm` 的浮点原样返回） → 同样只有**属性**那条红（①句：落点恒为整数毫米）。这条与第 12 条一起就是 Step 1 末尾承诺的那对见证。
+14. `pointRefOf` 的 `snap !== null && snap.pointId !== null` 放宽成 `snap !== null` → 『pointRefOf 只认 `pointId` 非 null 那一支』红。命令层拿到的会是 `{ pointId: null }`，`resolvePointRef` 当场抛 —— 但用例不等它抛，它直接判形状。
+15. `takeBest` 的 `if (cand.distPx !== best.distPx) return cand.distPx < best.distPx ? cand : best;` 写成 `if (cand.distPx < best.distPx) return cand;` → **不许红**：本实现的 `pool` 恒把静态点排在垂足与角度档之前 ⇒ "更近才换"与"不等就比谁近"在当前装配序上等价。保留 `!==` 那版是为了**让装配序不再是判据的一部分**（Step 4 之后有人把 `axes` 提到 `points` 前面时，`<` 那一版会静默改变结果）。改了不红，也不许把"两版等价"当成结论去简化 `!==` 那一版。
+16. `footOf` 的 `quantizeTarget(...)` 去掉 → 『垂足：光标落在斜墙轴线外侧』红（`(2025, 2025)` 变成 `2024.9999…`）。**属性那条还绿** —— 样例房全正交墙 ⇒ 垂足恒为整数，`Number.isInteger` 抓不到它。这一条是"属性的覆盖面 = 它那份靶子场的覆盖面"的现场教材：它不是万能网，斜墙得靠手搭用例。
+
+1–6、8–14、16 里任何一条"改坏了还绿"，说明对应断言写空了，就地补到能红为止；第 7、15 两条反过来，**必须还绿**，它们测的是"改动没坏但也没变"这一类，与"这条判据其实不承重"是两件事 —— 第 7 条承重（语义），第 15 条不承重（装配序）。把每条命令与关键红字写进提交信息。
+
+- [ ] **Step 3: scene-2d —— `pick.ts` 抽出 `uniqueHitOf`，新增出口 `pickPxOf`（先改测试）**
+
+Task 4 的 `probeTarget` 只能回答"随便挑一面点得中的墙"，而 Step 7 的 `--draw-shot` 要删除的是**刚新建的那一面**：撤销栈顶上恰好只有那一发时，删错墙也能绿 —— 那是假绿，而且是最贵的一类假绿，因为它绿在"删除功能可用"这句话上。所以 `pick.ts` 需要一个**点名**的出口。
+
+点名与随手挑吃的是同一把尺（边长下限、唯一命中两条判据）。判据抄成两遍的地方，漏抄的那一遍永远不红 —— 所以这一步的正解不是"再写一个函数"，是**把 `probeTarget` 里那段候选点扫描抽成文件内私有的 `uniqueHitOf`**，让两个出口各吃它一次。抽完之后 `pickPxOf` 与 `probeTarget` 的关系由一条用例钉住（同一个 owner 给同一个像素，逐字相等），而不是靠"看起来一样"。
+
+**为什么 `MIN_PICK_EDGE_PX` 必须导出**：Step 4 的 `wallProbe` 要在**墙还不存在**的时候预言"这面墙建出来点得中吗"，它没有指令表可扫，只能拿算术比这条尺（`(lengthMm − thicknessMm) × pxPerMm < MIN_PICK_EDGE_PX` ⇒ 换下一个候选落点）。不在这里给出去，探针只能自己抄一份 64，抄的那一份最先漂。`pickPxOf` 本身的读者则有两个：Step 7 的闸门，和 Step 4 里"建完之后拿真指令表点名"那条用例。
+
+**这一步动的是 Task 4 已经落地的判据所在文件**（Task 6 里只有这一处和 Step 5 的 `handles.ts` 是这种情况），所以顺序必须是"先改测试跑到红 → 再改实现 → 数一数原有用例有没有被碰坏"。`index.ts` 不用动：T4 已经有 `export * from './pick'`，两个新出口自动带出。
+
+---
+
+**A. 先改 `packages/scene-2d/test/pick.test.ts`（+3 条 ⇒ 18）**
+
+文件里只动三处：第 3 行的 core import 多一个 `wallAxisById`，`pickOne,` 之后多一行 `pickPxOf,`，然后在「每条指令的每条边中点都点得中自己」那条的收尾 `  });` 之后、「放大时吸附在屏幕上不变松…」那条之前插入三条。**其余一行都不许改** —— T4 的 15 条判据在这次改动之后必须逐字保持原样，B 段跑绿时若有任何一条原用例变红，就是抄错了地方。
+
+```ts
+  it('pickPxOf 点名要墙：一层的每一面墙都拿得到只命中它自己那一发的像素', () => {
+    const walls = house.doc.byKind('wall').filter((w) => w.storeyId === house.lowerStoreyId);
+    expect(walls).toHaveLength(8); // 素材自证：空表会让下面的循环什么都不判
+    let shortest: number | null = null;
+    for (const wall of walls) {
+      const px = pickPxOf(ops, wall.id);
+      expect(px).not.toBeNull();
+      if (px === null) continue;
+      // 不是"命中里有它"，是"只命中它"：删除那一步的选中集必须恰好一面墙
+      expect(owners(pickAt(ops, px))).toEqual([wall.id]);
+      const axis = wallAxisById(house.doc, wall.id);
+      shortest = shortest === null ? axis.lengthMm : Math.min(shortest, axis.lengthMm);
+    }
+    // 素材自证：最短的是 `stem`（(4000,0)→(4000,3000)），3000mm 整数
+    expect(shortest).toBe(3000);
+    // 边长下限 64px 在这一层的 0.125px/mm 下 = 512mm，最短的墙也远过这条线，
+    // 所以"每一面都给得出"不是运气 —— 但它确实**依赖** pxPerMm：极小缩放时会给 null，
+    // 那是调用方（探针）该处理的失败，不是这里放宽筛选的理由。
+    expect(shortest).toBeGreaterThan(64 / view.pxPerMm);
+  });
+
+  it('pickPxOf 找不到就说找不到：不存在的 id、只有注记的楼层、太小的多边形都给 null', () => {
+    expect(pickPxOf(ops, 'no-such-entity')).toBeNull();
+    // 楼层只有一条 text 指令，而 text 永不命中（注记不是构件）⇒ 没有候选点可挑
+    expect(pickPxOf(ops, house.lowerStoreyId)).toBeNull();
+    // 洞口只有 line 指令：本出口只扫多边形长边，给它 null 而不是"差不多的那个点"。
+    // 少了 `op.kind !== 'polygon'` 那道筛，这里会被 `op.pts` 取值炸掉或静默给出别的 owner。
+    const opening = house.doc.byKind('opening').find((o) => o.storeyId === house.lowerStoreyId);
+    expect(opening).toBeDefined();
+    if (opening !== undefined) expect(pickPxOf(ops, opening.id)).toBeNull();
+    // 唯一命中被别的指令压住 ⇒ 一路换边换不到：与 probeTarget 那两条合成用例同源，
+    // 但这里钉的是**点名**的那一支（probe 会跳过这个 owner 继续找下一个）。
+    const tight = [
+      face('tiny', PEN_S, [
+        { x: 0, y: 0 },
+        { x: 40, y: 0 },
+        { x: 40, y: 40 },
+        { x: 0, y: 40 },
+      ]),
+    ];
+    expect(pickPxOf(tight, 'tiny')).toBeNull(); // 四条边都 < 64px：一条候选都没有
+    const covered = [
+      face('w', PEN_S, [
+        { x: 0, y: 0 },
+        { x: 400, y: 0 },
+        { x: 400, y: 40 },
+        { x: 0, y: 40 },
+      ]),
+      // 两条断口线把上下两条长边的中点全压住 ⇒ 唯一命中不成立
+      seg('o1', PEN_O, { x: 200, y: -20 }, { x: 200, y: 20 }),
+      seg('o2', PEN_O, { x: 200, y: 20 }, { x: 200, y: 60 }),
+    ];
+    expect(pickPxOf(covered, 'w')).toBeNull();
+    expect(pickPxOf(covered, 'o1')).toBeNull(); // 线指令永远给 null（这一发同时证 o1 压住了边）
+  });
+
+  it('pickPxOf 与 probeTarget 同一把尺：同一个 owner 给同一个像素，且那把尺是 64px 下限', () => {
+    const probe = probeTarget(ops, view);
+    expect(probe).not.toBeNull();
+    if (probe === null) return; // 上面那条已断言非空，这里只为类型收窄
+    // 判据是"逐字相等"而不是"都非 null"：抽函数时把扫描整段抄成两套，这一发立刻红。
+    expect(pickPxOf(ops, probe.ownerId)).toEqual(probe.clickPx);
+    // 但上一句"两函数相等"抓不到**只漂 pickPxOf 的下限**那一发：两边吃同一个常量，下限翻倍时
+    // 两个函数一起跳到别的边上，等式照样成立。所以下面另钉一个像素值而不是关系 —— 实测（PK9）
+    // 红的是这一句，不是上一句。第一条够长（≥64px）的边就是上边，中点 (50, 0)；
+    // 下限翻到 128px 会跳到右边 (100, 200)。
+    const rect = [
+      face('w', PEN_S, [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 400 },
+        { x: 0, y: 400 },
+      ]),
+    ];
+    expect(pickPxOf(rect, 'w')).toEqual({ x: 50, y: 0 });
+  });
+```
+
+> **第三格为什么要另钉一个字面量像素**：这一格的前后两句是两种判据 —— 前一句钉"两个出口同源"（关系），后一句钉"那把尺是 64"（定值）。只留前一句的话，`MIN_PICK_EDGE_PX` 被改坏时两个函数会**一起**漂到别的边上，关系仍然成立、用例仍然绿。这是"关系断言"的通用盲区，实测（PK9：只把 `pickPxOf` 那一发下限翻倍）红的是后一句。
+>
+> **`tight` 与 `covered` 各管一侧**：`tight` 证边长下限（40px 正方形，四条边都够不到 64 ⇒ 一枚候选都没有），`covered` 证唯一命中筛（400px 长边够长，但中点被洞口线压住 ⇒ 换边换不到）。少任何一侧，`uniqueHitOf` 里对应的那道 `continue` 就没有红过。
+
+Run: `npx vitest run packages/scene-2d/test/pick.test.ts > /tmp/t6s3-red.log 2>&1; echo exit=$?`
+Expected: exit≠0，**`Tests 3 failed | 15 passed (18)`**，三条的红字都是 `TypeError: pickPxOf is not a function`（2026-09-28 实测）。**必须是这 3 条红、T4 原 15 条全绿** —— 多一条红说明 A 段抄进了实现细节之外的东西；少一条红说明 `pickPxOf` 不知从哪儿已经存在了。
+
+---
+
+**B. 再改 `packages/scene-2d/src/pick.ts`**
+
+前 158 行（`PICK_TOL_PX` → `PickHit` / `PickProbe` 两型 → `dist` → `distanceToSegmentPx` → `insidePolygon` → `distanceOfOp` → `rankOf` / `better` → `pickAt` → `pickOne` → `minDistanceToOps` → `blankPoint`）**一个字都不改**。从第 159 行那句 `/** 一次性回读用的靶子…` 起到文件末尾（T4 版的 `probeTarget` 整段）替换为下面这份：
+
+```ts
+/**
+ * 候选点边长下限（= `PICK_TOL_PX * 8` = 64px）：太短的边，其中点四周挤着一堆相邻指令，
+ * 唯一命中几乎不可能成立。
+ *
+ * 出口是必需的而不是顺手：`editing.ts` 的 `wallProbe` 要在**建墙之前**预言"这面墙建出来点得中吗"，
+ * 而那个"点得中"就是这一条尺 —— 不在这里给出去，探针只能抄一份 64，抄的那一份最先漂。
+ */
+export const MIN_PICK_EDGE_PX = PICK_TOL_PX * 8;
+
+/**
+ * `ownerId` 的唯一命中候选点：按绘制序扫该 owner 的多边形指令，取第一条够长的边的中点，
+ * 且要求 `pickAt` 在这一点恰好返回 1 条。找不到 ⇒ null。
+ *
+ * 抽成文件内私有只有一条理由：`probeTarget`（随便挑一个能用的靶子）与 `pickPxOf`（点名要某一个
+ * 实体的靶子）必须吃同一把尺 —— 边长下限、唯一命中两条判据抄成两遍，漏抄的那一遍永远不红。
+ */
+function uniqueHitOf(ops: readonly DrawOp[], ownerId: string, minEdgePx: number): Px | null {
+  for (const op of ops) {
+    if (op.kind !== 'polygon' || op.ownerId !== ownerId) continue;
+    const n = op.pts.length;
+    if (n < 2) continue;
+    for (let i = 0; i < n; i++) {
+      const a = op.pts[i]!;
+      const b = op.pts[(i + 1) % n]!;
+      if (dist(a, b) < minEdgePx) continue;
+      const mid: Px = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      // 多命中 = 这个点上"谁在上面"说不清，换下一条边，不猜。
+      // hits.length === 1 时那条必然是本条指令自己（中点在它上面，距离 0），
+      // 所以这里不再重复断言 ownerId —— 写了也没人能走到另一支，测试里由 probe 那两条钉。
+      if (pickAt(ops, mid).length !== 1) continue;
+      return mid;
+    }
+  }
+  return null;
+}
+
+/**
+ * 点名要某一个实体的可点像素 —— `probeTarget` 只能给"随便一面墙"，而 `--draw-shot` 的删除
+ * 那一步要的是**刚新建的那一面**（撤销栈顶上恰好只有它时，删错墙也能绿，那是假绿）。
+ * 边太短 / 每条边都被别的指令压住 / 该实体只有线和字（洞口、楼层注记）⇒ null，调用方当失败处理。
+ */
+export function pickPxOf(ops: readonly DrawOp[], ownerId: string): Px | null {
+  return uniqueHitOf(ops, ownerId, MIN_PICK_EDGE_PX);
+}
+
+/**
+ * 一次性回读用的靶子。两条规则都是为了让"点了没反应"这种失败藏不住：
+ * ① 只接受 `pickAt` 恰好返回 1 条的候选点 —— 相邻墙共享斜切顶点，那附近的"选中谁"
+ *    是 ownerId 升序给的巧合，不是判据；
+ * ② 空白点从四角里挑离一切指令最远的，且必须比容差更远，否则整个返回 null
+ *    （"点空白清空选中"这一步不许其实打中了东西）。
+ * 图铺满画布时没有空白角 ⇒ null，调用方（`__dajiaDebug` 与 `--pick-shot`）把它当失败处理。
+ */
+export function probeTarget(ops: readonly DrawOp[], v: Viewport): PickProbe | null {
+  const blank = blankPoint(ops, v);
+  if (blank === null) return null;
+  const minEdgePx = MIN_PICK_EDGE_PX;
+  // owner 按**首次出现**的绘制序试，`tried` 让一面墙的轮廓与它的轴线只进一次。
+  // 换抽之前这里是"逐条指令扫"；`buildDrawList` 按实体成组产出指令（一个 owner 的轮廓紧挨着
+  // 它的轴线），所以两种写法给出的第一个靶子逐字相同。诚实说一句：`tried` 因此**不是判据**，
+  // 只是省一遍重复扫描 —— 实测摘掉它（PK6）18 条全绿，别为它写用例，也别把它读成"排重规则"。
+  const tried = new Set<string>();
+  for (const op of ops) {
+    const ownerId = op.ownerId;
+    if (ownerId === null || op.kind !== 'polygon' || tried.has(ownerId)) continue;
+    tried.add(ownerId);
+    const clickPx = uniqueHitOf(ops, ownerId, minEdgePx);
+    if (clickPx !== null) return { ownerId, clickPx, blankPx: blank };
+  }
+  return null;
+}
+```
+
+> **`probeTarget` 的循环为什么换了形状**：抽函数之后必须有人决定"按什么顺序问哪些 owner"。原来的形状是"逐条指令扫，第一条符合条件的指令赢"，那是 `pickPxOf(ops, ownerId)` 的循环不能直接复用的部分（它按 owner 过滤）。新形状"按 owner 首次出现扫"与原形状在样例房给出**逐字相同**的第一个靶子 —— 这一点不靠推理，由第三格那条「同一个 owner 给同一个像素」钉住：`pickPxOf(ops, probe.ownerId)` 与 `probe.clickPx` 必须相等，`probe` 换了 owner 或换了边都会红。
+>
+> **`tried` 是性能，不是判据**（这句必须留在代码里，不能只留在计划里）：摘掉它 18 条全绿（PK6 实测）。它存在的意义是"轮廓 + 轴线同 owner 时不必把同一批边扫两遍"。写这一步的人如果把它读成"排重规则"，就会给排重写用例，那条用例永远抓不到东西。
+
+Run: `npx vitest run packages/scene-2d/test/pick.test.ts > /tmp/t6s3-green.log 2>&1; echo exit=$?`
+Expected: exit=0，**`Tests 18 passed`**（`Test Files 1 passed`；Step 1 的 15 条 + 本步 3 条）。数对不上就是有用例被跳过或被合并，别改期望值，先查日志。
+
+**类型不在这里拦**：vitest 走 esbuild 转译，**不做类型检查** —— 上面那次"把 `rect` 少写一个逗号"式的错，vitest 会照样跑绿。类型由 Step 8 的 `pnpm verify`（根 `typecheck` 已含 scene-2d，Task 1 Step 1 接的线）统一过，本步不重复跑它；但改完 B 段之后**必须**眼过一遍两个代码块与 A 段的插入位置，因为"绿但类型错"的东西会一路走到 Step 8 才红，那时候红字已经指不到是哪一段抄错了。
+
+---
+
+**C. 改坏验证（13 条，红在哪一条、红成什么数都是 2026-09-28 实测的，不是推演）**
+
+下面每条都在 `pick.ts` 上做一次、跑 `test/pick.test.ts`（18 条）、跑完立刻改回。括号里是实测的 `passed / failed`，引号里是实测的**断言红字**（vitest 原样）—— 红字比测试名值钱：它说明抓到的确实是那一判据，而不是碰巧邻居倒了。
+
+1. **PK1** 摘掉 `uniqueHitOf` 里 `if (pickAt(ops, mid).length !== 1) continue;` 整句（16/2）→ 「probeTarget 只接受唯一命中的候选点」红在 `expected { x: 200, y: +0 } to deeply equal { x: 200, y: 40 }`（放宽筛之后探针拿到被洞口线压住的那条边），「pickPxOf 找不到就说找不到」红在 `expected { x: 200, y: +0 } to be null`（`covered` 那一方）。**这就是 R4 那条"唯一命中"筛在抽函数之后的落点。**
+2. **PK2** `export const MIN_PICK_EDGE_PX = PICK_TOL_PX * 8;` 改成 `= 0`（16/2）→ 红的是**同名那两条，但红字不同**：`expected { x: 400, y: 20 } to deeply equal { x: 200, y: 40 }`（下限归零后第一条指令的第一条边就是顶点附近那条短边，候选点整个换了一座墙）与 `expected { x: 20, y: +0 } to be null`（`tight` 那 40px 正方形有了候选点）。**PK1 与 PK2 不许当成一条**：下限管的是"短边压根不许进候选"，唯一命中管的是"长边的中点被压住也要换边"，两条判据各有各的红字。
+3. **PK3** `uniqueHitOf` 的 owner 筛摘掉（`op.ownerId !== ownerId` 那半句删了）（16/2）→ 「点名要墙」红在 `expected [ Array(1) ] to deeply equal [ Array(1) ]`（两个一元数组不同：拿的是别的墙的像素、要的是本墙的 id），「找不到就说找不到」红在 `expected { x: 357.5, y: 810 } to be null`。**点名这件事当场失效** —— 不筛 owner 时"点中一面墙"和"点中随便哪面墙"是同一个返回值。
+4. **PK4** 多边形筛摘掉（`op.kind !== 'polygon'` 那半句删了）（17/1）→ 只红「找不到就说找不到」那一条，红在 `TypeError: Cannot read properties of undefined (reading 'length')` —— 线指令上没有 `pts`，扫到它就在 `op.pts.length` 炸掉。**是炸不是给 null**（测试里那句"会被 `op.pts` 取值炸掉或静默给出别的 owner"，实测落在前半支）。**只红一条是正确的**：别的出口本来就只点多边形，这一发不会给它们错答案。
+5. **PK5** `pickPxOf` 写成 `return null;`（16/2）→ 「点名要墙」红在 `expected null not to be null`，「同一把尺」红在 `expected null to deeply equal { x: 787.5, y: 442.5 }` —— 也就是**前一句关系判据**就够抓它了。这条与 PK9 正好是一对照：**整支坏掉**（恒 null）关系判据抓得到，**只漂下限**（两边一起挪）关系判据抓不到，所以字面量那一句不是冗余。
+6. **PK6** `probeTarget` 的 `tried.has(ownerId)` 那半句摘掉（**18/0，一条都不红，且这是正确的**）→ 见 B 段注释：`tried` 不承重，摘与不摘给出的第一个靶子逐字相同（`buildDrawList` 成组产出）。**别为它补用例**，也别反过来摘掉那句"因为它不红"。
+7. **PK7** 候选点从边中点改成起点顶点（`mid = { x: a.x, y: a.y }`）（14/4）→ 四条全红：`expected { x: +0, y: +0 } to deeply equal { x: 200, y: 40 }`、`expected null not to be null`（样例房的墙顶点全被邻墙/轴线压住 ⇒ 一枚靶子都挑不出来）、`expected { x: +0, y: +0 } to be null`、`expected { x: +0, y: +0 } to deeply equal { x: 50, y: +0 }`。**这是全场最红的一条**，也是"取中点而不是取顶点"这句话唯一的凭据 —— 顶点是相邻指令聚集处，中点才是那条边自己的地盘。
+8. **PK8** `probeTarget` 的 `blankPx: blank` 改成 `blankPx: clickPx`（16/2）→ 两条靶子用例红在 `expected [ { ownerId: 'wall', …(2) } ] to deeply equal []` 与 `expected [ { …(3) } ] to deeply equal []`（`pickAt(ops, probe.blankPx)` 非空）。空白点与可点点是两个东西，混淆它们等于把"点空白清空选中"那一步变成"再点一次构件"。
+9. **PK9** `pickPxOf` 里的下限翻倍（`uniqueHitOf(ops, ownerId, MIN_PICK_EDGE_PX * 2)`，**只漂点名的那一支**）（17/1）→ 只红「同一把尺」，且红在**后一句**：`expected { x: 100, y: 200 } to deeply equal { x: 50, y: +0 }`。前一句 `pickPxOf(ops, probe.ownerId)` 与 `probe.clickPx` **照样相等**（两边一起跳到别的边）—— 这一发就是 A 段那句"必须另钉字面量"的凭据：只写关系判据，这条改坏永远绿。
+10. **PK10** 同一处减半（`/ 2`，32px）（17/1）→ 只红「找不到就说找不到」，红在 `expected { x: 20, y: +0 } to be null`（`tight` 的 40px 边进了候选）。9 与 10 把这道下限夹在中间 —— 往任一方向漂都有对应的一侧红，且两侧红在**不同**的用例上。
+11. **PK11** `uniqueHitOf` 的指令扫描序反过来（`for (const op of [...ops].reverse())`）（**18/0**）→ 诚实记录：抓不到。**原因是结构性的**：一个 owner 在本计划的指令表里只有一条多边形指令（墙轮廓），所以"按绘制序取第一条"与"按倒序取第一条"对同一个 owner 是同一批边。这条不承重，**别为它写用例**；若哪天一个 owner 有多条多边形指令（比如给墙加分段轮廓），"取哪一条先"会变成真判据，那时再补。
+12. **PK12** `probeTarget` 的 owner 循环反过来（**18/0**）→ 同样抓不到，同样诚实：`probeTarget` 的语义是"给一个能用的靶子"，**哪个** owner 不是判据（它的三条用例判的都是"给了的那个是否唯一命中 + 空白点是否真空白"，全是相对判据）。别把它读成"必须挑最靠前的墙"。
+13. **PK13** 唯一命中筛改成 `hits.length < 1`（即 **Task 4 Step 5 第 10 条改坏搬家之后的样子**）（16/2）→ 红字与 PK1 **逐字相同**：`expected { x: 200, y: +0 } to deeply equal { x: 200, y: 40 }` + `expected { x: 200, y: +0 } to be null`。**Task 4 那条断言一字不改仍然成立**（它仍然红在 `expect(probe.clickPx).toEqual({ x: 200, y: 40 })`），多出来的那一条红来自本次新增的用例，不是 T4 的判据变了。（**已回改**：Task 4 Step 5 第 10 条现在写作 `uniqueHitOf`，并带着"Task 6 Step 3 之后这段住在 `uniqueHitOf` 里，见 PK13"的括注 —— 两处读的是同一次改坏，别再改回去。）
+
+1–5、7–10、13 里任何一条"改坏了还绿"，说明对应断言写空了，就地补到能红为止；第 6、11、12 三条反过来，**必须还绿** —— 它们测的是"这条写法其实不承重"，与"断言写空了"是两件事，所以必须像上面那样把不承重的**原因**写进代码注释或本节的文字里，否则下一个人会来给它们补用例。**注意这三条与 T4/T5 的同类幸存者是同一件事的两头**：不承重的写法要留在原地（它更直），但它不许被读成判据。
+
+把每条命令与关键红字写进提交信息。
+
+- [ ] **Step 4: scene-2d —— 先写 `editing.ts` 的失败测试（30 条 `it`，含 1 条属性）**
+
+`editing.ts` 只回答一句话：**这一发要不要发命令**。三个文件三条问题在这里排齐 —— `snapping.ts` 答"这一发光标落在哪"，`editing.ts` 答"这一发要不要发命令"，`handles.ts`（Step 5）答"哪一枚点可以拖"。PlanCanvas 只做装配，屏幕上不许长出第四套判据。
+
+这份测试的形状由三条纪律决定，它们决定了下面 30 条为什么长那样：
+
+**① 合法性 = 拿真命令试跑，屏幕上不重写守卫。** `legalWallCreate` 不是"再判一遍零长/墙厚/跨层"，它构造那发 `wallCreate` 并 `build` 一次，抛就是 false。与 T5 的 `legalDrop` 同一条理由：`wallCreate` 从构造期到 build 一路有六道守卫 —— 墙厚为正、墙高为正、零长、墙厚不小于墙长、楼层必须存在、复用的端点必须属于本层（`packages/core/src/commands/wall.ts:59-81`），**抄一道漏五道**，而漏掉的那一道只在用户真的拉出一堵怪墙时才说话。这条纪律的代价是"合法性"每移动一次光标都要跑一遍真构造 —— 一次 `pointermove` 几微秒，换来的是**预言与真命令不可能漂**（最后那条属性钉的就是这句）。
+
+**② 探针给的是建之前的预言，所以每一道筛都要能在建之后被打脸。** `wallProbe` 的六道筛（① 起点吸到既有端点并复用、② 终点不引别人的点、③ 毫米与像素两道长度下限、④ 落点与中点两发像素一个候选都不命中、⑤ 三发像素全在画布内、⑥ 建得出还要画得出）里，能在单元层说话的各有自己的用例，且**全部 8/8 恒红**（2026-09-28，每个改坏连开八个进程）：摘 ② → 「筛 ② 有牙齿」、摘 ④ → 「筛 ④ 有牙齿」、摘 ⑤ → 「筛 ⑤ 有牙齿」、摘像素下限 → 「极度缩小下探针给 null…」、摘"终点/中点取整像素" → 「探针只给整数像素…」各红一条。**只有 E17 一条都不红**（摘掉毫米下限，八个进程 `30/0` ×8）：那条筛在现有夹具里被像素下限**完全罩住** —— 样例房拟合视图 `pxPerMm = 0.125`，64px 换算回毫米是 512mm，加回墙厚 240 得 752mm，比 500mm 的毫米下限更严，于是任何过得了 ③ 之二的候选自动过得了 ③ 之一。**不许为它造假绿用例**：它的凭据在 T7 的"数值输入 + 最小墙长"（放大到 2px/mm 时两道筛才分家），现在写在 `MIN_WALL_LENGTH_MM` 的注释里（见 B 段第 ② 条）。**E14/E26 是这条纪律的两块试金石**：一个坏法（终点可以引别人的点）红一条，另一个坏法（终点什么都不许吸）红九条 —— 后者正是 S7 那句"这条筛不是'终点不许吸任何东西'"的凭据。
+
+**③ uuidv7 会让"探针先看到哪个候选"跨进程随机。** `snapFieldOf` 的端点表按 `doc.byKind('wall')` 的顺序 push（先 start 后 end），而 `byKind` 按实体 id 升序 —— uuidv7 在同一毫秒内**不单调**。于是任何"探针该换下一个候选"的用例，只要它的红取决于**哪面墙排在前面**，就是 flaky 的。这不是一句修辞，改坏跑里直接看得见：E27（摘掉 ⑤）与 E28（摘掉 ⑥）唯一的见证人是样例房那条「六道筛逐条自证」，八个进程里它**只红七次**；而同两道筛在自带夹具的「筛 ⑤ 有牙齿」与「⑥ 的前提」上是 8/8 恒红。所以本步的每一道"必须换下一个候选"都有自己的小场：② 用两堵共起点墙、④ 用一堵 4000mm 横墙、⑤ 用 `viewportOf(…, { center })` 把整层挪出画布、⑥ 用"同一枚点已过两条线"的三方向场。**别再让下一个人重新发现一次**（T7 要接手的也是这条口径：凡"探针/命令挑哪个候选"进判据，必须自带同坐标的合成夹具）。
+
+**30 条的分组**：新墙默认值 2 + 按下与移动 6 + 合法性预言与真命令 3 + 删除计划 7 + 新建回执与探针 12（含最后那条属性）。
+
+**A. 写 `packages/scene-2d/test/editing.test.ts`（新建，30 条 `it`）**
+
+整份如下，**逐字照抄**：里面的注释是判据的一部分，删掉注释的执行人就无法判断某一句断言为什么在那儿。
+
+```ts
+import { describe, expect, it } from 'vitest';
+import * as fc from 'fast-check';
+import {
+  Document,
+  TransactionLog,
+  columnCreate,
+  openingCreate,
+  openingDelete,
+  requirePoint,
+  storeyCreate,
+  uuidv7,
+  vec,
+  wallCreate,
+  wallDelete,
+  type PointRef,
+  type WallEntity,
+} from '@dajia/core';
+import {
+  EMPTY_SELECTION,
+  EMPTY_SNAP_FIELD,
+  MIN_PICK_EDGE_PX,
+  MIN_WALL_LENGTH_MM,
+  NEW_WALL_THICKNESS_MM,
+  buildDrawList,
+  demoHouse,
+  draftAtPress,
+  draftCommand,
+  draftRefs,
+  dropTargetOf,
+  fitStorey,
+  lastCreatedWall,
+  legalWallCreate,
+  mmToPx,
+  moveDraft,
+  moveTargetOf,
+  newWallDefaults,
+  pickAt,
+  pickPxOf,
+  planDelete,
+  pointRefOf,
+  pruneSelection,
+  snapFieldOf,
+  viewportOf,
+  wallProbe,
+  type DraftWall,
+  type MoveTarget,
+  type Px,
+  type SnapField,
+  type Viewport,
+} from '@dajia/scene-2d';
+
+const house = demoHouse();
+const view = fitStorey(house.doc, house.lowerStoreyId, 1200, 900, 60);
+const field = snapFieldOf(house.doc, house.lowerStoreyId);
+const ops = buildDrawList(house.doc, house.lowerStoreyId, view, EMPTY_SELECTION);
+const lowerWalls = house.doc.byKind('wall').filter((w) => w.storeyId === house.lowerStoreyId);
+const upperWalls = house.doc.byKind('wall').filter((w) => w.storeyId === house.upperStoreyId);
+
+/** 整数毫米生成器：真源只收这个形状，属性不许拿浮点当输入。 */
+const mmInt = fc.integer({ min: -20000, max: 20000 });
+
+/**
+ * 合成用例专用视口：0.1px/mm ⇒ `MIN_PICK_EDGE_PX`(64px) = 640mm、`SNAP_TOL_PX`(8px) = 80mm，
+ * 且 10mm 恰好是一像素 ⇒ `moveTargetOf` 在整数毫米上是不动点，红的时候不必先排除舍入。
+ * 样例房那一份 `fitStorey` 是 0.125px/mm（1px = 8mm），算落点要处理的边角太多。
+ */
+const sv = viewportOf(1000, 800, { pxPerMm: 0.1, center: vec(2000, 1000) });
+
+/** 独立的一层（可选层高），删除与新建的判据都在它上面跑，免得样例房的接头掺进来。 */
+function synthStorey(heightMm = 3000): { log: TransactionLog; storeyId: string } {
+  const projectId = uuidv7();
+  const log = new TransactionLog(Document.create(projectId));
+  log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm }));
+  let storeyId = '';
+  for (const id of log.affected) {
+    if (log.document.get(id)?.kind === 'storey') storeyId = id;
+  }
+  if (storeyId === '') throw new TypeError('affected 里没有新建的楼层');
+  return { log, storeyId };
+}
+
+/** 建一面墙并把实体取回来（**不许** `byKind('wall').at(-1)`：uuidv7 同毫秒不单调）。 */
+function wallAt(log: TransactionLog, storeyId: string, start: PointRef, end: PointRef): WallEntity {
+  log.dispatch(wallCreate({ storeyId, start, end, thicknessMm: 240, heightMm: 3000 }));
+  for (const id of log.affected) {
+    const entity = log.document.get(id);
+    if (entity?.kind === 'wall') return entity;
+  }
+  throw new TypeError('affected 里没有新建的墙');
+}
+
+/** 建一樘洞口并取回 id。 */
+function openingAt(log: TransactionLog, hostWallId: string, distanceMm: number): string {
+  log.dispatch(openingCreate({ hostWallId, distanceMm, widthMm: 1000, heightMm: 2100, category: 'door' }));
+  for (const id of log.affected) {
+    const entity = log.document.get(id);
+    if (entity?.kind === 'opening') return id;
+  }
+  throw new TypeError('affected 里没有新建的洞口');
+}
+
+/** 本层唯一那面墙。 */
+function onlyWall(log: TransactionLog): WallEntity {
+  const walls = log.document.byKind('wall');
+  if (walls.length !== 1) throw new TypeError('合成现场应当恰好只有一面墙');
+  return walls[0]!;
+}
+
+/** 光标就停在这对整数毫米的像素上：草稿拿到的像素与毫米因此逐字自洽。 */
+const pxOf = (mm: MoveTarget, v: Viewport): Px => mmToPx(v, vec(mm.x, mm.y));
+
+/**
+ * 一条**一面墙**的合成现场。所有移动 / 合法性用例都吃它，所以三个数字在整份文件里只解释一次：
+ * 墙 (0,0)→(4000,0)、视口 0.1px/mm、容差 8px = 80mm。
+ */
+function oneWall(): { log: TransactionLog; storeyId: string; wall: WallEntity; field: SnapField } {
+  const { log, storeyId } = synthStorey();
+  const wall = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+  return { log, storeyId, wall, field: snapFieldOf(log.document, storeyId) };
+}
+
+/** 按下的起点：压在 (0,0) 那枚既有端点上，`legal` 还没算过（false）。 */
+function pressAtOrigin(fd: SnapField, storeyId: string): DraftWall {
+  const start = draftAtPress(sv, pxOf({ x: 0, y: 0 }, sv), fd);
+  return {
+    storeyId,
+    start,
+    cursorPx: start.px,
+    end: dropTargetOf(sv, start.px, null, fd),
+    legal: false,
+  };
+}
+
+/** 从当前草稿把光标拖到**这对毫米**对应的像素上：走的就是屏幕那条通路（不手搓 DropTarget）。 */
+function dragToEnd(draft: DraftWall, end: MoveTarget, doc: Document, fd: SnapField, v: Viewport): DraftWall {
+  return moveDraft(doc, draft, v, pxOf(end, v), fd);
+}
+
+describe('新墙默认值', () => {
+  it('墙高读真源的层高，不是抄常量：3600 的层拿 3600', () => {
+    const { log, storeyId } = synthStorey(3600);
+    expect(newWallDefaults(log.document, storeyId)).toEqual({
+      thicknessMm: NEW_WALL_THICKNESS_MM,
+      heightMm: 3600,
+    });
+    // 对照：样例房两层都是 3000。少这一句，上面那发可以被"恒返回 3600"的写法混过去
+    expect(newWallDefaults(house.doc, house.lowerStoreyId).heightMm).toBe(3000);
+  });
+
+  it('楼层不存在 ⇒ 抛，不兜成默认值', () => {
+    expect(() => newWallDefaults(house.doc, 'no-such-storey')).toThrow(/不存在|楼层/);
+  });
+});
+
+describe('按下与移动', () => {
+  it('起点压在既有端点上：吸到端点档，pointId 与 mm 逐字取自真源', () => {
+    const wall = lowerWalls[0]!;
+    const point = requirePoint(house.doc, wall.startId, '起点');
+    const pressPx = pxOf({ x: point.x, y: point.y }, view);
+    const start = draftAtPress(view, pressPx, field);
+    expect(start.snap?.kind).toBe('endpoint');
+    expect(start.snap?.pointId).toBe(wall.startId);
+    expect(start.mm).toEqual({ x: point.x, y: point.y });
+    // `px` 存的是**按下那一发**的像素（起点标记画在哪儿读它），不是吸附点的像素
+    expect(start.px).toEqual(pressPx);
+  });
+
+  it('按下处的像素与吸附点的像素是两个值：标记画在按下处，落点吸到点上', () => {
+    const { storeyId, wall, field: fd } = oneWall();
+    const pressPx = pxOf({ x: -50, y: -50 }, sv); // 离原点那枚端点 7.07px（容差 8px 之内），且在两条轴的延长线外
+    const start = draftAtPress(sv, pressPx, fd);
+    expect(start.snap?.pointId).toBe(wall.startId); // 素材自证：这一发确实吸上了那枚点
+    expect(start.mm).toEqual({ x: 0, y: 0 });
+    // 但 `px` 记下的是手指按下的地方。存成吸附点的像素，屏幕上就是"标记自己跳过去了"，
+    // 而这一条在真源里查不出来 —— 只有这两个值不相等的那一发能分辨。
+    expect(start.px).toEqual(pressPx);
+    expect(start.px).not.toEqual(mmToPx(sv, vec(start.mm.x, start.mm.y)));
+    expect(storeyId).not.toBe(''); // 素材自证：合成现场立起来了
+  });
+
+  it('起点在空白处按下：什么都不吸，也不吃角度档（锚点恒 null）', () => {
+    const { log, storeyId, field: fd } = oneWall();
+    // (4200, 60)：在墙的延长线方向上 —— 垂足越界（t > 4000）、最近的端点也在 100px 外，
+    // 所以靶子档一枚都不命中；它离水平轴只有 0.82°，**带上锚点**就会被正交档钉平。
+    const raw: MoveTarget = { x: 4200, y: 60 };
+    const start = draftAtPress(sv, pxOf(raw, sv), fd);
+    expect(start.snap).toBeNull();
+    expect(start.mm).toEqual(moveTargetOf(sv, pxOf(raw, sv)));
+    // 素材自证：同一发带上锚点就吸得上 ⇒ "按下不吸"确实是锚点造成的，不是坐标碰巧没人要
+    const withAnchor = dropTargetOf(sv, pxOf(raw, sv), { x: 0, y: 0 }, EMPTY_SNAP_FIELD);
+    expect(withAnchor.snap?.kind).toBe('ortho');
+    expect(withAnchor.mm).toEqual({ x: 4200, y: 0 });
+    expect(storeyId).not.toBe(''); // 素材自证：合成现场确实立起来了（楼层 + 一面墙）
+    expect(log.depth).toBe(2);
+  });
+
+  it('拖到水平方向：终点吸成逐字整数、临时线仍画到裸光标、原草稿不动', () => {
+    const { log, storeyId, field: fd } = oneWall();
+    const base = pressAtOrigin(fd, storeyId);
+    const cursor = pxOf({ x: 5000, y: 60 }, sv); // 离轴 0.69°，在 ANGLE_TOL_DEG 之内
+    const moved = moveDraft(log.document, base, sv, cursor, fd);
+    expect(moved.end.snap?.kind).toBe('ortho');
+    expect(moved.end.mm).toEqual({ x: 5000, y: 0 }); // 正交档保坐标 ⇒ 逐字整数
+    expect(moved.cursorPx).toEqual(cursor); // S4 第三条：预览线画到**裸光标**，不是吸附点
+    expect(moved.legal).toBe(true);
+    // 不可变：原草稿一格都没动（renderer 比引用决定要不要重绘，改原地等于让 React 看不见这一发）
+    expect(base.cursorPx).not.toEqual(cursor);
+    expect(base.legal).toBe(false);
+  });
+
+  it('光标压在起点上：终点排掉起点坐标、零长墙判不合法', () => {
+    const { log, storeyId, field: fd } = oneWall();
+    const base = pressAtOrigin(fd, storeyId);
+    expect(base.start.snap?.pointId).not.toBeNull(); // 素材自证：起点确实吸上了那枚端点
+    const moved = moveDraft(log.document, base, sv, base.start.px, fd);
+    // 不排起点会吸回自己（端点档 + 该点处的垂足档），于是"一松手什么也没发生"
+    expect(moved.end.snap).toBeNull();
+    expect(moved.end.mm).toEqual(base.start.mm);
+    expect(moved.legal).toBe(false);
+    expect(draftCommand(moved, newWallDefaults(log.document, storeyId))).toBeNull();
+  });
+
+  it('draftRefs：起点复用 {pointId}、终点新建 {x,y}，真源里接头真接上了', () => {
+    const { log, storeyId, field: fd } = oneWall();
+    const base = pressAtOrigin(fd, storeyId);
+    const moved = dragToEnd(base, { x: 0, y: 2500 }, log.document, fd, sv);
+    expect(moved.legal).toBe(true);
+    const refs = draftRefs(moved);
+    expect(refs.start).toEqual({ pointId: base.start.snap?.pointId });
+    expect(refs.end).not.toHaveProperty('pointId');
+    const command = draftCommand(moved, newWallDefaults(log.document, storeyId));
+    expect(command?.type).toBe('wall.create');
+    if (command === null) throw new TypeError('legal 为真却拿不到命令');
+    const before = log.document.byKind('point').length;
+    log.dispatch(command);
+    const created = lastCreatedWall(log.document, log.affected, storeyId);
+    if (created === null) throw new TypeError('affected 里没有那面墙');
+    // 接头成立 = 起点那一端**就是**既有那枚点；终点是新建的，所以点数恰好 +1（不是 +2）
+    expect(created.startId).toBe(base.start.snap?.pointId);
+    expect(created.endId).not.toBe(created.startId);
+    expect(log.document.byKind('point').length).toBe(before + 1);
+    expect(requirePoint(log.document, created.startId, '共享起点')).toEqual(
+      expect.objectContaining({ x: 0, y: 0 }),
+    );
+    // 复用的判据只有一处：`pointRefOf` 看到 snap.pointId 非 null。换一种写法（自己摸 snap 拼 ref）
+    // 就会在这里给出 {x,y} ⇒ +2 枚点，上面那句先红。
+    expect(pointRefOf(moved.start.mm, moved.start.snap)).toEqual(refs.start);
+  });
+});
+
+describe('合法性预言与真命令', () => {
+  it('试跑不动真源：墙数、撤销栈深度、affected 三票全部原样', () => {
+    const { log, storeyId, field: fd } = oneWall();
+    const moved = dragToEnd(pressAtOrigin(fd, storeyId), { x: 1200, y: 0 }, log.document, fd, sv);
+    const walls = log.document.byKind('wall').length;
+    const affectedBefore = [...log.affected].sort();
+    expect(legalWallCreate(log.document, moved)).toBe(true);
+    expect(legalWallCreate(log.document, moved)).toBe(true); // 问两次同值（探针的可复现性靠这句）
+    expect(log.document.byKind('wall').length).toBe(walls);
+    expect(log.depth).toBe(2);
+    // 少了这一条，"预览时每问一次就污染一次 affected"会让 `lastCreatedWall` 拿到试跑那一份
+    expect([...log.affected].sort()).toEqual(affectedBefore);
+  });
+
+  it('三种拒绝各一色：零长、墙厚不小于墙长、跨层复用点', () => {
+    const { log, storeyId, field: fd } = oneWall();
+    const base = pressAtOrigin(fd, storeyId);
+    const defaults = newWallDefaults(log.document, storeyId);
+    // ① 零长：终点落回起点
+    expect(moveDraft(log.document, base, sv, base.start.px, fd).legal).toBe(false);
+    // ② 墙厚不小于墙长：240 厚的墙拖 200mm
+    expect(dragToEnd(base, { x: 200, y: 0 }, log.document, fd, sv).legal).toBe(false);
+    // 素材自证：同一方向多拖一点就合法（否则"恒 false"的写法也过这一发）
+    expect(dragToEnd(base, { x: 400, y: 0 }, log.document, fd, sv).legal).toBe(true);
+    // ③ 跨层复用点：把二层那枚起点当一层的起点，`resolvePointRef` 抛。
+    // 终点保持"合法那一发"，所以这一发红只可能是起点造成的 —— 反过来（只换终点）证不到起点。
+    const legalSoFar = dragToEnd(base, { x: 0, y: 1500 }, log.document, fd, sv);
+    expect(legalSoFar.legal).toBe(true);
+    const upper = upperWalls[0]!;
+    const crossLayer: DraftWall = {
+      ...legalSoFar,
+      start: {
+        mm: { x: 0, y: 0 },
+        px: legalSoFar.start.px,
+        snap: { kind: 'endpoint', pointId: upper.startId, mm: { x: 0, y: 0 }, distPx: 0 },
+      },
+    };
+    expect(legalWallCreate(log.document, crossLayer)).toBe(false);
+    // 素材自证：同一份草稿换回本层那枚点就合法 —— 上一发红在跨层，不是红在 `upper.startId` 写错了
+    const sameLayer: DraftWall = {
+      ...crossLayer,
+      start: { mm: { x: 0, y: 0 }, px: legalSoFar.start.px, snap: base.start.snap },
+    };
+    expect(legalWallCreate(log.document, sameLayer)).toBe(true);
+    expect(defaults.heightMm).toBe(3000);
+  });
+
+  it('draftCommand 只认 legal 一色：false 给 null，true 给可派发的命令', () => {
+    const { log, storeyId, field: fd } = oneWall();
+    const base = pressAtOrigin(fd, storeyId);
+    const defaults = newWallDefaults(log.document, storeyId);
+    expect(draftCommand(base, defaults)).toBeNull(); // 手工摆的草稿 legal 恒 false
+    const ok = dragToEnd(base, { x: 0, y: -1500 }, log.document, fd, sv);
+    expect(ok.legal).toBe(true);
+    expect(draftCommand(ok, defaults)?.type).toBe('wall.create');
+    // 对照：同一发把 legal 抹成 false，命令就发不出去（判据只有这一色，没有第二条路）
+    expect(draftCommand({ ...ok, legal: false }, defaults)).toBeNull();
+  });
+});
+
+describe('删除计划', () => {
+  it('选一面墙：一条 wall.delete，candidateIds 记着它', () => {
+    const { log, storeyId } = oneWall();
+    const wall = onlyWall(log);
+    const plan = planDelete(log.document, storeyId, 'select', [wall.id]);
+    expect(plan.outcome).toBe('ok');
+    expect(plan.commandTypes).toEqual(['wall.delete']);
+    expect(plan.candidateIds).toEqual([wall.id]);
+    expect(plan.unsupported).toEqual([]);
+    // 命令真的删得掉（预言与真源的对照；`build` 的 remove 里带这面墙）
+    expect(plan.commands[0]?.build(log.document).remove).toContain(wall.id);
+  });
+
+  it('墙与它的洞口一起选中：只发一条 wall.delete，不复述级联', () => {
+    const { log, storeyId } = oneWall();
+    const wall = onlyWall(log);
+    const openingId = openingAt(log, wall.id, 1000);
+    const plan = planDelete(log.document, storeyId, 'select', [wall.id, openingId]);
+    // 第二条 `opening.delete` 不该出现：`wallDelete` 的级联已经收了它（复述必漂）
+    expect(plan.outcome).toBe('ok');
+    expect(plan.commandTypes).toEqual(['wall.delete']);
+    expect(plan.candidateIds).toEqual([wall.id]);
+    expect(plan.unsupported).toEqual([]);
+    // 照计划真跑：墙与洞口一起消失
+    const once = new TransactionLog(log.document);
+    for (const command of plan.commands) once.dispatch(command);
+    expect(once.document.get(wall.id)).toBeUndefined();
+    expect(once.document.get(openingId)).toBeUndefined();
+    // 反过来（给宿主墙同批删除的洞口也发一条）会炸在半路：墙先删掉 ⇒ 洞口已不存在 ⇒ requireOpening 抛。
+    // 这一发是 `dispatchBatch` 的"半途留半套状态"的凭据，不是想象。
+    const twice = new TransactionLog(log.document);
+    twice.dispatch(wallDelete({ wallId: wall.id }));
+    expect(twice.document.get(openingId)).toBeUndefined();
+    expect(() => twice.dispatch(openingDelete({ openingId }))).toThrow();
+  });
+
+  it('独立洞口 + 另一面墙：两条命令，洞口在前、墙在后', () => {
+    const { log, storeyId } = synthStorey();
+    const a = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    const b = wallAt(log, storeyId, { x: 0, y: 2000 }, { x: 4000, y: 2000 });
+    const openingId = openingAt(log, a.id, 1200);
+    const plan = planDelete(log.document, storeyId, 'select', [b.id, openingId]);
+    expect(plan.outcome).toBe('ok');
+    // 顺序不是随手排的：栈顶留 `wall.delete`，一次 Ctrl+Z 还原"墙 + 它级联掉的洞口"
+    expect(plan.commandTypes).toEqual(['opening.delete', 'wall.delete']);
+    expect(plan.candidateIds).toEqual([openingId, b.id]);
+    for (const command of plan.commands) log.dispatch(command);
+    expect(log.document.get(openingId)).toBeUndefined();
+    expect(log.document.get(b.id)).toBeUndefined();
+    expect(log.document.get(a.id)?.kind).toBe('wall'); // 宿主墙没被选中，它和它的洞口都该还在
+    expect(log.document.byKind('opening').length).toBe(0);
+  });
+
+  it('三种沉默三种颜色：拉墙模式 / 只剩柱 / 空集', () => {
+    const { log, storeyId } = oneWall();
+    const wall = onlyWall(log);
+    log.dispatch(columnCreate({ storeyId, at: { x: 500, y: 500 }, widthMm: 400, depthMm: 400 }));
+    const columnId = [...log.affected].find((id) => log.document.get(id)?.kind === 'column');
+    if (columnId === undefined) throw new TypeError('affected 里没有那根柱');
+    // ① 拉墙时误触 Delete：什么都不发，但**不许**报"没选中东西"（选中集不该被清空）
+    expect(planDelete(log.document, storeyId, 'wall', [wall.id, columnId])).toEqual({
+      outcome: 'ignored-in-wall-mode',
+      commands: [],
+      commandTypes: [],
+      candidateIds: [],
+      unsupported: [],
+    });
+    // ② 只选了一根柱：本任务没有 columnDelete，如实报 unsupported（T7 补完这一格少一个取值）
+    const only = planDelete(log.document, storeyId, 'select', [columnId]);
+    expect(only.outcome).toBe('unsupported');
+    expect(only.commands).toHaveLength(0);
+    expect(only.unsupported).toEqual([columnId]);
+    // ③ 什么都没选：'empty'，与 ② 不同色
+    const none = planDelete(log.document, storeyId, 'select', []);
+    expect(none.outcome).toBe('empty');
+    expect(none.unsupported).toEqual([]);
+    // 三色的存在性：写成布尔（"发没发命令"）就把 ①②③ 糊成一格
+    expect(new Set(['ignored-in-wall-mode', only.outcome, none.outcome]).size).toBe(3);
+    // 混选：柱 + 墙 ⇒ 墙照删，柱进 unsupported（不是"整批不做"）
+    const mixed = planDelete(log.document, storeyId, 'select', [columnId, wall.id]);
+    expect(mixed.outcome).toBe('ok');
+    expect(mixed.commandTypes).toEqual(['wall.delete']);
+    expect(mixed.unsupported).toEqual([columnId]);
+  });
+
+  it('别层构件进 unsupported，不是"没选中"：本层没这个权力', () => {
+    const upper = upperWalls[0]!;
+    const upperOpening = house.doc.byKind('opening').find((o) => o.storeyId === house.upperStoreyId);
+    if (upperOpening === undefined) throw new TypeError('样例房二层应当有洞口');
+    const plan = planDelete(house.doc, house.lowerStoreyId, 'select', [upper.id, upperOpening.id]);
+    expect(plan.outcome).toBe('unsupported');
+    expect(plan.commands).toHaveLength(0); // 一发都不许发：删二层的墙不在本层的权力里
+    expect(plan.candidateIds).toEqual([]);
+    expect([...plan.unsupported].sort()).toEqual([upper.id, upperOpening.id].sort());
+    // 素材自证：同一枚洞口换到它自己的层就发得出命令 ⇒ 上一发红在认层，不红在"洞口删不掉"
+    const same = planDelete(house.doc, house.upperStoreyId, 'select', [upperOpening.id]);
+    expect(same.outcome).toBe('ok');
+    expect(same.commandTypes).toEqual(['opening.delete']);
+  });
+
+  it('删掉一面带洞口的墙：洞口与它的孤儿点一起消失，pruneSelection 把两者都剔掉', () => {
+    const { log, storeyId } = oneWall();
+    const wall = onlyWall(log);
+    const openingId = openingAt(log, wall.id, 1000);
+    const pointsBefore = log.document.byKind('point').length;
+    const selected = [wall.id, openingId, wall.startId];
+    const plan = planDelete(log.document, storeyId, 'select', [wall.id]);
+    for (const command of plan.commands) log.dispatch(command);
+    expect(log.document.get(wall.id)).toBeUndefined();
+    expect(log.document.get(openingId)).toBeUndefined(); // 级联收的，不是 UI 发的
+    // 这面墙的两枚端点都不再被引用 ⇒ wallDelete 一并收掉，点数回到建墙之前
+    expect(log.document.byKind('point').length).toBe(pointsBefore - 2);
+    expect(pruneSelection(log.document, storeyId, selected)).toEqual([]);
+  });
+
+  it('pruneSelection：别层的、已不存在的、楼层本身都剔掉，留下的按 id 升序', () => {
+    // 两层都取样例房：合成文档里只有一层，"别层的构件"根本不存在，摘掉层过滤也红不出来（实测过）。
+    const lower = lowerWalls[0]!;
+    const upper = upperWalls[0]!;
+    expect(pruneSelection(house.doc, house.lowerStoreyId, [lower.id, upper.id, 'gone'])).toEqual([lower.id]);
+    // 点按它自己的 storeyId 筛（不是"一律放行"）：别层的点留在本层选中集里，
+    // 下一发拖动就会拿二层的坐标去改一层的点。
+    expect(requirePoint(house.doc, upper.startId, '别层端点').storeyId).toBe(house.upperStoreyId);
+    expect(
+      pruneSelection(house.doc, house.lowerStoreyId, [lower.startId, upper.startId, house.upperStoreyId]),
+    ).toEqual([lower.startId]);
+    // 反方向的同一发：二层的选中集里不许留一层的点
+    expect(pruneSelection(house.doc, house.upperStoreyId, [lower.startId, upper.startId])).toEqual([
+      upper.startId,
+    ]);
+    // 升序是判据的一部分：撤销一次再比"选中集没变"，Set 的插入序会漂，只有排过序才可比
+    const many = house.doc.byKind('wall').filter((w) => w.storeyId === house.lowerStoreyId).slice(0, 4);
+    const kept = pruneSelection(house.doc, house.lowerStoreyId, [...many].reverse().map((w) => w.id));
+    expect(kept).toEqual([...kept].sort());
+    expect(kept).toHaveLength(many.length);
+    expect(kept).toEqual(many.map((w) => w.id).sort());
+  });
+});
+
+describe('新建回执与探针', () => {
+  it('lastCreatedWall：派发后拿得到；撤销后 affected 仍列着那枚 id，但答案必须是 null', () => {
+    const { log, storeyId } = oneWall();
+    const created = wallAt(log, storeyId, { x: 0, y: 1000 }, { x: 4000, y: 1000 });
+    const read = lastCreatedWall(log.document, log.affected, storeyId);
+    expect(read).toEqual({ wallId: created.id, storeyId, startId: created.startId, endId: created.endId });
+    // S6 的那一枪：`undo()` 把 lastAffected 设成**前向**补丁的 id，所以 id 还在集合里，
+    // 而文档里已经没有那面墙。少了 `doc.get(id)` 复核，屏幕上就是一个不存在的构件的把手。
+    expect(log.undo()).toBe(true);
+    expect(log.affected.has(created.id)).toBe(true);
+    expect(log.document.get(created.id)).toBeUndefined();
+    expect(lastCreatedWall(log.document, log.affected, storeyId)).toBeNull();
+  });
+
+  it('lastCreatedWall 认层：别层的墙不给本层的答案', () => {
+    const upper = upperWalls[0]!;
+    const ids = new Set([upper.id, upper.startId, upper.endId]);
+    expect(lastCreatedWall(house.doc, ids, house.lowerStoreyId)).toBeNull();
+    expect(lastCreatedWall(house.doc, ids, house.upperStoreyId)?.wallId).toBe(upper.id);
+  });
+
+  it('wallProbe 在样例房里给得出靶子，六道筛逐条自证，且两次问逐字相同', () => {
+    const probe = wallProbe(house.doc, house.lowerStoreyId, ops, view);
+    expect(probe).not.toBeNull();
+    if (probe === null) throw new TypeError('探针给不出可画的空白落点');
+    // ① 起点吸到既有端点，且复用那一枚
+    const startDrop = dropTargetOf(view, probe.startPx, null, field);
+    expect(startDrop.snap?.kind).toBe('endpoint');
+    expect(startDrop.snap?.pointId).toBe(probe.startPointId);
+    const startPoint = requirePoint(house.doc, probe.startPointId, '探针起点');
+    expect(probe.startMm).toEqual({ x: startPoint.x, y: startPoint.y });
+    // ② 终点不引别人的点（正交档命中是允许的，它不带 pointId）
+    const endDrop = dropTargetOf(view, probe.endPx, probe.startMm, field, { excludeMm: probe.startMm });
+    expect(endDrop.mm).toEqual(probe.endMm);
+    expect(endDrop.snap?.pointId ?? null).toBeNull();
+    // ③ 两道长度下限
+    expect(probe.lengthMm).toBeGreaterThanOrEqual(MIN_WALL_LENGTH_MM);
+    expect((probe.lengthMm - probe.defaults.thicknessMm) * view.pxPerMm).toBeGreaterThanOrEqual(
+      MIN_PICK_EDGE_PX,
+    );
+    // ④ 落点与中点两发像素一个候选都不命中
+    expect(pickAt(ops, probe.endPx)).toEqual([]);
+    expect(pickAt(ops, probe.midPx)).toEqual([]);
+    // ⑤ 三发像素全在画布内（留 2px 边）：越界的那一发 `sendInputEvent` 发不出去
+    for (const px of [probe.startPx, probe.endPx, probe.midPx]) {
+      expect(px.x).toBeGreaterThanOrEqual(2);
+      expect(px.y).toBeGreaterThanOrEqual(2);
+      expect(px.x).toBeLessThan(view.widthPx - 2);
+      expect(px.y).toBeLessThan(view.heightPx - 2);
+    }
+    // 像素是整数（`sendInputEvent` 只收整数 DIP），毫米由像素反算 ⇒ 不动点
+    expect(Number.isInteger(probe.endPx.x) && Number.isInteger(probe.endPx.y)).toBe(true);
+    expect(moveTargetOf(view, probe.endPx)).toEqual(probe.endMm);
+    // 确定性：同一个靶子两次问必须一模一样（"撤销后回到原值"那类判据的前提）
+    expect(wallProbe(house.doc, house.lowerStoreyId, ops, view)).toEqual(probe);
+    // 建出来真的点得中：这一发证明筛 ③ 够用，删除那一步能在真窗口里点名
+    const log = new TransactionLog(house.doc);
+    const command = draftCommand(
+      {
+        storeyId: house.lowerStoreyId,
+        start: { mm: probe.startMm, px: probe.startPx, snap: startDrop.snap },
+        cursorPx: probe.endPx,
+        end: endDrop,
+        legal: true,
+      },
+      probe.defaults,
+    );
+    if (command === null) throw new TypeError('legal 为真却拿不到命令');
+    log.dispatch(command);
+    const created = lastCreatedWall(log.document, log.affected, house.lowerStoreyId);
+    if (created === null) throw new TypeError('affected 里没有那面墙');
+    const after = buildDrawList(log.document, house.lowerStoreyId, view, EMPTY_SELECTION);
+    const named = pickPxOf(after, created.wallId);
+    expect(named).not.toBeNull(); // 筛 ③/④ 的全部目的：删除那一步点得出这面墙
+    if (named !== null) expect(pickAt(after, named).map((h) => h.ownerId)).toEqual([created.wallId]);
+  });
+
+  it('探针靶子的配平账：ops 空表（筛 ④ 失效）时建出来恰好多一枚点、删回去账回到原样', () => {
+    // 空指令表 = "屏幕上什么都没有" ⇒ 筛 ④ 一枚都不拒，这一发只剩"起点复用、终点新建"这条账可判。
+    // 终点若复用了既有点，删掉这面墙时那枚点仍被别人引用 ⇒ 留下 ⇒ 点数回不到原样。
+    // 闸门那一步"删掉新建的墙"的配平判据就是这句话。
+    //
+    // **这一发在摘掉筛 ② 时不红**（E14 实测）：样例房的第一发候选终点本来就不是既有点，
+    // 拦不拦都一样。② 自己的牙齿在下一条合成夹具那儿 —— 两条别合并，它们钉的是两件事。
+    const probe = wallProbe(house.doc, house.lowerStoreyId, [], view);
+    expect(probe).not.toBeNull();
+    if (probe === null) throw new TypeError('空表下探针该给得出靶子');
+    const startDrop = dropTargetOf(view, probe.startPx, null, field);
+    const endDrop = dropTargetOf(view, probe.endPx, probe.startMm, field, { excludeMm: probe.startMm });
+    expect(endDrop.snap?.pointId ?? null).toBeNull();
+    const command = draftCommand(
+      {
+        storeyId: house.lowerStoreyId,
+        start: { mm: probe.startMm, px: probe.startPx, snap: startDrop.snap },
+        cursorPx: probe.endPx,
+        end: endDrop,
+        legal: true,
+      },
+      probe.defaults,
+    );
+    if (command === null) throw new TypeError('legal 为真却拿不到命令');
+    const log = new TransactionLog(house.doc);
+    const before = log.document.byKind('point').length;
+    log.dispatch(command);
+    const created = lastCreatedWall(log.document, log.affected, house.lowerStoreyId);
+    if (created === null) throw new TypeError('affected 里没有那面墙');
+    expect(log.document.byKind('point').length).toBe(before + 1); // 起点复用、终点新建
+    log.dispatch(wallDelete({ wallId: created.wallId }));
+    expect(log.document.byKind('point').length).toBe(before); // 孤儿点被收走，账配平
+  });
+
+  it('筛 ② 有牙齿：画布夹住的靶场里，唯一活着的候选引的是别人的点', () => {
+    // **靶场视口**：300×300px @0.1px/mm ⇒ 画布只夹住 mm x ∈ (−1500, 1500)、y ∈ (−500, 2500)。
+    // 两面墙各从画布内的一枚端点往 x=−6000 长出去 ⇒ 画布外那两枚端点当起点全被筛 ⑤ 拒掉，
+    // 剩下 (0,0) 与 (0,2000) **互为对方唯一落在画布内的候选** —— 而那一枚终点是别人的点。
+    // 摘掉筛 ②（E14）探针就把这一发交出来 ⇒ 本条恒红在最后那句"必须给 null"。
+    //
+    // 为什么这一格必须靠画布夹住、而不是"把样例房的那一发换个干净落点"：终点复用既有点 ⇒
+    // 那一枚像素必然压在那面墙的轮廓上 ⇒ 筛 ④ 顺手就拒；就算 `ops` 给空表绕过 ④，共线重叠的
+    // 墙又派生不出来 ⇒ 筛 ⑥ 也拒。也就是说 **④ 与 ⑥ 天生罩住 ②**（2026-09-28 实测：加了 ⑤⑥
+    // 之后 E14 连跑八次 30/0，一条都不红）。这一格把 `ops` 给空表、再用画布把活着的候选逼到
+    // 只剩一发，② 才重新有自己说话的地方 —— **判据不许因为"反正后面有人拦"就删掉前面的筛**：
+    // ⑥ 每发要做一次整层派生，② 是一次比较，屏幕上拖一次光标要问十几发。
+    const tv = viewportOf(300, 300, { pxPerMm: 0.1, center: vec(0, 1000) });
+    const { log, storeyId } = synthStorey();
+    wallAt(log, storeyId, { x: 0, y: 0 }, { x: -6000, y: 0 });
+    wallAt(log, storeyId, { x: 0, y: 2000 }, { x: -6000, y: 2000 });
+    const doc = log.document;
+    const fd = snapFieldOf(doc, storeyId);
+    // 素材自证 ①：那一发引的确实是既有点 —— 否则"给 null"是"场里什么都没有"造成的，与 ② 无关
+    const candPx = pxOf({ x: 0, y: 2000 }, tv);
+    const cand = dropTargetOf(tv, candPx, { x: 0, y: 0 }, fd, { excludeMm: { x: 0, y: 0 } });
+    expect(cand.snap?.pointId ?? null).not.toBeNull();
+    // 素材自证 ②：三发像素全在画布内（筛 ⑤ 放行）、两道长度下限都过（筛 ③ 放行）
+    for (const p of [pxOf({ x: 0, y: 0 }, tv), candPx, pxOf({ x: 0, y: 1000 }, tv)]) {
+      expect(p.x).toBeGreaterThanOrEqual(2);
+      expect(p.y).toBeGreaterThanOrEqual(2);
+      expect(p.x).toBeLessThan(tv.widthPx - 2);
+      expect(p.y).toBeLessThan(tv.heightPx - 2);
+    }
+    expect(2000).toBeGreaterThanOrEqual(MIN_WALL_LENGTH_MM);
+    // 素材自证 ③：命令层建得成、派生层也画得出 ⇒ 前五道筛加两个试跑都不拒它
+    const startDrop = dropTargetOf(tv, pxOf({ x: 0, y: 0 }, tv), null, fd);
+    const defaults = newWallDefaults(doc, storeyId);
+    const trial = new TransactionLog(doc);
+    trial.dispatch(
+      wallCreate({
+        storeyId,
+        start: { pointId: startDrop.snap?.pointId ?? 'x' },
+        end: { pointId: cand.snap?.pointId ?? 'x' },
+        thicknessMm: defaults.thicknessMm,
+        heightMm: defaults.heightMm,
+      }),
+    );
+    expect(() => buildDrawList(trial.document, storeyId, tv)).not.toThrow();
+    // 判据：六道筛齐全 ⇒ 这一格探针给 null
+    expect(wallProbe(doc, storeyId, [], tv)).toBeNull();
+    // 反面自证：同一份文档把画布松开（`sv` 夹住 x ∈ (−3000, 7000)）靶子就出现了
+    // ⇒ 上面那发红在"越界把候选挤到只剩引点那一发"，不红在文档本身没有可画的落点
+    expect(wallProbe(doc, storeyId, [], sv)).not.toBeNull();
+  });
+
+  it('筛 ④ 有牙齿：画布夹住的靶场里，唯一活着的候选中点压在横墙上', () => {
+    // 同一块画布：竖着的候选 (0,0)→(0,2000) 落点**空**、中点 (0,1000) 正压在横墙 (−6000,1000)→(6000,1000)
+    // 的轮廓里 ⇒ 只有筛 ④ 拒它（终点没引任何点 ⇒ ②放行；建得成也画得出 ⇒ 命令层与 ⑥ 放行；
+    // 三发像素全在画布内 ⇒ ⑤ 放行）。摘掉筛 ④（E15）探针把这一发交出来 ⇒ 恒红在最后那句。
+    // 起点只有 (0,0) 一枚在画布内（其余端点全在 x=±6000 之外）⇒ 与 uuidv7 的排位无关。
+    const tv = viewportOf(300, 300, { pxPerMm: 0.1, center: vec(0, 1000) });
+    const { log, storeyId } = synthStorey();
+    wallAt(log, storeyId, { x: 0, y: 0 }, { x: -6000, y: 0 });
+    wallAt(log, storeyId, { x: -6000, y: 1000 }, { x: 6000, y: 1000 });
+    const doc = log.document;
+    const tvOps = buildDrawList(doc, storeyId, tv, EMPTY_SELECTION);
+    const fd = snapFieldOf(doc, storeyId);
+    // 素材自证 ①：中点确实压在横墙上（这一句就是 ④ 要拒的东西）
+    expect(pickAt(tvOps, pxOf({ x: 0, y: 1000 }, tv))).not.toEqual([]);
+    // 素材自证 ②：落点自己是空白的，且不带别人的点 ⇒ ④ 之外没有第二道筛替它说话
+    const candPx = pxOf({ x: 0, y: 2000 }, tv);
+    expect(pickAt(tvOps, candPx)).toEqual([]);
+    const cand = dropTargetOf(tv, candPx, { x: 0, y: 0 }, fd, { excludeMm: { x: 0, y: 0 } });
+    expect(cand.snap?.pointId ?? null).toBeNull();
+    // 素材自证 ③：命令层与派生层都放行（新点落在横墙内侧是 S1 允许的几何，闸门只要求点得中）
+    const defaults = newWallDefaults(doc, storeyId);
+    const trial = new TransactionLog(doc);
+    trial.dispatch(
+      wallCreate({
+        storeyId,
+        start: { pointId: fd.points.find((p) => p.mm.x === 0 && p.mm.y === 0)?.pointId ?? 'x' },
+        end: { x: cand.mm.x, y: cand.mm.y },
+        thicknessMm: defaults.thicknessMm,
+        heightMm: defaults.heightMm,
+      }),
+    );
+    expect(() => buildDrawList(trial.document, storeyId, tv)).not.toThrow();
+    // 判据：六道筛齐全 ⇒ 探针给 null；松开画布（靶子换到别发候选）就有了 ⇒ 不红在空场
+    expect(wallProbe(doc, storeyId, tvOps, tv)).toBeNull();
+    const svOps = buildDrawList(doc, storeyId, sv, EMPTY_SELECTION);
+    expect(wallProbe(doc, storeyId, svOps, sv)).not.toBeNull();
+  });
+
+  it('探针只给整数像素：换一把"整数毫米落在分数像素上"的尺子仍然成立', () => {
+    // 样例房在 0.125px/mm 下所有靶子恰好落在整数像素上，那份视图证不了 `intPx` 这句话。
+    // 高度改成 901 ⇒ pxPerMm 变成 781/6240，同样的毫米乘出来带小数，取整这一步才有对象。
+    const v = fitStorey(house.doc, house.lowerStoreyId, 1200, 901, 60);
+    expect(v.pxPerMm).not.toBe(0.125);
+    // 素材自证：这把尺子下"毫米的原始像素"确实带小数 —— 不然这一发与上一发是同一件事，
+    // `intPx` 依然没有对象（0.125px/mm + 全是 100 的倍数的坐标，取整恒等，红不出来）。
+    const witness = mmToPx(v, vec(0, 0));
+    expect(Number.isInteger(witness.x) && Number.isInteger(witness.y)).toBe(false);
+    const oddOps = buildDrawList(house.doc, house.lowerStoreyId, v, EMPTY_SELECTION);
+    const probe = wallProbe(house.doc, house.lowerStoreyId, oddOps, v);
+    expect(probe).not.toBeNull();
+    if (probe === null) throw new TypeError('换尺子后探针给不出靶子');
+    for (const px of [probe.startPx, probe.endPx, probe.midPx]) {
+      expect(Number.isInteger(px.x) && Number.isInteger(px.y)).toBe(true);
+    }
+    // 取整之后仍然自洽：落点是**那一发整数像素**过一遍屏幕通路的结果 ⇒ 闸门发得出、renderer 落得回
+    const endDrop = dropTargetOf(v, probe.endPx, probe.startMm, field, { excludeMm: probe.startMm });
+    expect(endDrop.mm).toEqual(probe.endMm);
+    const startDrop = dropTargetOf(v, probe.startPx, null, field);
+    expect(startDrop.mm).toEqual(probe.startMm);
+    expect(startDrop.snap?.pointId).toBe(probe.startPointId);
+  });
+
+  it('极度缩小下探针给 null，稍大一档就给得出：说话的是那道像素下限', () => {
+    // 两发的差别只有比例。0.02px/mm ⇒ 候选 2000mm = 40px：中点离既有墙角 20px（筛 ④ 放行），
+    // 而 `(2000-240)*0.02 = 35.2 < 64` 被像素下限拒掉 ⇒ null。0.04px/mm 同一批候选 = 80px，
+    // `(2000-240)*0.04 = 70.4 ≥ 64` 过筛 ⇒ 给得出。
+    // 为什么比例要挑在中间：太小（0.005）时中点也挤进 8px 命中圈，改坏"摘掉像素下限"会被
+    // 筛 ④ 顺手补上，这一发就退化成"④ 的第二个用例"；太大则两道筛都不说话。
+    const tiny = viewportOf(1000, 800, { pxPerMm: 0.02, center: vec(4000, 3000) });
+    const big = viewportOf(1000, 800, { pxPerMm: 0.04, center: vec(4000, 3000) });
+    const tinyOps = buildDrawList(house.doc, house.lowerStoreyId, tiny, EMPTY_SELECTION);
+    const bigOps = buildDrawList(house.doc, house.lowerStoreyId, big, EMPTY_SELECTION);
+    expect(wallProbe(house.doc, house.lowerStoreyId, tinyOps, tiny)).toBeNull();
+    const okProbe = wallProbe(house.doc, house.lowerStoreyId, bigOps, big);
+    expect(okProbe).not.toBeNull();
+    if (okProbe === null) throw new TypeError('0.04px/mm 下探针该给得出靶子');
+    expect((okProbe.lengthMm - okProbe.defaults.thicknessMm) * big.pxPerMm).toBeGreaterThanOrEqual(
+      MIN_PICK_EDGE_PX,
+    );
+    // 毫米下限在这一发里是**旁观者**：候选偏移恒 ≥2000mm，这条 500 对它永远不生效。
+    // 所以 `MIN_WALL_LENGTH_MM` 只保护探针挑靶子，不保护用户那一发（那一发的下限是真源的墙厚）。
+    expect(okProbe.lengthMm).toBeGreaterThan(MIN_WALL_LENGTH_MM);
+  });
+
+  it('筛 ⑤ 有牙齿：整层挪出画布后探针没靶子，回到拟合视图靶子就出现', () => {
+    // 样例房在没有这条筛时挑中的是 (0,0)→(-2000,0)：毫米合法、`pickAt` 空、两道长度下限都过，
+    // 但 `endPx = (-150, 825)`、`midPx = (-25, 825)` 在画布**左边界之外**（2026-09-28 实测）。
+    // 这一发判的不是"样例房挑哪一发"（那随 uuidv7 变），而是"挑出来的三发必须发得出 DIP"。
+    const off = viewportOf(1200, 900, { pxPerMm: view.pxPerMm, center: vec(30000, 30000) });
+    // 素材自证：这一发的原点确实在画布外 —— 否则那句 null 是别的东西造成的（尺寸、比例、空场…）
+    expect(mmToPx(off, vec(0, 0)).x).toBeLessThan(2);
+    expect(snapFieldOf(house.doc, house.lowerStoreyId).points.length).toBeGreaterThan(0);
+    const offOps = buildDrawList(house.doc, house.lowerStoreyId, off, EMPTY_SELECTION);
+    expect(wallProbe(house.doc, house.lowerStoreyId, offOps, off)).toBeNull();
+    // 同一份文档回到拟合视图 ⇒ 靶子出现：证上面那发红在"越界"，不红在文档或比例
+    expect(wallProbe(house.doc, house.lowerStoreyId, ops, view)).not.toBeNull();
+  });
+
+  it('⑥ 的前提：同一发候选命令层放行、派生层抛（星形接头）', () => {
+    // 角点 (0,0) 已经过着两条线（x 轴与 y 轴）。第三发 45° 斜线过同一点 ⇒ core 的 `deriveJoints`
+    // 判它星形接头 ⇒ `buildDrawList` 抛「S1 不支持」。这一发**过了 ①~⑤ 也过了命令层**，
+    // 所以本条判的是"⑥ 为什么必须存在"；⑥ 真正的牙齿在上一条样例房用例里
+    // （摘掉 ⑥ 那次实测八个进程：「六道筛逐条自证」七次红、一次绿，红在建完再派生那一句 —— 本条不跟着红，
+    // 因为它判的是候选本身，不判探针挑了谁）。
+    const { log, storeyId } = synthStorey();
+    const east = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    wallAt(log, storeyId, { pointId: east.startId }, { x: 0, y: 4000 });
+    const fd = snapFieldOf(log.document, storeyId);
+    const startMm: MoveTarget = { x: 0, y: 0 };
+    const startOps = buildDrawList(log.document, storeyId, sv, EMPTY_SELECTION);
+    const endPx = pxOf({ x: 2000, y: 2000 }, sv);
+    const start = draftAtPress(sv, pxOf(startMm, sv), fd);
+    const end = dropTargetOf(sv, endPx, startMm, fd, { excludeMm: startMm });
+    const draft: DraftWall = { storeyId, start, cursorPx: endPx, end, legal: true };
+    // ①③④⑤ 逐条自证：这一发确实"前五条全过"，于是它红的时候只可能是 ⑥ 干的
+    expect(start.snap?.kind).toBe('endpoint');
+    expect(end.snap?.pointId ?? null).toBeNull();
+    expect(end.mm).toEqual({ x: 2000, y: 2000 });
+    expect(pickAt(startOps, endPx)).toEqual([]);
+    expect(endPx.x).toBeGreaterThanOrEqual(2);
+    expect(endPx.y).toBeGreaterThanOrEqual(2);
+    expect(endPx.x).toBeLessThan(sv.widthPx - 2);
+    expect(endPx.y).toBeLessThan(sv.heightPx - 2);
+    expect(Math.hypot(end.mm.x - startMm.x, end.mm.y - startMm.y)).toBeGreaterThan(MIN_WALL_LENGTH_MM);
+    expect(legalWallCreate(log.document, draft)).toBe(true);
+    // 派生层：同一发命令建进去，整层就画不出来了
+    const command = draftCommand(draft, newWallDefaults(log.document, storeyId));
+    if (command === null) throw new TypeError('legal 为真却拿不到命令');
+    const trial = new TransactionLog(log.document);
+    trial.dispatch(command);
+    expect(() => buildDrawList(trial.document, storeyId, sv)).toThrow(/S1 不支持/);
+    // ⑥ 在这一发夹具上**不承重**：摘掉它，探针换的还是别发轴向候选，本条不红（实测 E28 只红
+    // 「六道筛逐条自证」那一条，且八进程里七次）。留着它是为了证"探针给的每一发都画得出"这句判据本身写得对。
+    const probe = wallProbe(log.document, storeyId, startOps, sv);
+    if (probe === null) throw new TypeError('这个夹具上探针该给得出别发候选（四条轴向外侧）');
+    const t2 = new TransactionLog(log.document);
+    t2.dispatch(
+      wallCreate({
+        storeyId,
+        start: { pointId: probe.startPointId },
+        end: { x: probe.endMm.x, y: probe.endMm.y },
+        thicknessMm: probe.defaults.thicknessMm,
+        heightMm: probe.defaults.heightMm,
+      }),
+    );
+    expect(() => buildDrawList(t2.document, storeyId, sv)).not.toThrow();
+  });
+
+  it('wallProbe 在空层给 null（不抛），有了靶子才给得出', () => {
+    const { log, storeyId } = synthStorey();
+    const emptyField = snapFieldOf(log.document, storeyId);
+    const emptyOps = buildDrawList(log.document, storeyId, sv, EMPTY_SELECTION);
+    expect(wallProbe(log.document, storeyId, emptyOps, sv)).toBeNull();
+    // 素材自证：空表确实空 —— 否则"给 null"可以是任何实现的功劳
+    expect(emptyField.points).toEqual([]);
+    expect(emptyField.axes).toEqual([]);
+    // 建一面墙后靶子出现了：证上一发红在"没有端点可吸"，不是红在视口或筛写反
+    wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    const afterOps = buildDrawList(log.document, storeyId, sv, EMPTY_SELECTION);
+    expect(wallProbe(log.document, storeyId, afterOps, sv)).not.toBeNull();
+  });
+
+  it('属性：legal 与"真 build 会不会抛"逐字同口径（试跑不是第二套判据）', () => {
+    const { log, storeyId, field: fd } = oneWall();
+    const base = pressAtOrigin(fd, storeyId);
+    const defaults = newWallDefaults(log.document, storeyId);
+    const wallsBefore = log.document.byKind('wall').length;
+    fc.assert(
+      fc.property(mmInt, mmInt, (x, y) => {
+        const draft = moveDraft(log.document, base, sv, pxOf({ x, y }, sv), fd);
+        // 预言与真命令吃同一对入参：这里的 `ok` 就是 `legalWallCreate` 该给的答案
+        const refs = draftRefs(draft);
+        let ok = true;
+        try {
+          wallCreate({
+            storeyId,
+            start: refs.start,
+            end: refs.end,
+            thicknessMm: defaults.thicknessMm,
+            heightMm: defaults.heightMm,
+          }).build(log.document);
+        } catch {
+          ok = false;
+        }
+        expect(draft.legal).toBe(ok);
+        const command = draftCommand(draft, defaults);
+        if (command === null) {
+          expect(ok).toBe(false); // 只有 legal 为假才许给 null
+          return;
+        }
+        expect(ok).toBe(true);
+        const fresh = new TransactionLog(log.document);
+        expect(() => fresh.dispatch(command)).not.toThrow();
+        expect(fresh.document.byKind('wall').length).toBe(wallsBefore + 1);
+      }),
+      { numRuns: 250 },
+    );
+  });
+});
+```
+
+> **四处"注释即判据"的地方，抄的时候别省**：
+>
+> ① 「试跑不动真源」那条钉的是**三票**（墙数、撤销栈深度、`log.affected`），不是一票。`legalWallCreate` 走的是真 `wallCreate(...).build(doc)`，它不动真源靠的是 `build` 的纯函数性质 —— 但只要有人在试跑里顺手 `log.dispatch(command)`、或者把 `doc` 换成 `log`，"墙数没变"这一票照样绿。三票同问才分得开"什么都没发生"与"发生了一次没人看见的派发"。
+>
+> ② `pruneSelection` 的两条用例（「删掉一面带洞口的墙：洞口与它的孤儿点一起消失」与「别层的、已不存在的、楼层本身都剔掉」）钉的是 S5 后半句：**剪枝不预测补丁内容**。屏幕上不去猜"级联会收走哪些 id"，删完之后拿真源问一遍 `doc.get(id)`。E7（不查存在性）红在这两条，E5/E6（摘掉层过滤 / 不排序）红在后一条 —— 层过滤和升序是"同一份答案给两次问要逐字相同"的最低要求，与存在性是三条独立判据，所以三条改坏各红各的。
+>
+> ③ 「探针靶子的配平账」与「筛 ② 有牙齿」是**两条**，不是一条的两半。前者用样例房 + 空指令表钉"建出来恰好多一枚点、删回去账回到原样"，后者用合成夹具钉"候选落点正是既有点时必须换下一个"。**前者在摘掉筛 ② 时不红**（样例房的第一发候选终点本来就不是既有点，E14 实测只红后一条），它的牙齿在 E25（`draftRefs` 不复用）那儿 —— 两条不许合并，合并之后两条判据都失去各自的见证。
+>
+> ④ 「筛 ⑤ 有牙齿」与「⑥ 的前提」各管一道**后来才长出来的**筛，而且两道的成因都写在注释里，不许读成"防御性代码"：⑤ 是因为样例房的探针在没有它时挑中 `(0,0) → (-2000,0)`，毫米合法、`pickAt` 空、两道长度下限全过，可 `endPx = (-150, 825)` 在画布左边界**之外**（实测），真窗口里那一发的现象是"按了没反应"、抛错却落在十几步之后；⑥ 是因为补上 ⑤ 之后探针改挑 `(0,0) → (2000,2000)` 那发 45°，而 `(0,0)` 已过着两条线 ⇒ 建完墙 `buildDrawList` 当场抛「S1 不支持」。**两条用例的形状因此不同**：⑤ 判"挑出来的三发必须发得出 DIP"（同一份文档在越界视图给 null、回拟合视图给得出，两问夹住原因）；⑥ 判"命令层放行、派生层抛"这个**前提**成立（同一发候选逐条自证过 ①③④⑤，只在派生层炸）。⑥ 真正的牙齿在样例房那条自证用例上，而它八进程只红七次 —— 这条不承重的事实登记在 C 段第 28 行，并转交 T7 配确定性夹具。
+
+Run: `npx vitest run packages/scene-2d/test/editing.test.ts > /tmp/t6s4-red.log 2>&1; echo exit=$?`
+Expected: exit≠0，**`Tests 30 failed (30)`**、`Test Files 1 failed (1)`。红在**函数不存在**上，不在断言上 —— 实测（2026-09-28：把 `src/index.ts` 的 `export * from './editing'` 摘掉、`editing.ts` 移走）给出的失败原因是 `TypeError`，按出口分摊：`draftAtPress is not a function` ×11、`wallProbe` ×6、`planDelete` ×6、`newWallDefaults` ×2、`lastCreatedWall` ×2、`pruneSelection` ×1，外加 1 次「expected value must be number or bigint, received "undefined"」（属性用例里那发算术）。
+
+> **为什么不是"红在解析/导出缺失"**：vitest 走 SSR 转译，`export *` 里缺的名字不会在链接期抛 `SyntaxError: does not provide an export named …`，它会变成 `undefined`，到**调用那一行**才炸（上面那条实测的失败原因就是按出口分摊的 `TypeError`）。同样的订正已经就地落进 **Task 2 Step 3、Task 4 Step 2、Task 6 Step 1** 各自的 Expected —— 这段说明留在这里，是因为它本身就是判据：两种红分不开（红的是既有函数、或红在断言值上）才是真问题，多半是 import 列表把某个新名字写成了既有名字，先核对再进 B 段。
+
+**B. 写 `packages/scene-2d/src/editing.ts`，并给 `index.ts` 加一行出口**
+
+`index.ts` 末尾追加 `export * from './editing';`（放在 `'./snapping'` 之后 —— 依赖方向是 `editing → snapping → pick → viewport`，反过来会成环）。
+
+`editing.ts` 整份新建，依赖只有四行：`@dajia/core`、`./viewport`、`./pick`（`MIN_PICK_EDGE_PX` 与 `pickAt`）、`./snapping`，加一条 `./drawlist` 的类型（筛 ⑥ 要 `buildDrawList` 真跑一遍派生）。**它不 import `./handles`**，方向是 `handles → snapping`（Step 5），拉墙这件事与拖把手互不知道。
+
+```ts
+import {
+  length,
+  openingDelete,
+  quantizeMm,
+  requireStorey,
+  sub,
+  TransactionLog,
+  vec,
+  wallCreate,
+  wallDelete,
+  type Command,
+  type Document,
+  type EntityId,
+  type PointRef,
+} from '@dajia/core';
+import { mmToPx, type Px, type Viewport } from './viewport';
+import { MIN_PICK_EDGE_PX, pickAt } from './pick';
+import { buildDrawList, type DrawOp } from './drawlist';
+import {
+  dropTargetOf,
+  pointRefOf,
+  snapFieldOf,
+  type DropTarget,
+  type MoveTarget,
+  type SnapField,
+  type SnapResult,
+} from './snapping';
+
+/**
+ * 屏幕上"这一发该不该发命令"的那一层（Task 6）。三个模块各管一问，互不越界：
+ * `snapping.ts` = 这一发光标落在**哪儿**；`handles.ts` = 这一发**接得到**哪枚既有的点；
+ * 本文件 = 接住了之后**要不要发**这条命令、发出去把谁拿回来、删的时候发几条。
+ *
+ * 为什么新建与删除放在同一个文件：两者共用同一套判据（真命令试跑、`affected` 的事后复核、
+ * 选中的事后剪枝）。拆成两个文件就是各写一份 —— 漂掉的永远是没人看的那一份
+ * （`commands/opening.ts` 顶部"命令层绝不复述区间规则"同一条理由）。
+ */
+
+/** 交互模式。`wall` = 正在拉新墙，此时删除键什么都不发（见 `planDelete`）。 */
+export type Tool = 'select' | 'wall';
+
+/** 新墙的默认墙厚。真源里没有"上一层用多厚"可读，这是产品给的起点；T7 的数值输入替换它。 */
+export const NEW_WALL_THICKNESS_MM = 240;
+
+/**
+ * 新墙的最小长度（毫米）—— **只作用于 `wallProbe` 挑靶子**，别把它读成"用户那一发也有这道闸"：
+ * 屏幕上真正拦得住长度的只有真源那两条（零长、墙厚不小于墙长，见 `wallCreate`），一面 300mm
+ * 的短墙在真源里完全合法，本任务不假装屏幕上有第三道闸。
+ *
+ * 为什么探针还需要这条：像素那一道下限量的是**轮廓长边**（`lengthMm - thicknessMm` 对 64px），
+ * 放大越多它换算回毫米越小 —— 2px/mm 时一面 272mm 长的墙（长边只剩 32mm）就够 64px 了，
+ * 而真源只不许 `thicknessMm >= lengthMm`，所以 240mm 到 500mm 之间那段墙全都合法、又短得没法施工。
+ * 这道毫米筛把靶子钉在 500mm 以上，与放大倍率无关。T7 的"数值输入 + 最小墙长"才把这条下限
+ * 搬到交互路径上。
+ */
+export const MIN_WALL_LENGTH_MM = 500;
+
+export interface NewWallDefaults {
+  readonly thicknessMm: number;
+  readonly heightMm: number;
+}
+
+/**
+ * 新墙的墙厚 / 墙高。**T7 的"数值输入"要替换掉的唯一占位入口** —— 届时只改这一个函数，
+ * `draftCommand` 与 `legalWallCreate` 的调用点一行不动（它们只吃 `NewWallDefaults`）。
+ *
+ * 层高读真源（`requireStorey`）而不是抄常量：把新墙画在 3600 的层上却给 3000 的墙高，
+ * 2D 屏幕上看不出来，到了 3D 与施工图上是一面够不到顶的墙。墙厚没有真源可读，才留常量。
+ */
+export function newWallDefaults(doc: Document, storeyId: string): NewWallDefaults {
+  return {
+    thicknessMm: NEW_WALL_THICKNESS_MM,
+    heightMm: requireStorey(doc, storeyId).heightMm,
+  };
+}
+
+/**
+ * 草稿的起点 = 按下那一发的答案。带着完整的 `SnapResult`（而不是拆成 `pointId` + `kind`）：
+ * `pointRefOf` 吃的就是这一份，拆开再拼回去等于把"复用哪枚点"这条判据抄两遍。
+ */
+export interface DraftPoint {
+  readonly mm: MoveTarget;
+  /** 按下那一发的**光标像素**（不是吸附点：起点标记画在哪儿由它决定）。 */
+  readonly px: Px;
+  readonly snap: SnapResult | null;
+}
+
+/** 一次拉墙的完整现场。不可变：`moveDraft` 每次返回新对象，renderer 比引用就能决定重绘。 */
+export interface DraftWall {
+  readonly storeyId: string;
+  readonly start: DraftPoint;
+  /** 裸光标：临时线**恒**画到这里（S4 第三条纪律），不是吸附点。 */
+  readonly cursorPx: Px;
+  readonly end: DropTarget;
+  /** 真命令试跑的结论。false ⇒ 松手不发命令。 */
+  readonly legal: boolean;
+}
+
+/**
+ * 按下那一发的起点。锚点给 **null** ⇒ 只有靶子档参与：按下时还没有"从哪儿出发"这回事，
+ * 给它锚点等于"点下去就自动变正交"，那是抢方向盘（S3 的措辞）。
+ */
+export function draftAtPress(v: Viewport, px: Px, field: SnapField): DraftPoint {
+  const drop = dropTargetOf(v, px, null, field);
+  return { mm: drop.mm, px, snap: drop.snap };
+}
+
+/** 草稿的两个端点 → 命令入参。吸到既有点就复用，否则才新建（`pointRefOf` 是唯一的判据）。 */
+export function draftRefs(draft: DraftWall): { readonly start: PointRef; readonly end: PointRef } {
+  return { start: pointRefOf(draft.start.mm, draft.start.snap), end: pointRefOf(draft.end.mm, draft.end.snap) };
+}
+
+/**
+ * 移动那一发：终点**以起点为锚**（"水平 / 竖直 / 15°"只有相对起点才成立），并且排掉起点的坐标
+ * —— 不排的话光标压在起点上会吸回自己（端点档 + 该点轴线上的垂足档），屏幕上表现为"拖不开"，
+ * 真源里是零长墙被 `wallCreate` 拒掉，用户以为松手键坏了。
+ *
+ * `doc` 每次现问，不缓存进草稿：草稿活着的那几十秒里可能来一发撤销，那一份 `legal` 就成了谎话。
+ */
+export function moveDraft(
+  doc: Document,
+  draft: DraftWall,
+  v: Viewport,
+  cursorPx: Px,
+  field: SnapField,
+): DraftWall {
+  const end = dropTargetOf(v, cursorPx, draft.start.mm, field, { excludeMm: draft.start.mm });
+  const next: DraftWall = { ...draft, cursorPx, end, legal: false };
+  return { ...next, legal: legalWallCreate(doc, next) };
+}
+
+/**
+ * 合法性 = 拿**真命令**试跑一次（`legalDrop` 的同一条理由：绝不在屏幕上重写一遍守卫）。
+ * `wallCreate` 的守卫有零长、墙厚不小于墙长、墙高为正、楼层存在、跨层复用点等五道，
+ * 抄一道漏四道。构造期与 `build` 两道都会抛，所以整段在 try 里。
+ */
+export function legalWallCreate(doc: Document, draft: DraftWall): boolean {
+  try {
+    buildCreate(doc, draft, newWallDefaults(doc, draft.storeyId));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function buildCreate(doc: Document, draft: DraftWall, defaults: NewWallDefaults) {
+  const refs = draftRefs(draft);
+  return wallCreate({
+    storeyId: draft.storeyId,
+    start: refs.start,
+    end: refs.end,
+    thicknessMm: defaults.thicknessMm,
+    heightMm: defaults.heightMm,
+  }).build(doc);
+}
+
+/**
+ * 草稿 → 命令。**只认 `legal` 一色**：false 就是不发（null），true 时 `wallCreate` 的构造期
+ * 判据必然也过（同一对入参、同一套守卫，`legalWallCreate` 已经跑过一遍）。
+ * 所以这里不 catch —— 真抛出来说明 `legal` 与入参之间漂了，那是程序错误，该红不该被咽下去。
+ */
+export function draftCommand(draft: DraftWall, defaults: NewWallDefaults): Command | null {
+  if (!draft.legal) return null;
+  const refs = draftRefs(draft);
+  return wallCreate({
+    storeyId: draft.storeyId,
+    start: refs.start,
+    end: refs.end,
+    thicknessMm: defaults.thicknessMm,
+    heightMm: defaults.heightMm,
+  });
+}
+
+/**
+ * 删除的计划。四条出口，各有各的判据，**不许合并成"成功 / 失败"两色**：
+ * 'empty' 与 'ignored-in-wall-mode' 都发 0 条命令，但前者该提示"没选中东西"、
+ * 后者该什么都不做（拉墙时误触 Delete 不该清空选中集）—— 合并了屏幕上就分不开。
+ */
+export type DeleteOutcome = 'ok' | 'empty' | 'ignored-in-wall-mode' | 'unsupported';
+
+export interface DeletePlan {
+  readonly outcome: DeleteOutcome;
+  /** 派发顺序 = 数组顺序：先洞口后墙（S5）。 */
+  readonly commands: readonly Command[];
+  /** `commands` 的 `type` 抄一份：探针与日志判"发了哪几条"用它，不用反射。 */
+  readonly commandTypes: readonly string[];
+  /** 真的发出命令的那些 id，与 `commands` 同序（洞口在前、墙在后，各自按 id 升序）。 */
+  readonly candidateIds: readonly EntityId[];
+  /** 本次不删、留给后续任务的 id（柱 / 板 / 楼层，以及别层构件）。 */
+  readonly unsupported: readonly EntityId[];
+}
+
+/**
+ * 选中集 → 删除命令。**两条规则，一条都不复述真源已经做的事**：
+ * ① 选中的墙 → `wall.delete`（它自己会级联收掉宿主是它的洞口、自己判端点还剩谁引用）；
+ * ② 选中的洞口且**宿主墙不在本次删除集里** → `opening.delete`。
+ *
+ * 为什么反过来（先给每个选中洞口发 `opening.delete`、再删墙）也不行：那是对真源已有级联的
+ * 复述，复述的规则一定会漂；而先删墙之后那些洞口已经不存在，第二条命令 `requireOpening`
+ * 直接抛，`dispatchBatch` 就在半途留下半套状态。
+ *
+ * 顺序排成"洞口在前"是为了撤销的可读性：栈顶是 `wall.delete`，一次 Ctrl+Z 把"墙 + 它自己
+ * 级联掉的洞口"整组还原，而不是先还回一樘无主的洞口。
+ */
+export function planDelete(
+  doc: Document,
+  storeyId: string,
+  tool: Tool,
+  ids: Iterable<EntityId>,
+): DeletePlan {
+  const all = [...ids];
+  if (tool === 'wall') {
+    return { outcome: 'ignored-in-wall-mode', commands: [], commandTypes: [], candidateIds: [], unsupported: [] };
+  }
+  // 先分两堆：要删的墙、要单独删的洞口。别的一律进 unsupported，不当"没选中"处理。
+  const wallIds = new Set<EntityId>();
+  const openingIds = new Set<EntityId>();
+  const unsupported: EntityId[] = [];
+  for (const id of all) {
+    const entity = doc.get(id);
+    // 已经不在了：两次渲染之间被撤销掉、或被同伴级联删掉。**一律不发命令也不进 unsupported** ——
+    // 该管这件事的是 `pruneSelection`（屏幕上那一发本来就点不到它），在这里记账只会把
+    // "选中集没剪干净"和"删除能力不够"混成同一条红。
+    if (entity === undefined) continue;
+    if (entity.kind === 'wall') {
+      // 别层的墙不当"不支持"处理：它是"不该在这一层删的东西出现在了这一层的选中集"，
+      // 那是选中集的问题（pruneSelection 的活），不是删除能力的问题。
+      if (entity.storeyId !== storeyId) unsupported.push(id);
+      else wallIds.add(id);
+      continue;
+    }
+    if (entity.kind === 'opening') {
+      if (entity.storeyId !== storeyId) unsupported.push(id);
+      else openingIds.add(id);
+      continue;
+    }
+    unsupported.push(id); // column / slab / storey / point ⇒ 本任务不发命令（T7 补 delete）
+  }
+  // 宿主墙要一起删的洞口不发第二条：wallDelete 的级联已经收了它。
+  const solo = [...openingIds].filter((id) => {
+    const opening = doc.get(id);
+    if (opening?.kind !== 'opening') return false;
+    return !wallIds.has(opening.hostWallId);
+  });
+  const sortedSolo = solo.sort();
+  const sortedWalls = [...wallIds].sort();
+  const commands: Command[] = [
+    ...sortedSolo.map((openingId) => openingDelete({ openingId })),
+    ...sortedWalls.map((wallId) => wallDelete({ wallId })),
+  ];
+  const candidateIds = [...sortedSolo, ...sortedWalls];
+  const outcome: DeleteOutcome =
+    commands.length > 0 ? 'ok' : unsupported.length > 0 ? 'unsupported' : 'empty';
+  return { outcome, commands, commandTypes: commands.map((c) => c.type), candidateIds, unsupported };
+}
+
+/**
+ * 删除 / 撤销之后重算一遍选中：还存在的、且还在本层的才留下。
+ *
+ * 为什么不预测补丁内容：`wallDelete` 会级联删掉洞口，还会收掉不再被引用的端点，
+ * UI 侧照抄一遍等于把真源的孤儿判定抄第二份。事后拿真源问一遍，永远只有一个口径。
+ * 排序是为了让"选中集没变"这种比较可判（`Set` 的迭代序跟着插入顺序，撤销一次就漂）。
+ */
+export function pruneSelection(doc: Document, storeyId: string, ids: Iterable<EntityId>): EntityId[] {
+  const out: EntityId[] = [];
+  for (const id of ids) {
+    const entity = doc.get(id);
+    if (entity === undefined) continue;
+    // 楼层实体没有 `storeyId`（它就是层本身），本层的选中集里出现它就是错 ⇒ 一律剔掉。
+    // 少这一支下面那句会编译不过，所以它不是"顺手写的"：`storeyDelete` 是 T7 的活，
+    // 届时该由 `planDelete` 的 'unsupported' 记账，而不是让它滞留在选中集里。
+    if (entity.kind === 'storey') continue;
+    // 点按它自己的 `storeyId` 筛：`PointEntity.storeyId` 可为 null（地形 / 园林点不属于任何一层），
+    // 那一支同样落不进本层的选中集。曾经这里写的是"point 一律放行"，理由是"点没有 storeyId" ——
+    // 那个前提是假的（`resolvePointRef` 正靠这句判跨层），假前提写进判据就是漏。
+    if (entity.storeyId !== storeyId) continue;
+    out.push(id);
+  }
+  return out.sort();
+}
+
+/** `lastCreatedWall` 的答案。`startId` / `endId` 是给探针复核用的三样之一（另一个是 `wallId`）。 */
+export interface LastCreatedWall {
+  readonly wallId: EntityId;
+  readonly storeyId: EntityId;
+  readonly startId: EntityId;
+  readonly endId: EntityId;
+}
+
+/**
+ * 从最近一次派发的 `affected` 里取新建的那面墙 —— renderer 侧第一个读 `affected` 的人。
+ *
+ * 三条纪律，缺一条就会拿到一面不存在的墙：
+ * ① 只在 `dispatch` 的成功分支里**同步**读（异步读会读到别人之后的 `affected`）；
+ * ② 读完立刻拿 `doc.get(id)` 复核（`undo()` 把 `lastAffected` 设成**前向**补丁的 id，
+ *    撤销掉一次 `wall.create` 之后 `affected` 里仍然列着那面墙，而文档里已经没有它了）；
+ * ③ 不许缓存（下一次派发就换内容）。
+ * `affected` 的语义是"最近一次触及的 id"，不是"新出现的 id" —— 所以调用方永远要把文档当第二票。
+ */
+export function lastCreatedWall(
+  doc: Document,
+  affected: ReadonlySet<EntityId>,
+  storeyId: string,
+): LastCreatedWall | null {
+  for (const id of affected) {
+    // 判别式只认 `doc.get(id)`：uuidv7 在同一毫秒内不单调，`byKind('wall').at(-1)` 会拿到
+    // 别的实体（全局约束那条），而这里连"最后一条"都不必 —— affected 里 wall 只会有一面。
+    const entity = doc.get(id);
+    if (entity?.kind !== 'wall') continue;
+    if (entity.storeyId !== storeyId) continue; // 别层的墙（撤销后重做、或探针挑错了靶子）不算
+    return { wallId: entity.id, storeyId: entity.storeyId, startId: entity.startId, endId: entity.endId };
+  }
+  return null;
+}
+
+/**
+ * `wallProbe` 的候选落点：整数毫米，全部 **axis 对齐**（正交档会把它钉在同一根坐标上，
+ * 于是新墙与既有墙垂直相交，屏幕上看着像那么回事）。顺序写死在这里 ⇒ 同一份文档
+ * 每次问都给同一个靶子，"撤销后回到原值"那类判据才有可比的对象。
+ */
+const WALL_PROBE_OFFSETS: readonly MoveTarget[] = [
+  { x: 2000, y: 0 },
+  { x: 0, y: 2000 },
+  { x: -2000, y: 0 },
+  { x: 0, y: -2000 },
+  { x: 2000, y: 2000 },
+  { x: -2000, y: 2000 },
+  { x: 2000, y: -2000 },
+  { x: -2000, y: -2000 },
+  { x: 3000, y: 0 },
+  { x: 0, y: 3000 },
+];
+
+/** `--draw-shot` 的一次拉墙现场：三枚**整数**像素 + 两对整数毫米 + 命令入参的默认值。 */
+export interface WallProbe {
+  /** 起点的像素：它**就是**既有端点那一发，按下即吸上。 */
+  readonly startPx: Px;
+  readonly startMm: MoveTarget;
+  /** 起点复用的那枚点：判据 D4「新建的墙与既有墙共享一枚点」读它。 */
+  readonly startPointId: EntityId;
+  /** 终点像素（整数）：`sendInputEvent` 只收整数 DIP，毫米由它反算。 */
+  readonly endPx: Px;
+  readonly endMm: MoveTarget;
+  /** 新墙中点的像素：删除那一步要在真窗口里点中它，`pickPxOf` 之外第二道对照。 */
+  readonly midPx: Px;
+  readonly lengthMm: number;
+  readonly defaults: NewWallDefaults;
+}
+
+/**
+ * 找一发"值得在真窗口里拉"的新墙。返回 null 是合法结果（空层、铺满的层），闸门在那一步就抛，
+ * 不许放宽下面的筛来迁就样例房。
+ *
+ * 六道筛，每条各堵一处假绿：
+ * ① **起点必须吸到既有端点**（`snapKind === 'endpoint'` 且 `pointId` 非 null）：不复用就接不上头，
+ *    判据 D4 只能在真源里成立、在屏幕上证不出来。注意这一筛**不假设每个端点都吸得上**：
+ *    像素原点带小数的视图下（`fitStorey` 在 1200×901 就是这样），把光标取整到端点像素后
+ *    垂足档可能比端点更近半像素，于是那一枚端点被跳过、探针换下一个 —— 实测过，不是想象。
+ *    谁吸得上是 `takeBest` 的判据，探针只负责服从它（把它改成"信自己按毫米拼出来的端点"，
+ *    屏幕上就会出现探针说吸上了、真窗口里没吸上）。
+ * ② **终点的 `pointId` 必须为 null**（S7 的准确口径）：它保证这面墙的终点那一头是**新建的点**。
+ *    注意不是"终点不许吸附" —— 探针的候选全是轴对齐的，正交档必然命中，那是保坐标、不引点。
+ *    只有引了别人的点，`wallDelete` 才会判定那枚点仍被引用而留下它，
+ *    "删掉这面墙带走恰好一枚孤儿点"的账就变成看运气。
+ * ③ 长度同时过毫米下限与像素下限：前者防墙屑，后者防"闸门建了一面点不中的墙"
+ *    （轮廓长边 ≈ 轴长 − 墙厚，小于 `MIN_PICK_EDGE_PX` 时 `pickPxOf` 给 null，删除那一步没法点名）。
+ * ④ 落点与中点那两发像素**一个候选都不许命中**：不判它，探针可能挑到穿过既有墙的位置，
+ *    新墙的轮廓与老墙叠在一起，`pickPxOf` 的"唯一命中"筛会一路换边换到 null。
+ * ⑤ **三发像素全在画布内**（`insideCanvas`）：越界的那一发 `sendInputEvent` 发不出去，
+ *    闸门会在"按了没反应"和"毫米对不上"之间反复横跳。
+ * ⑥ **建得出还要画得出**（`derivesCleanly`）：命令层的 `build` 不含接头分类，斜向候选会把共享点
+ *    凑成星形接头（S1 不支持），那一发在松手之后的 `buildDrawList` 里抛。
+ */
+export function wallProbe(
+  doc: Document,
+  storeyId: string,
+  ops: readonly DrawOp[],
+  v: Viewport,
+): WallProbe | null {
+  const field = snapFieldOf(doc, storeyId);
+  const defaults = newWallDefaults(doc, storeyId);
+  const endpoints = field.points.filter((p) => p.kind === 'endpoint');
+  for (const ep of endpoints) {
+    if (ep.pointId === null) continue; // 端点档恒有 pointId；这一支只为让类型收窄成立
+    // 起点走与屏幕完全同一条通路：先算像素、再 `dropTargetOf`。探针自己按毫米拼 `pointId`
+    // 就等于绕开吸附 —— 屏幕上真会吸到别处时探针看不见。
+    const startPx = intPx(mmToPx(v, vec(ep.mm.x, ep.mm.y)));
+    const start = draftAtPress(v, startPx, field);
+    if (start.snap?.kind !== 'endpoint' || start.snap.pointId !== ep.pointId) continue;
+    for (const off of WALL_PROBE_OFFSETS) {
+      const guess: MoveTarget = { x: ep.mm.x + off.x, y: ep.mm.y + off.y };
+      const endPx = intPx(mmToPx(v, vec(guess.x, guess.y)));
+      const end = dropTargetOf(v, endPx, ep.mm, field, { excludeMm: ep.mm });
+      if (end.snap !== null && end.snap.pointId !== null) continue; // 筛 ②
+      const lengthMm = length(sub(vec(end.mm.x, end.mm.y), vec(ep.mm.x, ep.mm.y)));
+      if (lengthMm < MIN_WALL_LENGTH_MM) continue; // 筛 ③ 之一
+      if ((lengthMm - defaults.thicknessMm) * v.pxPerMm < MIN_PICK_EDGE_PX) continue; // 筛 ③ 之二
+      const midPx = intPx(mmToPx(v, vec(quantizeMm((ep.mm.x + end.mm.x) / 2), quantizeMm((ep.mm.y + end.mm.y) / 2))));
+      if (pickAt(ops, endPx).length !== 0) continue; // 筛 ④
+      if (pickAt(ops, midPx).length !== 0) continue; // 筛 ④
+      // 筛 ⑤：三发像素全在画布内（见 `insideCanvas`）。放在 ④ 之后、`legalWallCreate` 之前：
+      // 它比试跑命令便宜，且越界那一发根本发不出去，合法性与否都无从在真窗口里对账。
+      if (!insideCanvas(v, startPx) || !insideCanvas(v, endPx) || !insideCanvas(v, midPx)) continue;
+      const draft: DraftWall = {
+        storeyId,
+        start: { mm: ep.mm, px: startPx, snap: start.snap },
+        cursorPx: endPx,
+        end,
+        legal: false,
+      };
+      if (!legalWallCreate(doc, draft)) continue;
+      // 筛 ⑥：建得成还要画得出。`legalWallCreate` 只跑命令的 `build`，看不见接头分类。
+      if (!derivesCleanly(doc, { ...draft, legal: true }, v, defaults)) continue;
+      return {
+        startPx,
+        startMm: ep.mm,
+        startPointId: ep.pointId,
+        endPx,
+        endMm: end.mm,
+        midPx,
+        lengthMm,
+        defaults,
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * 筛 ⑥：拿一份**副本真建一遍、再把整层派生一遍**。
+ *
+ * `legalWallCreate` 只跑命令的 `build`，那一道里没有接头分类；而 `buildDrawList` 会走
+ * `deriveStoreyGeometry` → `deriveJoints`，对"三个方向过同一枚点"抛 `RangeError`（S1 不支持星形接头）。
+ * 这条筛不是想象出来的：加进筛 ⑤ 之后样例房的探针改挑 `(0,0) → (2000,2000)` 那发 45°，
+ * 而 `(0,0)` 本来已经过着两条线 —— 建完墙 `buildDrawList` 当场抛
+ * 「接头 … 有 3 个墙端、3 组方向线，S1 不支持」（2026-09-28 实测，红在既有那条"建出来真的点得中"上）。
+ * 在真窗口里那一发的现象是**松手之后整层画不出来**：抛错发生在 paint effect 里，
+ * 判据会红在一句与画墙无关的对账上。所以挑靶子阶段就拒掉。
+ *
+ * **代价与边界**：每个候选多一次整层派生（样例房一层八面墙，`wallProbe` 全程仍在毫秒级）。
+ * 它只护住探针 —— 用户手拉的那一发斜墙仍然只过 `legalWallCreate`，星形接头在屏幕上的缺口
+ * 原样登记给 T7（`legalDrop` / `legalWallCreate` 都不跑派生，真要补的是 core 侧的派生复核，
+ * 不是 UI 再算一遍接头分类）。
+ */
+function derivesCleanly(
+  doc: Document,
+  draft: DraftWall,
+  v: Viewport,
+  defaults: NewWallDefaults,
+): boolean {
+  try {
+    const command = draftCommand(draft, defaults);
+    if (command === null) return false;
+    // 副本：`TransactionLog.dispatch` 换的是 log 自己那份 document 引用，传进来的那份不动
+    const trial = new TransactionLog(doc);
+    trial.dispatch(command);
+    buildDrawList(trial.document, draft.storeyId, v);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 筛 ⑤ 的判据：这一发像素能不能真的**点**到。
+ *
+ * 为什么非要有这一条：样例房一层在 `fitStorey(…, 1200, 900, 60)`（2026-09-28 实测 pxPerMm=0.125、
+ * origin `(-800, 6600)`）下，`wallProbe` 在没有这条筛时挑中的是 `(0,0) → (-2000,0)` 那一发 ——
+ * 毫米完全合法，可 `endPx` 是 `(-150, 825)`、`midPx` 是 `(-25, 825)`，**两发都在画布外**。
+ * `sendInputEvent` 的 x/y 是相对内容区的 DIP，负数与越界值不会报错、只会落到没有 canvas 的地方，
+ * 于是 `--draw-shot` 表现为"按了没反应"，而抛错点却在十几步之后的一句毫米对账上。
+ * 留 2px 边而不是 0：`Math.round` 出来的 0 与 `widthPx` 本身就压在边界像素上，而画布外侧没有像素。
+ */
+function insideCanvas(v: Viewport, p: Px): boolean {
+  return p.x >= 2 && p.y >= 2 && p.x < v.widthPx - 2 && p.y < v.heightPx - 2;
+}
+
+/** `sendInputEvent` 只收整数 DIP：先把像素取整，再由像素反算毫米（`handles.ts` 的 `snapPx` 同一条理由）。 */
+function intPx(p: Px): Px {
+  return { x: Math.round(p.x), y: Math.round(p.y) };
+}
+
+```
+
+> **七处形状，执行时最容易"顺手改平"的地方**（每条后面括号里的红法是 2026-09-28 的改坏实测，见 C 段）：
+>
+> ① `newWallDefaults` 的**墙高不兜底**：直读 `requireStorey(doc, storeyId).heightMm`，楼层不存在就让它抛。只有厚度有常量兜底（真源里没有"上一层用多厚"可读）。E13（墙高抄常量）红两条：「3600 的层拿 3600」与「楼层不存在 ⇒ 抛，不兜成默认值」—— 后一条是前一条的护栏：一处兜底同时吃掉"读不到"和"读到了别的层"两种故障。
+>
+> ② `MIN_WALL_LENGTH_MM` 的注释是这份文件里最容易被人"顺手放宽"的一句：**它只筛 `wallProbe`，别把它读成"用户那一发也有这道闸"**。屏幕上真正拦得住长度的只有真源那两条，一面 300mm 的短墙在真源里完全合法。为什么探针还要另加一道毫米筛：像素那一道量的是**轮廓长边**（`lengthMm - thicknessMm` 对 64px），放大越多它换算回毫米越小 —— 2px/mm 时一面 272mm 长的墙（长边只剩 32mm）就够 64px 了，而真源只不许 `thicknessMm >= lengthMm`，于是 240mm 到 500mm 之间那段墙全都合法、又短得没法施工：回读判据全绿，图纸上是一面画不出来的墙。**代价（诚实记账）**：在样例房这一档比例（`pxPerMm = 0.125`）下 64px = 512mm，加回墙厚 752mm > 500mm，毫米筛被像素筛完全罩住，所以 E17（摘掉毫米下限）八个进程一条都不红。这条筛现在是**给 T7 的数值输入用的**（那里比例由用户定，两道筛会分家），不许因为"测不出红"就删掉它，也不许为它造假绿用例。
+>
+> ③ `WALL_PROBE_OFFSETS` 的顺序**写死在源码里**，不排序、不随机。这是确定性的来源：`--draw-shot` 里"撤销后回到原值"那类判据要有一个可比的对象，而候选顺序一旦随 `byKind` 漂（见本步开头第 ③ 条），靶子就换面墙，对账变成看运气。
+>
+> ④ `lastCreatedWall` 只认 `doc.get(id)` 的判别式，**不许**写成 `doc.byKind('wall').at(-1)`：uuidv7 在同一毫秒内不单调，"末条"会拿到别的实体（全局约束那条）。E9 恒红它那两条（「派发后拿得到；撤销后 affected 仍列着那枚 id」与「认层」），三进程与单进程都是 `28/2`，**没有第三条顺带红** —— S6 那句"读完立刻 `doc.get` 复核"的凭据就在这两条里，不在别的用例里。
+>
+> ⑤ S7 的两个方向各红一次：E14（终点可以引别人的点）红**一条**（`29/1`，8/8 恒），E26（终点什么都不许吸）红**九条**（`21/9`，8/8 恒，九条全在「新建回执与探针」里）—— 探针在样例房、单墙场与合成场**全都给 null**。**这条筛的真意是"不许复用"，不是"不许吸附"**：探针的偏移全是轴对齐的，正交档必然命中，而那一发不带 `pointId`，是保坐标不是引点。写成 `end.snap !== null` 就等于要求"终点什么都不许吸"，一枚靶子都挑不出来。
+>
+> ⑥ 筛 ⑤ 排在 ④ 之后、`legalWallCreate` 之前，筛 ⑥ 排在 `legalWallCreate` 之后。这个顺序**是成本顺序不是逻辑顺序**：⑤ 只做三次比较，④ 只做两次 `pickAt`，而 ⑥ 要真建一份副本再派生整层 —— 把它俩换来换去判据不红，但每问一次探针就多跑一批注定被后面那道筛拒掉的派生。`derivesCleanly` 里的 `new TransactionLog(doc)` 必须是**新建的临时 log**：`dispatch` 换的是 log 自己那份 document 引用，传进来的那份一个字都不动（与「试跑不动真源」那条用例同一口径）。
+>
+> ⑦ 按下那一发**不吃角度档**：`draftAtPress` 调 `dropTargetOf` 时锚点恒给 `null`，于是 15°/正交两档在按下时物理上不存在。E22（误把终点锚传进去）红「起点在空白处按下：什么都不吸，也不吃角度档」；E23（把起点像素存成吸附点的像素）红「按下处的像素与吸附点的像素是两个值」—— 后者是第四色标记能画在"按下处"、而落点吸到"那枚点"的前提（S8 在屏幕侧的镜像）。
+
+Run: `npx vitest run packages/scene-2d/test/editing.test.ts > /tmp/t6s4-green.log 2>&1; echo exit=$?`
+Expected: exit=0，**`Tests 30 passed (30)`**。同一条命令再跑一次（两次 `30 passed` 逐字相同）—— 这一份测试里有探针与 uuidv7 的交叉，**跨进程确定性**在它身上不是修辞：本步开头第 ③ 条那些合成夹具就是为了这句才搭的。跑全量时 core 侧一条不动（本任务 core 零改动），scene-2d 侧**只加 68 条**：snapping 28（Step 1）+ editing 30（本步）+ pick 3（Step 3）+ handles 7（Step 5），计划总数 **337 → 405**。
+
+---
+
+**C. 改坏验证（28 条，红在哪一条、红成什么数都是 2026-09-28 实测的，不是推演）**
+
+每条改 `src/editing.ts` 一次、跑 `test/editing.test.ts`（30 条）、跑完立刻改回。括号里是实测的 `passed / failed`；E1–E13 与 E21–E25 各连开三个进程、E14–E20 与 E26–E28 各连开八个进程，**只有下面标了"偶发"的两行会抖**。
+
+
+1. **E1** 派发顺序反过来（墙在前、洞口在后）（29/1，三进程恒）→ 恒红「删除计划 独立洞口 + 另一面墙：两条命令，洞口在前、墙在后」。这一发红的是**顺序**，不是条数：两条命令都在，只是撤销栈顶换成了 `opening.delete`，S5 说的"一次 Ctrl+Z 把墙连同它级联掉的洞口整组还原"当场失效。
+2. **E2** 复述级联：选中的墙之外，洞口一律补发第二条 `opening.delete`（29/1，三进程恒）→ 恒红「删除计划 墙与它的洞口一起选中：只发一条 wall.delete，不复述级联」。`wallDelete.build` 自己收宿主洞口，复述的那一条在真源里已经找不到对象 —— 这一条就是 S5"复述的规则一定漂"的凭据。
+3. **E3** `unsupported` 与 `empty` 合并成一个布尔（28/2，三进程恒）→ 恒红「删除计划 三种沉默三种颜色：拉墙模式 / 只剩柱 / 空集」与「别层构件进 unsupported，不是"没选中"：本层没这个权力」（后一条里判的是 `outcome === 'unsupported'`）。四色判据塌成两色，T7 补 `columnDelete` 时就无处接。
+4. **E4** 拉墙模式不特判（`tool === 'wall'` 也照删）（29/1，三进程恒）→ 恒红「三种沉默三种颜色」。代价写在 `DeleteOutcome` 的注释里：`'ignored-in-wall-mode'` 是**故意**的沉默，正在拉墙时删掉选中集等于把用户上一发的成果一起吃掉。
+5. **E5** `pruneSelection` 摘掉层过滤（29/1，三进程恒）→ 恒红「pruneSelection：别层的、已不存在的、楼层本身都剔掉，留下的按 id 升序」。
+6. **E6** `pruneSelection` 不排序（29/1，三进程恒）→ 同上一条。升序买到的是"同一份答案问两次逐字相同"，而 `--draw-shot` 的 `selectionAfterDelete` 判的就是逐字相同。
+7. **E7** `pruneSelection` 不查存在性（只过滤层，不管实体还在不在）（28/2，三进程恒）→ 恒红两条：「删掉一面带洞口的墙：洞口与它的孤儿点一起消失，pruneSelection 把两者都剔掉」与上一条。S5 后半句"剪枝不预测补丁内容"的凭据在这里：不查存在性就是拿预测当答案。
+8. **E8** `lastCreatedWall` 摘掉认层（29/1，三进程恒）→ 恒红「lastCreatedWall 认层：别层的墙不给本层的答案」。
+9. **E9** `lastCreatedWall` 改成 `doc.byKind('wall').at(-1)`（28/2，三进程恒）→ 恒红「派发后拿得到；撤销后 affected 仍列着那枚 id，但答案必须是 null」与「认层」。没有第三条顺带红（见 B 段第 ④ 条）。
+10. **E10** `draftCommand` 不认 `legal`（false 也照发命令）（27/3，三进程恒）→ 恒红「光标压在起点上：终点排掉起点坐标、零长墙判不合法」「draftCommand 只认 legal 一色：false 给 null，true 给可派发的命令」与**属性用例**「legal 与"真 build 会不会抛"逐字同口径」。属性那条是这一发的主要见证：把 `legal` 变成一个装饰字段，只有随机生成的候选才会持续撞它。
+11. **E11** `moveDraft` 不排起点（终点吸附场里允许吸回起点自己）（29/1，三进程恒）→ 恒红「光标压在起点上：终点排掉起点坐标、零长墙判不合法」。
+12. **E12** `moveDraft` 原地改草稿（返回同一个对象）（29/1，三进程恒）→ 恒红「拖到水平方向：终点吸成逐字整数、临时线仍画到裸光标、原草稿不动」。renderer 比引用决定重绘（S4 第三条纪律在对象层的落地），原地改等于每一帧都不重绘。
+13. **E13** 墙高抄常量而不是读楼层 `heightMm`（28/2，三进程恒）→ 恒红「3600 的层拿 3600」与「楼层不存在 ⇒ 抛，不兜成默认值」。
+14. **E14** 探针摘掉筛 ②（终点可以引别人的点）（29/1，**八进程 8/8 恒**）→ 恒红「筛 ② 有牙齿：画布夹住的靶场里，唯一活着的候选引的是别人的点」。**只有这一条**：样例房那条「配平账」不红（第一发候选的终点本来就不是既有点），这正是注释即判据第 ③ 条说的分工。
+15. **E15** 探针摘掉筛 ④（不要求空白落点）（29/1，八进程 8/8 恒）→ 恒红「筛 ④ 有牙齿：画布夹住的靶场里，唯一活着的候选中点压在横墙上」。样例房那条自证用例**不跟着红** —— 旧版计划在这里写过"十次只红八次"，那是把判据写在样例房里的结果；配上合成夹具之后它恒红，而样例房那一发不再被任何改坏当作凭据（见本步开头第 ③ 条）。
+16. **E16** 探针摘掉像素下限（只留毫米下限）（29/1，八进程 8/8 恒）→ 恒红「极度缩小下探针给 null，稍大一档就给得出：说话的是那道像素下限」。
+17. **E17** 探针摘掉毫米下限（`MIN_WALL_LENGTH_MM` 那一道不生效）（**30/0，八进程一条都不红**）→ 无红，且这是**测不出来**而不是判据写错：样例房拟合视图 `pxPerMm = 0.125`，64px 换算回 512mm、加回墙厚 752mm，比 500mm 更严，凡是过得了像素下限的候选自动过得了毫米下限（推导与处置都写在 B 段第 ② 条）。**不许为它补一条假绿用例**；它的见证人是 T7 的"数值输入 + 最小墙长"（转下游清单里有名有姓）。
+18. **E18** 探针终点不取整像素（拿毫米直接当像素用）（29/1，八进程 8/8 恒）→ 恒红「探针只给整数像素：换一把"整数毫米落在分数像素上"的尺子仍然成立」。
+19. **E19** 探针中点不取整像素（29/1，八进程 8/8 恒）→ 同一条用例。中点那一发是删除时点名的靶子，`sendInputEvent` 只收整数 DIP，半像素的那一发发不出去。
+20. **E20** 探针起点自拼 `pointId`（绕开吸附，直接信自己按毫米算出来的端点）（29/1，八进程 8/8 恒）→ 恒红「探针只给整数像素…」。**旧版计划在这里写过"一条都不红"，订正**：那条用例把探针报告的 `startPx` 与"端点毫米换算出的整数像素"作差，而自拼那一支绕开 `dropTargetOf` 之后落点不再保证与屏幕同源，红的是这一条而不是"起点必须吸上"的语义 —— 语义那一条的真正凭据在 Step 7 的真窗口判据 D4（`--draw-shot` 里"新建的墙与既有墙共享一枚点"）。
+21. **E21** `draftRefs` 两端互换（起点新建、终点复用）（29/1，三进程恒）→ 恒红「draftRefs：起点复用 {pointId}、终点新建 {x,y}，真源里接头真接上了」。
+22. **E22** 按下也吃角度档（`draftAtPress` 误把锚点传给 `dropTargetOf`）（29/1，三进程恒）→ 恒红「起点在空白处按下：什么都不吸，也不吃角度档（锚点恒 null）」。S3 的"按下不许自动变正交"在屏幕侧的落地。
+23. **E23** 起点只存吸附点的像素（`DraftPoint.px` 写成 `mmToPx(snap.mm)`）（29/1，三进程恒）→ 恒红「按下处的像素与吸附点的像素是两个值：标记画在按下处，落点吸到点上」。
+24. **E24** `planDelete` 把别层构件当"没选中"（返回 `empty` 而不是 `unsupported`）（29/1，三进程恒）→ 恒红「别层构件进 unsupported，不是"没选中"：本层没这个权力」。
+25. **E25** `draftRefs` 不复用既有点（恒取 `{x,y}`）（26/4，三进程恒）→ 恒红四条：「draftRefs：起点复用…」「三种拒绝各一色：零长、墙厚不小于墙长、跨层复用点」「探针靶子的配平账：ops 空表（筛 ④ 失效）时建出来恰好多一枚点、删回去账回到原样」「⑥ 的前提：同一发候选命令层放行、派生层抛（星形接头）」。**这一发是"不复用则接头全断"的最贵坏法**：它同时打断拓扑（S7 的复用）、点数配平账（`--draw-shot` 的 `pointCount` 判据）与 ⑥ 的夹具前提。
+26. **E26** 筛 ② 收紧成"终点什么都不许吸"（`end.snap !== null` 就换下一个）（21/9，八进程 8/8 恒）→ 九条红，全在「新建回执与探针」里：「wallProbe 在样例房里给得出靶子，六道筛逐条自证，且两次问逐字相同」「配平账」「筛 ② 有牙齿」「筛 ④ 有牙齿」「探针只给整数像素」「极度缩小下探针给 null…」「筛 ⑤ 有牙齿」「⑥ 的前提」「wallProbe 在空层给 null（不抛）」。探针在三种场上**全都给 null** —— 与 E14 是同一道筛的两个方向，各红一次才说明它判的是"不许复用"而不是"不许吸附"（B 段第 ⑤ 条）。
+27. **E27** 探针摘掉筛 ⑤（画布外的落点也发出去）（六进程 26/4、两进程 27/3）→ 恒红三条：「筛 ② 有牙齿」「筛 ④ 有牙齿」「筛 ⑤ 有牙齿」（各 8/8）。**偶发红**：「六道筛逐条自证」八次红七次 —— 摘掉 ⑤ 之后样例房换不换那一发越界候选，取决于哪枚端点排在前面。**这一行就是"合成夹具为什么必须存在"的凭据**：判据写在样例房里会时红时绿，写在夹住的靶场里恒红。
+28. **E28** 探针摘掉筛 ⑥（建得出但画不出来的候选留下）（**七进程 29/1、一进程 30/0**）→ 只有「六道筛逐条自证」红，且**八进程里七次**，红在建完再派生那一句。这是本清单唯一一条"承重靠偶发"的行：⑥ 的语义前提由「⑥ 的前提」那条用例钉死（同一发候选命令层放行、派生层抛，`/S1 不支持/`），但"探针真的会撞上它"目前只在样例房的自证用例上看得见，而那一发随 uuidv7 漂。**处置**：不造假绿、不删判据，把"确定性 ⑥ 夹具"（同一坐标、同一比例，让星形候选成为唯一活着的候选）连同 ⑤ 的夹具一起登记给 T7（见本步末尾的转下游清单）。
+
+> **两处"红了但不是凭据"与一处"根本不红"**（第 17、20、27、28 行）：E17 是**比例造成的不可达**，E20 红错了对象（语义凭据在真窗口闸门），E27/E28 的那一发样例房自证用例是**八次七红**。三条的共同处置口径与 T5 一字不差：**判据不许靠"多半会红"**；恒红的那些就是凭据，偶发的那一发不算，不可达的那一条等它的第一个真读者。
+
+> **交接给 Task 7 的四条**（本步实测出来的差额，不许在 UI 侧私自补）：① `MIN_WALL_LENGTH_MM` 目前被像素下限罩住（E17），数值输入进来之后它会第一次真的说话；② 筛 ⑥ 与筛 ⑤ 的确定性夹具（E27/E28 的偶发那一发）；③ `legalWallCreate` / `legalDrop` 都只试跑命令的 `build`、**不跑派生层** ⇒ 用户手拉一发斜墙凑出星形接头时，屏幕会先接受、再在 paint effect 里抛（Step 5 的 B 段第 ① 条同一条差额，那里记的是拖把手，这里记的是拉新墙；真要补的是 core 侧的派生复核，不是 UI 再算一遍接头分类）；④ `--draw-shot` 的靶子依赖 `WALL_PROBE_OFFSETS` 的写死顺序，T7 若给样例房加墙或改比例，**筛 ⑤/⑥ 会把靶子换到另一枚端点**，那时 `--draw-shot` 的毫米判据要跟着重测（不许把判据改成"任一发候选都行"来迁就）。
+
+- [ ] **Step 5: scene-2d —— `handles.ts` 接上吸附，锚点与排除收进 `handleDropTarget` 出口；`handles.test.ts` 12 → 19 条**
+
+Task 6 里第二处"动已经落地的判据文件"（第一处是 Step 3 的 `pick.ts`）。顺序照旧：**先整份换测试跑到红 → 再整份换实现 → 数一数 T5 那 12 条有没有被碰坏**。T5 的 12 条在这次替换里只有三处不同（本 Task 开头"本任务会改到 T4/T5 的六处既有写法"的第 2、3、4 条），逐条写在这里，免得执行时把它们当成抄错了：
+
+1. 合成的 `handleAt`（`pickHandle` 那两条不借 `dragHandlesOf` 的用例在用）补一行 `anchorMm: { x: px, y: py }` —— 那是构造期缺字段的编译错误，不是判据变化。
+2. 末条配色判据把三色列成四色（多 `SNAP_COLOR`），判据本身一字不改。
+3. 「探针给的落点必然合法、必然真的移动…」里那句 `expect(moveTargetOf(view, p.toPx)).toEqual(p.targetMm)` 换成 `expect(handleDropTarget(view, p.toPx, probeHandle, probeField).mm).toEqual(p.targetMm)`。**这一处不是风格改动，是订正**：老写法的等式在"拖拽不吃吸附"时成立、吃吸附之后只在"探针恰好没吸到东西"时成立 —— 实测在样例房那把被挑中的把手上，它的落点正是被 15° 档改写过的（`{600,600} → {640,-578}` 那一类），于是老等式十个进程红 2 个。**一条会随机红的判据不能当 `--edit-shot`"落点逐字相等"的地基**，换成"两边同一个纯函数、同一对入参"之后它恒成立（恒等式，不是概率）。
+
+**这一步只改四件事**（B 块逐条对得上）：
+
+① `MoveTarget` / `quantizeTarget` / `moveTargetOf` 从 `handles.ts` 迁到 `snapping.ts`。迁移不是整理房间：D4 要求"屏幕 → 真源"只有一条通路，而吸附必须插在换算之后 —— 换算住在这个文件、吸附住在那个文件，就会长出第二条 px→mm 的路。迁完之后 `handles.ts` 只剩两个读者：`dragProbe` 吃 `dropTargetOf`，`legalDrop` 只吃已经定好的 `MoveTarget`。
+
+② `DragHandle` 补 `anchorMm`（另一端那对**整数毫米**，与既有 `anchorPx` 同产地）。为什么不能拿 `anchorPx` 反算：角度档要的是世界坐标里的锚点，浮点像素反算回毫米会引入一次往返，而这一次往返正好落在"保坐标"语义上 —— 正交档给 `(raw.x, anchor.y)`，`anchor.y` 漂 1mm，落点就漂 1mm。
+
+③ `dragProbe` 的落点从 `moveTargetOf(v, toPx)` 换成 `handleDropTarget(v, toPx, h, field)`；场在**入口取一次**（放在候选循环里就是 O(候选² × 墙)）；`legalDrop` 判的是**吸附之后**那对毫米。三条里最后这条最容易写反：判裸落点等于"预言一个松手必然被真源拒绝的落点"，屏幕上把手是绿的、松手报错。这条有专门的用例（下面第 19 条）与专门的改坏行（HB5）。
+
+④ 新增出口 `handleDropTarget(v, cursorPx, h, field)`，把"锚点 = `h.anchorMm`、排除 = `h.atMm`"这一对参数**收在唯一一处**。
+
+**④ 不是 convenience，是把判据从"多半会红"改成"必红"**。裁决 S4 ② 说探针与 renderer 必须吃同一个 `dropTargetOf`，但只要那两个调用点各写一遍参数，"探针传 `null` 锚点 / 忘了排除"就是可写的 —— 而实测这种改坏**时红时不红**：八个进程红 5 个（落点是否依赖锚点取决于探针挑到哪一面墙，挑哪面墙由 uuidv7 决定）。收进出口之后只剩"改出口"这一种写法，而它必然同时打到两个调用点：摘锚点（HB1）8/8 进程红「拖拽路径真的在吃吸附」，摘排除（HB2）8/8 红「把手按在原地那一发」，锚点写成原地（HE2）8/8 红前者。
+
+同一份清单也说清了它**不**买到什么：有人绕开出口、在探针里另抄一遍 `dropTargetOf` 并漏掉排除（HE3），19 条**一条都不红**；连恒等筛一起摘掉（HE4）仍然一条都不红。出口买到的是"这两个参数在这条通路上只有一处可写"，不是"写错必然红" —— 后者靠的是那两条直接问出口的用例，它们判的是参数本身的效果，不是探针的返回值。这句要留在计划里，否则下一个执行的人会去给 HE3 补一条"看起来能红"的用例，补出来的是假绿。
+
+**新加的七条（12 → 19）各咬谁**：anchorMm 的来源两条（字段语义 + 压扁拖那一发必然不合法）／拖拽路径真的在吃吸附一条（160 发候选的计数 + "改写只许来自 `angle15`"，咬 HB1、HE2）／把手按在原地一条（排除的牙齿，咬 HB2）／探针吃吸附后的毫米一条（场进探针，咬 HB3、HB4）／合法性判的是吸附后的毫米一条（咬 HB5）／三枚像素在分数尺子下的一条（咬 HC2，同时把 T5 第 10 条的凭据从假绿里救出来）。
+
+**为什么"合法性判裸落点还是判吸附后"必须另搭一层夹具**：先把话说反 —— 现有两套夹具（样例房 160 问、原点四层加对角 100 问，共 260 问）**逐问比对 `legalDrop(drop.raw)` 与 `legalDrop(drop.mm)`，分歧 0 条**（2026-09-28 实测）。所以 HB5 原先一条都不红，不是用例弱，是**素材里没有两种答案**。要有两种答案，得让吸附把落点搬进一个非法坐标，而合法性只由**拖那一点时在场的邻墙**决定（读过 `wallMoveEndpoint`：六道守卫全在共享端点上，洞口是夹回来不是驳回）。于是可造窗口只有 `T − tol ≤ dist(吸点, 邻墙另一端) < T`：`T = 240`、`tol = 8px`，在 0.1px/mm 的尺子上就是 `[160, 240)`mm。第二层夹具照这个窗口搭：共享点 `P` 上只有**共线的两面墙**（`P→(0,530)` 与 `P→(0,-800)` —— 反向同线在 core 里算**一个**线组），外加一面不共享的墙，它的端点 `(40,760)` 离 `P→(0,530)` 的另一端 233mm（落进窗口 ⇒ 吸上去非法），离第一发的裸落点 `(0,800)` 56.6mm（0.1px/mm 下 5.66px ⇒ 一定吸得到）。**中途试过、被真源驳回的那条路要记下**：给共享点再加第三面方向的墙（`A→(400,540)`）能把窗口凑出来，但 core 在派生层就抛 `RangeError: 接头 … 有 5 个墙端、3 个方向在同一点相交（star），S1 不支持`（`trimsFor` ← `deriveJoints` ← `deriveStoreyGeometry` ← `buildDrawList`）—— S1 的真源里根本不存在那种点，所以夹具必须绕开星形接头，这正是"共线两面 + 一面游离墙"这个形状的由来。
+
+---
+
+**A. 整份替换 `packages/scene-2d/test/handles.test.ts`（19 条 `it`）**
+
+整份如下，**逐字照抄**：里面的注释是判据的一部分 —— 这一份文件里"某个数为什么在那儿""某个夹具为什么长这个形状"的说明比断言本身多，删掉它们，下一个执行的人只能靠猜来改，而猜错的方向永远是放宽判据。
+
+```ts
+import { describe, expect, it } from 'vitest';
+import {
+  Document,
+  TransactionLog,
+  requirePoint,
+  storeyCreate,
+  uuidv7,
+  vec,
+  wallAxisById,
+  wallCreate,
+  wallMoveEndpoint,
+  type WallEntity,
+} from '@dajia/core';
+import {
+  buildDrawList,
+  demoHouse,
+  dragHandlesOf,
+  dragProbe,
+  dropTargetOf,
+  EMPTY_SELECTION,
+  fitStorey,
+  HANDLE_COLOR,
+  HANDLE_RADIUS_PX,
+  handleDropTarget,
+  legalDrop,
+  mmToPx,
+  moveTargetOf,
+  pickHandle,
+  pickOne,
+  PIXEL_CHANNEL_TOL,
+  pointSnapshot,
+  PREVIEW_COLOR,
+  pxToMm,
+  PICK_TOL_PX,
+  SELECTED,
+  snapFieldOf,
+  SNAP_COLOR,
+  SNAP_TOL_PX,
+  viewportOf,
+  type DragHandle,
+  type MoveTarget,
+  type Selection,
+} from '@dajia/scene-2d';
+
+const house = demoHouse();
+const view = fitStorey(house.doc, house.lowerStoreyId, 1200, 900, 60);
+const ops = buildDrawList(house.doc, house.lowerStoreyId, view, EMPTY_SELECTION);
+
+const sel = (...ids: string[]): Selection => ({ ids: new Set(ids) });
+
+/**
+ * `handles.ts` 里 `PROBE_OFFSETS` 那十发的**副本**（那是文件私有常量，出口里没有它）。
+ * 复制而不是导入是故意的：探针扫的就是这十个偏移，测试要拿同一套偏移去覆盖它，
+ * 二者必须逐字相同 —— 而"改了那边忘了这边"的红法由最后一条覆盖判据负责（那一句会红）。
+ */
+const SWEEP_OFFSETS: readonly MoveTarget[] = [
+  { x: 0, y: 800 },
+  { x: 800, y: 0 },
+  { x: 0, y: -800 },
+  { x: -800, y: 0 },
+  { x: 600, y: 600 },
+  { x: -600, y: 600 },
+  { x: 600, y: -600 },
+  { x: -600, y: -600 },
+  { x: 0, y: 2400 },
+  { x: 2400, y: 0 },
+];
+
+/**
+ * 样例房一层拐角 (4000, 0) 上的两面墙：southEast 向东、stem 向北，两者的 startId
+ * 是同一枚点（southWest 的 end）。共享点与非共享点在这里才分得开。
+ *
+ * 按坐标找墙，不按创建顺序：uuidv7 同毫秒不单调，`byKind` 又是 id 升序，
+ * "第 n 面墙"这种说法在真源里没有意义（T2 的 demo.ts 为此把八面墙写成八个具名 const）。
+ */
+function wallsAtJunction(): { junction: WallEntity; other: WallEntity } {
+  const byXY = (ax: number, ay: number, bx: number, by: number): WallEntity => {
+    for (const w of house.doc.byKind('wall')) {
+      if (w.storeyId !== house.lowerStoreyId) continue;
+      const a = requirePoint(house.doc, w.startId, '墙端点');
+      const b = requirePoint(house.doc, w.endId, '墙端点');
+      if (a.x === ax && a.y === ay && b.x === bx && b.y === by) return w;
+    }
+    throw new Error(`样例房一层找不到 (${ax}, ${ay})→(${bx}, ${by}) 这面墙`);
+  };
+  return { junction: byXY(4000, 0, 8000, 0), other: byXY(4000, 0, 4000, 3000) };
+}
+
+/**
+ * 合成一层：四面墙都从原点 A 出发（上 1040 / 右 1040 / 下 800 / 左 800），可选再在 (640,640)
+ * 挂一面对角外的墙。三套探针夹具共用它 —— 四面墙把 `PROBE_OFFSETS` 前四发（上/右/下/左）全堵死
+ * （(0,800)/(800,0) 撞墙厚，(0,-800)/(-800,0) 把另两面墙拖成零长），第五发对角才走得通。
+ *
+ * `foreign` 那一面给对角那发一个"吸得上的既有点"：带上它，探针报 (640,640)；不带，报裸 (600,600)。
+ * A 的 id 只认第一次 `wallCreate` 的 affected（`createdWall`），**不许** `byKind('point')[0]`：
+ * uuidv7 同毫秒不单调，那样写会把 A 拿成 (0,1040) 那枚点，四面墙两两同向重叠、core 当场抛。
+ */
+function wallsFromOrigin(foreign: boolean): { log: TransactionLog; storeyId: string } {
+  const projectId = uuidv7();
+  const log = new TransactionLog(Document.create(projectId));
+  log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+  let storeyId = '';
+  for (const id of log.affected) {
+    if (log.document.get(id)?.kind === 'storey') storeyId = id;
+  }
+  if (storeyId === '') throw new TypeError('affected 里没有新建的楼层');
+  log.dispatch(wallCreate({ storeyId, start: { x: 0, y: 0 }, end: { x: 0, y: 1040 }, thicknessMm: 240, heightMm: 3000 }));
+  const a = createdWallOf(log).startId;
+  const ENDINGS: readonly [number, number][] = [
+    [1040, 0],
+    [0, -800],
+    [-800, 0],
+  ];
+  for (const [bx, by] of ENDINGS) {
+    log.dispatch(wallCreate({ storeyId, start: { pointId: a }, end: { x: bx, y: by }, thicknessMm: 240, heightMm: 3000 }));
+  }
+  // 既有点 (640,640)：离裸对角落点 (600,600) 56.6mm。0.1px/mm 下是 5.66px（容差 8px 之内），
+  // 1px = 7mm 下是 8.08px（容差之外）—— 所以只有带 `foreign` 那发探针才吸得到它。
+  if (foreign) {
+    log.dispatch(wallCreate({ storeyId, start: { x: 640, y: 640 }, end: { x: 640, y: 1640 }, thicknessMm: 240, heightMm: 3000 }));
+  }
+  return { log, storeyId };
+}
+
+/**
+ * 最近一次 dispatch 的 affected 里那面墙。**不许** `byKind('wall').at(-1)`：uuidv7 同毫秒
+ * 不单调，`byKind` 又是 id 升序，"最后一面"跟"最后建的"不是一回事。
+ */
+function createdWallOf(log: TransactionLog): WallEntity {
+  for (const id of log.affected) {
+    const entity = log.document.get(id);
+    if (entity?.kind === 'wall') return entity;
+  }
+  throw new TypeError('affected 里没有新建的墙');
+}
+
+describe('拖拽把手', () => {
+  it('空选中集没有把手；选中一面墙给两个，端点与点 id 配对钉死', () => {
+    const { junction } = wallsAtJunction();
+    expect(dragHandlesOf(house.doc, house.lowerStoreyId, EMPTY_SELECTION, view)).toEqual([]);
+    const handles = dragHandlesOf(house.doc, house.lowerStoreyId, sel(junction.id), view);
+    expect(handles).toHaveLength(2);
+    const start = handles.find((h) => h.end === 'start');
+    const end = handles.find((h) => h.end === 'end');
+    expect(start).toBeDefined();
+    expect(end).toBeDefined();
+    // 角色配对：标着 'start' 的那把引用的必须是 startId。若实现把两端写反（计划 1 真反过一次），
+    // 屏幕上两个把手会互换位置，而"两个把手"这条计数照过 —— 所以必须逐把对 id。
+    expect(start!.pointId).toBe(junction.startId);
+    expect(end!.pointId).toBe(junction.endId);
+    const axis = wallAxisById(house.doc, junction.id);
+    const startPx = mmToPx(view, axis.start);
+    const endPx = mmToPx(view, axis.end);
+    // 位置与墙多边形同一个产地（wallAxisById）：各算各的就会在斜切墙脚上错开半个把手
+    expect([start!.atPx.x, start!.atPx.y]).toEqual([startPx.x, startPx.y]);
+    expect([end!.atPx.x, end!.atPx.y]).toEqual([endPx.x, endPx.y]);
+    // anchorPx 是"另一端"：压扁拖要的正是这个值，配错端就等于给了一条不存在的靶子
+    expect([start!.anchorPx.x, start!.anchorPx.y]).toEqual([endPx.x, endPx.y]);
+    expect([end!.anchorPx.x, end!.anchorPx.y]).toEqual([startPx.x, startPx.y]);
+    // atMm 就是真源里那对整数毫米，没经过任何 px ↔ mm 往返（往返会漂）
+    const corner = requirePoint(house.doc, junction.startId, '拐角');
+    expect(start!.atMm).toEqual({ x: corner.x, y: corner.y });
+    expect(Number.isInteger(start!.atMm.x) && Number.isInteger(start!.atMm.y)).toBe(true);
+    // 半径要画得出来，且小于命中容差：否则"看得见却点不中"，用户只会说鼠标坏了
+    expect(HANDLE_RADIUS_PX).toBeGreaterThan(0);
+    expect(HANDLE_RADIUS_PX).toBeLessThan(PICK_TOL_PX);
+  });
+
+  it('别层的墙、洞口 id、楼层 id、根本不存在的 id 一律不给把手（且不抛）', () => {
+    const upper = house.doc.byKind('wall').find((w) => w.storeyId === house.upperStoreyId);
+    const opening = house.doc.byKind('opening')[0];
+    expect(upper).toBeDefined(); // 先证明样例房真有二层墙与洞口，否则这条是空的
+    expect(opening).toBeDefined();
+    expect(
+      dragHandlesOf(
+        house.doc,
+        house.lowerStoreyId,
+        sel(upper!.id, opening!.id, house.lowerStoreyId, '00000000-0000-7000-8000-000000000009'),
+        view,
+      ),
+    ).toEqual([]);
+  });
+
+  it('把手顺序与选中集的插入顺序无关（决定性与可重放）', () => {
+    const { junction, other } = wallsAtJunction();
+    const forward = dragHandlesOf(house.doc, house.lowerStoreyId, sel(junction.id, other.id), view);
+    const backward = dragHandlesOf(house.doc, house.lowerStoreyId, sel(other.id, junction.id), view);
+    expect(forward).toHaveLength(4);
+    expect(backward).toEqual(forward);
+    // 排序键 `${wallId}:${end}` 升序 —— 这一行就是约定的全部含义，不藏别的语义。
+    // 同一面墙内 'end' 排在 'start' 前（字符串序），它只是"谁先"的凭据，不代表谁更重要。
+    const keys = forward.map((h) => `${h.wallId}:${h.end}`);
+    expect(keys).toEqual([...keys].sort());
+  });
+});
+
+describe('落点与命中', () => {
+  it('moveTargetOf 把浮点屏幕位置落成整数毫米，且对已是整数的输入幂等', () => {
+    // 故意自造视口：0.13 px/mm 保证整数像素映射到分数毫米。
+    // 不拿 `view` 做这件事 —— 它是 0.125 px/mm（T4 那条注算过），整数像素很可能本来就落在
+    // 整数毫米上，那"确实有分数"这句会假红；而拿一个本来就整的输入测舍入，等于什么都没测。
+    const v = viewportOf(1200, 900, { pxPerMm: 0.13, center: vec(4000, 3000) });
+    const cursor = { x: 517, y: 289 };
+    const raw = pxToMm(v, cursor);
+    expect(raw.x % 1 !== 0 || raw.y % 1 !== 0).toBe(true); // 先证明这一发真的有分数
+    const target = moveTargetOf(v, cursor);
+    expect(Number.isInteger(target.x) && Number.isInteger(target.y)).toBe(true);
+    // 钉住"四舍五入"这一个动作：换成 floor / ceil / trunc 都会在这里红（0.5 向正无穷侧走）
+    expect(target).toEqual({ x: Math.round(raw.x), y: Math.round(raw.y) });
+    // 幂等：已经是整数毫米的输入再过一遍不许漂（T6 的吸附叠在它之后，两者口径不能互相改）
+    expect(moveTargetOf(v, mmToPx(v, vec(target.x, target.y)))).toEqual(target);
+  });
+
+  it('pickHandle：容差边界含等于，远处与 NaN 给 null（合成把手，不借 dragHandlesOf）', () => {
+    // 合成把手的像素取整数：边界判据要精确落在 PICK_TOL_PX 上，
+    // 从 mmToPx 里捞出来的浮点坐标做 `+ PICK_TOL_PX` 会因舍入误差在 `<=` 上抖。
+    const handleAt = (px: number, py: number, id: string): DragHandle => ({
+      wallId: id,
+      end: 'start',
+      pointId: `${id}-point`,
+      atMm: { x: px, y: py },
+      atPx: { x: px, y: py },
+      anchorMm: { x: 0, y: 0 },
+      anchorPx: { x: 0, y: 0 },
+    });
+    const handles = [handleAt(100, 40, 'a'), handleAt(300, 40, 'b')];
+    expect(pickHandle(handles, { x: 100, y: 40 })?.wallId).toBe('a');
+    // 与下一句是一对：答案只能由把手集合决定，不能由数组顺序决定。
+    // （`dragHandlesOf` 出来的是排好序的，所以"排过序"这件事在真实路径上看不出来 ——
+    // 并列的牙齿必须在这里用同一像素上的两把 synthetic 把手来试。）
+    const tied = [handleAt(100, 40, 'zz'), handleAt(100, 40, 'aa')];
+    expect(pickHandle(tied, { x: 100, y: 40 })?.wallId).toBe('aa');
+    expect(pickHandle([...tied].reverse(), { x: 100, y: 40 })?.wallId).toBe('aa');
+    // 与 T4 的 pickAt 同一口径：正好容差算命中，再多 0.01px 不算
+    expect(pickHandle(handles, { x: 100 + PICK_TOL_PX, y: 40 })?.wallId).toBe('a');
+    expect(pickHandle(handles, { x: 100 + PICK_TOL_PX + 0.01, y: 40 })).toBeNull();
+    expect(pickHandle(handles, { x: 200, y: 40 })).toBeNull(); // 两把正中（各差 100px）都不中
+    // NaN 钉的是**比较式的写法**：`!(dist <= tol)` 为真 ⇒ 跳过；若写成 `if (dist > tol) continue`，
+    // NaN > tol 是 false ⇒ 不跳过，第一把把手会被当成命中（T4 第 8 条同款病，这里再守一次）。
+    expect(pickHandle(handles, { x: Number.NaN, y: 40 })).toBeNull();
+    expect(pickHandle(handles, { x: 100, y: Number.NaN })).toBeNull();
+  });
+
+  it('同一枚共享点上并列的两把把手：命中给唯一答案，且两把指的确实是同一个点', () => {
+    const { junction, other } = wallsAtJunction();
+    const corner = requirePoint(house.doc, junction.startId, '拐角');
+    expect(junction.startId).toBe(other.startId); // 先证明"并列"真的是同一枚点，不是坐标恰好吧
+    const both = dragHandlesOf(house.doc, house.lowerStoreyId, sel(junction.id, other.id), view);
+    const at = mmToPx(view, vec(corner.x, corner.y));
+    const tied = both.filter((h) => h.atPx.x === at.x && h.atPx.y === at.y);
+    expect(tied).toHaveLength(2);
+    expect(new Set(tied.map((h) => h.pointId)).size).toBe(1);
+    const picked = pickHandle(both, at);
+    expect(picked).not.toBeNull();
+    expect(picked!.wallId).toBe([junction.id, other.id].sort()[0]!);
+    // 换插入顺序再问一次，答案不许变："谁赢"只能取决于排序键，不能取决于 Set 的迭代序
+    const shuffled = dragHandlesOf(house.doc, house.lowerStoreyId, sel(other.id, junction.id), view);
+    expect(pickHandle(shuffled, at)).toEqual(picked);
+  });
+});
+
+describe('合法落点与拖拽探针', () => {
+  it('legalDrop 就是真源那道守卫的预言：合法 true、压扁给 false，而 false 那一发真的抛', () => {
+    const { junction, other } = wallsAtJunction();
+    const corner = requirePoint(house.doc, junction.startId, '拐角');
+    const farEnd = requirePoint(house.doc, junction.endId, '另一端点');
+    // (4000, 1200)：southEast 变 4326、southWest 变 4000、stem 变 1800，三面都远大于各自墙厚
+    expect(legalDrop(house.doc, junction.id, 'start', { x: corner.x, y: corner.y + 1200 })).toBe(true);
+    // 拖到自己另一端上：判据不许 scene-2d 自己重算一遍轴长，它试跑的就是 core 的那道守卫
+    expect(legalDrop(house.doc, junction.id, 'start', { x: farEnd.x, y: farEnd.y })).toBe(false);
+    expect(() =>
+      wallMoveEndpoint({ wallId: junction.id, end: 'start', x: farEnd.x, y: farEnd.y }).build(
+        house.doc,
+      ),
+    ).toThrow(/零长墙/);
+    // 最要紧的第三条：坏的不是被拖那面墙，是**邻墙**。junction（southEast）拖到 (4000, 3000)
+    // 自己变 4272、southWest 变 5000，两头都合格；只有 stem 的两端重合了。
+    // 屏幕上若要自己算，算的必然是"我这一面够不够长" ⇒ 判成 true ⇒ 松手才报错。
+    const stemFar = requirePoint(house.doc, other.endId, 'stem 另一端点');
+    expect([corner.x, corner.y]).not.toEqual([stemFar.x, stemFar.y]); // 空话防线：两个落点别是同一个
+    expect(legalDrop(house.doc, junction.id, 'start', { x: stemFar.x, y: stemFar.y })).toBe(false);
+    expect(() =>
+      wallMoveEndpoint({
+        wallId: junction.id,
+        end: 'start',
+        x: stemFar.x,
+        y: stemFar.y,
+      }).build(house.doc),
+    ).toThrow(/变成零长/); // 红在邻墙那条，不是红在别的守卫上
+    // 试跑不许留下痕迹：house.doc 是下面每一条共用的那份文档，被写脏了后面全不可信
+    expect(requirePoint(house.doc, junction.startId, '拐角')).toEqual(corner);
+  });
+
+  it('探针只认共享点：一面孤墙（两端都没有第二面墙指着）返回 null', () => {
+    const projectId = uuidv7();
+    const log = new TransactionLog(Document.create(projectId));
+    log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+    const storeyId = [...log.affected].find((id) => log.document.get(id)?.kind === 'storey')!;
+    log.dispatch(
+      wallCreate({
+        storeyId,
+        start: { x: 0, y: 0 },
+        end: { x: 4000, y: 0 },
+        thicknessMm: 240,
+        heightMm: 3000,
+      }),
+    );
+    const wallId = [...log.affected].find((id) => log.document.get(id)?.kind === 'wall')!;
+    const v = fitStorey(log.document, storeyId, 1200, 900, 60);
+    // 孤墙上"选中它给两个把手"照样成立 ⇒ 上一个用例没把把手和共享点混为一谈
+    expect(dragHandlesOf(log.document, storeyId, sel(wallId), v)).toHaveLength(2);
+    expect(
+      dragProbe(log.document, storeyId, buildDrawList(log.document, storeyId, v, EMPTY_SELECTION), v),
+    ).toBeNull();
+  });
+
+  it('探针给的落点必然合法、必然真的移动、锚点必然不合法、三枚像素全为整数，且 fromPx 先点必选中那面墙', () => {
+    const probe = dragProbe(house.doc, house.lowerStoreyId, ops, view);
+    expect(probe).not.toBeNull(); // 样例房一层有六枚共享端点 ⇒ 拿不到靶子是探针坏了，不是没素材
+    const p = probe!;
+    expect(p.sharedBy).toBeGreaterThanOrEqual(2);
+    const point = requirePoint(house.doc, p.pointId, '探针点');
+    expect([p.targetMm.x, p.targetMm.y]).not.toEqual([point.x, point.y]); // 真的移动，不是原地空放
+    expect(legalDrop(house.doc, p.wallId, p.end, p.targetMm)).toBe(true);
+    expect(legalDrop(house.doc, p.wallId, p.end, moveTargetOf(view, p.anchorPx))).toBe(false);
+    // 探针报的毫米必须是**renderer 松手那一发算出来的毫米**（T6 之前这里是
+    // `expect(moveTargetOf(view, p.toPx)).toEqual(p.targetMm)`，本行是它换掉的写法）。
+    // 为什么必须换：拖拽路径 T6 起吃吸附，样例房 16 把把手 × 10 发候选里有 14 发的落点
+    // **不等于**裸落点（15° 档把它们改写了，见下面"拖拽真的在吃吸附"那条），而"哪面墙先被扫到"
+    // 由 uuidv7 决定 ⇒ 老写法实测 10 个进程红 2 个。换掉之后这一句恒等：两边是同一个纯函数、
+    // 同一对入参。上面那句 `legalDrop` 判的就是这一对毫米，三句话连起来才成立：
+    // 探针说合法 → renderer 算出同一对毫米 → 命令必然成功 → `--edit-shot` 才许拿"逐字相等"当判据。
+    const probeField = snapFieldOf(house.doc, house.lowerStoreyId);
+    const probeHandle = dragHandlesOf(house.doc, house.lowerStoreyId, sel(p.wallId), view).find(
+      (x) => x.end === p.end,
+    )!;
+    expect(
+      handleDropTarget(view, p.toPx, probeHandle, probeField).mm,
+    ).toEqual(p.targetMm);
+    // 三枚像素必须全是整数：`sendInputEvent` 只收整数 DIP，主进程一发 `Math.round` 就把落点
+    // 挪到另一对毫米上（fitStorey 的 0.13 px/mm 下差 1~4mm），上面那句"不动点"立刻变成随机红。
+    // 但**这一条不是咬 snapPx 的那颗牙**：样例房 0.125px/mm 配百米毫米的坐标，取整前后本来就是
+    // 同一个数，摘掉 `snapPx`（HC2）实测 8 个进程在这条上零红 —— 咬它的是下面那份 1200×901 的尺子。
+    for (const spot of [p.fromPx, p.toPx, p.anchorPx]) {
+      expect(Number.isInteger(spot.x) && Number.isInteger(spot.y)).toBe(true);
+    }
+    // D5 的"拖之前先选中"能在真窗口里成立，靠的就是这一句：起点那一发点选中的就是被拖那面墙
+    expect(pickOne(ops, p.fromPx)?.ownerId).toBe(p.wallId);
+    expect(p.fromPx.x).toBeGreaterThanOrEqual(0);
+    expect(p.fromPx.x).toBeLessThanOrEqual(view.widthPx);
+    expect(p.fromPx.y).toBeGreaterThanOrEqual(0);
+    expect(p.fromPx.y).toBeLessThanOrEqual(view.heightPx);
+  });
+
+  it('探针幂等：同一份文档连问两次逐字节相同（回读判据不许每次跑给出不同靶子）', () => {
+    expect(dragProbe(house.doc, house.lowerStoreyId, ops, view)).toEqual(
+      dragProbe(house.doc, house.lowerStoreyId, ops, view),
+    );
+  });
+});
+
+describe('拖拽吃吸附（Task 6）', () => {
+  it('anchorMm 是另一端那对整数毫米：与 atMm 分居两端、与 anchorPx 同产地', () => {
+    const { junction } = wallsAtJunction();
+    const handles = dragHandlesOf(house.doc, house.lowerStoreyId, sel(junction.id), view);
+    const s = handles.find((h) => h.end === 'start')!;
+    const e = handles.find((h) => h.end === 'end')!;
+    const corner = requirePoint(house.doc, junction.startId, '拐角');
+    const far = requirePoint(house.doc, junction.endId, '另一端');
+    expect(s.atMm).toEqual({ x: corner.x, y: corner.y });
+    expect(s.anchorMm).toEqual({ x: far.x, y: far.y });
+    expect(e.anchorMm).toEqual({ x: corner.x, y: corner.y });
+    // 两把把手的"另一端"恰是彼此的落点：配错端（把 anchorMm 写成 atMm、或两端写反）在这里红，
+    // 而它在屏幕上的后果是角度档拿错锚 —— 拖出来的方向对着空气对齐，毫米账却全对。
+    expect(s.anchorMm).toEqual(e.atMm);
+    expect(e.anchorMm).toEqual(s.atMm);
+    expect(s.anchorMm).not.toEqual(s.atMm);
+    // 与 anchorPx 同产地：同一端换算两次必须逐字相同，不许一把取轴、一把取点
+    expect(s.anchorPx).toEqual(mmToPx(view, vec(s.anchorMm.x, s.anchorMm.y)));
+    expect(e.anchorPx).toEqual(mmToPx(view, vec(e.anchorMm.x, e.anchorMm.y)));
+    expect(Number.isInteger(s.anchorMm.x) && Number.isInteger(s.anchorMm.y)).toBe(true);
+  });
+
+  it('anchorMm 就是压扁拖那一发：每把把手按它拖都必然不合法，按 atMm 原地不动必然合法', () => {
+    const { junction, other } = wallsAtJunction();
+    const handles = dragHandlesOf(house.doc, house.lowerStoreyId, sel(junction.id, other.id), view);
+    expect(handles).toHaveLength(4); // 空样本防线：循环一次都不进的话，下面六句全是 vacuous truth
+    for (const h of handles) {
+      expect(legalDrop(house.doc, h.wallId, h.end, h.anchorMm)).toBe(false);
+      expect(() =>
+        wallMoveEndpoint({
+          wallId: h.wallId,
+          end: h.end,
+          x: h.anchorMm.x,
+          y: h.anchorMm.y,
+        }).build(house.doc),
+      ).toThrow(/零长/);
+      // 对照组：这一句让上一条循环不能靠"怎么拖都不合法"蒙过去
+      expect(legalDrop(house.doc, h.wallId, h.end, h.atMm)).toBe(true);
+    }
+  });
+
+  it('拖拽路径真的在吃吸附：160 发候选里 72 发吸成恒等、14 发被 15° 档改写，改写全来自 angle15', () => {
+    // 这条是上一批用例里那句 `moveTargetOf(view, toPx) === targetMm` 换掉的**理由**：
+    // 拖拽落点从 T6 起走 `dropTargetOf`，而样例房里绝大多数候选确实吸上了东西 ——
+    // 垂足（54 发）与正交（17 发）吸的是恒等（点本来就在自己那面墙的轴线上），中点 1 发；
+    // 真正把落点挪走的是 15° 档那 14 发（最大位移 6.97px，仍在 `SNAP_TOL_PX` 之内）。
+    // 计数跑在**全部把手 × 全部偏移**上，所以它与"uuidv7 决定探针挑哪面墙"无关：
+    // 16 把把手、160 发、恒等 72、改写 14，这几个数在十个进程里逐字相同（2026-09-28 实测）。
+    const fd = snapFieldOf(house.doc, house.lowerStoreyId);
+    const walls = house.doc.byKind('wall').filter((w) => w.storeyId === house.lowerStoreyId);
+    const handles = dragHandlesOf(house.doc, house.lowerStoreyId, sel(...walls.map((w) => w.id)), view);
+    expect(handles).toHaveLength(16); // 空样本防线：一把把手都没有的话下面两个计数就是 vacuous truth
+    let identity = 0;
+    let rewritten = 0;
+    for (const h of handles) {
+      for (const off of SWEEP_OFFSETS) {
+        const rawPx = mmToPx(view, vec(h.atMm.x + off.x, h.atMm.y + off.y));
+        const toPx = { x: Math.round(rawPx.x), y: Math.round(rawPx.y) }; // 与探针同一发整数像素
+        const ask = handleDropTarget(view, toPx, h, fd);
+        expect(Number.isInteger(ask.mm.x) && Number.isInteger(ask.mm.y)).toBe(true);
+        if (ask.snap === null) continue;
+        expect(ask.snap.distPx).toBeLessThanOrEqual(SNAP_TOL_PX); // 吸附不许把落点甩到容差外
+        if (ask.mm.x === ask.raw.x && ask.mm.y === ask.raw.y) identity++;
+        else {
+          rewritten++;
+          // 被挪走的只可能是 15° 档：轴对齐的候选落在轴对齐墙的轴线上，垂足与正交只能给恒等。
+          // 这一句是整条用例里唯一带"不许"的判据 —— 哪天垂足开始把对角候选拉回轴线，
+          // 它先红在这里，而不是红在 `--edit-shot` 的逐字对账上。
+          expect(ask.snap.kind).toBe('angle15');
+        }
+      }
+    }
+    expect(identity).toBeGreaterThanOrEqual(8); // 实测 72：判据只要求"吸了但没挪走"确实存在
+    expect(rewritten).toBeGreaterThanOrEqual(1); // 实测 14：判据只要求"吸了且挪走了"确实存在
+    // 扫的必须**盖住**探针真会走的那十发，否则上面两个数只是别人的账：
+    // 从探针返回的像素反算偏移，必须能在 `SWEEP_OFFSETS` 里找到同一发（±8mm 容得下取整像素的 0.5px）。
+    const p = dragProbe(house.doc, house.lowerStoreyId, ops, view)!;
+    const h = dragHandlesOf(house.doc, house.lowerStoreyId, sel(p.wallId), view).find(
+      (x) => x.end === p.end,
+    )!;
+    const atCursorMm = pxToMm(view, p.toPx);
+    const delta = { x: Math.round(atCursorMm.x - h.atMm.x), y: Math.round(atCursorMm.y - h.atMm.y) };
+    expect(
+      SWEEP_OFFSETS.some((o) => Math.abs(o.x - delta.x) <= 8 && Math.abs(o.y - delta.y) <= 8),
+    ).toBe(true);
+  });
+
+  it('把手按在原地那一发：排掉自己就谁也不吸，不排就吸回自己（dragProbe 传的就是前者）', () => {
+    // 判的是 `dragProbe` 与 renderer 都传给 `dropTargetOf` 的那对参数：光标停在把手自己的像素上。
+    // 这一发最容易写错成"按 pointId 排除"，而原地同时是①它自己那枚端点、②它所在轴线的 t=0 垂足、
+    // ③与它同坐标的邻墙候选 —— 三个候选同一个坐标，只排 id 会漏掉后两个，表现就是"一松手墙没动"。
+    // 实测样例房 16 把把手全部：传排除 ⇒ `snap === null` 且落点就是原地；不传 ⇒ 吸回自己那枚点。
+    const fd = snapFieldOf(house.doc, house.lowerStoreyId);
+    const walls = house.doc.byKind('wall').filter((w) => w.storeyId === house.lowerStoreyId);
+    const handles = dragHandlesOf(house.doc, house.lowerStoreyId, sel(...walls.map((w) => w.id)), view);
+    expect(handles.length).toBeGreaterThanOrEqual(4);
+    for (const h of handles) {
+      const at = { x: Math.round(h.atPx.x), y: Math.round(h.atPx.y) }; // 回读脚本发得出的那一发
+      const excluded = handleDropTarget(view, at, h, fd);
+      const kept = dropTargetOf(view, at, h.anchorMm, fd);
+      expect(excluded.snap).toBeNull();
+      expect(excluded.mm).toEqual(h.atMm); // 排掉自己之后原地那一发谁也不吸，落点就是它自己
+      expect(kept.snap?.pointId).toBe(h.pointId); // 不排就吸回自己：这道筛确实有东西要挡
+      expect(kept.mm).toEqual(h.atMm);
+    }
+  });
+
+  it('探针吃的是吸附后的毫米：四发正向候选全被真源挡下，第五发被一枚既有点接住', () => {
+    // 现场故意造到"前四发候选全非法、第五发对角候选的裸落点离一枚既有点 5.66px"，
+    // 于是吃场的探针报**那枚点的毫米**，不吃场的探针报**对角那发的裸毫米** —— 两个答案不同。
+    // 2026-09-28 实测这条咬住的改坏：探针传 `EMPTY_SNAP_FIELD`（HB3）与换回 `moveTargetOf`（HB4），
+    // 两条各红这条 + 下面那条「合法性判的是吸附后的毫米」。锚点（HB1）与排除（HB2）不在这里判 ——
+    // 它们收在 `handleDropTarget` 出口里，改出口会让"拖拽路径真的在吃吸附"与"把手按在原地那一发"
+    // 逐进程红（实测 8/8），判在探针调用点上反而漏（那时探针与 renderer 一起改，行为没变）。
+    // 判裸落点还是判吸附后（HB5）由下面那条专门咬，这条夹具里裸与吸两侧都合法，判不出。
+    const { log, storeyId } = wallsFromOrigin(true);
+    // 1px = 10mm ⇒ 整数像素与整数毫米逐字往返，红的时候不必先排除舍入
+    const v = viewportOf(1000, 800, { pxPerMm: 0.1, center: vec(300, 300) });
+    const doc = log.document;
+    const p = dragProbe(doc, storeyId, buildDrawList(doc, storeyId, v, EMPTY_SELECTION), v);
+    expect(p).not.toBeNull();
+    expect(p!.sharedBy).toBeGreaterThanOrEqual(2);
+    // 先自证现场：裸落点确实是对角那一发，而探针给的是**吸上去之后**那枚既有点
+    expect(moveTargetOf(v, p!.toPx)).toEqual({ x: 600, y: 600 });
+    expect(p!.targetMm).toEqual({ x: 640, y: 640 });
+    expect(p!.targetMm).not.toEqual(moveTargetOf(v, p!.toPx));
+    // 而合法性判的也是吸附后的毫米：原地那枚既有点把墙拖成的形状必须真的过得了真源那道守卫
+    expect(legalDrop(doc, p!.wallId, p!.end, p!.targetMm)).toBe(true);
+    expect(legalDrop(doc, p!.wallId, p!.end, { x: 600, y: 600 })).toBe(true); // 两个都合法 ⇒ 上面那句不是巧合
+    // 前四发候选全非法是这套夹具的前提，不是假设：逐发当场验一遍（(0,800)/(800,0) 撞墙厚，
+    // (0,-800)/(-800,0) 把另两面墙拖成零长），前提漂了这里先红，不会让上面那两句变成猜。
+    for (const off of [
+      { x: 0, y: 800 },
+      { x: 800, y: 0 },
+      { x: 0, y: -800 },
+      { x: -800, y: 0 },
+    ]) {
+      expect(legalDrop(doc, p!.wallId, p!.end, { x: off.x, y: off.y })).toBe(false);
+    }
+  });
+
+  it('合法性判的是吸附后的毫米：裸对角合法、吸上去那一发被 240 厚墙挡下', () => {
+    // 上一条例用里裸落点与吸附落点**都**合法（那句 `legalDrop(... {600,600}) === true` 就是把它钉住），
+    // 所以"合法性判在吸附之前还是之后"在那里只有一种答案 —— 实测把 `legalDrop` 改判 `drop.raw`
+    // 在那套夹具上八个进程零红。这一条另造一层：`P→(0,530)` 那面 240 厚的墙把**吸上去**那一发
+    // (40,760) 挡在"墙厚 ≥ 轴长"外（233 < 240），而裸的 (0,800) 离 (0,530) 有 270 ⇒ 合法。
+    // 判裸落点的探针会把第一发就收下并报 (40,760) —— 一个松手必然被真源拒绝的落点；判吸附后的
+    // 探针跳过第一发、报第二发的 (800,0)。于是这条同时钉住三件事：报出来的毫米合法、报出来的
+    // 不是那个非法的吸点、报出来的像素不是第一发那一个。
+    const projectId = uuidv7();
+    const log = new TransactionLog(Document.create(projectId));
+    log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+    let storeyId = '';
+    for (const id of log.affected) {
+      if (log.document.get(id)?.kind === 'storey') storeyId = id;
+    }
+    if (storeyId === '') throw new TypeError('affected 里没有新建的楼层');
+    // 共享 P 的两面墙（同一条竖线、方向相反 ⇒ 接头只有一个线组，S1 造得成）：`sharedBy >= 2` 成立。
+    // 530 那面同时是陷阱口：`wallCreate` 的最小轴长 500 与墙厚 240 都过得去，建得成。
+    log.dispatch(wallCreate({ storeyId, start: { x: 0, y: 0 }, end: { x: 0, y: 530 }, thicknessMm: 240, heightMm: 3000 }));
+    const north = createdWallOf(log);
+    log.dispatch(wallCreate({ storeyId, start: { pointId: north.startId }, end: { x: 0, y: -800 }, thicknessMm: 240, heightMm: 3000 }));
+    // (40,760) 这一枚既有点离第一发的裸落点 (0,800) 56.6mm ⇒ 0.1px/mm 下 5.66px，容差 8px 之内
+    // ⇒ 探针第一发必然吸到它（实测两把共享把手都是 `endpoint@5.66`）。
+    log.dispatch(wallCreate({ storeyId, start: { x: 40, y: 760 }, end: { x: 1040, y: 760 }, thicknessMm: 240, heightMm: 3000 }));
+    const v = viewportOf(1000, 800, { pxPerMm: 0.1, center: vec(200, 300) });
+    const doc = log.document;
+    const ops = buildDrawList(doc, storeyId, v, EMPTY_SELECTION);
+    const p = dragProbe(doc, storeyId, ops, v);
+    expect(p).not.toBeNull();
+    expect(p!.sharedBy).toBeGreaterThanOrEqual(2);
+    // 现场自证分歧真的存在，且就在**赢的那把把手**身上：同一发整数像素，裸落点过得了守卫、
+    // 吸上去那一发过不了。这一句不判探针，只判"这条红不是靠运气挑到靶子"。
+    const field = snapFieldOf(doc, storeyId);
+    const handle = dragHandlesOf(
+      doc,
+      storeyId,
+      { ids: new Set(doc.byKind('wall').filter((w) => w.storeyId === storeyId).map((w) => w.id)) },
+      v,
+    ).find((h) => h.wallId === p!.wallId && h.end === p!.end)!;
+    const firstPx = {
+      x: Math.round(mmToPx(v, { x: handle.atMm.x, y: handle.atMm.y + 800 }).x),
+      y: Math.round(mmToPx(v, { x: handle.atMm.x, y: handle.atMm.y + 800 }).y),
+    };
+    const firstDrop = handleDropTarget(v, firstPx, handle, field);
+    expect(firstDrop.raw).toEqual({ x: 0, y: 800 });
+    expect(firstDrop.mm).toEqual({ x: 40, y: 760 }); // 吸上了那枚既有点
+    expect(legalDrop(doc, handle.wallId, handle.end, firstDrop.raw)).toBe(true);
+    expect(legalDrop(doc, handle.wallId, handle.end, firstDrop.mm)).toBe(false);
+    // ⇒ 探针报出来的必须是**别的一发**：不是那个非法的吸点，且它真能落
+    expect(p!.targetMm).not.toEqual({ x: 40, y: 760 });
+    expect(p!.toPx).not.toEqual(firstPx);
+    expect(legalDrop(doc, p!.wallId, p!.end, p!.targetMm)).toBe(true);
+  });
+
+  it('探针的三枚像素在分数尺子下才见取整的牙齿：取整前是浮点，报出来全为整数', () => {
+    // T5 那条「三枚像素全为整数」在样例房那份 `fitStorey(…, 1200, 900, 60)` 上是**假绿**：
+    // 0.125px/mm 配百米毫米的坐标，取整前后本来就是同一个数（2026-09-28 实测：摘掉 `snapPx`
+    // 八个进程零红）。这一份 1200×901 把尺子换成 781/6240 px/mm，把手与候选的像素全是浮点，
+    // 于是那三句"整数"判的才真是取整这一步 —— 而它是 `--edit-shot`「落点逐字相等」的地基：
+    // 主进程 `sendInputEvent` 只收整数 DIP，探针给浮点就是拿浮点跟主进程对赌。
+    const frac = fitStorey(house.doc, house.lowerStoreyId, 1200, 901, 60);
+    const p = dragProbe(
+      house.doc,
+      house.lowerStoreyId,
+      buildDrawList(house.doc, house.lowerStoreyId, frac, EMPTY_SELECTION),
+      frac,
+    )!;
+    const h = dragHandlesOf(house.doc, house.lowerStoreyId, sel(p.wallId), frac).find(
+      (x) => x.end === p.end,
+    )!;
+    // 现场自证：这把把手的原生像素就是浮点 ⇒ 下面三句不是"本来就整数"蒙过去的
+    expect(Number.isInteger(h.atPx.x) && Number.isInteger(h.atPx.y)).toBe(false);
+    expect(Number.isInteger(p.fromPx.x) && Number.isInteger(p.fromPx.y)).toBe(true);
+    expect(Number.isInteger(p.toPx.x) && Number.isInteger(p.toPx.y)).toBe(true);
+    expect(Number.isInteger(p.anchorPx.x) && Number.isInteger(p.anchorPx.y)).toBe(true);
+    // 报出来的像素 = 原生像素四舍五入，不是"另算一遍"：`fromPx` 与把手必须同源
+    expect(p.fromPx).toEqual({ x: Math.round(h.atPx.x), y: Math.round(h.atPx.y) });
+    // 取整那一发反算的毫米与真源现值不同 ⇒ 这一发真的被搬到了整数像素上
+    expect(p.targetMm).not.toEqual(h.atMm);
+    // 与 renderer 同一个调用：同一发整数像素再问一次，答案逐字相同（浮点尺子下这条更要紧）
+    expect(
+      handleDropTarget(frac, p.toPx, h, snapFieldOf(house.doc, house.lowerStoreyId)).mm,
+    ).toEqual(p.targetMm);
+  });
+});
+
+describe('回读用的投影与配色', () => {
+  it('pointSnapshot 的键集合恰是本层墙端点的去重集（多一个少一个都红）', () => {
+    const snap = pointSnapshot(house.doc, house.lowerStoreyId);
+    const lower = house.doc.byKind('wall').filter((w) => w.storeyId === house.lowerStoreyId);
+    const upper = house.doc.byKind('wall').filter((w) => w.storeyId === house.upperStoreyId);
+    const lowerIds = new Set(lower.flatMap((w) => [w.startId, w.endId]));
+    expect(lowerIds.size).toBeGreaterThan(0); // 空样本会让下面全部断言变成恒真
+    // 键集合**就是**本层全部墙端点：混进别层的点、或漏掉共享点（去重后少一枚）都红
+    expect(Object.keys(snap).sort()).toEqual([...lowerIds].sort());
+    for (const id of lowerIds) {
+      const point = requirePoint(house.doc, id, '端点');
+      expect(snap[id]).toEqual({ x: point.x, y: point.y });
+      expect(Number.isInteger(snap[id]!.x) && Number.isInteger(snap[id]!.y)).toBe(true);
+    }
+    for (const w of upper) {
+      // 同一件事的第二证法：别层的两枚端点都不该在表里
+      expect(snap[w.startId]).toBeUndefined();
+      expect(snap[w.endId]).toBeUndefined();
+    }
+  });
+
+  it('四种颜色两两之间最大通道差 > 2×PIXEL_CHANNEL_TOL ⇒ 像素计数不会串道', () => {
+    const rgb = (hex: string): [number, number, number] => [
+      Number.parseInt(hex.slice(1, 3), 16),
+      Number.parseInt(hex.slice(3, 5), 16),
+      Number.parseInt(hex.slice(5, 7), 16),
+    ];
+    const spread = (a: string, b: string): number => {
+      const ca = rgb(a);
+      const cb = rgb(b);
+      return Math.max(...ca.map((c, k) => Math.abs(c - cb[k]!)));
+    };
+    // 每一侧的认色窗口宽 2×TOL（±TOL），两窗口不重叠 ⇔ 最大通道差 > 2×TOL。
+    // 分开写而不是套循环：红了直接知道是哪一对颜色串道，不必再反推 i/j。
+    // T6 加第四色（吸附标记）：判据一字不改，只是每对都多一列要过同一把尺。
+    const min = PIXEL_CHANNEL_TOL * 2;
+    expect(spread(SELECTED, HANDLE_COLOR)).toBeGreaterThan(min);
+    expect(spread(SELECTED, PREVIEW_COLOR)).toBeGreaterThan(min);
+    expect(spread(SELECTED, SNAP_COLOR)).toBeGreaterThan(min);
+    expect(spread(HANDLE_COLOR, PREVIEW_COLOR)).toBeGreaterThan(min);
+    expect(spread(HANDLE_COLOR, SNAP_COLOR)).toBeGreaterThan(min);
+    expect(spread(PREVIEW_COLOR, SNAP_COLOR)).toBeGreaterThan(min);
+  });
+});
+```
+
+
+
+Run: `npx vitest run packages/scene-2d/test/handles.test.ts > /tmp/t6s5-red.log 2>&1; echo exit=$?`
+Expected: exit≠0，**`Tests 8 failed | 11 passed (19)`**（2026-09-28 实测的红态就是这两个数）。红的是本步 7 条新用例，加上 T5 那条被订正的第 3 点（`handleDropTarget(view, p.toPx, …)` 那一句），红字一律是 `TypeError: handleDropTarget is not a function`。T5 其余 11 条**必须全绿** —— 多一条红说明 A 段抄进了本步之外的东西，少一条红说明 `handleDropTarget` 不知从哪儿已经存在了。
+
+同一条命令之外，`pnpm typecheck` 在这个中间状态**必然**报三类错，它们全是"① 那条迁移还没做完"的样子，B 块换完就消失 —— 别回头改测试迁就它：
+
+- `src/index.ts` **TS2308**：`Module './snapping' has already exported a member named 'MoveTarget'`（`moveTargetOf` 同一条第二行）。`export *` 撞名就是"同一个类型住在两个文件"的机械证据，正是 ① 要消掉的东西。
+- `test/handles.test.ts` **TS2305**：`Module '"@dajia/scene-2d"' has no exported member 'handleDropTarget'`。
+- `test/handles.test.ts` **TS2353 / TS2339**：`anchorMm` 不在 `DragHandle` 上，十余处（合成分支、`atMm` 分居两端、把手按在原地那三条用例都在读它）。
+
+---
+
+**B. 整份替换 `packages/scene-2d/src/handles.ts`**
+
+整份如下，逐字照抄。`index.ts` 不动（T5 已有 `export * from './handles'`，新出口 `handleDropTarget` 自动带出）。
+
+```ts
+import {
+  endPointId,
+  incidentWallEnds,
+  requirePoint,
+  wallAxisById,
+  wallMoveEndpoint,
+  type Document,
+  type WallEnd,
+} from '@dajia/core';
+import { mmToPx, type Px, type Viewport } from './viewport';
+import type { DrawOp, Selection } from './drawlist';
+import { PICK_TOL_PX, pickOne } from './pick';
+import {
+  dropTargetOf,
+  snapFieldOf,
+  type DropTarget,
+  type MoveTarget,
+  type SnapField,
+} from './snapping';
+
+/**
+ * 编辑器画在屏幕上、却**不进指令表**的那一层（Task 5 D2）：把手、拖拽临时线、
+ * 以及"这个落点拖不拖得动"的预言。
+ *
+ * 为什么不进 `buildDrawList`：那张表是**图纸内容的投影** —— 计划 4 的像素判据与计划 5 的
+ * 可施工图都直接吃它，把蓝点掺进去等于往施工图上印编辑器家具，而"指令表还是 31 条"
+ * 这类回归判据恰好看不见多印了什么。代价是这个文件外面要再多两个画家（PlanCanvas 的
+ * `paintHandles` / `paintPreview`），"只有一条绘制通路"这条纪律改由像素计数来守（Step 5/6）。
+ *
+ * T6 之后本文件不再自带"像素 → 毫米"：`MoveTarget` / `moveTargetOf` 搬进了 `snapping.ts`
+ * （吸附必须接在换算之后，两者分居两文件就会长出第二条 px→mm 的路，那正是 D4 禁止的）。
+ * 本文件因此只剩两个**读者**：`dragProbe` 吃 `dropTargetOf`（吸附后的落点，与 renderer 松手
+ * 那一发同一个函数、同一个场），`legalDrop` 只吃已经定好的 `MoveTarget`。
+ */
+
+/**
+ * 四种颜色给 `countPixels` 认道：选中（红）、把手（蓝）、临时线（绿）、吸附标记（橙，
+ * 常量在 `snapping.ts` 的 `SNAP_COLOR`）。
+ * 两两最大通道差必须 > 2×`PIXEL_CHANNEL_TOL`（`handles.test.ts` 最后一条钉死）：
+ * 认色是按通道 ±TOL 开窗的，两种颜色挨太近时同一片像素会同时进两个桶，
+ * Step 6 的 `handlePx` / `previewPx` 就全是假绿。#1668dc 与 #12b886 的差只在 G/B 上
+ * （104↔184、220↔134，最大 86 > 80），挨得不远 —— 所以改任何一个字面量都要回去跑那条。
+ */
+export const HANDLE_COLOR = '#1668dc';
+export const PREVIEW_COLOR = '#12b886';
+export const PIXEL_CHANNEL_TOL = 40;
+export const HANDLE_RADIUS_PX = 4.5;
+
+/** 一枚可拖把手：`end` 与 `pointId` 配对钉死（计划 1 的角色反转 bug 就是这个配对松开过）。 */
+export interface DragHandle {
+  readonly wallId: string;
+  readonly end: WallEnd;
+  readonly pointId: string;
+  /** 真源里那对整数毫米，直读实体，不做任何 px ↔ mm 往返。 */
+  readonly atMm: MoveTarget;
+  /** 它在线上的哪一端：与 `wallAxisById` 同源，所以和墙多边形永远对齐。 */
+  readonly atPx: Px;
+  /**
+   * 另一端那对整数毫米：T6 的角度档（正交 / 15°）要一个**毫米**锚点，而 `anchorPx` 是浮点像素，
+   * 拿它反算毫米会引入一次往返。与 `anchorPx` 同产地（都取自 `wallAxisById` 的另一端），
+   * 所以两枚永远指同一头 —— 它不进 `dispatch`，只当锚，不必像 `atMm` 那样另立"直读实体"这一票。
+   */
+  readonly anchorMm: MoveTarget;
+  /** 另一端：拖到这里必然'零长墙'，压扁拖的回读判据要的就是这个值。 */
+  readonly anchorPx: Px;
+}
+
+/** 排序键：代码单元序，和 `Array.prototype.sort()` 默认序一致（测试拿它当定义比）。
+ *  绝不用 `localeCompare` —— 它对 `-` 与数字的排序规则跟代码单元序不同，两边会各排各的。 */
+function handleKey(h: DragHandle): string {
+  return `${h.wallId}:${h.end}`;
+}
+
+const WALL_ENDS: readonly WallEnd[] = ['start', 'end'];
+
+/**
+ * 把手只从**当前选中集**里生（D5）：入参 `sel` 就是 paint effect 刚拿去上色的那份 `ids`，
+ * 于是"屏幕上红着的"与"屏幕上能拖的"不可能是两批构件。
+ * 返回顺序只服务一件事：确定性（同文档同选中集 ⇒ 同数组），不给 `start` 排前面这种语义。
+ */
+export function dragHandlesOf(
+  doc: Document,
+  storeyId: string,
+  sel: Selection,
+  v: Viewport,
+): DragHandle[] {
+  const out: DragHandle[] = [];
+  for (const id of sel.ids) {
+    const wall = doc.get(id);
+    // 三种"不是本层墙"的 id（洞口的、楼层的、已经不存在的）一律跳过，不抛：
+    // 选中集来自点选，而那枚构件可能在两次渲染之间被撤销掉 —— 抛出去就是白屏。
+    if (wall?.kind !== 'wall') continue;
+    // 别层的墙不给把手：两层各自建面点，跨层拖一发就是拿一层的坐标去改另一层的点
+    // （`wallCreate` 的 resolvePointRef 明确禁止跨层复用点，这里不能给 UI 开后门）。
+    if (wall.storeyId !== storeyId) continue;
+    const axis = wallAxisById(doc, wall.id);
+    for (const end of WALL_ENDS) {
+      const pointId = endPointId(wall, end);
+      const point = requirePoint(doc, pointId, '墙端点');
+      const anchor = end === 'start' ? axis.end : axis.start;
+      out.push({
+        wallId: wall.id,
+        end,
+        pointId,
+        // atMm 直读实体、atPx 走轴线：两个产地同一个数字，用例分别钉（H1）。
+        // 只从轴取 atMm 的话，"轴算错了"和"点被人改了"会红在同一条断言上。
+        atMm: { x: point.x, y: point.y },
+        atPx: mmToPx(v, end === 'start' ? axis.start : axis.end),
+        // anchorMm 与 anchorPx 同产地、同一端：角度档吃毫米，命中与探针吃像素。
+        anchorMm: { x: anchor.x, y: anchor.y },
+        anchorPx: mmToPx(v, anchor),
+      });
+    }
+  }
+  return out.sort((a, b) => {
+    const ka = handleKey(a);
+    const kb = handleKey(b);
+    return ka < kb ? -1 : ka > kb ? 1 : 0;
+  });
+}
+
+/**
+ * 命中把手：排在 `pickOne` **之前**的独立一趟（D2 说的"比层序更强"就是这里）。
+ * 容差沿用 `PICK_TOL_PX`：屏幕上"点得中一条线"与"点得中一个点"该是同一个手感。
+ *
+ * 不要求入参已排序：并列时按 `handleKey` 升序取第一个，所以结果只由把手集合决定，
+ * 不由谁先塞进数组决定（H6 的"洗牌再问一次"靠这句成立）。
+ * 循环里是 `!(dist <= tolPx)` 而不是 `if (dist > tolPx) continue` —— 后者会让 NaN 混进命中。
+ */
+export function pickHandle(
+  handles: readonly DragHandle[],
+  point: Px,
+  tolPx: number = PICK_TOL_PX,
+): DragHandle | null {
+  let best: DragHandle | null = null;
+  let bestDist = Number.POSITIVE_INFINITY;
+  let bestKey = '';
+  for (const h of handles) {
+    const dist = Math.hypot(h.atPx.x - point.x, h.atPx.y - point.y);
+    if (!(dist <= tolPx)) continue;
+    const key = handleKey(h);
+    if (best === null || dist < bestDist || (dist === bestDist && key < bestKey)) {
+      best = h;
+      bestDist = dist;
+      bestKey = key;
+    }
+  }
+  return best;
+}
+
+/**
+ * "这一发拖得动吗" = 拿真命令试跑一次（D3）。绝不在屏幕上重写一遍轴长比较：
+ * `wallMoveEndpoint` 的守卫有六道（本墙零长、本墙墙厚、每面邻墙零长、每面邻墙墙厚、
+ * 墙缩短后洞口放不下、重影柱），少抄一道就是"看着能拖、松手才报错"。第三条用例专门
+ * 挑"本墙合格、邻墙被拖成零长"那种落点 —— 自己算的写法唯一会漏的就是它。
+ *
+ * 试跑安全的前提（读过源码才敢这么写）：`build` 是纯函数 —— 不新建实体（这个命令里一个
+ * `uuidv7` 都没有）、不改文档、同一入参两次调用结果逐字节相同。
+ * `catch` 宽到一切异常是有意的：连墙 id 打错这种 TypeError 也只有一种回答 —— 不能拖。
+ */
+export function legalDrop(
+  doc: Document,
+  wallId: string,
+  end: WallEnd,
+  target: MoveTarget,
+): boolean {
+  try {
+    wallMoveEndpoint({ wallId, end, x: target.x, y: target.y }).build(doc);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * 拖拽与松手**共用**的那一发落点：锚点与被排除的坐标都从把手自己身上取，两个调用点
+ * （`dragProbe` 与 PlanCanvas 的 `onMove`/松手）拿到的是同一个函数、同一对参数。
+ *
+ * 这一层薄壳不是 convenience，是**把 S4 第二条纪律变成可红的判据**。分开写两遍时，"探针传
+ * `null` 锚点 / 忘了排除"是可写的，而实测那种改坏时红时不红（2026-09-28 八个进程里红 5 个：
+ * 落点是否依赖锚点取决于探针挑到哪一面墙）—— 拿不稳的判据不算凭据。收进这一个出口之后，
+ * 改锚点/改排除只有"改出口"这一种写法，而它必然同时打到两个调用点：实测摘锚点红
+ * 「拖拽路径真的在吃吸附」、摘排除红「把手按在原地那一发」，两条都是 8/8 进程逐字红。
+ *
+ * 说清楚它**不**保证什么：有人绕过本出口、在探针里另抄一遍 `dropTargetOf(...)` 并漏掉排除
+ * （改坏清单 HE3），本层拦不住 —— 实测那条零红，恒等筛也兜不住它（HE3 + 摘掉恒等筛的联合
+ * 改坏 HE4 同样零红，样例房那十发候选里没有一发吸回原地）。出口买到的是"参数只有一处可写"，
+ * 不是"参数写错必然红"；后者靠的是判探针与 renderer 同一个调用那两条。
+ */
+export function handleDropTarget(
+  v: Viewport,
+  cursorPx: Px,
+  h: DragHandle,
+  field: SnapField,
+): DropTarget {
+  return dropTargetOf(v, cursorPx, h.anchorMm, field, { excludeMm: h.atMm });
+}
+
+/** 一次自动拖拽的全部坐标：`--edit-shot` 只读它，不猜靶子。 */
+export interface DragProbe {
+  readonly wallId: string;
+  readonly end: WallEnd;
+  readonly pointId: string;
+  /** 几面墙指着这个点（>= 2）：孤墙拖了证不出"邻墙跟着动"，那才是回读要判的事。 */
+  readonly sharedBy: number;
+  /** 三枚像素全部取整（见 `snapPx`）：回读脚本发得出、renderer 反算得回同一个毫米。 */
+  readonly fromPx: Px;
+  readonly toPx: Px;
+  readonly anchorPx: Px;
+  readonly targetMm: MoveTarget;
+}
+
+/**
+ * `sendInputEvent` 只收整数 DIP，而 renderer 松手时算的是
+ * `dropTargetOf(视图, 那一发整数像素, 锚点, 场, 排除原地)`。
+ * 所以探针**先取整像素、再由像素定落点**：这样"探针给的毫米"与"屏幕上真会落下的毫米"
+ * 是同一个纯函数的同一个输出，不是近似。反过来（先定毫米再算像素）会在 0.125 px/mm 这种
+ * 比例上差出最多 4mm —— 回读判据就会变成"有时候差一点"的随机红。
+ */
+function snapPx(p: Px): Px {
+  return { x: Math.round(p.x), y: Math.round(p.y) };
+}
+
+/**
+ * 候选落点按顺序试，第一个"**吸附之后**真的动了且合法"的赢。偏移全写成整数毫米 ⇒ 同一份文档、
+ * 同一个视图，每次问都给出同一个靶子（"撤销后回到原值"这条判据的前提就是靶子可复现）。
+ *
+ * 这一串候选**会**被吸走，别把"偏移取得远"当成"吸不上"。样例房一层 16 把把手 × 这十发 = 160 问
+ * （2026-09-28 实测，十个进程逐字相同）：86 问吸上了东西，其中 72 问吸成**恒等** —— 垂足 54、
+ * 正交 17、中点 1，那些落点本来就在自己那面墙的轴线上，吸附只是原样还回来；剩下 14 问被 15° 档
+ * 挪走，最大位移 55.79mm = 6.97px（仍在 `SNAP_TOL_PX` 之内），且 160 问的落点全部过得了 `legalDrop`。
+ * 所以"整数百米毫米"买到的是靶子可复现与恒等落点上的稳定，不是"探针不吃吸附"。
+ *
+ * `handles.test.ts` 的「拖拽路径真的在吃吸附」把这几个计数钉成判据（恒等 ≥ 8、改写 ≥ 1、
+ * 改写只许来自 `angle15`）。它红的那天不是回归，是要回来重量的那天：`--edit-shot` 的
+ * "松手落点逐字等于探针给的毫米"仍成立（两边同吃 `dropTargetOf`），但"拖了 800mm"这类
+ * 位移预期从此不再等于偏移本身 —— 到那天要改的是判据，不是把吸附从拖拽路径上摘掉。
+ */
+const PROBE_OFFSETS: readonly MoveTarget[] = [
+  { x: 0, y: 800 },
+  { x: 800, y: 0 },
+  { x: 0, y: -800 },
+  { x: -800, y: 0 },
+  { x: 600, y: 600 },
+  { x: -600, y: 600 },
+  { x: 600, y: -600 },
+  { x: -600, y: -600 },
+  { x: 0, y: 2400 },
+  { x: 2400, y: 0 },
+];
+
+/**
+ * 找一个"值得自动拖"的共享端点。返回 null 是合法结果（空层、孤墙层）。
+ *
+ * 注意它返回的是**哪面墙**取决于样例房每次现建的 uuidv7（接头处三面墙叠在同一片像素上，
+ * 谁赢由 T4 的层序 + ownerId 排序决定），所以调用方与测试都只判性质，不判具体 id。
+ */
+export function dragProbe(
+  doc: Document,
+  storeyId: string,
+  ops: readonly DrawOp[],
+  v: Viewport,
+): DragProbe | null {
+  // 场在入口取一次：`snapFieldOf` 要展开本层全部墙与点，放在候选循环里就是 O(候选² × 墙)。
+  // 判据（`--edit-shot` 逐字相等）要的是"探针与 renderer 同一个函数、同一个场"，不是"更快一点"。
+  const field = snapFieldOf(doc, storeyId);
+  const wallIds = doc
+    .byKind('wall')
+    .filter((w) => w.storeyId === storeyId)
+    .map((w) => w.id);
+  // dragHandlesOf 已排序 ⇒ 这一趟的候选顺序与"谁在选中集里先插入"无关
+  for (const h of dragHandlesOf(doc, storeyId, { ids: new Set(wallIds) }, v)) {
+    const sharedBy = incidentWallEnds(doc, h.pointId).length;
+    if (sharedBy < 2) continue;
+    const fromPx = snapPx(h.atPx);
+    // D5 的前提要在真窗口里成立，这一句是根：那一发点下去必须选中被拖那面墙。
+    // 判的是**取整后**的像素 —— 回读脚本发的就是它，不是 h.atPx 那个浮点数。
+    // 选不中就换一把 —— 而不是拖一面"屏幕上没红着的"墙。
+    if (pickOne(ops, fromPx)?.ownerId !== h.wallId) continue;
+    for (const off of PROBE_OFFSETS) {
+      const toPx = snapPx(mmToPx(v, { x: h.atMm.x + off.x, y: h.atMm.y + off.y }));
+      // 与 renderer 松手那一发**同一个调用**：`handleDropTarget(视图, 那一发整数像素, 这把把手, 场)`。
+      // 锚点与排除集都在那个出口里从把手身上取（见它的注释）：原地要排掉的是**被拖那枚点的坐标**
+      // 而不是 `pointId`（原地同时是端点候选又是它自己轴线上的垂足），锚点要给另一端，角度档才有方向可对齐。
+      const { mm: targetMm } = handleDropTarget(v, toPx, h, field);
+      // 极小比例视图下取整会把这一发抹回原地：那不是"移动"，撤销/重做判据会全部空转，换下一个候选。
+      if (targetMm.x === h.atMm.x && targetMm.y === h.atMm.y) continue;
+      if (!legalDrop(doc, h.wallId, h.end, targetMm)) continue;
+      return {
+        wallId: h.wallId,
+        end: h.end,
+        pointId: h.pointId,
+        sharedBy,
+        fromPx,
+        toPx,
+        anchorPx: snapPx(h.anchorPx),
+        targetMm,
+      };
+    }
+  }
+  return null;
+}
+
+/**
+ * 本层全部墙端点的整数毫米，给 `--edit-shot` 当回读快照（"拖动前 vs 拖动后 vs 撤销后"）。
+ * 只走墙端点，不遍历 `byKind('point')`：真源里的 point 只被墙/柱/板引用，而本任务的
+ * 判据全部关于墙 —— 顺带把"别层的点漏进来"变成可红的断言（快照口径与 `dragHandlesOf` 的层过滤一致）。
+ */
+export function pointSnapshot(doc: Document, storeyId: string): Record<string, MoveTarget> {
+  const out: Record<string, MoveTarget> = {};
+  for (const wall of doc.byKind('wall')) {
+    if (wall.storeyId !== storeyId) continue;
+    for (const id of [wall.startId, wall.endId]) {
+      if (out[id] !== undefined) continue; // 共享点只记一次
+      const point = requirePoint(doc, id, '墙端点');
+      out[id] = { x: point.x, y: point.y };
+    }
+  }
+  return out;
+}
+```
+
+
+> **四处形状，执行时最容易"顺手改平"的地方**：
+>
+> ① `legalDrop` 的 `catch` 是**宽到一切异常**的，且它试跑的是真命令的 `build`。别收紧它、也别在屏幕上重写轴长比较（改坏 HD6 实测：换成"自己算 `hypot(target, anchor) > thickness`"红两条 —— 「legalDrop 就是真源那道守卫的预言」与「探针吃的是吸附后的毫米」。第二那条是 T6 新长的牙：自算那一版漏掉的是**邻墙**那两道，而吸上去那一发恰好撞在邻墙的墙厚上）。
+> 还要记下它**没有**覆盖的东西：`build` 不跑 `deriveStoreyGeometry`，所以"这一发拖出一个星形接头（≥3 个方向过同一点）"在 `legalDrop` 这里预言为合法，松手后却在派生层抛。S1 的构造保证真窗口里不会走到那儿（屏幕上的点来自已有墙，接头方向数不会凭空 +1），但这条差额**记在 Task 7 的边界表里**，不许在 UI 侧另搭一套星形预判 —— 那是复述派生规则，复述的规则一定漂。
+>
+> ② `PROBE_OFFSETS` 那十发**会被吸走**，别把"偏移取得远"读成"探针不吃吸附"。样例房 16 把把手 × 10 发 = 160 问（2026-09-28 实测，十个进程逐字相同）：86 问吸上了东西，其中 72 问吸成**恒等**（垂足 54、正交 17、中点 1 —— 那些落点本来就在自己那面墙的轴线上，吸附只是原样还回来），剩下 14 问被 15° 档挪走，最大位移 55.79mm = 6.97px，仍在 `SNAP_TOL_PX` 之内；160 问的落点全部过得了 `legalDrop`。所以"整数百米毫米"买到的是**靶子可复现**与恒等落点上的稳定，不是"探针免疫吸附"。这个计数同时是 A 块那条 sweep 用例的判据来源（它只要求 `identity ≥ 8`、`rewritten ≥ 1`、改写只许来自 `angle15`）。
+>
+> ③ `dragProbe` 里恒等筛那句（`targetMm === h.atMm` 就换下一个候选）在现有夹具下**单独摘掉不红**（HB6 实测 8/8 进程零红），它的凭据是联合改坏 HE1（插 `{0,0}` + 摘筛 ⇒ 红 3 条）。这不代表可以删掉它：`--edit-shot` 的"撤销后回到原值"判的前提是探针报出的**必然不是原地空放**，而那个前提靠的就是这一句。同理第 12 条筛（`pickOne` 必须选中被拖那面墙，HC4）在单测里零红，凭据在 Step 7 的真窗口闸门 —— 与 T5 的处置口径一字不差。
+>
+> ④ `handleDropTarget` 是本文件唯一允许出现 `anchorMm` / `atMm` 作为**吸附入参**的地方。`dragProbe` 与 renderer 的松手分支都调它；谁要是直接写 `dropTargetOf(v, toPx, h.anchorMm, …)`，S4 ② 那条纪律就从"没有写法"退回"多半会红"（HE3 实测：那样写并漏掉排除，19 条一条都不红）。
+
+Run: `npx vitest run packages/scene-2d/test/handles.test.ts > /tmp/t6s5-green.log 2>&1; echo exit=$?`
+Expected: exit=0，**`Tests 19 passed`**。同一条命令**连跑十个进程**，每次都得 `19 passed`（2026-09-28 实测十个进程逐字相同）—— 这一份里有 `dragProbe` 与吸附场，两者的靶子都吃 uuidv7 的建序，"偶尔红"在这一层不是可接受的绿：`--edit-shot` 的逐字对账要的是同一个靶子，靶子换面墙就是拿判据赌运气。真赌不起的那两处（HB4 / HB3 各自附带的那一句，见 C 段第 6、7 行）已经改写成"性质判据"而不是"具体靶子判据"。
+
+---
+
+**C. 改坏验证（24 条，红在哪一条、红成什么数都是 2026-09-28 实测的，不是推演）**
+
+每条改 `packages/scene-2d/src/handles.ts` 一次、跑 `test/handles.test.ts`（19 条）、跑完立刻改回。标了"8/8"的是同一条改坏连跑八个进程逐字相同的；标了比例的（第 6、7 行）是那一条改坏在八个进程里红得**不全**，比例实测写在括号里。
+
+1. **HA1** `anchorMm` 写成本端（`{ x: point.x, y: point.y }`）（16/3）→ 「anchorMm 是另一端…」「anchorMm 就是压扁拖那一发」「拖拽路径真的在吃吸附」。第一、二条判字段，第三条判它进了吸附。
+2. **HA2** `anchorMm` 两端取反（`end === 'start' ? axis.start : axis.end`）（14/5）→ HA1 那三条 + 「空选中集没有把手…」（`anchorPx` 与 `atPx` 互换后配对判据红）+ 「探针给的落点必然合法…」（锚点那一发不再必然不合法）。**这一发与 T5 第 1 条是同一类角色反转，只是落在新字段上。**
+3. **HA3** `anchorMm` 改走 px↔mm 往返（`pxToMm(v, mmToPx(v, anchor))` 再取整）（**19/0，八次全绿，不许红**）→ 反向哨兵：整数毫米一轮往返还是它自己，这条改动只多算不改变输出。它存在的意义是把"第 1、2 条的红"与"实现整体崩了"分开。真要钉"不许往返"，靠的是 `atMm` 与 `atPx` 分别比对不同产地那两句（T5 第 3 条同款，一字未改地沿用）。
+4. **HB1** 出口不传锚点（`dropTargetOf(v, cursorPx, null, field, { excludeMm: h.atMm })`）（18/1，**8/8 恒**）→ 恒红「拖拽路径真的在吃吸附」。
+5. **HB2** 出口不排原地（去掉 `{ excludeMm: h.atMm }`）（18/1，**8/8 恒**）→ 恒红「把手按在原地那一发：排掉自己就谁也不吸，不排就吸回自己」。这一发在屏幕上就是"一松手墙没动"。
+6. **HB3** 探针传 `EMPTY_SNAP_FIELD`（仍走 `dropTargetOf`，等于把吸附整个摘掉）（17/2 七次、16/3 一次）→ 恒红两条（8/8）：「探针吃的是吸附后的毫米」与「合法性判的是吸附后的毫米」；**偶发红**「探针的三枚像素在分数尺子下…」八次一次 —— 那一发的靶子随 uuidv7 换把手。**这一行是"锚点/排除收进出口"最直接的对照**：摘掉场是探针与 renderer 一起摘，行为变了但等式还在，所以红来自判落点内容的两条用例，不是判恒等式的那条。
+7. **HB4** 探针换回 `moveTargetOf`（T5 原样：吸附整个不接）（八个进程：15/4 两次、16/3 五次、17/2 两次）→ 恒红两条（8/8，同 HB3）；**偶发红**「三枚像素在分数尺子下」八次六、「探针给的落点必然合法…」八次二 —— 后一条红的正是第 3 点那句恒等式，**它现在只判"两边同一个调用"，不判"落点等于裸毫米"**，所以摘掉吸附时它反倒可能不红：这条用例的牙齿在第 8 行。
+8. **HB5** `legalDrop` 判吸附**之前**（`legalDrop(doc, h.wallId, h.end, drop.raw)`，dispatch 仍发 `drop.mm`）（18/1，**8/8 恒**）→ 恒红「合法性判的是吸附后的毫米：裸对角合法、吸上去那一发被 240 厚墙挡下」。**这一行在 T5 的清单里没有对应物**，它是 T6 新长的牙；上一批夹具里裸与吸两侧都合法（260 问 0 分歧），所以它为真必须新搭一层 —— 别把那条用例读成"和第 7 条重复"。
+9. **HB6** 摘掉恒等筛（**19/0，8/8 全绿**）→ 诚实记录：样例房那十发候选里，第一把通过其余筛的把手报出来的落点本来就不是原地，所以这一句单独摘掉没有可见后果。它防的是"候选表以后加进会吸回原地的偏移"，凭据在第 21 行的联合改坏。**不许为它单独造用例**（造出来的那条只会判"筛存在"，不判"筛有用"）。
+10. **HC1** `PROBE_OFFSETS` 最前面插 `{ x: 0, y: 0 }`（**19/0，8/8 全绿**）→ **T5 改坏清单第 9 条说"探针那条必须红"，实测不红**：恒等筛把 `{0,0}` 那一发挡掉了。这不说明 T5 那条用例写空，只说明那一条判据的地基是"筛 + 候选表"这一对，拆开各都不承重 —— 见第 21 行。
+11. **HC2** 摘掉 `snapPx`（返回原浮点）（18/1，**8/8 恒**）→ 恒红「探针的三枚像素在分数尺子下才见取整的牙齿」。**这是对 T5 第 10 条的订正**：原清单说"样例房那三句『整数』必须红"，实测在 `fitStorey(…, 1200, 900, 60)` 那把 0.125px/mm 的尺子上**一条都不红**（百米毫米的坐标取整前后本来就是同一个数 —— 假绿）。牙齿挪到了 1200×901 那份 `781/6240` px/mm 的尺子上，那条用例自己带"现场自证原生像素是浮点"的一句。
+12. **HC3** 像素↔毫米反向对调（`toPx` 不取整、落点改由 `snapPx(h.atPx)` 算）（14/5）→ 五条同时红：「探针给的落点必然合法…」、sweep 那条、两条"吸附后的毫米"、分数尺子那条。整段写反有牙齿，与第 11 行是两种粒度。
+13. **HC4** 摘掉"按在把手上必须先选中那面墙"（**19/0，8/8 全绿**）→ 与 T5 第 12 条同判：**不保证红**，接头处哪面墙赢吃 uuidv7。凭据在 Step 7 的 `--draw-shot`（`selectedAfterPress === 被拖那面墙`）。改了不红，也不许反过来删探针那一句。
+14. **HD1** `dragHandlesOf` 摘掉墙种筛（18/1）→ 「别层的墙、洞口 id、楼层 id…」。红在 `requirePoint` 的 `TypeError`，不是断言 —— 它守的是入口（T5 第 1 条原样沿用）。
+15. **HD2** `dragHandlesOf` 摘掉层筛（18/1）→ 同一条用例，红在"给了 2 个把手"。二层的墙在一层长出把手 ⇒ 一发拖动能改两层坐标。
+16. **HD3** `handleKey` 从 `${wallId}:${end}` 改成只按 `end`（16/3）→ 「把手顺序与选中集的插入顺序无关」+ `pickHandle` 的 NaN 那条 + 「同一枚共享点上并列的两把把手」。
+17. **HD4** `pickHandle` 的 `!(dist <= tolPx)` 改成 `if (dist > tolPx) continue`（18/1）→ NaN 那条（NaN 比较恒 false ⇒ 第一把被当成命中）。与 T4 第 8 条、T5 第 5 条同源。
+18. **HD5** 并列时不比 key（18/1）→ `pickHandle([...tied].reverse(), …)` 那句（答案跟着数组顺序翻）。真实路径上两句都不红 —— 这对 synthetic 并列把手是这条判据唯一的牙齿（T5 第 6 条原样沿用）。
+19. **HD6** `legalDrop` 换成只判被拖这面墙（17/2）→ 「legalDrop 就是真源那道守卫的预言」+「探针吃的是吸附后的毫米」。见上方 ①：屏幕上自算判据，算的永远是"我这一面"。
+20. **HD7** `pointSnapshot` 摘掉层筛（18/1）→ 「键集合恰是本层墙端点的去重集」（别层的点漏进来）。T5 第 13 条原样沿用。
+21. **HE1** 插 `{0,0}` **且**摘掉恒等筛（第 10 + 第 9 行联合）（16/3）→ 三条红：「探针给的落点必然合法…」（落点退回原地）、sweep 那条、「探针吃的是吸附后的毫米」。**这一行才是第 9、10 两行的凭据**：恒等筛与候选表是一对，只在两者同时被改时才说话 —— 而 `--edit-shot` 的"撤销后回到原值"判的就是这一对。
+22. **HE2** 出口锚点写成 `h.atMm`（锚点 = 原地，角度档失去方向但不报错）（18/1，**8/8 恒**）→ 恒红「拖拽路径真的在吃吸附」。与第 4 行同一个红法：出口里那两个参数只有一处可写，写错就必然打到两条调用点。
+23. **HE3** 探针**绕开**出口、自己另抄一遍 `dropTargetOf(v, toPx, h.anchorMm, field)`（漏掉排除）（**19/0，8/8 全绿**）→ 诚实记录：这一层拦不住"故意绕开出口"的人。它不是"可以绕"的许可证 —— 判据是第 5、22 两行：只要参数写在出口里，改它们就恒红。补一条用例去抓 HE3 就是假绿（它只能判"探针调了哪个函数"，而那已经由源码结构决定）。
+24. **HE4** 绕开出口 + 摘掉恒等筛（**19/0，8/8 全绿**）→ 与第 23 行同组：恒等筛也兜不住它（样例房那十发里没有一发"绕开排除后吸回原地"的候选）。**第 9 行那句"恒等筛防的是候选表将来加偏移"在这里仍然成立，别把 HE4 读成"恒等筛没用"，也别读成"排除可以不传"。**
+
+1–2、4–5、6–8、11–12、14–22 里任何一条"改坏了还绿"，说明对应断言写空了，就地补到能红为止。第 **3、9、10、13、23、24** 六条反过来，**必须基本还绿**，且各自不承重的原因不同：3 是**反向哨兵**（整数毫米往返是它自己）；9 与 10 是**一对**（恒等筛 × 候选表，拆开都不承重，联合红三条 = 第 21 行）；13 是**判据不在单元层**（凭据在 Step 7 闸门）；23 与 24 是**结构约束的边界**（出口拦不住绕开它的人，也不假装拦得住）。六条都不许删，也不许为它们补用例 —— 把上面这几段理由原样写进代码注释与本节，否则下一个执行的人会来"补测试"，补出来的必然假绿。
+
+> **两处"红了但不是凭据"的偶发**（第 6、7 行各自附带的那一句），原因和 Step 4 开头第 ③ 条同一颗：探针挑哪面墙吃 `byKind` 的 uuidv7 序。处置口径也照抄：**判据不许靠"多半会红"** —— 恒红的那几条（HB1 / HB2 / HB5 / HE2 / HC2 / HA3）就是凭据，偶发的那两句（「三枚像素在分数尺子下…」与「探针给的落点必然合法…」的恒等式）在这两行上不算凭据，它们在别的行上是（第 11、12 行）。
+
+> **交接给 Task 7 的两条**：① `legalDrop` 只试跑 `build`，**不跑派生层** ⇒ "拖出一颗星形接头"这一发会被预言为合法、在重绘时抛（① 里已写明）。真窗口里 S1 的构造暂时挡住它，T7 若把"复制墙""批量拖"接上屏幕，这条差额就会开始可达 —— 到时候要补的是**派生层复核**（core 侧），不是 UI 侧再算一遍接头分类。② 凡"探针/命令挑哪个候选"进判据，都必须自带同坐标的合成夹具（本步第 8 行那层"共线两面 + 一枚游离点"就是这么搭的）；样例房只能提供**性质**，不能提供**靶子**。
+
+- [ ] **Step 6: desktop —— renderer 接线：工具态、草稿、删除派发、第四色标记**
+
+这一层只做**装配**：`snapping.ts` 答"落在哪"、`editing.ts` 答"要不要发命令"、`handles.ts` 答"接得到哪枚点"，PlanCanvas 把三者按到指针事件与画布上，自己**不长出任何一条判据**（T4/T5 的"一条绘制通路 + 屏幕侧零判据"纪律在这里继续生效）。屏幕侧唯一的"判据"是那 9 个诊断字段 —— 它们不是断言，是给 Step 7 那道真窗口闸门读的读数。
+
+三个文件都是**整份替换**（`apps/desktop/src/renderer/src/` 下）。先 `stores/`：
+
+`stores/editorStore.ts` —— T5 那份的基础上加 `tool` / `draft` / `setTool` / `setDraft` / `dispatchBatch`，并给 `DragState` 补两个字段（`handle` 与 `drop`，S4 ② 要求锚点与排除集**只能从按下那一把把手上取**）：
+
+```ts
+import { create } from 'zustand';
+import type { Command, TransactionLog, WallEnd } from '@dajia/core';
+import {
+  demoHouse,
+  type DraftWall,
+  type DragHandle,
+  type DropTarget,
+  type MoveTarget,
+  type Px,
+  type Tool,
+  type Viewport,
+} from '@dajia/scene-2d';
+
+// demoHouse() 只调一次（T3 的理由照旧：调两次就是"屏幕画 B、命中查 A"，且不报错）。
+const demo = demoHouse();
+
+/** 一次进行中的拖拽。中途只活在这里，不进真源（D4）。 */
+export interface DragState {
+  readonly wallId: string;
+  readonly end: WallEnd;
+  readonly pointId: string;
+  /** 按下那一发从真源读到的坐标：松手回到它 ⇒ noop，一个字都不写。 */
+  readonly atMm: MoveTarget;
+  readonly fromPx: Px;
+  readonly cursorPx: Px;
+  readonly targetMm: MoveTarget;
+  /**
+   * 按下命中的那把把手（S4 ②）：吸附的**锚点**（`handle.anchorMm`）与**排除集**
+   * （`handle.atMm`）都长在它身上，所以拖拽态必须带上它 —— 不带就只能在 `onMove` 里
+   * 重算 `pickHandle`，而重算出来的把手与按下那一把不是同一个对象，中途换墙就是改语义。
+   */
+  readonly handle: DragHandle;
+  /**
+   * 吸附后的完整落点（`raw` / `mm` / `snap`）。`targetMm` 恒等于 `drop.mm`，两个字段都留着
+   * 是因为 T5 的三处判据（noop 比对、`wallMoveEndpoint` 入参、`DropReport.targetMm`）写的是
+   * `targetMm`，而第四色标记要读的是 `drop.snap`。按下那一发 `drop === null`（S4 ①：不吸）。
+   */
+  readonly drop: DropTarget | null;
+}
+
+export interface EditorState {
+  readonly log: TransactionLog;
+  readonly storeyId: string;
+  /** null = 还没量过窗口尺寸，一帧都还没画 */
+  readonly viewport: Viewport | null;
+  /**
+   * 唯一的"该重绘了"扳机（D6）。`log` 是可变类实例，引用永远不变 ⇒ zustand 的
+   * `Object.is` 判定相等 ⇒ 只订阅 `{log}` 的组件**永不重渲**，所以这不是保险，是唯一的通路。
+   * 它只在 `dispatch`/`dispatchBatch`/`undo`/`redo` **成功**之后 +1：失败不动它 ⇒ 既不重绘也无副作用，
+   * 于是计划 2 转下游 #11（`log.lastAffected` 在抛错后留着上一批 id）在本任务里根本没有读者。
+   */
+  readonly revision: number;
+  readonly lastError: string | null;
+  readonly drag: DragState | null;
+  /** 工具态。`'wall'` 时不画把手、点选不生效，按下即起草稿（S2 的屏幕侧形状）。 */
+  readonly tool: Tool;
+  /** 进行中的墙草稿。中途只活在这里，不进真源（与 `drag` 同一条 D4 纪律）。 */
+  readonly draft: DraftWall | null;
+  setViewport: (viewport: Viewport | null) => void;
+  setDrag: (drag: DragState | null) => void;
+  setTool: (tool: Tool) => void;
+  setDraft: (draft: DraftWall | null) => void;
+  dispatch: (cmd: Command) => void;
+  /** 一批命令 = 一个循环，**不是一个事务**（见下面那条注释）。 */
+  dispatchBatch: (cmds: readonly Command[]) => void;
+  undo: () => void;
+  redo: () => void;
+}
+
+export const useEditor = create<EditorState>((set, get) => ({
+  log: demo.log,
+  storeyId: demo.lowerStoreyId,
+  viewport: null,
+  revision: 0,
+  lastError: null,
+  drag: null,
+  tool: 'select',
+  draft: null,
+  setViewport: (viewport) => set({ viewport }),
+  setDrag: (drag) => set({ drag }),
+  setTool: (tool) => set({ tool }),
+  setDraft: (draft) => set({ draft }),
+  // 失败路径**必须**只动 lastError：动 revision 就是"为一件没发生的事重绘整张图"。
+  dispatch: (cmd) => {
+    try {
+      get().log.dispatch(cmd);
+    } catch (err) {
+      set({ lastError: `拖不动：${String(err)}` });
+      return;
+    }
+    set((s) => ({ revision: s.revision + 1, lastError: null }));
+  },
+  /**
+   * 删除走这里，拉墙仍走 `dispatch`（一条命令一条路，别为了"统一"把单发也套进循环）。
+   *
+   * **它不是一个事务**：读过源码，`TransactionLog` 只有 `dispatch` / `undo` / `redo` 三个动作
+   * 与 `affected` / `depth` / `canUndo` / `canRedo` 四个读数，没有 begin/commit/rollback。
+   * 所以一次删除（N 面墙 + M 樘独立洞口）= 撤销栈上的 **N+M 步**，连按 Ctrl+Z 会一条条退回去；
+   * 而 `S5` 排的"洞口在前、墙在后"保证了第 ② 条命令不会 `requireOpening` 抛在半途 ——
+   * 顺序反了才真会留下半套状态（那条由 `editing.test.ts` 的 E1 钉住）。
+   * 代价照付：批语义（一次撤销退一整组）是计划 4 真源侧的决定，UI 不许私自拿
+   * "连发多条 + 出错回滚" 拼一个假事务：回滚要逆序重放补丁，那是第二套 `invertPatch`。
+   */
+  dispatchBatch: (cmds) => {
+    const log = get().log;
+    let applied = 0;
+    let failed: string | null = null;
+    for (const cmd of cmds) {
+      try {
+        log.dispatch(cmd);
+        applied += 1;
+      } catch (err) {
+        failed = String(err);
+        break;
+      }
+    }
+    // 应用了几条就只 +1 一次 revision：扳机管的是"该重绘了"，不是"重绘几次"。
+    // 半途失败时 `applied > 0` 也要 +1 —— 真源已经变了，不动它才是"屏幕画旧账"。
+    set((s) => ({
+      revision: applied > 0 ? s.revision + 1 : s.revision,
+      lastError: failed === null ? null : `删不动：${failed}`,
+    }));
+  },
+  undo: () => {
+    if (!get().log.undo()) {
+      set({ lastError: '没有可撤销的操作' }); // D7：栈空要给反馈，不许静默返回 false
+      return;
+    }
+    set((s) => ({ revision: s.revision + 1, lastError: null }));
+  },
+  redo: () => {
+    if (!get().log.redo()) {
+      set({ lastError: '没有可重做的操作' });
+      return;
+    }
+    set((s) => ({ revision: s.revision + 1, lastError: null }));
+  },
+}));
+```
+
+
+`stores/selectionStore.ts` —— 只多一个出口 `retain`（删除后的剪枝走它，`undo` / `redo` 不走它）：
+
+```ts
+import { create } from 'zustand';
+
+export interface SelectionState {
+  readonly ids: ReadonlySet<string>;
+  select: (id: string) => void;
+  toggle: (id: string) => void;
+  clear: () => void;
+  retain: (keep: Iterable<string>) => void;
+}
+
+/**
+ * 选中集独立于 editorStore：spec 明令它不进真源、不进撤销栈、不落库（关窗口就该忘掉，
+ * 撤销一次拖拽不该顺手改回选中）。这里每次返回**新的 Set** —— 原地 add/delete 让
+ * zustand 的 `Object.is` 判定相等、订阅者不重渲，屏幕就不跟着红，那是"点了没反应"里最难查的一种。
+ * 重复点同一个构件、清空已经空的集，都原样返回 state：不为了"看着安全"多刷一帧。
+ *
+ * `retain` 是**删除之后**的剪枝：屏幕上不去猜"这条命令的补丁会收走哪些 id"，真源落完之后拿
+ * `doc.get(id)` 问一遍（`pruneSelection` 就是那一问）。`undo` / `redo` **不走**它 —— D7 判过
+ * "撤销的是文档，不是视图"，于是撤销掉一面正被选中的墙之后，选中集里会留一个不存在的 id。
+ * 那无害（`buildDrawList` 与 `dragHandlesOf` 都按 `doc.get` 找不到就跳过），但它是 T7 的接缝。
+ */
+export const useSelection = create<SelectionState>((set) => ({
+  ids: new Set<string>(),
+  select: (id) => set((s) => (s.ids.size === 1 && s.ids.has(id) ? s : { ids: new Set([id]) })),
+  toggle: (id) =>
+    set((s) => {
+      const next = new Set(s.ids);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return { ids: next };
+    }),
+  clear: () => set((s) => (s.ids.size === 0 ? s : { ids: new Set<string>() })),
+  retain: (keep) =>
+    set((s) => {
+      const allowed = new Set(keep);
+      const next = new Set([...s.ids].filter((id) => allowed.has(id)));
+      // `next` 是 `s.ids` 的子集，所以"元素个数相等"就等价于"集合相等"⇒ 一个都没剪掉时
+      // 原样返回 state：换了新 Set 的引用会让订阅者白重渲一帧，画的是同一张图。
+      if (next.size === s.ids.size) return s;
+      return { ids: next };
+    }),
+}));
+```
+
+
+`PlanCanvas.tsx` —— 整份替换。它是本任务最长的一块，但**没有一处判断是新的**：每一句都在调 scene-2d 的出口，或者在把读数搬到诊断字段上。
+
+```ts
+import { useEffect, useRef } from 'react';
+import { requirePoint, wallMoveEndpoint } from '@dajia/core';
+import {
+  buildDrawList,
+  draftAtPress,
+  draftCommand,
+  dragHandlesOf,
+  dragProbe,
+  dropTargetOf,
+  EMPTY_SNAP_FIELD,
+  fitStorey,
+  HANDLE_COLOR,
+  HANDLE_RADIUS_PX,
+  handleDropTarget,
+  lastCreatedWall,
+  legalWallCreate,
+  mmToPx,
+  moveDraft,
+  moveTargetOf,
+  newWallDefaults,
+  pickHandle,
+  pickOne,
+  PIXEL_CHANNEL_TOL,
+  planDelete,
+  pointSnapshot,
+  PREVIEW_COLOR,
+  probeTarget,
+  pruneSelection,
+  SNAP_COLOR,
+  SNAP_MARK_HALF_PX,
+  snapFieldOf,
+  SELECTED,
+  wallProbe,
+  type DeleteOutcome,
+  type DragHandle,
+  type DragProbe,
+  type DrawOp,
+  type DraftWall,
+  type Pen,
+  type PickProbe,
+  type Px,
+  type SnapField,
+  type Tool,
+  type WallProbe,
+} from '@dajia/scene-2d';
+import { useEditor } from './stores/editorStore';
+import { useSelection } from './stores/selectionStore';
+
+export interface DropReport {
+  outcome: 'ok' | 'noop' | 'failed';
+  wallId: string;
+  end: string;
+  targetMm: { x: number; y: number };
+  /** 松手那一刻从真源读到的坐标（不是命令参数）：ok 与 failed 的分界要靠它。 */
+  pointMm: { x: number; y: number };
+}
+
+export interface KeyEventReport {
+  /**
+   * 每一发被 renderer 处理的 keydown 递增一次。**判据不能只靠 `combo`**：第 8 步的
+   * "空栈再按 Ctrl+Shift+Z"与第 6 步的"重做 Ctrl+Shift+Z"是同一串字面量，而空栈那一发
+   * 故意什么都不改（`depth`、`revision`、坐标全不动，只换一句中文）⇒ 真源侧没有任何字段
+   * 能证明它到过。`waitKeyApplied` 等的就是这个数变大，`combo` 只用来证"回声的是那一发"。
+   */
+  seq: number;
+  combo: string;
+  depth: number;
+  revision: number;
+  canUndo: boolean;
+  canRedo: boolean;
+  lastError: string | null;
+}
+
+/** 松手那一发拉出来的墙。`'rejected'` = 草稿 `legal === false`，**一条命令都没发**；`'failed'` = 发了但真源抛。 */
+export interface CreateReport {
+  outcome: 'ok' | 'rejected' | 'failed';
+  wallId: string | null;
+  /** 派发成功后从真源读的两端点 id（S6 的三票之一：`affected` 给 id，`doc.get` 复核存在）。 */
+  startId: string | null;
+  endId: string | null;
+  /** 松手前草稿的终点毫米。命令入参可能是一支 `{ pointId }`（没有毫米），所以账要记在落点上。 */
+  endMm: { x: number; y: number } | null;
+  /** 本层点数的前后两次读数：新建一面全新终点的墙 ⇒ +1，删回去 ⇒ 回到原值。 */
+  pointCountBefore: number;
+  pointCountAfter: number;
+}
+
+/**
+ * `w` / `Escape` / `Delete` / `Backspace` 的回声，与 `KeyEventReport` 同一套 `seq` 机理
+ * （T5 D8 那条理由在这里原样成立：`combo` 只证"回声的是哪一发"，等它变大抓不到"到过 renderer"）。
+ * 单独一份而不是塞进 `KeyEventReport`：撤销/重做那一发不碰工具态，这里每一发都碰。
+ */
+export interface HotkeyReport {
+  seq: number;
+  combo: string;
+  /** 这一发处理完之后的工具态：`w` 与 `Escape` 的凭据就在它身上。 */
+  tool: Tool;
+  /** 这一发处理完还有没有草稿（Escape 取消、松手、被拒都该让它变 false）。 */
+  draftActive: boolean;
+  /** 只有 `Delete` / `Backspace` 那一发给值；其余快捷键给 null。四色判"沉默是哪一种沉默"（S5）。 */
+  deleteOutcome: DeleteOutcome | null;
+  depth: number;
+  revision: number;
+  lastError: string | null;
+}
+
+/** 本层的点数。`points` 快照的键集合就是它，所以这里不再数第二遍（两个真值来源必漂）。 */
+function pointCountOf(points: Record<string, { x: number; y: number }>): number {
+  return Object.keys(points).length;
+}
+
+export interface DebugReport {
+  ops: number;
+  layers: Record<string, number>;
+  nonBlankPx: number;
+  wPx: number;
+  hPx: number;
+  selectedIds: string[];
+  selectedPx: number;
+  pick: PickProbe | null;
+  selectedAfterBlank: number;
+  // ↓ T5 的 12 个
+  revision: number;
+  depth: number;
+  canUndo: boolean;
+  canRedo: boolean;
+  lastError: string | null;
+  handlePx: number;
+  previewPx: number;
+  /** 临时线中离**当前光标** 2px 内的那一撮：只有 `previewPx` 分不出"跟手的线"与"钉在按下点的线"。 */
+  previewNearCursorPx: number;
+  points: Record<string, { x: number; y: number }>;
+  edit: DragProbe | null;
+  lastDrop: DropReport | null;
+  lastKeyEvent: KeyEventReport | null;
+  // ↓ T6 的 9 个
+  tool: Tool;
+  /** 进行中的草稿（含两端落点、吸附结论、合法性）。null = 没在拉墙。 */
+  draft: DraftWall | null;
+  /** 第四色像素总数。**只证"那一刻吸附了"，不证吸到哪**（S8）：位置的对账走毫米。 */
+  snapMarkPx: number;
+  lastCreate: CreateReport | null;
+  /** 最后一次删除计划真的发出命令的 id（与 `commands` 同序）。 */
+  deletedIds: string[];
+  /** 最后一次删除计划留给 T7 的 id。样例房里恒空 —— 那儿没有柱板可删，字段是接线凭据不是分支凭据。 */
+  unsupportedIds: string[];
+  /** 删除剪枝**之后**的选中集（`pruneSelection` 的答案直接落在这儿，不经过 store 二次推导）。 */
+  selectionAfterDelete: string[];
+  lastHotkey: HotkeyReport | null;
+  /** 拉墙的靶子：与 `edit` 同一条纪律 —— 主进程只读它，不猜坐标（`pxPerMm` 住在 renderer）。 */
+  draw: WallProbe | null;
+}
+
+declare global {
+  interface Window {
+    __dajiaDebug?: () => DebugReport;
+  }
+}
+
+const DASH: Record<Pen['lineType'], number[]> = {
+  solid: [],
+  dashed: [6, 4],
+  'dash-dot': [12, 4, 2, 4],
+};
+
+const BG = '#ffffff';
+
+/** 临时线的虚实：比轴线更疏一点，免得和 `DASH.dashed` 的轴线混成一类。 */
+const PREVIEW_DASH = [4, 3];
+
+function rgbOf(hex: string): readonly [number, number, number] {
+  return [
+    Number.parseInt(hex.slice(1, 3), 16),
+    Number.parseInt(hex.slice(3, 5), 16),
+    Number.parseInt(hex.slice(5, 7), 16),
+  ];
+}
+
+const SEL_RGB = rgbOf(SELECTED);
+const HANDLE_RGB = rgbOf(HANDLE_COLOR);
+const PREVIEW_RGB = rgbOf(PREVIEW_COLOR);
+const SNAP_RGB = rgbOf(SNAP_COLOR);
+
+/**
+ * 抗锯齿让线边缘是渐变而不是纯色，所以按通道 ±TOL 数，不比 RGB 全等（T4 的口径）。
+ * 容差取自 `handles.ts` 的 `PIXEL_CHANNEL_TOL`：判据与画家不许各拿一个数 ——
+ * `handles.test.ts` 最后那条"三种颜色互相分得开"用的也是它。
+ */
+function nearChannel(px: number, target: number): boolean {
+  return Math.abs(px - target) <= PIXEL_CHANNEL_TOL;
+}
+
+/** 没有 ctx 时（理论分支）用的零值，与 `countPixels` 的返回同一形状。 */
+const NO_PIXELS: Buckets = {
+  nonBlankPx: 0,
+  selectedPx: 0,
+  handlePx: 0,
+  previewPx: 0,
+  previewNearCursorPx: 0,
+  snapMarkPx: 0,
+};
+
+function paint(ctx: CanvasRenderingContext2D, ops: readonly DrawOp[]): void {
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  ctx.lineCap = 'round';
+  for (const op of ops) {
+    ctx.strokeStyle = op.pen.color;
+    ctx.lineWidth = op.pen.widthPx;
+    ctx.setLineDash(DASH[op.pen.lineType]);
+    if (op.kind === 'polygon') {
+      ctx.beginPath();
+      op.pts.forEach((p, i) => {
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      });
+      ctx.closePath();
+      if (op.fill !== null) {
+        ctx.fillStyle = op.fill;
+        ctx.fill();
+        ctx.fillStyle = BG;
+      }
+      ctx.stroke();
+    } else if (op.kind === 'line') {
+      ctx.beginPath();
+      ctx.moveTo(op.from.x, op.from.y);
+      ctx.lineTo(op.to.x, op.to.y);
+      ctx.stroke();
+    } else {
+      ctx.setLineDash([]);
+      ctx.fillStyle = op.pen.color;
+      ctx.font = `${String(op.sizePx)}px system-ui, sans-serif`;
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(op.text, op.at.x, op.at.y);
+    }
+  }
+  ctx.setLineDash([]);
+}
+
+/** D2：把手不进指令表，所以它有专用画家。圆而不是方块 —— 端点上盖得住、旁边盖不住。 */
+function paintHandles(ctx: CanvasRenderingContext2D, handles: readonly DragHandle[]): void {
+  ctx.fillStyle = HANDLE_COLOR;
+  for (const h of handles) {
+    ctx.beginPath();
+    ctx.arc(h.atPx.x, h.atPx.y, HANDLE_RADIUS_PX, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+/** 拖拽中的临时线：起点是按下那一发的像素，终点是当前光标（不是 targetMm 的像素 ——
+ *  中途要让光标指哪画哪，落点那对整数毫米是松手才生效的东西）。 */
+function paintPreview(
+  ctx: CanvasRenderingContext2D,
+  fromPx: Px,
+  cursorPx: Px,
+): void {
+  ctx.strokeStyle = PREVIEW_COLOR;
+  ctx.fillStyle = PREVIEW_COLOR;
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash(PREVIEW_DASH);
+  ctx.beginPath();
+  ctx.moveTo(fromPx.x, fromPx.y);
+  ctx.lineTo(cursorPx.x, cursorPx.y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.arc(cursorPx.x, cursorPx.y, HANDLE_RADIUS_PX, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/**
+ * 吸附标记：一枚 5×5 的实心方块，画在**吸附后的落点**上（不是光标上 —— 光标那儿已经有
+ * `paintPreview` 的绿点）。它是第四色，所以它唯一能证的事是"这一发光标确实被吸走了"；
+ * 吸到哪一律走毫米（`draft.end.mm` / `lastCreate.endMm`），像素不参与对账。
+ *
+ * `left/top` 先取整再画：`mmToPx` 给浮点，浮点原点的 `fillRect` 会把 5×5 摊成 6×6 的
+ * 半透明边，而 `nearChannel` 的 ±40 容差吃不下与白底混过色的高通道（`#ff8a00` 的 G=138，
+ * 五成混白就是 196 > 178）—— 于是同一个标记在两种视图下数出来是 25 与 0。
+ * 取整之后恒 25 个纯色像素（`SNAP_MARK_HALF_PX * 2` 见 `snapping.ts`）。
+ */
+function paintSnapMarker(ctx: CanvasRenderingContext2D, atPx: Px): void {
+  ctx.fillStyle = SNAP_COLOR;
+  ctx.fillRect(
+    Math.round(atPx.x - SNAP_MARK_HALF_PX),
+    Math.round(atPx.y - SNAP_MARK_HALF_PX),
+    SNAP_MARK_HALF_PX * 2,
+    SNAP_MARK_HALF_PX * 2,
+  );
+}
+
+interface Buckets {
+  nonBlankPx: number;
+  selectedPx: number;
+  handlePx: number;
+  previewPx: number;
+  previewNearCursorPx: number;
+  snapMarkPx: number;
+}
+
+/**
+ * 五个桶一次扫完。分开扫要五次 `getImageData`（每次都是跨进程边界的拷贝），一次扫是同一件事的几倍便宜。
+ * 桶与桶**可以重叠**（一根线正好压在把手上），所以这里数的是"有多少像素像这个颜色"，
+ * 不是像素分配 —— 判据全是 `> 0` / `=== 0`，不拿它们做加减。
+ *
+ * `cursorPx` 只服务第五个桶：临时线的**颜色**证不了它跟手（`previewPx` 在一根钉死于
+ * 按下点的线上一样的 >20），所以要数"离当前光标 2px 内的临时线像素"。窗口给 2px 而不是 0，
+ * 是因为 `offsetX` 在缩放的 Windows 上可能带小数，而 `sendInputEvent` 发出去的是取整值。
+ * 拖拽之外（`cursorPx === null`）这一桶恒 0 —— 没人拿它判"没在拖"的那种情形。
+ */
+function countPixels(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  cursorPx: Px | null,
+): Buckets {
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const width = canvas.width;
+  const out: Buckets = {
+    nonBlankPx: 0,
+    selectedPx: 0,
+    handlePx: 0,
+    previewPx: 0,
+    previewNearCursorPx: 0,
+    snapMarkPx: 0,
+  };
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i]!;
+    const g = data[i + 1]!;
+    const b = data[i + 2]!;
+    if (r < 250 || g < 250 || b < 250) out.nonBlankPx += 1;
+    if (nearChannel(r, SEL_RGB[0]) && nearChannel(g, SEL_RGB[1]) && nearChannel(b, SEL_RGB[2])) {
+      out.selectedPx += 1;
+    }
+    if (nearChannel(r, HANDLE_RGB[0]) && nearChannel(g, HANDLE_RGB[1]) && nearChannel(b, HANDLE_RGB[2])) {
+      out.handlePx += 1;
+    }
+    if (nearChannel(r, PREVIEW_RGB[0]) && nearChannel(g, PREVIEW_RGB[1]) && nearChannel(b, PREVIEW_RGB[2])) {
+      out.previewPx += 1;
+      if (cursorPx !== null) {
+        const col = (i / 4) % width;
+        const row = Math.floor(i / 4 / width);
+        if (Math.abs(col - cursorPx.x) <= 2 && Math.abs(row - cursorPx.y) <= 2) {
+          out.previewNearCursorPx += 1;
+        }
+      }
+    }
+    // 第六桶**不开位置窗口**：标记就画在吸附后的落点上，而落点在哪儿正是判据要问的东西 ——
+    // 拿"落点像素"当窗口去数自己的像素，等于用结论证结论。所以这一桶只数颜色，位置对账一律走毫米。
+    if (nearChannel(r, SNAP_RGB[0]) && nearChannel(g, SNAP_RGB[1]) && nearChannel(b, SNAP_RGB[2])) {
+      out.snapMarkPx += 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * 画布像素坐标。`offsetX/offsetY` 相对**事件目标**，而目标在窗口级监听下仍然是命中到的那块
+ * canvas（它铺满内容区、1 canvas px = 1 CSS px，没有 CSS 缩放掺进来），所以它与 `DrawOp`
+ * 的坐标同一单位、同一原点 —— 指针拖出画布外时目标会变成 `<html>`，那时 `offsetX` 就不是
+ * 画布坐标了，但 `moveTargetOf` 拿到的仍是同一张屏幕上的数，最多是落点偏一点，不会算错单位。
+ * 非有限值返回 null：`quantizeMm` 会抛 RangeError，而那一发既没什么可写、也没什么可撤销。
+ */
+function pointerPx(event: PointerEvent): Px | null {
+  const x = Number.isFinite(event.offsetX) ? event.offsetX : event.clientX;
+  const y = Number.isFinite(event.offsetY) ? event.offsetY : event.clientY;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { x, y };
+}
+
+export function PlanCanvas(): React.JSX.Element {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // 指针事件的靶子必须是**刷上屏的那一份**指令表与把手表（T4 的纪律延续到把手上）：
+  // 副本与屏幕一旦漂开，"点得中的就是画出来的"就只剩注释在守。
+  const opsRef = useRef<readonly DrawOp[]>([]);
+  const handlesRef = useRef<readonly DragHandle[]>([]);
+  // 诊断值住 ref 不进 paint 依赖（D6）：它们只给 __dajiaDebug 读，进了依赖就等于
+  // "每一次抛错都自己制造一次重绘"，那 revision 的设计就白做了。
+  const dropRef = useRef<DropReport | null>(null);
+  const keyRef = useRef<KeyEventReport | null>(null);
+  // 快捷键的"到过"计数器：与 keyRef 同生命周期，只给 __dajiaDebug 读（同样不进依赖）。
+  const keySeqRef = useRef<number>(0);
+  // "这次按下落在把手上"的同步副本：window 级监听器只注册一次、依赖里没有 drag，
+  // 它判断"当前这串 move/up 属不属于一次拖"只能读 ref。屏幕上的那一半住 store（管重绘）。
+  // T6 起它同时表示"这串手势归我管"：把手拖与拉墙的按下都置 true，`onMove`/`onUp` 再按
+  // store 里是 `drag` 还是 `draft` 分岔 —— 两条路共用一个手势标志，因为一次按下只会走一条。
+  const activeRef = useRef<boolean>(false);
+  // 吸附的场：paint effect 每次上屏时刷新，指针事件只读不建（`snapFieldOf` 要展开本层全部墙，
+  // 放在 `pointermove` 里就是每发一次整层遍历）。它必须是**刷上屏那一份**：场与屏幕不同步，
+  // 判据就会说"吸上了一个屏幕上根本不存在的东西"。
+  const fieldRef = useRef<SnapField>(EMPTY_SNAP_FIELD);
+  /** 最后一次删除计划的三本账（发出的 / 留给 T7 的 / 剪完之后剩下的），给 `__dajiaDebug` 读。 */
+  const deleteRef = useRef<{
+    deletedIds: string[];
+    unsupportedIds: string[];
+    selectionAfterDelete: string[];
+  }>({ deletedIds: [], unsupportedIds: [], selectionAfterDelete: [] });
+  /** 最后一次拉墙的回执（`CreateReport`）。同 `dropRef`：诊断值，不进 paint 依赖。 */
+  const createRef = useRef<CreateReport | null>(null);
+  const hotRef = useRef<HotkeyReport | null>(null);
+  /** 只数 `w`/`Escape`/`Delete`/`Backspace` 这一路，与 `keySeqRef` 各数各的（见 `HotkeyReport`）。 */
+  const hotSeqRef = useRef<number>(0);
+
+  const log = useEditor((s) => s.log);
+  const storeyId = useEditor((s) => s.storeyId);
+  const viewport = useEditor((s) => s.viewport);
+  const revision = useEditor((s) => s.revision);
+  const drag = useEditor((s) => s.drag);
+  const tool = useEditor((s) => s.tool);
+  const draft = useEditor((s) => s.draft);
+  const setViewport = useEditor((s) => s.setViewport);
+  const setDrag = useEditor((s) => s.setDrag);
+  // `setTool` / `dispatchBatch` 不在这里取：只有快捷键那一路用它们，而那一路全部走
+  // `useEditor.getState()`（闭包不捕获会变的东西 ⇒ 依赖表留空才是诚实的）。
+  // `setDraft` 要取：按下/移动/松手三步都在指针路径里写草稿，它进那条 useEffect 的依赖表。
+  const setDraft = useEditor((s) => s.setDraft);
+  const dispatch = useEditor((s) => s.dispatch);
+  const undo = useEditor((s) => s.undo);
+  const redo = useEditor((s) => s.redo);
+  const ids = useSelection((s) => s.ids);
+  const select = useSelection((s) => s.select);
+  const toggle = useSelection((s) => s.toggle);
+  const clear = useSelection((s) => s.clear);
+
+  useEffect(() => {
+    const fit = (): void => {
+      const wPx = Math.max(1, Math.floor(window.innerWidth));
+      const hPx = Math.max(1, Math.floor(window.innerHeight));
+      const canvas = canvasRef.current;
+      if (canvas !== null) {
+        canvas.width = wPx;
+        canvas.height = hPx;
+        canvas.style.width = `${String(wPx)}px`;
+        canvas.style.height = `${String(hPx)}px`;
+      }
+      setViewport(fitStorey(log.document, storeyId, wPx, hPx, 60));
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, [log, storeyId, setViewport]);
+
+  // 一条绘制通路：指令表 → 把手 → 临时线/标记，同一个 effect、同一次 ctx 获取。
+  // `revision` 进了依赖却没被读：它是扳机不是数据（见 editorStore 的 D6 注释）。
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas === null || viewport === null) return;
+    const ctx = canvas.getContext('2d');
+    if (ctx === null) return;
+    const doc = log.document;
+    const ops = buildDrawList(doc, storeyId, viewport, { ids });
+    opsRef.current = ops;
+    paint(ctx, ops);
+    // 场与指令表在同一趟里取：指针事件的靶子、吸附的候选，全都来自刚刷上屏那一份几何。
+    fieldRef.current = snapFieldOf(doc, storeyId);
+    // S2：拉墙时屏幕上不许有把手。不画还不算完 —— `handlesRef` 也要清空，否则
+    // `pickHandle` 会在墙模式下继续吃上一趟留下的把手（按下就该起草稿，不该拖老墙）。
+    const handles = tool === 'wall' ? [] : dragHandlesOf(doc, storeyId, { ids }, viewport);
+    handlesRef.current = handles;
+    paintHandles(ctx, handles);
+    if (drag !== null) {
+      paintPreview(ctx, drag.fromPx, drag.cursorPx);
+      const dragSnap = drag.drop?.snap ?? null;
+      if (dragSnap !== null) paintSnapMarker(ctx, mmToPx(viewport, dragSnap.mm));
+    }
+    if (draft !== null) {
+      // 临时线**恒**画到裸光标（`draft.cursorPx`），不画到吸附点：吸附点由橙色方块说。
+      paintPreview(ctx, draft.start.px, draft.cursorPx);
+      if (draft.start.snap !== null) paintSnapMarker(ctx, mmToPx(viewport, draft.start.snap.mm));
+      if (draft.end.snap !== null) paintSnapMarker(ctx, mmToPx(viewport, draft.end.snap.mm));
+    }
+  }, [log, storeyId, viewport, revision, ids, drag, draft, tool]);
+
+  // 按下：先问把手，再问指令表（D2 说的"把手命中排在 pickOne 之前"就是这一行的顺序）。
+  const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>): void => {
+    // 没有 viewport 就什么都没有：handlesRef 与 opsRef 由 paint effect 填，而它在
+    // viewport === null 时直接 return（屏幕上是空的）。在这里返回假视口等于自欺。
+    if (viewport === null) return;
+    const px = pointerPx(event.nativeEvent);
+    if (px === null) return;
+    const hit = pickHandle(handlesRef.current, px);
+    if (hit !== null) {
+      // D5：拖之前先选中，同一趟里做完。于是"拖的那面墙"与"红着的那面墙"是同一个表达式给的。
+      select(hit.wallId);
+      const point = requirePoint(log.document, hit.pointId, '端点');
+      const target = moveTargetOf(viewport, px);
+      activeRef.current = true;
+      setDrag({
+        wallId: hit.wallId,
+        end: hit.end,
+        pointId: hit.pointId,
+        atMm: { x: point.x, y: point.y },
+        fromPx: hit.atPx,
+        cursorPx: px,
+        targetMm: target,
+        // S4 ①：按下那一发**不吸**。把手已经在原地，吸一下只会把 `targetMm` 挪回 `atMm`
+        // 之外的别处，于是"零移动 ⇒ noop"那条判据（D4）会在第一发上就判错。
+        handle: hit,
+        drop: null,
+      });
+      return;
+    }
+    if (tool === 'wall') {
+      // S2：拉墙时点选完全不生效 —— 既不 `pickOne` 也不 `clear()`。不清选中集是因为退出墙模式后
+      // 用户期望看见的仍是刚才红着的那批构件；在这里清掉等于让"按一次 w"有隐蔽副作用。
+      const field = fieldRef.current;
+      // 两次调用喂同一对入参 ⇒ `start.mm` 与 `end.mm` 必然相同（`draftAtPress` 的定义就是
+      // `dropTargetOf(v, px, null, field)`）。宁可多跑一次吸附，也不在 renderer 里手拼
+      // `DropTarget`：那是第二条 px→mm 通路，D4 禁的东西。
+      const start = draftAtPress(viewport, px, field);
+      const seed: DraftWall = {
+        storeyId,
+        start,
+        cursorPx: px,
+        end: dropTargetOf(viewport, px, null, field),
+        legal: false,
+      };
+      activeRef.current = true;
+      // 按下即试跑：零长草稿的 `legal` 恒 false，屏幕上的临时线从第一发起就是"不许松手"的颜色语义。
+      setDraft({ ...seed, legal: legalWallCreate(log.document, seed) });
+      return;
+    }
+    const opHit = pickOne(opsRef.current, px);
+    if (opHit === null) {
+      clear();
+      return;
+    }
+    if (event.shiftKey) toggle(opHit.ownerId);
+    else select(opHit.ownerId);
+  };
+
+  // 中途与松手挂 window：拖出画布外也要继续画、也要能结束（元素级 handler 在指针离开后就收不到了，
+  // 于是"临时线钉在屏幕上"是这类实现的标配 bug）。
+  useEffect(() => {
+    const onMove = (event: PointerEvent): void => {
+      if (!activeRef.current || viewport === null) return;
+      const px = pointerPx(event);
+      if (px === null) return;
+      const s = useEditor.getState();
+      const current = s.drag;
+      if (current !== null) {
+        // S4 ②：中途走 `handleDropTarget` —— 锚点与被排除的原地都从**按下那一把**把手身上取，
+        // 与 `dragProbe` 里那一发是同一个函数、同一对入参，于是"探针给的毫米"与
+        // "屏幕上真会落下的毫米"仍然是同一个纯函数的同一个输出。
+        const drop = handleDropTarget(viewport, px, current.handle, fieldRef.current);
+        setDrag({ ...current, cursorPx: px, targetMm: drop.mm, drop });
+        return;
+      }
+      const currentDraft = s.draft;
+      if (currentDraft !== null) {
+        // 终点以起点为锚（正交/15° 只有相对起点才成立），并排掉起点坐标（否则吸自己、拖不开）。
+        setDraft(moveDraft(s.log.document, currentDraft, viewport, px, fieldRef.current));
+      }
+    };
+    const onUp = (): void => {
+      if (!activeRef.current) return;
+      activeRef.current = false;
+      const s = useEditor.getState();
+      const currentDraft = s.draft;
+      if (currentDraft !== null) {
+        setDraft(null);
+        const before = pointCountOf(pointSnapshot(s.log.document, s.storeyId));
+        const cmd = draftCommand(currentDraft, newWallDefaults(s.log.document, s.storeyId));
+        if (cmd === null) {
+          // 预言说不合法 ⇒ 一条命令都不发。这一支是 `--draw-shot` 里"拒绝就不留痕迹"那一步的凭据。
+          createRef.current = {
+            outcome: 'rejected',
+            wallId: null,
+            startId: null,
+            endId: null,
+            endMm: currentDraft.end.mm,
+            pointCountBefore: before,
+            pointCountAfter: before,
+          };
+          return;
+        }
+        dispatch(cmd);
+        const after = useEditor.getState();
+        const doc = after.log.document;
+        // `lastCreatedWall` 的三条纪律之一：只在成功分支里**同步**读 `affected`，读完拿文档复核。
+        const created =
+          after.lastError === null ? lastCreatedWall(doc, after.log.affected, after.storeyId) : null;
+        createRef.current = {
+          // `failed` 而不是 `rejected`：命令已经发出去了，是真源抛的。`dispatch` 的 `legalDrop`
+          // 缺位（D3/D6）在这里同样成立 —— 预言说行、真源说不行，那就是两边漂了，必须留一条能红的路。
+          outcome: after.lastError === null && created !== null ? 'ok' : 'failed',
+          wallId: created?.wallId ?? null,
+          startId: created?.startId ?? null,
+          endId: created?.endId ?? null,
+          endMm: currentDraft.end.mm,
+          pointCountBefore: before,
+          pointCountAfter: pointCountOf(pointSnapshot(doc, after.storeyId)),
+        };
+        // 建完就选中它（D5 的入口唯一）：下一步"拖刚建的墙""删刚建的墙"都要它在选中集里，
+        // 而把手只从选中集生成 —— 不选中的话屏幕上会出现一面没有把手的新墙。
+        if (created !== null) select(created.wallId);
+        return;
+      }
+      const current = s.drag;
+      setDrag(null);
+      if (current === null || viewport === null) return;
+      // D4：零移动不发命令。否则每点一次把手都往撤销栈塞一步空操作，
+      // 真东西就被埋了 —— spec 验收 2 要的是"连按撤销能看到一串串改动退回去"。
+      if (current.targetMm.x === current.atMm.x && current.targetMm.y === current.atMm.y) {
+        dropRef.current = {
+          outcome: 'noop',
+          wallId: current.wallId,
+          end: current.end,
+          targetMm: current.targetMm,
+          pointMm: current.atMm,
+        };
+        return;
+      }
+      // 不预检 legalDrop（见 editorStore 那条注）：让真源判，抛错由 dispatch 的 catch 记。
+      dispatch(wallMoveEndpoint({ wallId: current.wallId, end: current.end, ...current.targetMm }));
+      const after = useEditor.getState();
+      const point = requirePoint(after.log.document, current.pointId, '端点');
+      dropRef.current = {
+        outcome: after.lastError === null ? 'ok' : 'failed',
+        wallId: current.wallId,
+        end: current.end,
+        targetMm: current.targetMm,
+        pointMm: { x: point.x, y: point.y },
+      };
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+  }, [viewport, dispatch, setDrag, setDraft, select]);
+
+  // D7：Ctrl+Z / Ctrl+Shift+Z（mac 上 meta 同义）。挂在 window 而不是 canvas：
+  // 快捷键不该要求"鼠标正好停在图上"。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'z' && event.key !== 'Z') return;
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      const isRedo = event.shiftKey;
+      if (isRedo) redo();
+      else undo();
+      const s = useEditor.getState();
+      keySeqRef.current += 1;
+      keyRef.current = {
+        seq: keySeqRef.current,
+        combo: isRedo ? 'Ctrl+Shift+Z' : 'Ctrl+Z',
+        depth: s.log.depth,
+        revision: s.revision,
+        canUndo: s.log.canUndo,
+        canRedo: s.log.canRedo,
+        lastError: s.lastError,
+      };
+      // undo/redo 都不碰选中集（D7）：撤销的是文档，不是视图。
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [undo, redo]);
+
+  // T6 的四发快捷键。与上面那发 `z` **分家成两个监听器**：那一路逐字不动（T5 的 R1–R7 与
+  // `--edit-shot` 的 21 判据全压在它身上），而这一路每一发都碰工具态。两路各数各的 `seq`
+  // （`keySeqRef` / `hotSeqRef`）：判据等的是"我这一路到过"，混在一个计数器上就分不清是哪一发。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const key = event.key;
+      const isWall = key === 'w' || key === 'W';
+      const isEscape = key === 'Escape';
+      const isDelete = key === 'Delete' || key === 'Backspace';
+      if (!isWall && !isEscape && !isDelete) return;
+      event.preventDefault();
+      // 全部状态从 `getState()` 现取，闭包不捕获任何会变的东西 ⇒ 依赖表留空是诚实的。
+      const s = useEditor.getState();
+      const sel = useSelection.getState();
+      let combo: string;
+      let outcome: DeleteOutcome | null = null;
+      if (isWall) {
+        combo = 'W';
+        // 已经在墙模式就是空操作（`setTool` 给同一个值，zustand 照样换 state 对象，
+        // 但 `tool` 引用不变 ⇒ 订阅者比的是 `s.tool` ⇒ 不重渲）。不清草稿：连按 w 不该吞手势。
+        s.setTool('wall');
+      } else if (isEscape) {
+        combo = 'Escape';
+        // `s` 是**这一发之前**的快照（`set()` 换的是 store 里的新对象），下面四个分支都读它：
+        // 判的是"这一发该不该取消点什么"，不是"取消完了以后还剩什么"。
+        if (s.draft !== null) s.setDraft(null);
+        // 取消草稿后**留在**墙模式：Escape 的第一含义是"这一下不拉了"，不是"我要退出工具"。
+        else if (s.tool === 'wall') s.setTool('select');
+        // 不在墙模式也没有草稿：退回"什么都不选"，与点空白同一条语义。
+        else sel.clear();
+        // 按着指针时按 Escape ⇒ 手势当场作废：`activeRef` 不清的话，下一次 `onUp` 会拿
+        // 一个已经作废的 `drag`/`draft` 再发一条命令（松手那一下本来不该有落点了）。
+        if (s.drag !== null) s.setDrag(null);
+        if (s.drag !== null || s.draft !== null) activeRef.current = false;
+      } else {
+        combo = key === 'Delete' ? 'Delete' : 'Backspace';
+        const plan = planDelete(s.log.document, s.storeyId, s.tool, sel.ids);
+        outcome = plan.outcome;
+        if (plan.commands.length > 0) {
+          s.dispatchBatch(plan.commands);
+          deleteRef.current.deletedIds = [...plan.candidateIds];
+        } else {
+          // 四条出口里只有 'ok' 发命令。'empty' / 'ignored-in-wall-mode' / 'unsupported' 一律
+          // 留一本空账 —— 判据据此分"上次删了东西"与"上次什么都没删"，而不是读一句中文。
+          deleteRef.current.deletedIds = [];
+        }
+        deleteRef.current.unsupportedIds = [...plan.unsupported];
+        const after = useEditor.getState();
+        // 剪枝在**派发之后**、拿新文档问：`wallDelete` 级联掉的东西只有真源知道（口径见它注释）。
+        const kept = pruneSelection(after.log.document, after.storeyId, useSelection.getState().ids);
+        useSelection.getState().retain(kept);
+        deleteRef.current.selectionAfterDelete = kept;
+      }
+      const after = useEditor.getState();
+      hotSeqRef.current += 1;
+      hotRef.current = {
+        seq: hotSeqRef.current,
+        combo,
+        tool: after.tool,
+        draftActive: after.draft !== null,
+        deleteOutcome: outcome,
+        depth: after.log.depth,
+        revision: after.revision,
+        lastError: after.lastError,
+      };
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas === null || viewport === null) return;
+    const previous = window.__dajiaDebug;
+    window.__dajiaDebug = (): DebugReport => {
+      const ops = opsRef.current;
+      const layers: Record<string, number> = {};
+      for (const o of ops) layers[o.pen.layer] = (layers[o.pen.layer] ?? 0) + 1;
+      const ctx = canvas.getContext('2d');
+      // `s` 先取：第五个桶要拿**当下 store 里的光标**去量像素。这一句是整个判据的要害 ——
+      // 位置取自 store（活的那一份），颜色取自屏幕（刷上屏的那一份），两者对不上就是"没跟手"。
+      const s = useEditor.getState();
+      // 光标来源两支：拖把手时读 `drag.cursorPx`（T5 的第五桶判据一字不动），拉墙时读
+      // `draft.cursorPx`。两支都非空的那一帧不存在 —— 一个手势只会走一条路。
+      const counted =
+        ctx === null
+          ? NO_PIXELS
+          : countPixels(ctx, canvas, s.drag?.cursorPx ?? s.draft?.cursorPx ?? null);
+      return {
+        ops: ops.length,
+        layers,
+        nonBlankPx: counted.nonBlankPx,
+        wPx: canvas.width,
+        hPx: canvas.height,
+        selectedIds: [...ids],
+        selectedPx: counted.selectedPx,
+        pick: probeTarget(ops, viewport),
+        selectedAfterBlank: ids.size,
+        revision: s.revision,
+        depth: s.log.depth,
+        canUndo: s.log.canUndo,
+        canRedo: s.log.canRedo,
+        lastError: s.lastError,
+        handlePx: counted.handlePx,
+        previewPx: counted.previewPx,
+        previewNearCursorPx: counted.previewNearCursorPx,
+        points: pointSnapshot(s.log.document, s.storeyId),
+        edit: dragProbe(s.log.document, s.storeyId, ops, viewport),
+        lastDrop: dropRef.current,
+        lastKeyEvent: keyRef.current,
+        // ↓ T6 的 9 个。全部读 `s`（活的那一份）与 `ops`（刷上屏的那一份），不读闭包里的
+        // `tool`/`draft` —— 闭包可能是上一帧的，而判据要的是"按下这一发之后"。
+        tool: s.tool,
+        draft: s.draft,
+        snapMarkPx: counted.snapMarkPx,
+        lastCreate: createRef.current,
+        deletedIds: deleteRef.current.deletedIds,
+        unsupportedIds: deleteRef.current.unsupportedIds,
+        selectionAfterDelete: deleteRef.current.selectionAfterDelete,
+        lastHotkey: hotRef.current,
+        draw: wallProbe(s.log.document, s.storeyId, ops, viewport),
+      };
+    };
+    return () => {
+      window.__dajiaDebug = previous;
+    };
+  }, [viewport, ids, revision]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      onPointerDown={onPointerDown}
+      style={{ display: 'block', touchAction: 'none', cursor: 'crosshair' }}
+    />
+  );
+}
+```
+
+**Step 6 的九处形状**（每一处都有"为什么长这样"，改之前先读它）：
+
+① **`fieldRef` 在 paint effect 里刷新，指针事件只读不建**（`:453`）。`snapFieldOf` 要展开本层全部墙、每面墙取两端点 —— 放进 `pointermove` 就是每发一次整层遍历（一次拖拽轻松上千发）。它必须与 `opsRef`/`handlesRef` 同趟刷新：吸附的候选若非"刷上屏那一份几何"，判据就会说"吸上了一个屏幕上根本不存在的东西"。
+
+② **墙模式把手不画，`handlesRef` 还要清空**（`:456-457`）。只跳过 `paintHandles` 是不够的：`pickHandle` 吃的是 ref，留着上一趟的把手，按下那一发就会去拖老墙而不是起草稿。这一句是 S2"拉墙时点选完全不生效"的落地形状。
+
+③ **`activeRef` 是一个手势标志，不是两个**（`:385` 注释）。把手拖与拉墙共用它：`onMove`/`onUp` 进去之后再按 store 里是 `drag` 还是 `draft` 分岔。分两个 ref 会漏一种状态 —— 一次按下只会走一条路，但"这串手势归我管"这件事只有一份真相。
+
+④ **两发 `keydown` 监听器分家**（`:636` 与 `:664`），各数各的 `seq`（`keySeqRef` / `hotSeqRef`）。T5 那一路一字不改（`--edit-shot` 的 21 条判据与 R1–R7 全压在它身上），这一路每一发都碰工具态。合在一个计数器上，`waitHot` 与 `waitKeyApplied` 就分不清"到过 renderer 的是哪一路"。
+
+⑤ **`Escape` 分支读的是 `s` = 这一发之前的快照**（`:684`）。`set()` 换的是 store 里的新对象，`s.draft` 判的是"这一发该不该取消点什么"，不是"取消完了还剩什么"。四个分支的顺序就是判据的顺序：有草稿先取消草稿并**留在**墙模式；没草稿且在墙模式才退回 select；都不在才清选中集。
+
+⑥ **删除的剪枝在派发之后、拿新文档问**（`:708-711`）。屏幕上不去猜补丁收了哪些 id（`pruneSelection` 就是那一问），而 `retain` 在"一个都没剪掉"时原样返回 state（`selectionStore` 里那句 `next.size === s.ids.size`）—— 换了新 Set 的引用会让订阅者白重渲一帧，画的还是同一张图。
+
+⑦ **第五个桶的光标来源两支**（`:748`）：`s.drag?.cursorPx ?? s.draft?.cursorPx ?? null`。T5 那条 `previewNearCursorPx` 判据一字不动（它只会在拖把手时有值），拉墙时同一个桶读草稿的裸光标 —— 于是 S4 第三条纪律"临时线恒画到裸光标"在两条路上都有像素凭据。两支都非空的那一帧不存在（③）。
+
+⑧ **`draw: wallProbe(...)` 每次调用现算**（`:781`）。它与 `edit: dragProbe(...)` 同一条纪律：主进程只读靶子，不猜坐标（`pxPerMm` 住在 renderer）。代价是**文档一变靶子就换** —— 所以 Step 7 的 `runDrawShot` 只在第 0 步读一次并把 JSON 留档，第 15 步拿"几何回到基线之后重新算出的那一发"与它逐字对账；中途任何一步再问一次，拿到的是"已经建了一面墙之后"的场里挑出的另一发。
+
+⑨ **`pointCountOf` 在 renderer 与 main 各有一份，但都只数 `points` 快照的键**（`:108` / Step 7 的 `pointCountOf`）。两边数的都是**同一个真值来源的同一个派生**（`pointSnapshot` 的键集合），不是"各数一遍语义"。若哪天 main 侧改成读 `lastCreate.pointCountAfter`，那两处就会在撤销/重做那两步漂开 —— 那两个数只在松手那一发有值。
+
+**harness 的凭据与边界**（这份代码在计划编写期是怎么验的，写在明处）：仓库里 `apps/desktop/.tscheck/` 不存在，本任务是**先落地再跑**；所以 Step 6 的验证命令就是仓库那条 `pnpm --filter @dajia/desktop typecheck`（Task 3 已把 `zustand` 装上，PlanCanvas 与两个 store 走的是真 react + 真 zustand 类型）。编写期能跑的只有离线 harness：把这三份文件放进一份临时目录，`tsconfig` 继承 `tsconfig.base.json`、`paths` 把 `@dajia/core` 指到 `packages/core/src/index.ts`、`@dajia/scene-2d` 指到本任务 Step 2/4 落地的 `src/index.ts`，react 与 react-dom 的类型沿 `apps/desktop/node_modules` 自然解析（**真类型，不是替身**），只有 `zustand` 用一份手写 `declare module` 替身（签名按 v5 的用法面写窄：`create<T>(initializer)` 直接给 hook、`getState`、`set` 的部分更新）。跑 `npx tsc --noEmit` ⇒ **exit=0**（2026-09-28 实测，无输出）。
+
+它**不证**三件事，别把它们写进凭据：vite 打包能不能过（harness 没有 bundler）、真窗口的行为（那是 Step 7 那道 `--draw-shot` 的唯一凭据）、zustand 真实实现的订阅语义（`retain` 那句"返回同一个 state 就不重渲"吃的是 v5 的 `Object.is` 默认判定，harness 用的替身不实现订阅）。
+
+- [ ] **Step 7: desktop —— 主进程的 `--draw-shot`：十六步拉墙现场，坐标全部来自探针**
+
+`vitest.config.ts` 的 include 只有 `packages/*/test/**` 与 `scripts/test/**` —— `apps/**` 一行单测都没有。所以 Step 6 那套屏幕状态机（工具态、草稿、四色标记、删除派发）在仓库里**只有这一个客观凭据**：真起一个窗口，用 `sendInputEvent` 发指针与按键，再把 `__dajiaDebug()` 的读数逐条钉成 PASS。这与 T5 的 `--edit-shot` 是同一层东西，判据数量翻一倍（21 → 27），因为拉墙一条路上有**三种"什么都没发生"**要分开：`rejected`（预言不合法、一条命令都没发）、`ignored-in-wall-mode`（墙模式下的故意沉默）、`unsupported`（留给 T7 的构件）—— 全塞进一句中文报错就等于没有判据，所以 `DeleteOutcome` 的四色直接进报告。
+
+写这一份代码时钉死四条纪律，它们决定了下面十六步为什么长那样：
+
+**① 坐标一个都不硬编码。** 三发像素（`startPx` / `endPx` / `midPx`）、两对毫米、厚度与墙高，全部来自第 0 步读到的 `draw`（就是 renderer 里现算的 `wallProbe`）。写死一个数，等于让这道闸门替样例房背书：样例房一改，闸门就红在"坐标对不上"而不是"行为不对"上。
+
+**② 探针只读一次，第 15 步拿它逐字对账。** `draw` 是每次调用 `__dajiaDebug()` 现算的（Step 6 第 ⑧ 条），文档一变靶子就换。所以第 0 步 `JSON.stringify(probe)` 留档，终态再算一次比"逐字相同"—— 这一句是整个序列"没留痕"的总账，比"点数回到基线"更严：点数回到基线但探针换了一发，说明几何看着一样、靶子已换。
+
+**③ 序列必须把文档送回基线几何。** 第 8 步建的那面墙要在第 12 步删掉、第 13 步撤销回来、第 14 步重做再删掉，终态停在"已删除"上。原因很实在：`desktop-shot.mjs` 那六条基线判据（`ops === 31` 等）读的是**最后落盘的那一份报告**，序列留一面墙在文档里，那六条就红在"样例房指令数变了"上 —— 与①同一条理由，闸门不许红在错的地方。
+
+**④ 等不到就抛，绝不把"没等到"当成通过。** 18 处等待（12 处 `waitUntil` + 4 处 `waitHot` + 2 处沿用 T5 的 `waitKeyApplied`），每处上限 10 秒，超时抛中文；每一处拿到报告之后还有一串硬 `throw`。最坏 180 秒加上起窗与加载，所以 Step 7 末把这一条 electron 调用的超时给到 `300_000`（**只给这一条**，`shot`/`pick-shot`/`edit-shot` 仍是 180 秒 —— 它们的等待数量没变）。
+
+`waitHot` 与 `pointCountOf` 这两个新 helper 各堵一个具体的坑：
+
+- **`waitHot` 要同时等 `seq` 变大与 `combo` 相等。** 只等 `seq`：第 9 步那发 `Delete` 若根本没进 renderer，会读到上一发（`W`）的回声然后判过 —— 于是"故意沉默"这一步测的是"上一发快捷键"。只比 `combo`：同一串字面量在序列里出现两次（两次 `Escape`，第 4 步与第 10 步），读到旧的那一发也长得对。与 T5 的 `waitKeyApplied` 同一条 D8 纪律，只是这里读的是 `lastHotkey`（撤销/重做那一发不碰工具态，所以两路各一份回声、各一个计数器）。
+- **`pointCountOf` 只认 `points` 快照的键数**，不读 `lastCreate.pointCountBefore/After`。那两个数只在松手那一发有值，而撤销 / 重做 / 删除三步的账要靠**当前快照**问 —— 两处各数一遍必然漂（renderer 侧那份同名函数同一口径，见 Step 6 第 ⑨ 条）。它在快照为空时直接抛：样例房没了和 renderer 死了都不是"点数为 0"。
+
+**A. `apps/desktop/src/main/index.ts` —— 追加一段（放在 `runEditShot` 之后、`whenReady` 之前）**
+
+这一段**不新增任何 import**：`app` / `BrowserWindow` / `writeFileSync` 在文件开头已经进了；下面用到的既有出口 `argPath`、`createWindow`、`whenLoaded`、`waitForDebug`、`focusForInput`、`pressPx`、`movePx`、`releasePx`、`keyCombo`、`waitUntil`、`waitKeyApplied`、`pickShotRequested`、`editShotRequested`、`runShot`、`runPickShot`、`runEditShot`，以及类型 `ClickPoint` / `EditReportShape` / `MmShape`，**全部沿用 T3–T5 落下来的那一份，一字不改**（`DrawReportShape extends EditReportShape` 就是接在它后面读的）。会红的只有两种可能：某个 helper 的名字被 T5 之后的重构改过，或者 `EditReportShape` 少了一个字段 —— 前者按报错改调用点，后者说明 Step 6 的报告字段没落地，**不许**为了过编译把判据删掉。
+
+```ts
+
+type ToolShape = 'select' | 'wall';
+type SnapKindShape = 'endpoint' | 'midpoint' | 'foot' | 'ortho' | 'angle15';
+type DeleteOutcomeShape = 'ok' | 'empty' | 'ignored-in-wall-mode' | 'unsupported';
+
+interface SnapShape {
+  kind: SnapKindShape;
+  pointId: string | null;
+  mm: MmShape;
+  distPx: number;
+}
+
+/** 与 renderer 的 `DraftPoint` 对齐：`px` 是**按下处**，`snap.mm` 是**落点**（E23 的那两个值）。 */
+interface DraftPointShape {
+  mm: MmShape;
+  px: ClickPoint;
+  snap: SnapShape | null;
+}
+
+interface DropTargetShape {
+  raw: MmShape;
+  mm: MmShape;
+  snap: SnapShape | null;
+}
+
+interface DraftShape {
+  storeyId: string;
+  start: DraftPointShape;
+  cursorPx: ClickPoint;
+  end: DropTargetShape;
+  legal: boolean;
+}
+
+interface CreateShape {
+  outcome: 'ok' | 'rejected' | 'failed';
+  wallId: string | null;
+  startId: string | null;
+  endId: string | null;
+  endMm: MmShape | null;
+  pointCountBefore: number;
+  pointCountAfter: number;
+}
+
+interface HotkeyShape {
+  seq: number;
+  combo: string;
+  tool: ToolShape;
+  draftActive: boolean;
+  deleteOutcome: DeleteOutcomeShape | null;
+  depth: number;
+  revision: number;
+  lastError: string | null;
+}
+
+/** 与 `WallProbe` 逐字段对齐：主进程只读它，不猜坐标（`pxPerMm` 住在 renderer）。 */
+interface WallProbeShape {
+  startPx: ClickPoint;
+  startMm: MmShape;
+  startPointId: string;
+  endPx: ClickPoint;
+  endMm: MmShape;
+  midPx: ClickPoint;
+  lengthMm: number;
+  defaults: { thicknessMm: number; heightMm: number };
+}
+
+interface DrawReportShape extends EditReportShape {
+  tool: ToolShape;
+  draft: DraftShape | null;
+  snapMarkPx: number;
+  lastCreate: CreateShape | null;
+  deletedIds: string[];
+  unsupportedIds: string[];
+  selectionAfterDelete: string[];
+  lastHotkey: HotkeyShape | null;
+  draw: WallProbeShape | null;
+}
+
+function drawShotRequested(): boolean {
+  return process.argv.includes('--draw-shot');
+}
+
+async function readDrawReport(win: BrowserWindow, label: string): Promise<DrawReportShape> {
+  const value = (await win.webContents.executeJavaScript('window.__dajiaDebug()')) as
+    | DrawReportShape
+    | undefined;
+  if (value === undefined) {
+    throw new Error(`__dajiaDebug() 没返回报告（${label}）—— renderer 死了，不是"还没刷完"`);
+  }
+  return value;
+}
+
+/**
+ * 点数的唯一真值来源是 `points` 快照的键集合（renderer 的 `pointCountOf` 同一口径，**不数第二遍语义**）。
+ * 这里不读 `lastCreate.pointCountBefore/After`：那两个数只在松手那一发有值，而撤销 / 重做 / 删除
+ * 三步的账要靠**当前快照**问 —— 两处各数一遍必然漂，所以判据只认这一个函数。
+ */
+function pointCountOf(report: DrawReportShape, label: string): number {
+  const n = Object.keys(report.points).length;
+  if (n === 0) throw new Error(`${label}：points 快照是空的，样例房没了还是 renderer 没起来`);
+  return n;
+}
+
+async function clickPx(win: BrowserWindow, p: ClickPoint): Promise<void> {
+  await pressPx(win, p);
+  await releasePx(win, p);
+}
+
+/**
+ * 快捷键回声的等待：`seq` 必须变大，**且** `combo` 必须是这一发。
+ * 少了 `seq` 这一条，第 9 步的 `Delete` 若没进 renderer，会读到上一发（`W`）的回声然后判过；
+ * 少了 `combo`，"回声的是哪一发"就无从判断 —— 与 T5 的 `waitKeyApplied` 同一条 D8 纪律，
+ * 只是这里读的是 `lastHotkey`（撤销/重做那一发不碰工具态，两类快捷键各一份回声）。
+ */
+async function waitHot(
+  win: BrowserWindow,
+  before: DrawReportShape,
+  combo: string,
+  label: string,
+): Promise<HotkeyShape> {
+  const report = await waitUntil(
+    `快捷键没生效（${label}）：renderer 的 keydown 没跑到`,
+    () => readDrawReport(win, label),
+    (r) => r.lastHotkey !== null && r.lastHotkey.seq > (before.lastHotkey?.seq ?? 0),
+  );
+  const hot = report.lastHotkey;
+  if (hot === null) throw new Error(`不可达：waitUntil 判定非空后读回 null（${label}）`);
+  if (hot.combo !== combo) {
+    throw new Error(`${label}：读到的是另一发快捷键 ${hot.combo}，期望 ${combo}`);
+  }
+  return hot;
+}
+
+/**
+ * 十六步（0…15）。**整条序列必须把文档送回基线几何**：`desktop-shot.mjs` 前六条判据读的是
+ * 最后落盘的那一份报告（`ops === 31` 等），所以第 8 步建的那面墙要在第 12 步删掉、
+ * 第 13/14 步各撤销与重做一次，终态停在"已删除"的基线上。
+ *
+ * 坐标一个都不硬编码：三发像素、两对毫米、厚度与墙高全部来自第 0 步读到的探针。
+ * 探针**只在第 0 步取一次**并留档 —— 它是每次调用现算的（文档一变就换靶子），
+ * 后面再问一次会拿到"建了一面墙之后的场"里挑出的另一发。
+ *
+ * 每一步的读数存成独立 const，最后一起写盘：TS 的使用先于声明会替我们守住
+ * "少跑一步就编译不过"（与 `runEditShot` 同一条纪律）。
+ */
+async function runDrawShot(win: BrowserWindow, out: string): Promise<void> {
+  await whenLoaded(win);
+  await waitForDebug(win);
+  focusForInput(win);
+
+  // 0) 起始读数 + 探针。
+  const start = await readDrawReport(win, '起始');
+  const probe = start.draw;
+  if (probe === null) {
+    throw new Error('探针给不出可画的空白落点 —— 样例房或视口改过了，先重跑 wallProbe 的六道筛');
+  }
+  const probeJson = JSON.stringify(probe);
+  const basePoints = pointCountOf(start, '起始');
+  if (start.snapMarkPx !== 0) {
+    throw new Error(`起始没有草稿也没有拖拽，第四色应当恒 0，实测 ${String(start.snapMarkPx)}`);
+  }
+  if (start.tool !== 'select' || start.draft !== null) {
+    throw new Error('起始状态不是"选择模式、无草稿"');
+  }
+
+  // 1) W 进拉墙。
+  await keyCombo(win, 'W', []);
+  const afterW = await waitHot(win, start, 'W', '按 W 之后');
+  if (afterW.tool !== 'wall') throw new Error(`W 没把工具切到 wall：${afterW.tool}`);
+  if (afterW.draftActive) throw new Error('按 W 不该顺手起草稿');
+  if (afterW.depth !== start.depth) throw new Error('按 W 动了真源');
+
+  // 2) 在既有端点上按下：草稿起来、起点吸上那枚点、零长 ⇒ 不合法。
+  await pressPx(win, probe.startPx);
+  const pressed = await waitUntil(
+    '按下起点没起草稿',
+    () => readDrawReport(win, '按下起点后'),
+    (r) => r.draft !== null,
+  );
+  const draft0 = pressed.draft;
+  if (draft0 === null) throw new Error('不可达：waitUntil 判定非空后读回 null（按下起点后）');
+  const startSnap = draft0.start.snap;
+  if (startSnap === null || startSnap.kind !== 'endpoint') {
+    throw new Error(`起点必须吸到端点档，实测 ${String(startSnap?.kind)}`);
+  }
+  if (startSnap.pointId !== probe.startPointId) throw new Error('起点吸上的不是探针指的那枚点');
+  if (JSON.stringify(draft0.start.px) !== JSON.stringify(probe.startPx)) {
+    throw new Error('按下处的像素与探针给的像素不是同一发');
+  }
+  if (draft0.legal) throw new Error('零长草稿不该合法（S4 ①：按下不吸方向档，长度也没出来）');
+  if (pressed.snapMarkPx === 0) {
+    throw new Error('起点吸上了既有端点，第四色标记却没画出来');
+  }
+
+  // 3) 移到探针终点：落点毫米逐字等于探针给的那对，标记仍在，真源一个字没动。
+  await movePx(win, probe.endPx);
+  const moved = await waitUntil(
+    '移到探针终点后落点没对上',
+    () => readDrawReport(win, '移到终点后'),
+    (r) => r.draft !== null && JSON.stringify(r.draft.end.mm) === JSON.stringify(probe.endMm),
+  );
+  const draft1 = moved.draft;
+  if (draft1 === null) throw new Error('不可达：移到终点后草稿没了');
+  if (!draft1.legal) throw new Error('探针说过合法的落点，屏幕上判不合法');
+  const endSnap = draft1.end.snap;
+  if (endSnap === null) {
+    throw new Error('方向档必命中：探针偏移全是轴对齐或 45°（实测 distPx = 0）');
+  }
+  if (endSnap.pointId !== null) {
+    throw new Error(`终点引了别人的点（${endSnap.pointId}），与筛 ② 矛盾`);
+  }
+  if (draft1.cursorPx.x !== probe.endPx.x || draft1.cursorPx.y !== probe.endPx.y) {
+    throw new Error('草稿的裸光标不是探针那一发像素（临时线该画到这里）');
+  }
+  if (moved.previewNearCursorPx === 0) {
+    throw new Error('临时线没跟到光标（S4 第三条纪律）');
+  }
+  if (moved.snapMarkPx === 0) {
+    throw new Error('落点吸上了却没有第四色标记 —— 用户只会觉得"拖不到想去的地方"');
+  }
+  if (moved.depth !== start.depth || moved.revision !== start.revision) {
+    throw new Error('中途把草稿写进真源了（D4）');
+  }
+  if (pointCountOf(moved, '移到终点后') !== basePoints) throw new Error('中途点数变了 —— 半途建墙');
+
+  // 4) Escape 取消：草稿没了、标记也没了，账一步都不许多。
+  const beforeEsc = await readDrawReport(win, '取消前');
+  await keyCombo(win, 'Escape', []);
+  const afterEsc = await waitHot(win, beforeEsc, 'Escape', '按 Escape 之后');
+  if (afterEsc.draftActive) throw new Error('Escape 没取消草稿');
+  if (afterEsc.tool !== 'wall') throw new Error('有草稿时 Escape 只该取消草稿，不该退出拉墙模式');
+  const cancelled = await waitUntil(
+    '取消后标记或账没回到原样',
+    () => readDrawReport(win, '取消读数'),
+    (r) => r.snapMarkPx === 0 && r.draft === null && r.depth === beforeEsc.depth,
+  );
+  if (pointCountOf(cancelled, '取消读数') !== basePoints) throw new Error('取消一次草稿留下了点');
+  const depthAtCancel = cancelled.depth;
+
+  // 5) 原地按下即松手：预言不合法 ⇒ 一条命令都不发（`rejected` 那一支）。
+  await pressPx(win, probe.startPx);
+  await releasePx(win, probe.startPx);
+  const rejected = await waitUntil(
+    '原地松手没给出 rejected 回执',
+    () => readDrawReport(win, '原地松手后'),
+    (r) => r.lastCreate !== null && r.lastCreate.outcome === 'rejected',
+  );
+  const rej = rejected.lastCreate;
+  if (rej === null) throw new Error('不可达：rejected 分支读不到回执');
+  if (rej.wallId !== null || rej.startId !== null || rej.endId !== null) {
+    throw new Error('被拒的一发不该留下任何 id');
+  }
+  if (rej.pointCountBefore !== rej.pointCountAfter) throw new Error('被拒的一发多了点');
+  if (rejected.depth !== depthAtCancel) throw new Error('被拒的一发入了栈');
+
+  // 6) 第二次按下起点 —— 与第 2 步同一发像素，这次不松手。
+  await pressPx(win, probe.startPx);
+  const pressed2 = await waitUntil(
+    '第二次按下没起草稿',
+    () => readDrawReport(win, '第二次按下'),
+    (r) => r.draft !== null,
+  );
+
+  // 7) 移到终点
+  await movePx(win, probe.endPx);
+  const moved2 = await waitUntil(
+    '第二次移动落点没对上',
+    () => readDrawReport(win, '第二次移到终点'),
+    (r) => r.draft !== null && JSON.stringify(r.draft.end.mm) === JSON.stringify(probe.endMm),
+  );
+
+  // 8) 松手建墙：点数 +1、起点复用探针那枚点、新建即选中。
+  await releasePx(win, probe.endPx);
+  const built = await waitUntil(
+    '松手没建出墙',
+    () => readDrawReport(win, '松手建墙后'),
+    (r) => r.lastCreate !== null && r.lastCreate.outcome === 'ok',
+  );
+  const builtCreate = built.lastCreate;
+  if (builtCreate === null) throw new Error('不可达：建墙分支读不到回执');
+  if (builtCreate.startId !== probe.startPointId) {
+    throw new Error('新建的墙没有与既有墙共享起点 —— 接头全断（S7）');
+  }
+  if (JSON.stringify(builtCreate.endMm) !== JSON.stringify(probe.endMm)) {
+    throw new Error('回执落点与探针预言不一致');
+  }
+  if (builtCreate.pointCountAfter !== basePoints + 1) {
+    throw new Error(
+      `一面全新终点的墙应恰好多一枚点：${String(basePoints)} → ${String(builtCreate.pointCountAfter)}`,
+    );
+  }
+  const newWallId = builtCreate.wallId;
+  if (newWallId === null || !built.selectedIds.includes(newWallId)) {
+    throw new Error('新建即选中没生效（S6）');
+  }
+  if (built.selectedPx < 100) throw new Error(`选中红像素太少：${String(built.selectedPx)}`);
+  if (built.tool !== 'wall') throw new Error('建完一面墙不该自动退出拉墙模式');
+  const builtPoints = pointCountOf(built, '松手建墙后');
+
+  // 9) 拉墙模式下按 Delete：四色之一的"故意沉默"。
+  const beforeWallDel = await readDrawReport(win, '拉墙模式删除前');
+  await keyCombo(win, 'Delete', []);
+  const ignored = await waitHot(win, beforeWallDel, 'Delete', '拉墙模式下按 Delete');
+  const ignoredReport = await readDrawReport(win, '拉墙删除后');
+  if (ignored.deleteOutcome !== 'ignored-in-wall-mode') {
+    throw new Error(`拉墙模式的删除沉默读成 ${String(ignored.deleteOutcome)}`);
+  }
+  if (ignoredReport.depth !== beforeWallDel.depth) throw new Error('拉墙模式下的删除发了命令');
+  if (pointCountOf(ignoredReport, '拉墙删除后') !== builtPoints) throw new Error('拉墙模式下的删除动了点');
+
+  // 10) Escape 退出拉墙（此时没有草稿 ⇒ 回到 select）。
+  const beforeExit = await readDrawReport(win, '退出拉墙前');
+  await keyCombo(win, 'Escape', []);
+  const exited = await waitHot(win, beforeExit, 'Escape', '按 Escape 退出拉墙');
+  if (exited.tool !== 'select') throw new Error(`Escape 没退回 select：${exited.tool}`);
+
+  // 11) 点新墙中点：筛 ④ 保证那里建墙前一片空白，所以现在命中的只可能是新墙。
+  await clickPx(win, probe.midPx);
+  const clicked = await waitUntil(
+    '点不中新墙（筛 ③ 的像素下限在真窗口里失效）',
+    () => readDrawReport(win, '点新墙后'),
+    (r) => r.selectedIds.length === 1 && r.selectedIds[0] === newWallId,
+  );
+  if (clicked.selectedPx < 100) throw new Error(`点中了但屏幕上没有红色像素：${String(clicked.selectedPx)}`);
+  if (clicked.handlePx === 0) throw new Error('回到 select 了却没画把手');
+
+  // 12) Backspace 删除：墙与它的孤儿点一起消失，选中集剪枝成空。
+  const beforeDel = await readDrawReport(win, '删除前');
+  await keyCombo(win, 'Backspace', []);
+  const delHot = await waitHot(win, beforeDel, 'Backspace', '按 Backspace 删除');
+  if (delHot.deleteOutcome !== 'ok') throw new Error(`删除读成 ${String(delHot.deleteOutcome)}`);
+  const deleted = await waitUntil(
+    '删除后账没回到基线',
+    () => readDrawReport(win, '删除后'),
+    (r) => pointCountOf(r, '删除后') === basePoints && r.selectionAfterDelete.length === 0,
+  );
+  if (deleted.deletedIds.length !== 1 || deleted.deletedIds[0] !== newWallId) {
+    throw new Error(`deletedIds 不是那一面墙：${JSON.stringify(deleted.deletedIds)}`);
+  }
+  if (deleted.unsupportedIds.length !== 0) {
+    throw new Error(`样例房里不该有 unsupported 构件：${JSON.stringify(deleted.unsupportedIds)}`);
+  }
+
+  // 13) Ctrl+Z：墙连同它那枚孤儿点一起回来（撤销不恢复选中 —— D7）。
+  const beforeUndo = await readDrawReport(win, '撤销前');
+  await keyCombo(win, 'Z', ['ctrl']);
+  const undoKey = await waitKeyApplied(win, beforeUndo, '撤销');
+  const undid = await waitUntil(
+    '撤销没把墙和它的点带回来',
+    () => readDrawReport(win, '撤销后'),
+    (r) => pointCountOf(r, '撤销后') === basePoints + 1,
+  );
+  if (undid.selectedIds.includes(newWallId)) throw new Error('撤销把选中也恢复了（D7 说不许）');
+
+  // 14) Ctrl+Shift+Z：再删回去，序列停在基线几何上。
+  const beforeRedo = await readDrawReport(win, '重做前');
+  await keyCombo(win, 'Z', ['ctrl', 'shift']);
+  const redoKey = await waitKeyApplied(win, beforeRedo, '重做');
+  const redid = await waitUntil(
+    '重做没把墙再删掉',
+    () => readDrawReport(win, '重做后'),
+    (r) => pointCountOf(r, '重做后') === basePoints,
+  );
+
+  // 15) 终态：几何回到第 0 步，探针重新算出的靶子与第 0 步**逐字相同**。
+  //     这一句是整个序列"没留痕"的总账，也是前六条基线判据能继续读最后一份报告的前提。
+  const fin = await waitUntil(
+    '终态探针没回到基线靶子',
+    () => readDrawReport(win, '终态'),
+    (r) => r.draw !== null && JSON.stringify(r.draw) === probeJson,
+  );
+  if (JSON.stringify(fin.points) !== JSON.stringify(start.points)) {
+    throw new Error('终态的 points 快照与起始不同 —— 序列改写了基线几何');
+  }
+  if (fin.tool !== 'select' || fin.draft !== null) throw new Error('终态没回到"选择模式、无草稿"');
+  if (fin.snapMarkPx !== 0) throw new Error('终态还留着吸附标记');
+
+  const out1 = {
+    ...fin,
+    // ↓ 探针与逐步读数全部留档：脚本侧判据拿它们对账，改一步就少一个键。
+    probeJsonAtStart: probeJson,
+    basePoints,
+    depthAtStart: start.depth,
+    revisionAtStart: start.revision,
+    toolAfterW: afterW.tool,
+    depthAfterW: afterW.depth,
+    startSnapKind: startSnap.kind,
+    startSnapPointId: startSnap.pointId,
+    pressPxMatches: JSON.stringify(draft0.start.px) === JSON.stringify(probe.startPx),
+    legalAtPress: draft0.legal,
+    snapMarkAtPress: pressed.snapMarkPx,
+    endSnapKind: endSnap.kind,
+    endSnapDistPx: endSnap.distPx,
+    endSnapPointId: endSnap.pointId,
+    legalAtMove: draft1.legal,
+    cursorPxAtMove: draft1.cursorPx,
+    previewNearCursorPx: moved.previewNearCursorPx,
+    snapMarkAtMove: moved.snapMarkPx,
+    depthAtMove: moved.depth,
+    revisionAtMove: moved.revision,
+    pointsAtMove: pointCountOf(moved, '移到终点后'),
+    toolAfterEsc: afterEsc.tool,
+    snapMarkAfterEsc: cancelled.snapMarkPx,
+    rejectedOutcome: rej.outcome,
+    rejectedWallId: rej.wallId,
+    rejectedCounts: `${String(rej.pointCountBefore)}→${String(rej.pointCountAfter)}`,
+    rejectedDepth: rejected.depth,
+    depthAtCancel,
+    pressed2Draft: pressed2.draft !== null,
+    moved2Mm: moved2.draft?.end.mm ?? null,
+    builtOutcome: builtCreate.outcome,
+    builtWallId: newWallId,
+    builtStartId: builtCreate.startId,
+    builtEndId: builtCreate.endId,
+    builtEndMm: builtCreate.endMm,
+    builtCounts: `${String(builtCreate.pointCountBefore)}→${String(builtCreate.pointCountAfter)}`,
+    builtSelectedPx: built.selectedPx,
+    builtTool: built.tool,
+    builtSelected: built.selectedIds.includes(newWallId),
+    builtPointsBefore: builtCreate.pointCountBefore,
+    builtPointsAfter: builtCreate.pointCountAfter,
+    builtDepth: built.depth,
+    deleteOutcomeInWallMode: ignored.deleteOutcome,
+    depthInWallMode: ignored.depth,
+    toolAfterEscape: exited.tool,
+    clickedSelectedIds: clicked.selectedIds,
+    clickedSelectedPx: clicked.selectedPx,
+    clickedHandlePx: clicked.handlePx,
+    deleteOutcomeAfterBackspace: delHot.deleteOutcome,
+    deletedCount: deleted.deletedIds.length,
+    unsupportedCount: deleted.unsupportedIds.length,
+    comboAfterUndo: undoKey.combo,
+    pointsAfterUndo: pointCountOf(undid, '撤销后'),
+    selectedAfterUndo: undid.selectedIds.length,
+    comboAfterRedo: redoKey.combo,
+    pointsAfterRedo: pointCountOf(redid, '重做后'),
+    probeMatchesStart: JSON.stringify(fin.draw) === probeJson,
+    pointsMatchStart: JSON.stringify(fin.points) === JSON.stringify(start.points),
+  };
+  writeFileSync(out, `${JSON.stringify(out1, null, 2)}\n`, 'utf8');
+  process.stdout.write(`${JSON.stringify(out1)}\n`);
+}
+```
+
+**B. 同一个文件里的 `whenReady`：三段换四段**
+
+T5 那段 `if (editShotRequested()) … else if (pickShotRequested()) … else runShot …` 整块换成：
+
+```ts
+/**
+ * 四段分支（T5 的三段再加一段）。顺序是**从具体到通用**：`--draw-shot` 判在
+ * `editShotRequested()` 之前 —— 四个 runner 共用 `--shot` 那份落盘路径，谁先命中谁写盘。
+ * 脚本侧同样只允许一个具体 flag 生效（`mode` 只有一个值），两边配成一对。
+ */
+void app.whenReady().then(async () => {
+  const shotPath = argPath('--shot');
+  const win = createWindow(shotPath === null);
+  if (shotPath === null) {
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow(true);
+    });
+    return;
+  }
+  let code = 0;
+  try {
+    if (drawShotRequested()) await runDrawShot(win, argPath('--draw-shot') ?? shotPath);
+    else if (editShotRequested()) await runEditShot(win, argPath('--edit-shot') ?? shotPath);
+    else if (pickShotRequested()) await runPickShot(win, argPath('--pick-shot') ?? shotPath);
+    else await runShot(win, shotPath);
+  } catch (err) {
+    process.stderr.write(`--shot 失败：${String(err)}\n`);
+    code = 1;
+  }
+  app.exit(code);
+});
+```
+
+> **顺序是从具体到通用**：`--draw-shot` 必须在 `editShotRequested()` 之前判，`--edit-shot` 在 `--pick-shot` 之前，`runShot` 兜最后。理由是四个 runner **共用 `--shot` 那一份落盘路径**（`argPath('--shot') !== null` 才是"进 shot 模式、隐藏窗口、跑完 exit"的开关），谁先命中谁写盘 —— 反过来排不会编译错，只会让 `--draw-shot` 悄悄跑成 `--edit-shot` 那份报告，然后在 27 行判据里红成一地对不上的读数。
+>
+> `?? shotPath` 那三个兜底照 T5 的原样保留（脚本一定会成对给路径；手写命令少给一个时宁可退回 `--shot` 那份路径，也不要让 runner 拿 `null` 当文件名去 `writeFileSync`）。
+
+`scripts/desktop-shot.mjs`：`try` / `finally { rmSync(dir, ...) }` 的骨架照旧，`out` 的定义保持在它上面不动。把 T5 那段 `wantPick` + `wantEdit` + `electronArgs` 整段换成下面这段 —— **三个 `includes` 换成一条 `mode` 判定链**：开关要是能同时生效，`--edit --draw` 就会给主进程两个具体 flag，而分支只认第一个，脚本侧却按 `wantDraw` 攒判据 ⇒ 红在"报告里没这个键"上。`mode` 只有一个值，这件事就不可能发生：
+
+```js
+const mode = process.argv.includes('--draw')
+  ? 'draw'
+  : process.argv.includes('--edit')
+    ? 'edit'
+    : process.argv.includes('--pick')
+      ? 'pick'
+      : 'shot';
+const wantPick = mode === 'pick';
+const wantEdit = mode === 'edit';
+const wantDraw = mode === 'draw';
+// 具体 flag 与 `--shot` 成对给：`--shot out` 不是"再写一份报告"，主进程用它判定进不进 shot 模式
+// （隐藏窗口、跑完 exit）。少了它，`--draw-shot` 那份路径根本没人读。
+const specificFlag = wantDraw
+  ? '--draw-shot'
+  : wantEdit
+    ? '--edit-shot'
+    : wantPick
+      ? '--pick-shot'
+      : null;
+const electronArgs = [
+  '.',
+  ...(specificFlag === null ? [] : [specificFlag, out]),
+  '--shot',
+  out,
+];
+try {
+  run('pnpm', ['--filter', '@dajia/desktop', 'build']);
+  // 只有 draw 那一发放宽到 300 秒：它有序列里 18 处等待（每处上限 10 秒），最坏 180 秒。
+  // 另三条**不跟着放宽** —— 它们的等待数量一字没动，跟着涨等于把"变慢了"这件事抹平。
+  run(
+    'pnpm',
+    ['--filter', '@dajia/desktop', 'exec', 'electron', ...electronArgs],
+    wantDraw ? 300_000 : 180_000,
+  );
+```
+
+`const layers = report.layers ?? {};` 之后补一行读数对象（`draw` 是**探针**那一份，序列的逐步读数全部平铺在报告根上 —— 与 `edit` 那一份的形状不同，那些是 `runEditShot` 自己组的嵌套对象）：
+
+```js
+  const probe = report.draw ?? {};
+```
+
+然后**在 T5 那段 `if (wantEdit) {…}` 之后**追加 `if (wantDraw) {…}`。二十一条，一条对一步（或一步里的一件事），顺序就是 `runDrawShot` 的步序：
+
+```js
+  if (wantDraw) {
+    // 前六条与 drawlist.test.ts 同源（序列把文档送回基线，所以 `ops === 31` 在这里仍是回归判据）；
+    // 这二十一条与 editing.test.ts + snapping.test.ts 同源，但只测它们管不到的那一层：
+    // 真窗口里"发的像素 → 吸附的落点 → 真源的账 → 撤销栈"。
+    checks.push(
+      ['D1 探针给得出靶子，起点吸在既有端点上（S7 的复用那一半）', typeof report.startSnapPointId === 'string' && report.startSnapPointId.length > 0 && report.startSnapKind === 'endpoint'],
+      ['D2 按下处的像素就是探针给的那一发（屏幕不另算一套坐标）', report.pressPxMatches === true],
+      ['D3 零长草稿判不合法，但吸附标记已经上屏', report.legalAtPress === false && report.snapMarkAtPress > 0],
+      // 档位只钉到「是方向档、且零位移」：钉死 ortho 还是 angle15 等于拿判据赌 uuidv7 的端点顺序（探针挑中哪枚起点会漂，见 S8 ① 那段实测）。
+      // S3 那句"画 4000 的水平墙必须是 ortho"由 snapping.test.ts 的档位互斥用例负责，那一份是确定性的。
+      ['D4 终点吸的是方向档、没引别人的点、位移逐字为 0（S7 的另一半 + S8 ①）', report.endSnapPointId === null && (report.endSnapKind === 'ortho' || report.endSnapKind === 'angle15') && report.endSnapDistPx === 0],
+      ['D5 中途临时线跟到光标（S4 第三条纪律）', report.previewNearCursorPx > 0],
+      ['D6 中途第四色标记在屏（S8 只证存在）', report.snapMarkAtMove > 0],
+      ['D7 中途真源一个字没动：depth、revision、点数三者', report.depthAtMove === report.depthAtStart && report.revisionAtMove === report.revisionAtStart && report.pointsAtMove === report.basePoints],
+      ['D8 Escape 只取消草稿、留在拉墙模式，标记跟着消失', report.toolAfterEsc === 'wall' && report.snapMarkAfterEsc === 0 && report.depthAtCancel === report.depthAtStart],
+      ['D9 原地松手 = rejected，一条命令都不发（D4 的第三色）', report.rejectedOutcome === 'rejected' && report.rejectedWallId === null && report.rejectedCounts === `${String(report.basePoints)}→${String(report.basePoints)}`],
+      ['D10 被拒那一发不入栈：depth 与取消后逐字相同', report.rejectedDepth === report.depthAtCancel],
+      ['D11 松手建墙，起点复用探针指的那枚点（接头没断）', report.builtOutcome === 'ok' && report.builtStartId === report.startSnapPointId],
+      ['D12 回执落点逐字等于探针预言（两边同一个纯函数）', JSON.stringify(report.builtEndMm) === JSON.stringify(probe.endMm)],
+      ['D13 一面全新终点的墙恰好多一枚点（S7 的删除账靠它）', report.builtPointsBefore === report.basePoints && report.builtPointsAfter === report.basePoints + 1],
+      ['D14 新建即选中，且屏幕上真有红色像素', report.builtSelected === true && report.builtSelectedPx > 100],
+      ['D15 建完仍在拉墙模式（连画不该每面退出一次）', report.builtTool === 'wall'],
+      ['D16 拉墙模式下按 Delete = 故意沉默，账一步不动', report.deleteOutcomeInWallMode === 'ignored-in-wall-mode' && report.depthInWallMode === report.builtDepth],
+      ['D17 再按一次 Escape 才退出拉墙', report.toolAfterEscape === 'select'],
+      ['D18 点新墙中点：唯一命中就是刚建那面，把手也画出来了（筛 ④ 的像素下限在真窗口里成立）', Array.isArray(report.clickedSelectedIds) && report.clickedSelectedIds.length === 1 && report.clickedSelectedIds[0] === report.builtWallId && report.clickedHandlePx > 20],
+      ['D19 Backspace 只删那一面墙，unsupported 空，选中集剪空', report.deleteOutcomeAfterBackspace === 'ok' && report.deletedCount === 1 && report.unsupportedCount === 0 && Array.isArray(report.selectionAfterDelete) && report.selectionAfterDelete.length === 0],
+      ['D20 撤销把墙连同它的孤儿点一起带回来，选中不跟着回来（D7 那半句）', report.pointsAfterUndo === report.basePoints + 1 && report.selectedAfterUndo === 0 && report.comboAfterUndo === 'Ctrl+Z'],
+      // 最后一条是总账：②③ 两条纪律的凭据都在它身上 —— 序列没留痕，前六条才还读得到基线。
+      ['D21 重做回到基线，终态探针与 points 快照逐字回到第 0 步', report.pointsAfterRedo === report.basePoints && report.probeMatchesStart === true && report.pointsMatchStart === true && report.comboAfterRedo === 'Ctrl+Shift+Z'],
+    );
+  }
+```
+
+根 `package.json` 的 scripts 再加一条（`shot` / `pick-shot` / `edit-shot` 三条保持原样）：
+
+```json
+"draw-shot": "node scripts/desktop-shot.mjs --draw"
+```
+
+数一下：`wantDraw` 那段是 **21** 条判据，基础六条照旧 ⇒ `pnpm draw-shot` 应当打印 **27 行 PASS**。另外三道闸门一行不动：`pnpm shot` 6 行、`pnpm pick-shot` 10 行、`pnpm edit-shot` 21 行。改样例房或改判据时，这几处要一起改：`drawlist.test.ts`、`pick.test.ts`、`snapping.test.ts`、`editing.test.ts`、`handles.test.ts`、`commands-drag.test.ts`、`desktop-shot.mjs`。
+
+> **D13 那一句为什么钉"恰好 +1"而不是"> 基线"**：S7 让终点全新建，所以一面新墙在真源里留下的点是**一枚**（`wallCreate` 建两端、起点走 `{ pointId }` 复用既有那一枚）。多出来的那一枚如果没被删干净，D19 的"点数回基线"会红；反过来，若起点没复用而走了 `{x,y}`，D11 先红 —— 两条一起才把"共享端点退化成一堆独立点"这条路堵死（计划 2 Task 3 的 `resolvePointRef` 守卫在屏幕侧的镜像）。
+>
+> **D18 是探针六道筛在真窗口里唯一露面的那一条**：它点的是 `probe.midPx`，而筛 ④ 保证那一发像素在**建墙之前**一个候选都不命中。所以建完之后那儿若还"唯一命中新墙"，证的就是这面墙真的画出来了、真的可点，而不是"点了个本来就红的地方"。它同时是筛 ③ 之二（`(长度 − 厚度) × pxPerMm ≥ MIN_PICK_EDGE_PX`）的运行时凭据 —— 那条下限在单元里由 E16 钉着，在真窗口里只有这一发够得着。
+
+- [ ] **Step 8: 真窗口跑一次 + 八条改坏 + 全量闸门 + 两个提交**
+
+```bash
+pnpm --filter @dajia/desktop typecheck > /tmp/t6-dts.log 2>&1; echo exit=$?
+pnpm shot > /tmp/t6-shot-base.log 2>&1; echo exit=$?
+pnpm pick-shot > /tmp/t6-shot-pick.log 2>&1; echo exit=$?
+pnpm edit-shot > /tmp/t6-shot-edit.log 2>&1; echo exit=$?
+pnpm draw-shot > /tmp/t6-shot-draw.log 2>&1; echo exit=$?
+```
+Expected: 五个 exit=0。`shot` **六行**、`pick-shot` **十行**、`edit-shot` **二十一行**照旧全绿（本任务不该动它们的判据 —— 见下面"红线"那条），`draw-shot` **二十七行**全 PASS。把 stdout 里那三行读数原样抄进提交信息：探针那一发的 `startMm → endMm` 与 `startPointId` 的前 8 字（证靶子从**既有端点**起画）、`snapMarkAtPress / snapMarkAtMove / previewNearCursorPx` 三个数（证"按下就有标记、中途标记与线都在、线跟着手"）、`builtCounts` 那一串 `N→N+1`（证"恰好一枚新点"）。
+
+**四条已知风险**（前三条是 `--draw-shot` 独有的新风险，T5 没证过这些形状）。按顺序试，**一次只动一个变量**，都不许把判据改成"读到什么算什么"：
+
+1. **`keyCode: string` 校验不了字面量。** `keyCombo(win, 'W', [])` 里那个 `'W'` 与 `'Escape'` / `'Delete'` / `'Backspace'` 都是裸字符串 —— `electron.d.ts` 只说它"取 Accelerator 键名"，TypeScript 帮不上忙，写错了要等到真窗口跑才知道。现象是某处 `waitHot` 抛「快捷键没生效（…）：renderer 的 keydown 没跑到」。分辨办法：同一份 `keyCombo` 在 `--edit-shot` 里跑过 `'Z'` 与 `'Shift'` 那一发 ⇒ 通道本身是通的，红的那一发单独查它的 `keyCode` 拼写（`'Escape'` 不是 `'esc'`，`'Backspace'` 不是 `'backspace'`）。**先确认 `focusForInput(win)` 之后没有别的窗口抢焦点**（T5 风险 1 同一条：`sendInputEvent` 要求窗口 focused）。
+2. **`event.key` 与输入法。** renderer 判的是 `key === 'w' || key === 'W'`。合成事件走的是 Chromium 的 keydown 通路，与 T5 的 `'z'` 同一形状（那一路绿了 21 行），所以闸门里预期没问题；但**用户在中文输入法下按 W** 时 `event.key` 可能是 `'Process'` 而不是 `'w'` —— 那是键盘布局侧的事实，本任务的判据抓不到它（闸门只发合成事件）。这条**不在这里补**：写进转下游，T7 做模式 UI（有按钮可点）与快捷键文案时才需要它，届时要么用 `event.code`，要么给模式一个可点的入口。**别为了让这条可测而在 renderer 里加一条"按不到就点按钮"的分支。**
+3. **D2 那一句逐字相等吃的是整数像素。** `probe.startPx` 是 `intPx` 取整后的值，而 `draftAtPress` 存的 `px` 来自 `event.offsetX`。T5 已经记下"`offsetX` 在缩放的 Windows 上可能带小数"（所以 5 号桶给 ±2px 窗口）。若 `--draw-shot` 红在「按下处的像素与探针给的像素不是同一发」，处置是**在 `pointerPx` 里把按下像素取整**（与探针同一个 `intPx` 口径，两边同源），**不是**把 D2 放宽成"差 ≤ 1px" —— 那条判据的存在理由就是"屏幕不另算一套坐标"，一旦允许误差，探针与 renderer 就又是两个数了。
+4. **300 秒上限**：`runDrawShot` 有序列里 18 处等待（最坏 180 秒）加起窗与加载。撞到就只把 `wantDraw` 那一支的超时给到 `300_000`（Step 7 已经这么写了），**不许**缩短那 10 秒的单次上限 —— 它是给慢机器留的余量。
+
+**红线**：如果 `--draw-shot` 逼着回头改 `--edit-shot` 那 21 行里的任何一行、或者改 `onPointerDown` 的把手分支（S4 ① 说按下那一发**保持 T5 原样**），那就是 S4 的代价没付掉 —— 停在这里核对，别把 T5 的判据改松来迁新闸门。
+
+再验一次判据能区分"做了"和"没做"。**`apps/**` 没有单测，这一步不能省**（`vitest.config.ts` 的 include 只有 `packages/*/test/**` 与 `scripts/test/**`）。下面八条各钉一处，每条做完立刻改回来再跑下一条（每条只动一处，跑完 `git diff` 应当只剩那一处）。**"必须红在哪一处"这一列是按 `runDrawShot` 的 throw 文案推出来的，执行时把实测的红字原样回填这一列** —— 与 T5 那张表不同，那张的每一行都在真窗口里跑过，这张还没有（编写期跑不了：`apps/desktop` 的 renderer 与 `scripts/desktop-shot.mjs` 要 Task 3 之后才存在）。红在哪一行本身就是信息：throw 在判据行上游，"某一行 FAIL"意味着它前面那道 throw 被削弱了，那种红同样要查。
+
+| # | 改坏（各一处） | 必须红在哪一处 | 为什么是这一处 |
+|---|---|---|---|
+| DR1 | 注释掉 paint effect 里草稿那两支 `paintSnapMarker(...)`（起点与终点，`drag` 那一支保留） | 第 2 步的 `snapMarkPx === 0` 硬 throw：「起点吸上了既有端点，第四色标记却没画出来」 | 证明橙色像素是**这个画家**画的，不是别的东西混色。`countPixels` 一字没动，所以只有画家那一处能解释"颜色没了" |
+| DR2 | `paintPreview(ctx, draft.start.px, draft.cursorPx)` 的终点改成吸附落点（`mmToPx(viewport, draft.end.mm)`） | 第 3 步 `waitUntil` 抛「移到探针终点后落点没对上」或硬 throw「临时线没跟到光标（S4 第三条纪律）」 | S4 ③ 那处"看得见的取舍"的哨兵：预览线恒画裸光标、吸附点交给第四色。改成画到吸附点，屏幕上"线在、标记在"两桶都还满足，但**线的位置不再等于手的位置** |
+| DR3 | `draftAtPress(viewport, px, field)` 多传一个锚点（按下也吃方向档） | 第 2 步硬 throw「起点必须吸到端点档」 | S3/S4 ① 的落地：按下那一发不许自动变正交，否则 `--edit-shot` 的"零移动 ⇒ noop"那条判据在拉墙这条路上就没有对应物了 |
+| DR4 | 在 `onUp` 的草稿分支开头加 `legalWallCreate` 预检、不合法直接 `return`（不写 `rejected` 回执） | 第 5 步 `waitUntil` 抛「原地松手没给出 rejected 回执（超时 10s）」 | 与 T5 的 R5 同一类：D3 的纪律是"屏幕上不重写守卫"，而**预检最像"什么都没发生"** —— 少一份回执，`--draw-shot` 就分不出"被预言挡下"与"那一发根本没到" |
+| DR5 | `planDelete` 摘掉 `tool === 'wall'` 特判（拉墙模式下照删选中集） | 第 9 步硬 throw「拉墙模式的删除沉默读成 ok」，`depthInWallMode` 那一处跟着红 | S5 的四色判据里唯一一条"故意沉默"。摘掉之后正在拉墙时按 Delete 会把用户上一发的选中集一起吃掉，而屏幕上没有任何一条中文报错能证明它发生过 |
+| DR6 | 摘掉删除之后那两句 `useSelection.getState().retain(kept)` | 第 12 步 `waitUntil` 抛「删除后账没回到基线（超时 10s）」（谓词含 `selectionAfterDelete.length === 0`） | 剪枝只在这条路上有读者：`buildDrawList` 与 `dragHandlesOf` 都按 `doc.get` 找不到就跳过，所以**不剪枝屏幕上看不出任何异常** —— 只有那份留档的 `selectionAfterDelete` 抓得到（D7 留给 T7 的那个接缝，本任务先在删除这条路上收掉） |
+| DR7 | 摘掉 `hotSeqRef.current += 1`（`combo` 与其余读数照常写） | 第一处 `waitHot`（第 1 步按 W）抛「快捷键没生效（按 W 之后）：renderer 的 keydown 没跑到（超时 10s）」 | 证 `waitHot` 不是靠 `combo` 字面量蒙对的：`seq` 是"这一发到过 renderer"的唯一凭据，而 `'Escape'` 在序列里出现两次、`'Delete'` 与上一发的 `'W'` 长得不同但都会过期 |
+| DR8 | 删掉 `if (created !== null) select(created.wallId)`（新建后不选中） | 第 8 步硬 throw「新建即选中没生效（S6）」 | D5"拖之前先选中"在拉墙路上的对应物。少这一句，新墙没有把手（把手只从选中集生成），下一步点它仍能选中 —— 所以**只有第 8 步那一发抓得到**，这正是它必须在建完立刻读的原因 |
+
+**不做**的一条，写在这里防有人顺手补：把 `pointerup` 里"墙模式与 select 模式共用的 `activeRef` 复位"摘掉，看哪一条会红 —— **不许当改坏**。`Escape` 那一支已经把标志复位，后续按下又会置 `true`，红不红取决于事件到达顺序，于是一条真坏了的东西可能偶然还绿（与 T5 那条"删掉 `select(hit.wallId)`"同一类）。D8 与 D17 那两条判据加 `runDrawShot` 第 4 步之后紧跟的第 5 次按下，已经把"取消之后还能重新起一发"这件事测到了。
+
+```bash
+pnpm verify > /tmp/t6-verify.log 2>&1; echo exit=$?
+```
+Expected: exit=0，`Test Files 30 passed`（**28 + 2**：本任务新增 `snapping.test.ts` 与 `editing.test.ts` 两个文件）、`Tests 405 passed`（**337 + 68** = snapping 28 + editing 30 + pick 3 + handles 7，全部落在 scene-2d，core 零改动零新增）。同时**老用例一条都不许改**：Step 3 与 Step 5 动了 `pick.ts` / `handles.ts` 的既有写法，那六处订正逐条列在"本任务会改到 T4/T5 的六处既有写法"里 —— 在那六处之外的任何一条老用例变红，都是本任务把某处判据改松了，停下来核对。
+
+```bash
+git status --porcelain
+git diff --stat
+git add packages/scene-2d
+git commit -m "feat: 五档吸附、拉墙草稿与删除计划进 scene-2d"
+git add apps/desktop scripts package.json
+git commit -m "feat: 拉墙与删除接上屏幕，--draw-shot 二十七行判据"
+```
+第一条提交信息带上：snapping 28 条 + editing 30 条 + pick 3 条 + handles 7 条、Step 4 与 Step 5 的改坏清单里那些**恒红**的行号与红字（E14 / E15 / E25 / E26 各一句）、`Tests 30 passed` 与 `Tests 19 passed` 那两行、以及标了"偶发"的 E17 / E27 / E28 三行**连同它们的处置**（这三条最容易被下一个人当成"判据写坏了"重新查一遍）。第二条带上：`--draw-shot` 的二十七行 PASS、上面那三行实测读数、DR1–DR8 各自红在哪一处。`git status --porcelain` 在两次提交之后应当只剩计划文档一类，并且 **`apps/desktop/.tscheck/` 这类临时 harness 目录必须已经删掉**（它不属于任何一个提交）。
+
+
+---
+
+## 尚未展开的任务边界（只剩 Task 7；补齐后才进执行）
+
+Task 6 已展开（正文见上文 Task 6：八条裁决 + 八步 + 二十七行真窗口判据）。它把 T5 留下的两个接缝就地判掉了：① 吸附的插入点 = `moveTargetOf` 之后、`dispatch` 之前那一行（S4 的三条纪律：按下不吸、探针与 renderer 同一个出口、预览线恒画裸光标）；② "撤销掉正被选中的构件"拆成两半收掉 —— 删除之后用 `pruneSelection` + `selectionStore.retain` 剪掉已不存在的 id（S5），新建那一路用 `lastCreatedWall` 里的 `doc.get(id)` 复核挡住"选中指向不存在的构件"（S6：`log.affected` 在撤销后**仍然**列着那枚 id）。**没收掉的那一半**写在这里防丢：`Ctrl+Z` 撤销一次删除之后选中集不回（D7 的口径是"撤销的是文档，不是视图"），T7 若要"撤销后恢复选中"，得回来改这条裁决。
 - **Task 7 楼层切换 + 属性面板**：需要内核补口 —— 现在**没有** `wallSetMaterial` / `wallSetLoadBearing` / `storeyDelete` / `columnDelete` / `slabDelete`（M1.2 的"构件属性面板（厚度 / 承重 / 材料）"里只有厚度有命令）。补口放 Task 7 的第一步，且必须连带补 core 的测试与计划 2 的口径。
 
 ## 已核实的现状事实（2026-09-27 逐条读过源码，写给执行者省得再翻）
@@ -4674,6 +10112,11 @@ git commit -m "feat: 拖端点改墙：屏幕像素落到真源，撤销栈全�
 - （T5 加）`assertSimpleRing` 只在 `slabCreate` 的 `build` 里跑一次（`commands/slab.ts`），派生层不再复核 ⇒ 拖动挂板楼层的共享端点**可以**把已存在的楼板轮廓拖成自相交或 180° 折回，而且没有任何一条判据会红。`demoHouse()` 无柱无板，所以本任务的判据碰不到它；这条与计划 4 的读盘不变式（挂账 #5、#12）一起处理，不在 T5 里偷偷补。
 - （T5 加）`demoHouse()` 一层有六枚共享端点（四个角 + 拐角 (4000,0) + 中段 (4000,3000)），且**无柱无板** ⇒ 重影柱那批用例必须自己 `columnCreate`，探针也绝不能指望样例里有柱。
 - （T5 加）全仓此前**没有**一条用例钉过"同层同坐标已有柱"这条 `RangeError` 的完整文案（`commands-column-slab.test.ts` 只用了 `/已有柱/` 的部分匹配）⇒ Step 1 把判据搬进 `assertNoGhostColumn` 时，G2 是这条文案第一次被逐字钉住，搬完必须回去确认老用例仍过（它匹配的是子串，搬动不影响）。
+- （T6 加）样例房一层拟合视图实测 **`pxPerMm = 0.125`** ⇒ `SNAP_TOL_PX = 8` 在这一档等于 **64mm**，而 `MIN_PICK_EDGE_PX = 64` 换算回毫米是 512mm、加回墙厚 752mm —— 这就是 `MIN_WALL_LENGTH_MM = 500` 在现有夹具里被像素下限**完全罩住**（改坏 E17 八进程一条都不红）的算术来源。同一档比例下 `--draw-shot` 的第四色判据只能判"吸上了没有"，不能判"吸到了哪里"（S8）。
+- （T6 加）`WALL_PROBE_OFFSETS` 那十发偏移 × 探针选中的起点，逐发问一遍 `dropTargetOf`（2026-09-28 实测）：**十发全部命中方向档、`distPx` 逐字为 `0`**，档位分布 `ortho` 1 / `angle15` 4 / `foot` 3 / `endpoint` 1 / `midpoint` 1。理由是构造性的：偏移全是轴对齐或 45°，而 S3 的档位互斥把四条轴整档给正交、45° 整档留给 15°。所以 `snapMarkPx > 0` 不靠运气。
+- （T6 加）探针选中的**起点会跨进程漂**：同一份 `demoHouse()` 连开十个进程，9 次挑中 `(4000,3000)`、1 次挑中 `(800,3000)`（`snapFieldOf` 的端点表顺序来自 `doc.byKind('wall')`，按 uuidv7 的 id 升序，而同毫秒不单调）。⇒ `--draw-shot` 只许把第 0 步算出的那份 `probeJson` 存下来、在第 15 步与**它自己**对账，**不许**把档位名、起点毫米或任何一次实测值写死进判据；单元侧凡是"必须换下一个候选"的判据都自带合成夹具（Task 6 Step 4 开头第 ③ 条）。
+- （T6 加）`log.affected` 在 `undo()` 之后**仍然列着**被撤销实体的 id（`undo()` 把 `lastAffected` 设成**前向补丁**的 id 集），而那时 `doc.get(id)` 已经是 `undefined` ⇒ "新建即选中"若不复核文档就会指向一个不存在的构件。这条既是 S6 那句"读完立刻 `doc.get` 复核"的来源，也是 `editing.test.ts` 里「派发后拿得到；撤销后 affected 仍列着那枚 id，但答案必须是 null」那条用例的判据（2026-09-28 在临时工程跑过）。
+- （T6 加）T5 那句 `expect(moveTargetOf(view, p.toPx)).toEqual(p.targetMm)` 在吸附接上之后**会红**，不是"照样绿"：样例房 16 把把手 × 10 发候选 = 160 发里有 **14 发**被 15° 档改写（最大偏差 6.97px），十个进程红 2 个。所以 Task 6 Step 5 把它换成同一函数的自比对（恒等式），落点内容的凭据交给新增的两条"吸上了什么/合法性判在哪一侧"用例（改坏 HD6 实测：`legalDrop` 换成自算 `hypot` 红两条）。
 
 ## 执行日志
 
