@@ -2,6 +2,7 @@ import { uuidv7, type EntityId } from '../ids';
 import { assertMm, positiveMm, quantizeMm, type Mm } from '../units/mm';
 import { requirePoint, requireStorey, requireWall } from '../model/read';
 import { endPointId, otherEnd, wallAxis, type WallEnd } from '../geom/axis';
+import { length, sub, vec } from '../geom/vec';
 import {
   incidentWallEnds,
   isExistingPoint,
@@ -47,7 +48,7 @@ function assertWallShape(thicknessMm: Mm, x0: Mm, y0: Mm, x1: Mm, y1: Mm): void 
   if (x0 === x1 && y0 === y1) {
     throw new RangeError(`零长墙：两端点量化后同为 (${x0}, ${y0})`);
   }
-  const lengthMm = Math.hypot(x1 - x0, y1 - y0);
+  const lengthMm = length(sub(vec(x1, y1), vec(x0, y0)));
   if (thicknessMm >= lengthMm) {
     throw new RangeError(
       `墙厚 ${thicknessMm} 不小于墙长 ${Math.round(lengthMm)}，轮廓会自相交`,
@@ -160,7 +161,10 @@ function clampOpeningsToWall(
       continue;
     }
     // floor 不是随手写的：轴长是浮点（斜墙 1999.698），round 会舍到墙外去
-    const maxDistanceMm = Math.floor(newLengthMm - opening.widthMm);
+    const maxDistanceMm = assertMm(
+      Math.floor(newLengthMm - opening.widthMm),
+      '夹取后的洞口距离',
+    );
     if (maxDistanceMm < 0) {
       throw new RangeError(
         `墙 ${wall.id} 缩到 ${Math.round(newLengthMm)}mm，放不下洞口 ${opening.id}` +
@@ -203,9 +207,10 @@ export function wallMoveEndpoint(input: {
       // 被拖的这面墙自己也要查：计划 1 只让 wallCreate / wallSetThickness 管墙厚与轴长的关系，
       // 拖端点是第三条能改轴长的路。少了这一条，把 3600 长的 240 墙拖到 200 就成功了，
       // 而 Task 5 的轮廓会自相交 —— 真源里绝不能留这种东西。
-      // 轴长一律按"补丁应用之后"的两个端点算：Math.hypot 与 wallAxis 的 length 同式，
-      // 所以这里的预测值与派生层事后重算的值逐位相同，夹回来的洞口不会差 1mm。
-      const selfLengthMm = Math.hypot(x - anchor.x, y - anchor.y);
+      // 轴长一律按"补丁应用之后"的两个端点算：这里与 wallAxis 用的是 geom/vec 的同一个出口
+      // （length(sub(vec, vec))），所以预测值与派生层事后重算的值逐位相同 —— 由构造保证，
+      // 不再靠"Math.hypot 恰好同式"。夹回来的洞口于是差不了 1mm。
+      const selfLengthMm = length(sub(vec(x, y), vec(anchor.x, anchor.y)));
       if (wall.thicknessMm >= selfLengthMm) {
         throw new RangeError(
           `移动端点会让墙 ${wall.id} 的墙厚 ${wall.thicknessMm} 不小于轴长 ${Math.round(selfLengthMm)}，轮廓会自相交`,
@@ -226,7 +231,7 @@ export function wallMoveEndpoint(input: {
             `移动端点会让墙 ${neighbour.id} 变成零长：它与本墙共享端点 ${moving.id}`,
           );
         }
-        const lengthMm = Math.hypot(x - other.x, y - other.y);
+        const lengthMm = length(sub(vec(x, y), vec(other.x, other.y)));
         if (neighbour.thicknessMm >= lengthMm) {
           throw new RangeError(
             `移动端点会让墙 ${neighbour.id} 的墙厚 ${neighbour.thicknessMm} 不小于轴长 ${Math.round(lengthMm)}，轮廓会自相交`,
