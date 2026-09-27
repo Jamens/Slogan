@@ -2,7 +2,7 @@
 // ② 派生抓不到的三条（宽/高为正、门洞窗台为 0、洞顶 ≤ 宿主墙高）在这里补；
 // ③ 本文件只写"新建/搬动/删除一樘洞"，拉伸墙时的跟随逻辑在 commands/wall.ts。
 import { uuidv7, type EntityId } from '../ids';
-import { assertMm, type Mm } from '../units/mm';
+import { assertMm, positiveMm } from '../units/mm';
 import type { Command } from '../model/command';
 import type { Document } from '../model/document';
 import { applyPatch } from '../model/patch';
@@ -20,11 +20,6 @@ export interface OpeningCreateInput {
   /** 洞底距本层楼面。省略时门取 0、窗取 900 */
   sillMm?: number;
   category: OpeningEntity['category'];
-}
-
-function positiveMm(value: Mm, label: string): Mm {
-  if (value <= 0) throw new RangeError(`${label}必须为正，收到 ${value}`);
-  return value;
 }
 
 function requireOpening(doc: Document, id: EntityId): OpeningEntity {

@@ -28,6 +28,12 @@ export function assertMm(value: number, label: string): Mm {
   return value === 0 ? 0 : value;
 }
 
+/** 已过 assertMm 的量再守正负：0 与负数在真源里都不成立。label 自带冒号位（`${label}必须为正`）。 */
+export function positiveMm(value: Mm, label: string): Mm {
+  if (value <= 0) throw new RangeError(`${label}必须为正，收到 ${value}`);
+  return value;
+}
+
 /** 仅用于 UI 显示与图纸标注文案，绝不写回真源。 */
 export function mmToMeters(mm: Mm): number {
   return mm / MM_PER_M;

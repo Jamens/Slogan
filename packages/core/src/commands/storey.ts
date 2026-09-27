@@ -1,5 +1,5 @@
 import { uuidv7, type EntityId } from '../ids';
-import { assertMm, type Mm } from '../units/mm';
+import { assertMm, positiveMm, type Mm } from '../units/mm';
 import type { Command } from '../model/command';
 import type { Document } from '../model/document';
 import type { StoreyEntity } from '../model/entity';
@@ -36,8 +36,7 @@ function assertNoVerticalOverlap(doc: Document, candidate: StoreyEntity): void {
 
 export function storeyCreate(input: StoreyCreateInput): Command {
   const elevationMm = assertMm(input.elevationMm, '楼层标高');
-  const heightMm = assertMm(input.heightMm, '层高');
-  if (heightMm <= 0) throw new RangeError(`层高必须为正，收到 ${heightMm}`);
+  const heightMm = positiveMm(assertMm(input.heightMm, '层高'), '层高');
   if (!Number.isInteger(input.index) || input.index < 0) {
     throw new RangeError(`楼层序号必须为非负整数，收到 ${input.index}`);
   }

@@ -1,5 +1,5 @@
 import { uuidv7, type EntityId } from '../ids';
-import { assertMm, quantizeMm, type Mm } from '../units/mm';
+import { assertMm, positiveMm, quantizeMm } from '../units/mm';
 import type { Command } from '../model/command';
 import type { Document } from '../model/document';
 import type { ColumnEntity, Entity, PointEntity } from '../model/entity';
@@ -16,11 +16,6 @@ export interface ColumnCreateInput {
   heightMm?: number;
   loadBearing?: boolean;
   material?: string;
-}
-
-function positiveMm(value: Mm, label: string): Mm {
-  if (value <= 0) throw new RangeError(`${label}必须为正，收到 ${value}`);
-  return value;
 }
 
 export function columnCreate(input: ColumnCreateInput): Command {

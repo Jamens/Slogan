@@ -1,5 +1,5 @@
 import type { EntityId } from '../ids';
-import { assertMm } from '../units/mm';
+import { assertMm, positiveMm } from '../units/mm';
 import type { Document } from '../model/document';
 import type { Entity, OpeningEntity, WallEntity } from '../model/entity';
 import { mustExist, requireWall } from '../model/read';
@@ -133,9 +133,7 @@ const DEFAULT_CELL_SIZE_MM = 4000;
 
 function assertCellSize(value: number): number {
   // 网格边长也走 assertMm：整数毫米，免得浮点渗进 cell key（key 一变，插进去的盒子就找不回来了）
-  const mm = assertMm(value, '网格边长');
-  if (mm <= 0) throw new RangeError(`网格边长必须为正，收到 ${mm}`);
-  return mm;
+  return positiveMm(assertMm(value, '网格边长'), '网格边长');
 }
 
 function assertQueryable(rect: Aabb): void {

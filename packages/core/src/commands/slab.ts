@@ -1,5 +1,5 @@
 import { uuidv7, type EntityId } from '../ids';
-import { assertMm, quantizeMm } from '../units/mm';
+import { assertMm, positiveMm, quantizeMm } from '../units/mm';
 import type { Command } from '../model/command';
 import type { Document } from '../model/document';
 import type { Entity, PointEntity, SlabEntity } from '../model/entity';
@@ -17,8 +17,7 @@ export interface SlabCreateInput {
 }
 
 export function slabCreate(input: SlabCreateInput): Command {
-  const thicknessMm = assertMm(input.thicknessMm, '板厚');
-  if (thicknessMm <= 0) throw new RangeError(`板厚必须为正，收到 ${thicknessMm}`);
+  const thicknessMm = positiveMm(assertMm(input.thicknessMm, '板厚'), '板厚');
   const elevationOffsetMm = assertMm(input.elevationOffsetMm ?? 0, '板标高偏移');
   // 入参在构造期只判"形状"（数量与重复），坐标本身要等 build 才读得到（可能是复用的点）
   if (input.boundary.length < 3) {

@@ -1,6 +1,6 @@
 import { uuidv7, type EntityId } from '../ids';
-import { assertMm, quantizeMm, type Mm } from '../units/mm';
-import { mustExist, requirePoint, requireWall } from '../model/read';
+import { assertMm, positiveMm, quantizeMm, type Mm } from '../units/mm';
+import { requirePoint, requireStorey, requireWall } from '../model/read';
 import { endPointId, otherEnd, wallAxis, type WallEnd } from '../geom/axis';
 import {
   incidentWallEnds,
@@ -56,8 +56,8 @@ function assertWallShape(thicknessMm: Mm, x0: Mm, y0: Mm, x1: Mm, y1: Mm): void 
 }
 
 export function wallCreate(input: WallCreateInput): Command {
-  const thicknessMm = assertMm(input.thicknessMm, '墙厚');
-  const heightMm = assertMm(input.heightMm, '墙高');
+  const thicknessMm = positiveMm(assertMm(input.thicknessMm, '墙厚'), '墙厚');
+  const heightMm = positiveMm(assertMm(input.heightMm, '墙高'), '墙高');
   const elevationOffsetMm = assertMm(input.elevationOffsetMm ?? 0, '标高偏移');
   const startRef = input.start;
   const endRef = input.end;
@@ -74,7 +74,7 @@ export function wallCreate(input: WallCreateInput): Command {
   return {
     type: 'wall.create',
     build(doc: Document) {
-      mustExist(doc, input.storeyId, '楼层');
+      requireStorey(doc, input.storeyId);
       const a = resolveEnd(doc, input.start, input.storeyId);
       const b = resolveEnd(doc, input.end, input.storeyId);
       assertWallShape(thicknessMm, a.x, a.y, b.x, b.y);
@@ -123,7 +123,7 @@ export function wallSetThickness(input: { wallId: EntityId; thicknessMm: Mm }): 
     type: 'wall.setThickness',
     build(doc: Document) {
       const wall = requireWall(doc, input.wallId);
-      if (thicknessMm <= 0) throw new RangeError(`墙厚必须为正，收到 ${thicknessMm}`);
+      positiveMm(thicknessMm, '墙厚');
       if (thicknessMm >= wallAxis(doc, wall).lengthMm) {
         throw new RangeError(`墙厚 ${thicknessMm} 不小于墙长，轮廓会自相交`);
       }

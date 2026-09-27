@@ -132,6 +132,77 @@ describe('wallCreate', () => {
       ),
     ).toThrow(/不小于墙长/);
   });
+
+  it('零墙厚被拒：真源里不存在零厚的墙', () => {
+    const log = emptyLog();
+    log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+    const storeyId = log.document.byKind('storey')[0]!.id;
+    expect(() =>
+      log.dispatch(
+        wallCreate({
+          storeyId,
+          start: { x: 0, y: 0 },
+          end: { x: 3600, y: 0 },
+          thicknessMm: 0,
+          heightMm: 3000,
+        }),
+      ),
+    ).toThrow(/墙厚必须为正/);
+  });
+
+  it('负墙厚被拒：符号在构造期就挡，不等派生层画歪', () => {
+    const log = emptyLog();
+    log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+    const storeyId = log.document.byKind('storey')[0]!.id;
+    expect(() =>
+      log.dispatch(
+        wallCreate({
+          storeyId,
+          start: { x: 0, y: 0 },
+          end: { x: 3600, y: 0 },
+          thicknessMm: -100,
+          heightMm: 3000,
+        }),
+      ),
+    ).toThrow(/墙厚必须为正/);
+  });
+
+  it('零墙高被拒：与墙厚同口径', () => {
+    const log = emptyLog();
+    log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+    const storeyId = log.document.byKind('storey')[0]!.id;
+    expect(() =>
+      log.dispatch(
+        wallCreate({
+          storeyId,
+          start: { x: 0, y: 0 },
+          end: { x: 3600, y: 0 },
+          thicknessMm: 240,
+          heightMm: 0,
+        }),
+      ),
+    ).toThrow(/墙高必须为正/);
+  });
+
+  it('拿墙 id 当 storeyId 建墙被拒：楼层位必须是楼层', () => {
+    const log = emptyLog();
+    const { wallId } = oneWall(log);
+    const depth = log.depth;
+    expect(() =>
+      log.dispatch(
+        wallCreate({
+          storeyId: wallId,
+          start: { x: 0, y: 0 },
+          end: { x: 3600, y: 0 },
+          thicknessMm: 240,
+          heightMm: 3000,
+        }),
+      ),
+    ).toThrow(/不是楼层，是 wall/);
+    // requireStorey 是 build 的第一行：抛在建点之前，墙数与日志深度都该原地不动
+    expect(log.depth).toBe(depth);
+    expect(log.document.byKind('wall')).toHaveLength(1);
+  });
 });
 
 describe('wallSetThickness / wallMoveEndpoint', () => {
