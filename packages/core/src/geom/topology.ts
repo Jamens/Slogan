@@ -117,9 +117,15 @@ export function dependentsOf(doc: Document, id: EntityId): EntityId[] {
       for (const column of doc.byKind('column')) if (column.storeyId === id) out.add(column.id);
       for (const slab of doc.byKind('slab')) if (slab.storeyId === id) out.add(slab.id);
       break;
-    default:
-      // opening / column / slab 没有下游依赖者
+    case 'opening':
+    case 'column':
+    case 'slab':
+      // 这三类没有下游依赖者（写成事实，不是穷尽检查；穷尽由下面的 never 汇合点保证）
       break;
+    default: {
+      const exhaustive: never = entity;
+      throw new TypeError(`dependentsOf 未处理的实体类型：${String(exhaustive)}`);
+    }
   }
   return [...out];
 }
