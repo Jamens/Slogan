@@ -9318,3 +9318,41 @@ start/start 直角上不可满足（正确的凸角本来就是 (−120,−120)�
 （`recordClamps` 内两句 + `clampDirected` 末三句 + `floor ≠ round` 哨兵），只是执行顺序会把消息遮蔽 ⇒
 已就地前置（`b88d2ba`）。另两条 Minor 登记不修：`checkKinds` 里的 `not.toContain` 与 `index.empty++`
 是恒真语句（brief 原样，留着当"这一类没出现"的记录，不承重）。
+---
+
+## 全分支终审与修复批（2026-09-27，计划 2 收口）
+
+终审席（覆盖 `470109a..76bd526` 的 39 个提交）判 **CHANGES_REQUESTED**：0 Blocker / 3 Important / 11 Minor，
+并把散在各任务回填里的 22 条挂账一次性处置完（修 5 / 继续挂 6 / 转下游 7 / 前序提交已修 4）。
+全文存档在 `.superpowers/sdd/2026-09-25-dajia-plan2-geometry-invariants/final-review-plan2.md`（gitignored）。
+三条 Important 在派发修复前逐条 grep 复验为真，**报告措辞不作为开工依据**。
+
+**修复批**：`0ef01a2` → `c8da525` → `4f2aaac` → `efbc5ea` → `185c980` → `3912b26`（代码），
+`9ab0e60`（控制者的正文账），`d65dff9`（重评 M-1 就地修）。门禁 **280 → 284**（`Test Files 23`），+4 全来自新守卫用例。
+
+| 终审条目 | 落地 | 实测凭据 |
+| --- | --- | --- |
+| I-1 `wall.create` 缺正数与楼层类型守卫 | `0ef01a2`：`positiveMm` 提到 `units/mm.ts`，六处手写点合并（文案逐字节不变），`wall.ts` 两处入参过它，`build` 首行换 `requireStorey` | 新增 4 条定值（零厚 / 负厚 / 零高 / 拿墙当楼层）；反向哨兵：`thicknessMm: 240` 的正常建墙用例仍走同一工厂且绿 ⇒ 工厂不是无差别抛 |
+| I-2 命令层手写轴长 + `floor` 绕过写回守卫 | `c8da525`：三处 `Math.hypot` 换 `length(sub(vec,vec))`；`:159` 的 `Math.floor` 包 `assertMm(…, '夹取后的洞口距离')` | 逐位相同（`vec()` 归一 `-0`、`length()` 就是 `Math.hypot`），全量断言值一字未改 |
+| I-3 洞口→沿轴区间投影写了三遍 | `4f2aaac`：新产地 `spansOfOpenings(openings): OpeningSpan[]`，`openingSpans` 只剩跨层判定 + 委托，`clampOpeningsToWall` 改吃它；计划 3 的 `drawlist` 正文同步改吃（`9ab0e60`） | 摘掉新产地的 `.sort()` **红 3 条**（`opening-geom.test.ts:161`、`commands-opening.test.ts:302` 与 `:638`）⇒ 升序契约有人守，不只靠 `assertSpansFit` 的内部错误抛 |
+| 挂账 #4 `dependentsOf` 的 `default: break` 静默吞新 kind | `efbc5ea`：显式列全 `opening/column/slab` + `const exhaustive: never = entity` 汇合点 | 重评席实测：临时加第 7 个 kind → `tsc` 在 `topology.ts:126` 报 TS2322（真能编译不过，不是口头承诺） |
+| 挂账 #18 / M-9 `angleBetween` 把退化折成 0 | `185c980`：零长度抛，与同文件 `sinOfAngle` 同口径；src 消费者 0，只有 `vec.test.ts` 引用 | 两条退化用例（`vec(1,0)×vec(0,0)` 与反向）；共线非零那条 `toBe(0)` 原样不动 |
+
+**重评席（`final-fix-rereview.md`）判 APPROVED_WITH_MINOR，三条 Minor 的处置**：
+- **M-1 已修（`d65dff9`）**：三条正数定值原来写成 `expect(() => log.dispatch(wallCreate(…))).toThrow(…)`，
+  工厂与 dispatch 混在一个 thunk 里 ⇒ 守卫挪到哪一层都绿，只钉住"这个输入进不了真源"、没钉"谁拦的"。
+  改成只调工厂（`build` 根本不执行），能过 `toThrow` 就只能来自 `wallCreate` 返回之前。
+  **未做的检查要写清**：原打算把守卫真的挪进 `build` 看它红，被权限闸门拦下 ⇒ 这里给的是静态推理加"合法入参不抛"的反向哨兵，不是一次变异实测。
+- **M-2 判不改**：新文案 `夹取后的洞口距离` 在测试目录 0 命中。这条 `assertMm` 今天**没有任何可达路径**能触发它的抛错
+  （`Math.floor` 恒整数，超安全整数要轴长 > 2⁵³），唯一可观察的作用是 `-0` 归一，而那发生在补丁被丢弃的路径上（`assertSpansFit` 先把越界抛掉了）。
+  给它补用例等于造一个不可能的入参，写出来是一条只会永远绿的装饰断言 —— 登记为"防御性守卫，无靶心"。
+- **M-3 报告措辞**：`final-fix-report.md` 三处把用例名引成"零墙高被拒：与墙高同口径"，磁盘上是"与墙厚同口径"。
+  报告是历史存档，不改写；权威正文（本节）按磁盘写。
+
+**转下游的 7 条，别丢**：计划 3 —— #1（`wallMoveEndpoint` 的 `end:'start'` 角色反转用例，拖拽入口天然两端都拖时补）、
+#11（`transaction.ts` 失败事务留下上一次 `lastAffected` ⇒ 计划 3 的增量重建要写死"dispatch 抛错 = 不重建"）、
+#14（`cellKeys` 无 key 上限，随缩放级别一起在 T4 定）、#15（`dirtyIds` 对每 id 现调 `expandAffected` 的 O(n²) 性能账）；
+计划 4 —— #5（`isExistingPoint` 的 `{x,y,pointId:undefined}` 只在反序列化进得来，修在 zod 边界加 `.strict()`）、
+#10（命令入参一律冻结，含 `SlabCreateInput.boundary` 按引用捕获）、#12（跨层批量校验要的是共享版 `assertNoVerticalOverlap`）。
+另有 6 条"继续挂"（`wall.ts` 两枚 point 字面量、存档报告少写一条、`板边界`/`ring` 同文案、`NaN` 打印成 `null`、
+`applyAffected` 边派生边提交、两条恒真计数语句）—— 判留理由逐条在 `final-review-plan2.md` 的处置表里。
