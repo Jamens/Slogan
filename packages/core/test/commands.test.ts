@@ -137,16 +137,16 @@ describe('wallCreate', () => {
     const log = emptyLog();
     log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
     const storeyId = log.document.byKind('storey')[0]!.id;
+    // 钉的是**构造期**：命令工厂自己就得抛。包在 log.dispatch(...) 里的话，
+    // 把守卫从工厂挪进 build 也照绿 —— 守卫的时机就没有钉子了（终审重评 M-1）。
     expect(() =>
-      log.dispatch(
-        wallCreate({
-          storeyId,
-          start: { x: 0, y: 0 },
-          end: { x: 3600, y: 0 },
-          thicknessMm: 0,
-          heightMm: 3000,
-        }),
-      ),
+      wallCreate({
+        storeyId,
+        start: { x: 0, y: 0 },
+        end: { x: 3600, y: 0 },
+        thicknessMm: 0,
+        heightMm: 3000,
+      }),
     ).toThrow(/墙厚必须为正/);
   });
 
@@ -155,15 +155,13 @@ describe('wallCreate', () => {
     log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
     const storeyId = log.document.byKind('storey')[0]!.id;
     expect(() =>
-      log.dispatch(
-        wallCreate({
-          storeyId,
-          start: { x: 0, y: 0 },
-          end: { x: 3600, y: 0 },
-          thicknessMm: -100,
-          heightMm: 3000,
-        }),
-      ),
+      wallCreate({
+        storeyId,
+        start: { x: 0, y: 0 },
+        end: { x: 3600, y: 0 },
+        thicknessMm: -100,
+        heightMm: 3000,
+      }),
     ).toThrow(/墙厚必须为正/);
   });
 
@@ -172,15 +170,13 @@ describe('wallCreate', () => {
     log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
     const storeyId = log.document.byKind('storey')[0]!.id;
     expect(() =>
-      log.dispatch(
-        wallCreate({
-          storeyId,
-          start: { x: 0, y: 0 },
-          end: { x: 3600, y: 0 },
-          thicknessMm: 240,
-          heightMm: 0,
-        }),
-      ),
+      wallCreate({
+        storeyId,
+        start: { x: 0, y: 0 },
+        end: { x: 3600, y: 0 },
+        thicknessMm: 240,
+        heightMm: 0,
+      }),
     ).toThrow(/墙高必须为正/);
   });
 
