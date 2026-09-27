@@ -742,8 +742,11 @@ describe('绘制指令表', () => {
         expect(p.y).toBeLessThanOrEqual(900);
       }
     }
-    // 本样例是"高"这一边吃满（6340mm / 780px < 8240mm / 1080px）：
-    // 纵向张幅必须正好等于可用高，否则 fitStorey 把 padPx 丢了或选错了缩放边。
+    // 本样例是"高"这一边吃满（6240mm / 780px = 8.0 > 8240mm / 1080px ≈ 7.63：
+    // mm/px 越大的一边越先填满，可用像素先被纵向用光）。纵向张幅必须正好等于可用高，
+    // 否则 fitStorey 把 padPx 丢了或选错了缩放边。
+    // 两个数不是手抖写的：整层角点 AABB = {−120,−120,8120,6120}（计划 2 的 integration 定值），
+    // 张幅 6120−(−120)=6240 与 8120−(−120)=8240；可用高宽 = 900−120 / 1200−120。
     const ys = ops
       .filter((o) => o.pen.layer !== 'annotation')
       .flatMap((o) => [...ptsOf(o)].map((p) => p.y));
@@ -793,9 +796,11 @@ import {
   advance,
   deriveStoreyGeometry,
   requireStorey,
+  spansOfOpenings,
   vec,
   wallAxisById,
   type Document,
+  type OpeningSpan,
   type WallAxis,
 } from '@dajia/core';
 import {
@@ -911,13 +916,27 @@ export function buildDrawList(
     });
   }
 
+  // 洞口的沿轴区间只有一个产地：core 的 `spansOfOpenings`（计划 2 终审 I-3 合并出来的出口，
+  // 命令层的夹取复核与墙垛分段吃的是同一份算式）。这里再写一遍 `distanceMm + widthMm`
+  // 就是第三份投影，漂一次的后果是"图上的洞口与墙垛对不上"。
+  const spanById = new Map<string, OpeningSpan>();
+  for (const span of spansOfOpenings(
+    doc.byKind('opening').filter((o) => o.storeyId === storeyId),
+  )) {
+    spanById.set(span.openingId, span);
+  }
+
   // ③ opening：每樘洞口两条断口线（横穿墙厚），窗再补一条沿轴中线。
   for (const opening of doc.byKind('opening')) {
     if (opening.storeyId !== storeyId) continue;
     const axis = axisOf(axes, doc, opening.hostWallId);
     const half = axis.thicknessMm / 2;
-    const near = alongAxis(axis, opening.distanceMm);
-    const far = alongAxis(axis, opening.distanceMm + opening.widthMm);
+    // 查不空：spanById 的过滤条件与上面的 continue 逐字相同。留着这句是让类型收窄成立
+    // （同 commands/wall.ts 的 resolveEnd 那条不可达抛错的规矩），不是给 UI 准备的错误分支。
+    const span = spanById.get(opening.id);
+    if (span === undefined) throw new TypeError(`洞口 ${opening.id} 没有沿轴区间（内部错误）`);
+    const near = alongAxis(axis, span.fromMm);
+    const far = alongAxis(axis, span.toMm);
     for (const jamb of [near, far]) {
       ops.push({
         kind: 'line',
@@ -1423,6 +1442,11 @@ Expected: `verify` exit=0（**`pnpm shot` 不在其中**）；`Tests` 数与 Tas
 - **Task 4 命中与点选**：`pick.ts` —— `SpatialIndex.query(rect: Aabb)` 取候选（索引只有墙与洞口两种 `IndexedKind`，端点不在里头），再精判（点在轮廓内 / 到轴线距离 ≤ 阈值）；阈值按**屏幕像素**给、换算成毫米比较（`pxToMm`），保证放大时吸附不变松（spec §6）。多命中的取舍必须确定性（距离最小 → id 升序），否则同一次点击在不同机器上选中不同构件。选中集另建 `stores/selectionStore.ts`（spec 明令选中不进真源、不进撤销栈）。
 - **Task 4 必须回答的一个问题**：`pick` 吃 `DrawOp[]` 的 `ownerId` 还是吃 `SpatialIndex`？前者保证"点得中的就是画出来的"（屏幕与真源同源），后者快但可能选中被遮住或没画的东西。**倾向：以指令表为准，索引只做候选加速**，但这条要在展开 Task 4 时连同遮挡取舍一起定。
 - **Task 5 拖点改墙**：pointer down 命中端点 → 拖拽期只重绘临时线（要不要给 `DrawLayer` 真加一个 `interaction` 层，在这里定）→ up 时 `quantizeMm` 后 `log.dispatch(wallMoveEndpoint)`；撤销/重做快捷键接 `log.undo()` / `log.redo()`（两者都返回 `boolean`，栈空时要反馈到 UI 而不是静默）。
+- **Task 5 必须先回答的语义裁决 —— 重影柱（计划 2 ledger Ruling ㊤，判给"计划 3 的拖拽入口"，本行是它的落点）**：拖一个挂着柱的共享端点，柱跟不跟走？现状事实三条，逐条读过源码：
+  ① 柱以 `column.pointId` 引用那枚 point 实体，而 `wallMoveEndpoint` upsert 的正是那个点（`commands/wall.ts`：`const upsert: Entity[] = [{ ...moving, x, y }]`）⇒ 柱**一定**跟走。但这是引用共享的副作用，不是任何一条判据承诺的语义。
+  ② `column.ts:56-73` 的"同层同坐标不能立两根柱"只在**建柱那一刻**判一次（判据取坐标 + 同层，不取 `pointId`）。拖动共享端点完全可以把一根柱搬到另一根柱的坐标上 ⇒ 那条判据在建完之后被破坏，而全仓没有第二处复核。
+  ③ 破坏之后没人红：`deriveStoreyGeometry` 不派生柱，`SpatialIndex` 的 `IndexedKind` 只有墙与洞口 ⇒ 视图与索引都看不见悬空/重影的柱。
+  **展开 T5 时要写下来的东西**：一句裁决（跟走 / 拒拖 / 拖后复核，三选一）、一条钉住它的定值用例（拖共享端点 ⇒ 柱坐标变了 / 命令抛 / 命中阶段就不给把手），以及若裁决是"跟走"，那第二处复核放在哪一层（命令层加守卫，或计划 4 的读盘不变式）。这条与"`DrawLayer` 加不加 `interaction` 层"同等必答，不许默认现状。
 - **Task 6 拉新墙 + 删除 + 吸附**：`snapping.ts`（端点/中点/垂足/15°/正交，按优先级）；`wallCreate` 复用既有端点时必须走 `{ pointId }` 引用，否则共享端点退化成一堆独立点、接头全断（计划 2 Task 3 的 `resolvePointRef` 就是这条的守卫）。
 - **Task 7 楼层切换 + 属性面板**：需要内核补口 —— 现在**没有** `wallSetMaterial` / `wallSetLoadBearing` / `storeyDelete` / `columnDelete` / `slabDelete`（M1.2 的"构件属性面板（厚度 / 承重 / 材料）"里只有厚度有命令）。补口放 Task 7 的第一步，且必须连带补 core 的测试与计划 2 的口径。
 
