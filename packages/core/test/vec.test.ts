@@ -63,6 +63,9 @@ describe('长度与方向', () => {
     // 无向：反向取钝角的一侧，结果落在 [0, π]
     expect(angleBetween(vec(1, 0), vec(0, -1))).toBeCloseTo(Math.PI / 2, 12);
     expect(angleBetween(vec(2, 4), vec(1, 2))).toBe(0);
+    // 退化输入折成 0 = "看起来平行"，与同文件 sinOfAngle 明文拒绝折叠矛盾：这里也抛
+    expect(() => angleBetween(vec(1, 0), vec(0, 0))).toThrow(/零向量无方向/);
+    expect(() => angleBetween(vec(0, 0), vec(1, 0))).toThrow(/零向量无方向/);
   });
 
   it('advance 沿单位向量前移，负值后退', () => {

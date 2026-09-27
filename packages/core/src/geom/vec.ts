@@ -77,8 +77,9 @@ export function angleOf(a: Vec2): number {
   return Math.atan2(a.y, a.x);
 }
 
-/** 无向夹角，结果落在 [0, π]。共线反向给 π。 */
+/** 无向夹角，结果落在 [0, π]。共线反向给 π。零长度向量没有方向，抛 —— 与 sinOfAngle 同口径。 */
 export function angleBetween(a: Vec2, b: Vec2): number {
+  if (length(a) === 0 || length(b) === 0) throw new RangeError('零向量无方向，无法求夹角');
   return Math.abs(Math.atan2(cross(a, b), dot(a, b)));
 }
 
