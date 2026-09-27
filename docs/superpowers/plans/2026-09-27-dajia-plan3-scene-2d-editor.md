@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
-> **状态：本计划展开了 Task 1–3。** Task 4–7 的边界与验收口径列在末尾，正文尚未展开成可执行步骤 —— **补齐前不得进入执行**（Task 1 起就要改根 `typecheck` 与 `vitest.config.ts`，跑到 Task 4 才发现缺口的代价是把前三步的闸门重跑一遍）。
+> **状态：本计划展开了 Task 1–4。** Task 5–7 的边界与验收口径列在末尾，正文尚未展开成可执行步骤 —— **补齐前不得进入执行**（Task 1 起就要改根 `typecheck` 与 `vitest.config.ts`，跑到 Task 5 才发现缺口的代价是把前四步的闸门重跑一遍）。
 
 **Goal:** 把 `@dajia/scene-2d` 从一行 stub 推进到「在真窗口里看得见一层平面、点得中构件」：视口仿射、绘制指令表、命中与选中，全部保持 DOM-free 可单测；像素是否真上屏由一次性截图回读证明，不靠人眼。
 
@@ -38,12 +38,15 @@
 | `packages/scene-2d/src/demo.ts` | `demoHouse()`：无持久化时的样例两层房，命令现场建，desktop 与测试共用同一份几何 | T2 |
 | `packages/scene-2d/src/drawlist.ts` | `buildDrawList(doc, storeyId, viewport, selection)` → `DrawOp[]`；`fitStorey(...)` → 该层的初始视口 | T2 |
 | `packages/scene-2d/test/drawlist.test.ts` | 指令表的结构与不变式 | T2 |
+| `packages/scene-2d/src/pick.ts` | 命中测试：`PICK_TOL_PX` / `distanceToSegmentPx` / `pickAt` / `pickOne` / `probeTarget`（靶子 = 指令表，容差 = 屏幕像素） | T4 |
+| `packages/scene-2d/test/pick.test.ts` | 命中的判据：容差两侧、回边、层序压倒距离、去重、NaN 守卫、2 条属性 | T4 |
 | `packages/scene-2d/src/index.ts` | 出口（现在是 `export const SCENE_2D_PACKAGE = 'scene-2d';` 一行 stub） | T1 起逐个补 |
 | `apps/desktop/electron.vite.config.ts` | renderer 侧补 `@dajia/core` + `@dajia/scene-2d` 的 alias（scene-2d 源码里 import 的是裸说明符） | T3 |
-| `apps/desktop/src/renderer/src/PlanCanvas.tsx` | 一块 canvas：量尺寸 → `fitStorey` → `buildDrawList` → 刷；并挂 `window.__dajiaDebug` | T3 |
-| `apps/desktop/src/renderer/src/stores/editorStore.ts` | zustand：`TransactionLog`、当前层、视口。**选中集不在这儿** —— spec 明令 selection 不进真源/撤销栈，T4 另建 `selectionStore.ts` | T3 |
-| `apps/desktop/src/main/index.ts` | 加 `--shot <path>`：`executeJavaScript('window.__dajiaDebug()')` → 写 JSON → `app.exit(code)` | T3 |
-| `scripts/desktop-shot.mjs` | 起 Electron 跑一次回读，按判据打 PASS/FAIL；**不进 `pnpm verify`**（CI 的 ubuntu 无 xvfb） | T3 |
+| `apps/desktop/src/renderer/src/PlanCanvas.tsx` | 一块 canvas：量尺寸 → `fitStorey` → `buildDrawList` → 刷；并挂 `window.__dajiaDebug`。**T4 起**：选中进绘制、`onPointerDown` 走 `pickOne`、`opsRef` 让钩子读刷上屏那份、`DebugReport` 补 `selectedIds`/`selectedPx`/`pick`/`selectedAfterBlank` | T3 |
+| `apps/desktop/src/renderer/src/stores/editorStore.ts` | zustand：`TransactionLog`、当前层、视口。**选中集不在这儿** —— spec 明令 selection 不进真源/撤销栈 | T3 |
+| `apps/desktop/src/renderer/src/stores/selectionStore.ts` | zustand：`ids: ReadonlySet<string>` + `select`/`toggle`/`clear`，每次给新 Set。**没有 node 测试**（`apps/` 不在 vitest include 里，也没 jsdom），正确性由 `--pick-shot` 在真窗口钉 | T4 |
+| `apps/desktop/src/main/index.ts` | 加 `--shot <path>`：`executeJavaScript('window.__dajiaDebug()')` → 写 JSON → `app.exit(code)`。**T4 加** `--pick-shot`：`sendInputEvent` 点探针给的两个点 + 条件轮询 | T3 |
+| `scripts/desktop-shot.mjs` | 起 Electron 跑一次回读，按判据打 PASS/FAIL；**不进 `pnpm verify`**（CI 的 ubuntu 无 xvfb）。`--pick` 开关多四条判据（`pnpm pick-shot`） | T3 |
 
 ---
 
@@ -1437,10 +1440,1028 @@ Expected: `verify` exit=0（**`pnpm shot` 不在其中**）；`Tests` 数与 Tas
 
 ---
 
+### Task 4: 命中与点选（点得中的就是画出来的）
+
+**Files:**
+- Create: `packages/scene-2d/src/pick.ts`
+- Modify: `packages/scene-2d/src/drawlist.ts`（只加 `DRAW_LAYERS` 一条导出，画法一行都不改）
+- Modify: `packages/scene-2d/src/index.ts`（`export * from './pick';`）
+- Create: `packages/scene-2d/test/pick.test.ts`
+- Create: `apps/desktop/src/renderer/src/stores/selectionStore.ts`
+- Modify: `apps/desktop/src/renderer/src/PlanCanvas.tsx`（选中进绘制、`onPointerDown`、`opsRef`、`DebugReport` 三个新字段）
+- Modify: `apps/desktop/src/main/index.ts`（新增 `--pick-shot` 的点击序列，`--shot` 那条路径一行不动）
+- Modify: `scripts/desktop-shot.mjs`（`--pick` 开关 + 四条新判据）
+- Modify: `package.json`（根：`"pick-shot"`）
+
+**先落的四条裁决（末尾边界表里 Task 4 的两条问句在这里判掉，判据写进代码与测试，不许留在纸面）**：
+
+| # | 问题 | 裁决 | 理由与代价 |
+|---|---|---|---|
+| R1 | `pick` 吃 `DrawOp[]` 的 `ownerId` 还是吃 `SpatialIndex`？ | **吃指令表，本轮根本不碰 `SpatialIndex`** | T2 把 `ownerId` 钉在每一条指令上，为的就是这一座"像素 ↔ 实体"的桥；指令表就是屏幕上那张图，索引只装墙与洞口两类 `IndexedKind`，且它的 AABB 是世界毫米 —— 拿它当靶子就把"看得见的"换成了"落在包围盒里的"，会点中已经被更高层盖住的构件。代价：全扫 O(指令数)，本样例 31 条，一次点击几微秒。**索引什么时候回来**：等出现"点一下要卡"的真证据；届时 `pickAt` 签名不动，只在 `hitDistanceOf` 之前加一趟 AABB 预筛。计划 2 转下游的 #14（`cellSizeMm` 护栏）与 #15（脏集 O(n²)）说的都是索引与重建，与本任务无关，留在 T5/T6。 |
+| R2 | 容差在屏幕像素上比，还是换算成毫米比？ | **在屏幕像素上比**（`PICK_TOL_PX = 8`，不做 `pxToMm` 换算） | 边界原话说"保证放大时吸附不变松（spec §6）"，而**换算成毫米正好做不到**：毫米容差固定的是世界尺寸，放大 `k` 倍它在屏幕上就宽 `k` 倍，吸附反而变松。像素容差钉的是屏幕上那 8 个像素 —— 放大时它在世界里自动变紧。定值用例「同一世界点在 0.125 与 0.5 px/mm 下命中/不命中」钉的就是这一条：改成毫米口径它必红。 |
+| R3 | 多命中怎么取舍（遮挡）？ | **层序压倒距离 → 同层按距离升序 → 同距离按 `ownerId` 升序**；`kind === 'text'` 与 `ownerId === null` 永不命中 | 指令表的数组顺序就是绘制顺序（T2 口径②），后画的盖住先画的 ⇒ 靠后的层在屏幕上是"看得见的上面那一层"，所以 `annotation > opening > structure` 的层序必须赢过距离，否则点洞口断口线会选中它底下那面墙，屏幕上明明是洞口在压着墙。`text` 排除的理由：楼层标签点进去会把 `storeyId` 塞进选中集，而 T5/T6 的拖拽与删除只认构件 —— 那是"选中了一个不该被选中的东西"，不是"选中了注记"。派生指令（`ownerId === null`）没有可指向的实体，点它无意义。 |
+| R4 | 两次点击之间不许有巧合 | **`probeTarget` 只接受"唯一命中"的候选点** | 相邻墙共享斜切顶点，那附近的点到两面墙都是 0 距离 —— 谁赢取决于 `ownerId` 升序，是巧合不是判据。探针要求 `pickAt` 恰好返回 1 条，多命中直接跳过下一条边。空白点同理：从四个画布角里取"离一切指令最远"的那个，且不足容差就整个返回 `null`，于是"点空白清空选中"这一步不存在"其实打中了东西"的侥幸。 |
+
+**Interfaces:**
+- Consumes: T2 的 `DrawOp` / `Pen` / `DrawLayer` / `Selection` / `EMPTY_SELECTION` / `buildDrawList` / `fitStorey` / `demoHouse` / `SELECTED`；T1 的 `Px` / `Viewport` / `viewportOf` / `mmToPx`；`@dajia/core` 的 `vec`
+- Produces:
+  ```ts
+  export const PICK_TOL_PX = 8;
+  export interface PickHit {
+    readonly ownerId: string;
+    readonly layer: DrawLayer;
+    readonly distancePx: number;
+  }
+  export interface PickProbe {
+    readonly ownerId: string;
+    readonly clickPx: Px;
+    readonly blankPx: Px;
+  }
+  export function distanceToSegmentPx(p: Px, from: Px, to: Px): number;
+  export function pickAt(ops: readonly DrawOp[], point: Px, tolPx?: number): PickHit[];
+  export function pickOne(ops: readonly DrawOp[], point: Px, tolPx?: number): PickHit | null;
+  export function probeTarget(ops: readonly DrawOp[], v: Viewport): PickProbe | null;
+  ```
+  以及 `drawlist.ts` 新增的 `export const DRAW_LAYERS: readonly DrawLayer[];`（层序的唯一真源，`pick.ts` 的排序建立在它上面）。T5 拿 `pickOne` 的返回值当拖拽靶子，拿 `selectionStore` 的 `toggle` 当多选。
+
+> **命中为什么能在 node 里测完**：`pickAt` 吃的是 `DrawOp[]` + 一个 `Px`，两者都是普通对象，不需要 canvas、不需要 DOM、不需要真窗口 —— 这正是 T2 把几何留在 scene-2d 的回报。desktop 侧只剩两件事要证明：指针坐标进得了 `pickAt`（Step 5 的 `--pick-shot`），以及选中**真的改变像素**（`selectedPx`）。
+>
+> **`drawlist.test.ts` 里那个本地 `layerRank` 不改**：它是 T2 的私事，T2 的改坏验证（第 6 条）钉的是"标签排最后"，与 `DRAW_LAYERS` 导不导出无关。改它就要把 T2 的九条改坏重跑一遍，那不是本任务的收益。
+
+- [ ] **Step 1: 写失败测试 `pick.test.ts`**
+
+`packages/scene-2d/test/pick.test.ts`（15 条 `it`，其中 2 条属性）：
+
+```ts
+import { describe, expect, it } from 'vitest';
+import * as fc from 'fast-check';
+import { vec } from '@dajia/core';
+import {
+  PICK_TOL_PX,
+  buildDrawList,
+  demoHouse,
+  distanceToSegmentPx,
+  EMPTY_SELECTION,
+  fitStorey,
+  mmToPx,
+  pickAt,
+  pickOne,
+  probeTarget,
+  viewportOf,
+  type DrawOp,
+  type Pen,
+  type PickHit,
+  type Px,
+  type Viewport,
+} from '@dajia/scene-2d';
+
+const PEN_S: Pen = { layer: 'structure', lineType: 'solid', widthPx: 2, color: '#1f1f1f' };
+const PEN_O: Pen = { layer: 'opening', lineType: 'solid', widthPx: 1.5, color: '#1f1f1f' };
+
+const seg = (ownerId: string | null, pen: Pen, from: Px, to: Px): DrawOp => ({
+  kind: 'line',
+  ownerId,
+  from,
+  to,
+  pen,
+});
+const face = (ownerId: string, pen: Pen, pts: Px[], fill: string | null = null): DrawOp => ({
+  kind: 'polygon',
+  ownerId,
+  pts,
+  fill,
+  pen,
+});
+const label = (ownerId: string | null, at: Px): DrawOp => ({
+  kind: 'text',
+  ownerId,
+  at,
+  text: '楼层 0 · 标高 0.000',
+  sizePx: 14,
+  pen: { layer: 'annotation', lineType: 'solid', widthPx: 1, color: '#1f1f1f' },
+});
+
+const owners = (hits: PickHit[]): string[] => hits.map((h) => h.ownerId);
+
+/** 一条指令的"第一条可点边"的中点：polygon 取 pts[0]→pts[1]，line 取整段，text 取锚点。 */
+function firstEdgeMid(op: DrawOp): Px {
+  if (op.kind === 'polygon') {
+    const a = op.pts[0]!;
+    const b = op.pts[1]!;
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  }
+  if (op.kind === 'line') return { x: (op.from.x + op.to.x) / 2, y: (op.from.y + op.to.y) / 2 };
+  return op.at;
+}
+
+const square = (ownerId: string, pen: Pen, size: number, fill: string | null): DrawOp =>
+  face(
+    ownerId,
+    pen,
+    [
+      { x: 0, y: 0 },
+      { x: size, y: 0 },
+      { x: size, y: size },
+      { x: 0, y: size },
+    ],
+    fill,
+  );
+
+// 与 T2/T3 同源的样例房：视口用 fitStorey（1200×900、pad 60 → 0.125 px/mm），
+// 下面所有"点得中/点不中"的像素算式都以这个缩放为准。
+const house = demoHouse();
+const view = fitStorey(house.doc, house.lowerStoreyId, 1200, 900, 60);
+const ops = buildDrawList(house.doc, house.lowerStoreyId, view, EMPTY_SELECTION);
+
+describe('命中测试 —— 合成指令（判据的每一侧都手动摆过）', () => {
+  it('容差边界含等于：屏幕上正好 8px 命中，再多 0.01px 不命中', () => {
+    const ops = [seg('w', PEN_S, { x: 0, y: 0 }, { x: 100, y: 0 })];
+    // 用常量而不是字面量 8：这条钉的是**边界含等于**，不是"8 这个数"
+    expect(owners(pickAt(ops, { x: 50, y: PICK_TOL_PX }))).toEqual(['w']);
+    expect(pickAt(ops, { x: 50, y: PICK_TOL_PX + 0.01 })).toEqual([]);
+  });
+
+  it('零长段退化到点距：不许 NaN 混进比较', () => {
+    const ops = [seg('dot', PEN_S, { x: 10, y: 10 }, { x: 10, y: 10 })];
+    expect(distanceToSegmentPx({ x: 10, y: 10 }, { x: 10, y: 10 }, { x: 10, y: 10 })).toBe(0);
+    const hits = pickAt(ops, { x: 10, y: 10 });
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.distancePx).toBe(0);
+    // 点到 9px 外：9 > 8，必须判不中。NaN 走这条会静默命中（NaN > tol 是 false）
+    expect(pickAt(ops, { x: 19, y: 10 })).toEqual([]);
+  });
+
+  it('多边形按闭合环判：回边（最后一点 → 第一点）也点得中', () => {
+    const ops = [square('w', PEN_S, 100, null)];
+    // (-3, 50) 只挨着 pts[3]→pts[0] 那条回边；不取模就只剩三条边，这个点的最近距离是 50.09
+    expect(owners(pickAt(ops, { x: -3, y: 50 }))).toEqual(['w']);
+  });
+
+  it('fill 为 null 的内部是白的 —— 点进去不算命中；fill 非 null 时内部算，且距离 0', () => {
+    const tol = 4;
+    const hollow = [square('hollow', PEN_S, 10, null)];
+    const filled = [square('filled', PEN_S, 10, '#dddddd')];
+    // 中心 (5,5) 到边是 5px：tol=4 时 hollow 必须空（内部没画东西），filled 必须命中且 0
+    expect(pickAt(hollow, { x: 5, y: 5 }, tol)).toEqual([]);
+    const hits = pickAt(filled, { x: 5, y: 5 }, tol);
+    expect(owners(hits)).toEqual(['filled']);
+    expect(hits[0]!.distancePx).toBe(0);
+  });
+
+  it('层序压倒距离：更远的洞口线赢过更近的墙轮廓', () => {
+    const ops = [
+      face('wall', PEN_S, [
+        { x: 0, y: 5 },
+        { x: 100, y: 5 },
+        { x: 100, y: 105 },
+        { x: 0, y: 105 },
+      ]),
+      seg('win', PEN_O, { x: 0, y: 9 }, { x: 100, y: 9 }),
+    ];
+    const hits = pickAt(ops, { x: 50, y: 0 }, 20);
+    expect(hits.map((h) => h.layer)).toEqual(['opening', 'structure']);
+    expect(hits.map((h) => h.distancePx)).toEqual([9, 5]);
+    expect(pickOne(ops, { x: 50, y: 0 }, 20)!.ownerId).toBe('win');
+  });
+
+  it('同层按距离升序，同距离按 ownerId 升序', () => {
+    const ops = [
+      seg('far', PEN_S, { x: 0, y: 6 }, { x: 100, y: 6 }),
+      seg('bbb', PEN_S, { x: 0, y: -2 }, { x: 100, y: -2 }),
+      seg('aaa', PEN_S, { x: 0, y: 2 }, { x: 100, y: 2 }),
+    ];
+    expect(owners(pickAt(ops, { x: 50, y: 0 }))).toEqual(['aaa', 'bbb', 'far']);
+  });
+
+  it('同一 owner 的多条指令去重成一条，留最近的那条', () => {
+    const ops = [
+      face('w', PEN_S, [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 40 },
+        { x: 0, y: 40 },
+      ]),
+      seg('w', PEN_S, { x: 0, y: 2 }, { x: 100, y: 2 }),
+    ];
+    const hits = pickAt(ops, { x: 50, y: 6 });
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.distancePx).toBe(4);
+  });
+
+  it('text 永不命中；ownerId 为 null 的指令永不命中', () => {
+    const ops = [
+      label('storey-1', { x: 50, y: 0 }),
+      label(null, { x: 50, y: 0 }),
+      seg(null, PEN_S, { x: 0, y: 0 }, { x: 100, y: 0 }),
+    ];
+    expect(pickAt(ops, { x: 50, y: 0 })).toEqual([]);
+  });
+
+  it('NaN 点击点返回空表，不许静默命中', () => {
+    const ops = [seg('w', PEN_S, { x: 0, y: 0 }, { x: 100, y: 0 })];
+    expect(pickAt(ops, { x: NaN, y: 0 })).toEqual([]);
+    expect(pickAt(ops, { x: 50, y: NaN })).toEqual([]);
+    expect(pickOne(ops, { x: NaN, y: NaN })).toBeNull();
+  });
+
+  it('probeTarget 只接受唯一命中的候选点：被洞口线压住的那条边必须跳过', () => {
+    const v = viewportOf(1200, 900, { pxPerMm: 1, center: vec(0, 0) });
+    const ops = [
+      face('wall', PEN_S, [
+        { x: 0, y: 0 },
+        { x: 400, y: 0 },
+        { x: 400, y: 40 },
+        { x: 0, y: 40 },
+      ]),
+      // 断口线正好穿过上边 (200, 0)：那条边的中点上"谁在上面"说不清（opening 层还压着 structure）
+      seg('win', PEN_O, { x: 200, y: -20 }, { x: 200, y: 20 }),
+    ];
+    const probe = probeTarget(ops, v);
+    expect(probe).not.toBeNull();
+    if (probe === null) return; // 上一条已断言非空，这里只为类型收窄
+    // 跳过 (200,0) 之后，下一条够长的边是下边，中点 (200,40) 只挨着墙。
+    // 钉死坐标才是真正的牙齿：不筛唯一命中就会拿到 (200, 0)。
+    expect(probe.clickPx).toEqual({ x: 200, y: 40 });
+    expect(owners(pickAt(ops, probe.clickPx))).toEqual(['wall']);
+    expect(pickAt(ops, probe.blankPx)).toEqual([]);
+  });
+
+  it('probeTarget：clickPx 唯一命中自己，blankPx 一个都不命中', () => {
+    const probe = probeTarget(ops, view);
+    expect(probe).not.toBeNull();
+    if (probe === null) return; // 上一条已经断言过非空，这里只为类型收窄；走到这儿就是测试失败
+    expect(owners(pickAt(ops, probe.clickPx))).toEqual([probe.ownerId]);
+    expect(house.doc.get(probe.ownerId)?.kind).toBe('wall');
+    expect(pickAt(ops, probe.blankPx)).toEqual([]);
+  });
+});
+
+describe('命中测试 —— 样例两层房', () => {
+  it('每条指令的每条边中点都点得中自己', () => {
+    let checked = 0;
+    for (const op of ops) {
+      if (op.kind === 'text') continue;
+      const ownerId = op.ownerId;
+      if (ownerId === null) continue;
+      const pts = op.kind === 'polygon' ? op.pts : [op.from, op.to];
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[i]!;
+        const b = pts[(i + 1) % pts.length]!;
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        expect(owners(pickAt(ops, mid, PICK_TOL_PX))).toContain(ownerId);
+        checked += 1;
+      }
+    }
+    // 空循环等于没测：8 轮廓 × 4 边 + 12 轴线 + 10 洞口线 = 54 条边
+    expect(checked).toBe(54);
+  });
+
+  it('放大时吸附在屏幕上不变松、在世界里变紧（像素口径的唯一证明）', () => {
+    const fine = viewportOf(1200, 900, { pxPerMm: 0.125, center: vec(4000, 3000) });
+    const zoom = viewportOf(1200, 900, { pxPerMm: 0.5, center: vec(4000, 3000) });
+    const opsFine = buildDrawList(house.doc, house.lowerStoreyId, fine, EMPTY_SELECTION);
+    const opsZoom = buildDrawList(house.doc, house.lowerStoreyId, zoom, EMPTY_SELECTION);
+    // southWest 墙厚 240 → 下表面在 y = -120mm；x=2000 处没有接头，那条边是完整的
+    const onFace = vec(2000, -120);
+    const below5px = (v: Viewport): Px => ({ x: mmToPx(v, onFace).x, y: mmToPx(v, onFace).y + 5 });
+    // 屏幕偏移同为 5px：两个缩放都命中 —— 吸附在屏幕上一样紧
+    expect(pickOne(opsFine, below5px(fine))).not.toBeNull();
+    expect(pickOne(opsZoom, below5px(zoom))).not.toBeNull();
+    // 而同一**世界**点（下表面往下 40mm）：0.125 下是 5px（命中），0.5 下是 20px（不命中）。
+    // 毫米口径会给相反的答案，这三行就是像素口径的钉子。
+    expect(pickOne(opsFine, mmToPx(fine, vec(2000, -160)))).not.toBeNull();
+    expect(pickOne(opsZoom, mmToPx(zoom, vec(2000, -160)))).toBeNull();
+  });
+
+  it('属性：容差越大，命中集只增不减', () => {
+    const near = ops.filter((o) => o.kind !== 'text' && o.ownerId !== null);
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: near.length - 1 }),
+        fc.double({ min: -3, max: 3, noNaN: true }),
+        fc.double({ min: -3, max: 3, noNaN: true }),
+        (rawIndex, dx, dy) => {
+          const op = near[rawIndex % near.length]!;
+          const mid = firstEdgeMid(op);
+          const p = { x: mid.x + dx, y: mid.y + dy };
+          const small = new Set(owners(pickAt(ops, p, 4)));
+          const big = new Set(owners(pickAt(ops, p, 16)));
+          // 容差 4 时至少点得中自己那条边（jitter ≤ 4.25px），空集就是这条属性在自欺
+          expect(small.size).toBeGreaterThanOrEqual(1);
+          for (const id of small) expect(big.has(id)).toBe(true);
+        },
+      ),
+      { numRuns: 300 },
+    );
+  });
+
+  it('属性：排序契约对任意点击成立，且结果与指令数组的顺序无关', () => {
+    const near = ops.filter((o) => o.kind !== 'text' && o.ownerId !== null);
+    const mid = firstEdgeMid(near[0]!);
+    const p = { x: mid.x + 1, y: mid.y + 2 };
+    const reference = pickAt(ops, p);
+    expect(reference.length).toBeGreaterThanOrEqual(1);
+    fc.assert(
+      fc.property(
+        fc.shuffledSubarray(ops, { minLength: ops.length, maxLength: ops.length }),
+        (shuffled) => {
+          expect(pickAt(shuffled, p)).toEqual(reference);
+        },
+      ),
+      { numRuns: 100 },
+    );
+    for (const hits of [reference, pickAt(ops, { x: mid.x, y: mid.y })]) {
+      for (let i = 1; i < hits.length; i++) {
+        const a = hits[i - 1]!;
+        const b = hits[i]!;
+        const rank = (h: PickHit) => ['structure', 'opening', 'annotation'].indexOf(h.layer);
+        expect(rank(b)).toBeLessThanOrEqual(rank(a));
+        if (rank(b) === rank(a)) expect(b.distancePx).toBeGreaterThanOrEqual(a.distancePx);
+        expect(a.ownerId).not.toBe(b.ownerId);
+      }
+    }
+  });
+});
+```
+
+> **「每条指令的每条边中点都点得中自己」为什么必须钉死 `checked === 54`**：这条是"看得见 = 点得中"的正面证据，一旦 `buildDrawList` 少出一条边、或 `filter` 把某类指令误排掉，循环照样跑完、照样全绿。54 = 8 轮廓 × 4 边 + 12 轴线 + 10 洞口线，与 T3 的 `ops === 31` 同源；改样例房必须三处一起改。
+
+- [ ] **Step 2: 跑到红**
+
+Run: `npx vitest run packages/scene-2d/test/pick.test.ts > /tmp/t4-red.log 2>&1; echo exit=$?`
+Expected: exit≠0，红在解析/导出缺失（`does not provide an export named 'pickAt'`）。**不许**出现"`probeTarget` 那条绿了"—— 导出不存在时任何断言都拿不到函数。
+
+- [ ] **Step 3: 写 `pick.ts`（并给 `drawlist.ts` 加 `DRAW_LAYERS`）**
+
+`packages/scene-2d/src/drawlist.ts` 在 `export type DrawLayer = ...` 之后加：
+
+```ts
+/**
+ * 绘制顺序 = 指令数组的顺序 = 层序。数组下标越大越靠上（后画的盖住先画的），
+ * 命中测试的取舍按它排（见 pick.ts 的 R3）—— 所以它是层序的唯一真源，
+ * 不是给人看的注释：加一层必须同时改 buildDrawList 的产出顺序，否则层序压倒距离就是空话。
+ */
+export const DRAW_LAYERS: readonly DrawLayer[] = ['structure', 'opening', 'annotation'];
+```
+
+`packages/scene-2d/src/pick.ts`：
+
+```ts
+import { DRAW_LAYERS, type DrawLayer, type DrawOp } from './drawlist';
+import type { Px, Viewport } from './viewport';
+
+/**
+ * 吸附半径，单位是**屏幕像素**。换算成毫米比较就做不到"放大时吸附不变松"：
+ * 毫米容差钉的是世界尺寸，放大 k 倍它在屏幕上就宽 k 倍。
+ */
+export const PICK_TOL_PX = 8;
+
+export interface PickHit {
+  readonly ownerId: string;
+  readonly layer: DrawLayer;
+  readonly distancePx: number;
+}
+
+/** 给一次性回读用的靶子：一个必定命中 `ownerId` 的点，和一个必定什么都不命中的点。 */
+export interface PickProbe {
+  readonly ownerId: string;
+  readonly clickPx: Px;
+  readonly blankPx: Px;
+}
+
+function dist(a: Px, b: Px): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+/**
+ * 点到线段。零长段必须退化到点距：不写这一句，`t` 的分母是 0 ⇒ `NaN`，
+ * 而 `NaN <= tol` 是 false —— 一个退化的控制点会既"点不中"又把 NaN 带进排序。
+ */
+export function distanceToSegmentPx(p: Px, from: Px, to: Px): number {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 === 0) return dist(p, from);
+  const t = ((p.x - from.x) * dx + (p.y - from.y) * dy) / len2;
+  const clamped = t < 0 ? 0 : t > 1 ? 1 : t;
+  return dist(p, { x: from.x + dx * clamped, y: from.y + dy * clamped });
+}
+
+/** 奇偶射线法。只在 `fill !== null` 时用到 —— 本计划的墙轮廓 fill 恒为 null，用不到它。 */
+function insidePolygon(p: Px, pts: readonly Px[]): boolean {
+  let odd = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const a = pts[i]!;
+    const b = pts[j]!;
+    if (a.y > p.y !== b.y > p.y) {
+      const xAt = a.x + ((p.y - a.y) * (b.x - a.x)) / (b.y - a.y);
+      if (p.x < xAt) odd = !odd;
+    }
+  }
+  return odd;
+}
+
+/** 命中距离。null = 这条指令根本不可点。 */
+function distanceOfOp(op: DrawOp, p: Px): number | null {
+  switch (op.kind) {
+    case 'text':
+      // 注记不是构件：点它会往选中集塞一个 storeyId，而 T5/T6 的拖拽与删除只认构件。
+      return null;
+    case 'line':
+      return distanceToSegmentPx(p, op.from, op.to);
+    case 'polygon': {
+      const n = op.pts.length;
+      // 少于 2 点连一条边都凑不出来，屏幕上根本没有可见轮廓。
+      // 本计划没有这种输入（轮廓一律四点），所以它不红任何用例 —— 是防御，不是判据。
+      if (n < 2) return null;
+      let d = Infinity;
+      for (let i = 0; i < n; i++) {
+        const a = op.pts[i]!;
+        const b = op.pts[(i + 1) % n]!; // 取模：多边形是闭合环，回边也画了线
+        d = Math.min(d, distanceToSegmentPx(p, a, b));
+      }
+      // fill 非 null ⇒ 内部真的涂了像素，点在里面就该命中（距离记 0：它比任何边都"更在这条指令上"）。
+      if (op.fill !== null && insidePolygon(p, op.pts)) return 0;
+      return d;
+    }
+  }
+}
+
+function rankOf(layer: DrawLayer): number {
+  const i = DRAW_LAYERS.indexOf(layer);
+  if (i < 0) throw new RangeError(`未知绘制层 ${layer}`);
+  return i;
+}
+
+/** 层序先赢，同层近的赢。 */
+function better(a: PickHit, b: PickHit): boolean {
+  const ra = rankOf(a.layer);
+  const rb = rankOf(b.layer);
+  if (ra !== rb) return ra > rb;
+  return a.distancePx < b.distancePx;
+}
+
+/**
+ * 将 `point` 命中（≤ `tolPx`）的实体，按 R3 的口径排好序，**每个 owner 只出一条**。
+ * 同一个 owner 常常有几条指令同时命中（墙轮廓 + 它的轴线 + 它的洞口断口），
+ * 那是同一个实体，不是几个候选。
+ */
+export function pickAt(ops: readonly DrawOp[], point: Px, tolPx: number = PICK_TOL_PX): PickHit[] {
+  // 入口守卫：NaN 与 tolPx 的一切比较都是 false，`d > tolPx` 兜不住它 —— 少了这三行，
+  // NaN 点击点会命中"距离为 NaN"的第一条指令。
+  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return [];
+  const byOwner = new Map<string, PickHit>();
+  for (const op of ops) {
+    const ownerId = op.ownerId;
+    if (ownerId === null) continue;
+    const d = distanceOfOp(op, point);
+    if (d === null || d > tolPx) continue;
+    const hit: PickHit = { ownerId, layer: op.pen.layer, distancePx: d };
+    const current = byOwner.get(ownerId);
+    if (current === undefined || better(hit, current)) byOwner.set(ownerId, hit);
+  }
+  // ownerId 升序收尾是必需的：去重后 owner 互不相同 ⇒ 它把排序变成全序，
+  // 于是洗牌不改变结果（见那条属性）。少了它，`Array.sort` 的稳定性会让绘制顺序掺进答案。
+  return [...byOwner.values()].sort((a, b) => {
+    if (rankOf(a.layer) !== rankOf(b.layer)) return rankOf(b.layer) - rankOf(a.layer);
+    if (a.distancePx !== b.distancePx) return a.distancePx - b.distancePx;
+    return a.ownerId < b.ownerId ? -1 : a.ownerId > b.ownerId ? 1 : 0;
+  });
+}
+
+/** 单击语义的入口：层序 + 距离选出的那一个，什么都没命中就是 null。 */
+export function pickOne(ops: readonly DrawOp[], point: Px, tolPx: number = PICK_TOL_PX): PickHit | null {
+  return pickAt(ops, point, tolPx)[0] ?? null;
+}
+
+function minDistanceToOps(ops: readonly DrawOp[], p: Px): number {
+  let d = Infinity;
+  for (const op of ops) {
+    const dd = distanceOfOp(op, p);
+    if (dd !== null && dd < d) d = dd;
+  }
+  return d;
+}
+
+function blankPoint(ops: readonly DrawOp[], v: Viewport): Px | null {
+  const inset = PICK_TOL_PX + 2;
+  const corners: Px[] = [
+    { x: inset, y: inset },
+    { x: v.widthPx - inset, y: inset },
+    { x: inset, y: v.heightPx - inset },
+    { x: v.widthPx - inset, y: v.heightPx - inset },
+  ];
+  let best: Px | null = null;
+  let bestD = -Infinity;
+  for (const c of corners) {
+    const d = minDistanceToOps(ops, c);
+    // 严格 >：四角同分时保留先出现的（左下角），洗牌与浮点都不改变结果
+    if (d > bestD) {
+      bestD = d;
+      best = c;
+    }
+  }
+  if (best === null || bestD <= PICK_TOL_PX) return null;
+  return best;
+}
+
+/**
+ * 一次性回读用的靶子。两条规则都是为了让"点了没反应"这种失败藏不住：
+ * ① 只接受 `pickAt` 恰好返回 1 条的候选点 —— 相邻墙共享斜切顶点，那附近的"选中谁"
+ *    是 ownerId 升序给的巧合，不是判据；
+ * ② 空白点从四角里挑离一切指令最远的，且必须比容差更远，否则整个返回 null
+ *    （"点空白清空选中"这一步不许其实打中了东西）。
+ * 图铺满画布时没有空白角 ⇒ null，调用方（`__dajiaDebug` 与 `--pick-shot`）把它当失败处理。
+ */
+export function probeTarget(ops: readonly DrawOp[], v: Viewport): PickProbe | null {
+  const blank = blankPoint(ops, v);
+  if (blank === null) return null;
+  // 边长下限：太短的边中点四周挤着一堆相邻指令，唯一命中几乎不可能成立
+  const minEdgePx = PICK_TOL_PX * 8;
+  for (const op of ops) {
+    if (op.kind !== 'polygon' || op.ownerId === null) continue;
+    const n = op.pts.length;
+    if (n < 2) continue;
+    for (let i = 0; i < n; i++) {
+      const a = op.pts[i]!;
+      const b = op.pts[(i + 1) % n]!;
+      if (dist(a, b) < minEdgePx) continue;
+      const mid: Px = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const hits = pickAt(ops, mid);
+      // 多命中 = 这个点上"谁在上面"说不清，换下一条边，不猜。
+      // hits.length === 1 时那条必然是本条指令自己（中点在它上面，距离 0），
+      // 所以这里不再重复断言 ownerId —— 写了也没人能走到另一支，测试里由 probe 那条钉。
+      if (hits.length !== 1) continue;
+      return { ownerId: op.ownerId, clickPx: mid, blankPx: blank };
+    }
+  }
+  return null;
+}
+```
+
+`packages/scene-2d/src/index.ts` 追加一行：
+
+```ts
+export * from './pick';
+```
+
+- [ ] **Step 4: 跑到全绿**
+
+Run: `npx vitest run packages/scene-2d/test/pick.test.ts > /tmp/t4-green.log 2>&1; echo exit=$?`
+Expected: exit=0，**`Tests 15 passed`**（`Test Files 1 passed`；Step 1 的 `it` 共 15 条，2 条属性在其中）。数对不上就是有用例被跳过或被合并，别改期望值，先查日志。
+
+若「probeTarget」红在 `expect(probe).not.toBeNull()`，先查是"四角不够空"还是"没有一条边的中点唯一命中"：在测试里临时打一行 `console.log(view.pxPerMm, blankPoint 距离)`（跑完删掉），**不许**把 `PICK_TOL_PX` 改小、也不许把 R4 的唯一命中放宽来迁就实现 —— 那两条都是判据，不是参数。判据与样例真的冲突时停下来报告。
+
+- [ ] **Step 5: 改坏验证（10 条）**
+
+逐条做，每条做完立刻改回来：
+
+1. `distanceToSegmentPx` 删掉 `len2 === 0` 短路 → 「零长段」必须红（`NaN` 距离既过不了 `toBe(0)`，也让 `9px` 那条静默命中）。
+2. 多边形的边改成 `op.pts[i + 1]` 不取模 → 「回边也点得中」必须红。
+3. 删掉 `if (op.fill !== null && insidePolygon(...))` → 「fill 非 null 时内部算命中」必须红。**反向哨兵另在下方**。
+4. `pickAt` 的 `d > tolPx` 改成 `d >= tolPx` → 「容差边界含等于」必须红（正好 8px 变成不命中）。
+5. `sort` 里去掉层序那一行，只按距离 → 「层序压倒距离」必须红（`['structure','opening']`）。
+6. `sort` 的层序方向反了（`rankOf(a) - rankOf(b)`）→ 同一条必须红。
+7. `better` 去掉距离比较，只比层序（同层保留先来的那条）→ 「去重留最近的」必须红（4 变 6）。
+8. 删掉 `pickAt` 入口的 `Number.isFinite` 守卫 → 「NaN 点击点返回空表」必须红（NaN 会命中第一条指令）。
+9. `sort` 去掉 `ownerId` 那一路 → 「洗牌不改变结果」的属性必须红（同层同距离时稳定排序跟着数组顺序走）；`owners` 那条同距离定值同样会红。
+10. `probeTarget` 的 `hits.length !== 1` 改成 `hits.length < 1` → 「probeTarget 只接受唯一命中的候选点」必须红在 `expect(probe.clickPx).toEqual({ x: 200, y: 40 })`（放宽筛选后探针拿到的是被洞口线压住的 (200, 0)）。样例房那条 `probeTarget` 用例**不会**红 —— 它的第一个候选边本来就唯一，所以 R4 的牙齿全靠这条合成用例。别把它当装饰删。
+
+反向哨兵两条，**必须还绿**：
+
+- 删掉 `distanceOfOp` 里 `if (n < 2) return null;` —— 本计划没有少于 2 点的多边形，它是防御不是判据。红了说明有用例在依赖不该依赖的东西。
+- `minDistanceToOps` 改成只比顶点不比线段（把 `distanceOfOp` 换成 `dist` 到各 `pts`）—— 样例房四角离任何顶点都比离线段远，空白点仍是空白。红了说明 `blankPoint` 的判据被写进了不该写的位置。
+
+1–10 里任何一条"改坏了还绿"，说明那条断言写空了，就地补到能红为止。**一条不会红的测试比没有测试更糟。** 把每条命令与关键红字写进提交信息。
+
+- [ ] **Step 6: desktop 接线 —— 选中进绘制、指针进命中**
+
+`apps/desktop/src/renderer/src/stores/selectionStore.ts`：
+
+```ts
+import { create } from 'zustand';
+
+export interface SelectionState {
+  readonly ids: ReadonlySet<string>;
+  select: (id: string) => void;
+  toggle: (id: string) => void;
+  clear: () => void;
+}
+
+/**
+ * 选中集独立于 editorStore：spec 明令它不进真源、不进撤销栈、不落库（关窗口就该忘掉，
+ * 撤销一次拖拽不该顺手改回选中）。这里每次返回**新的 Set** —— 原地 add/delete 让
+ * zustand 的 `Object.is` 判定相等、订阅者不重渲，屏幕就不跟着红，那是"点了没反应"里最难查的一种。
+ * 重复点同一个构件、清空已经空的集，都原样返回 state：不为了"看着安全"多刷一帧。
+ */
+export const useSelection = create<SelectionState>((set) => ({
+  ids: new Set<string>(),
+  select: (id) => set((s) => (s.ids.size === 1 && s.ids.has(id) ? s : { ids: new Set([id]) })),
+  toggle: (id) =>
+    set((s) => {
+      const next = new Set(s.ids);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return { ids: next };
+    }),
+  clear: () => set((s) => (s.ids.size === 0 ? s : { ids: new Set<string>() })),
+}));
+```
+
+这个文件**没有 node 测试可写**：`vitest.config.ts` 的 include 只有 `packages/*/test/**`，`apps/` 不在里头，而且没有 jsdom。这不是漏测 —— 判据（命中、排序、去重）全在 `pick.ts`，store 只是状态的容器；它的正确性由 Step 7 的 `--pick-shot` 在真窗口里钉。这条口径与全局约束「renderer 一行几何都不许算」是同一件事的两面。
+
+`apps/desktop/src/renderer/src/PlanCanvas.tsx` 整体换成：
+
+```tsx
+import { useEffect, useRef } from 'react';
+import {
+  SELECTED,
+  buildDrawList,
+  fitStorey,
+  pickOne,
+  probeTarget,
+  type DrawOp,
+  type Pen,
+  type PickProbe,
+} from '@dajia/scene-2d';
+import { useEditor } from './stores/editorStore';
+import { useSelection } from './stores/selectionStore';
+
+export interface DebugReport {
+  ops: number;
+  layers: Record<string, number>;
+  nonBlankPx: number;
+  wPx: number;
+  hPx: number;
+  selectedIds: string[];
+  selectedPx: number;
+  pick: PickProbe | null;
+  selectedAfterBlank: number;
+}
+
+declare global {
+  interface Window {
+    __dajiaDebug?: () => DebugReport;
+  }
+}
+
+const DASH: Record<Pen['lineType'], number[]> = {
+  solid: [],
+  dashed: [6, 4],
+  'dash-dot': [12, 4, 2, 4],
+};
+
+const BG = '#ffffff';
+const CHANNEL_TOL = 40;
+
+/** 选中色从 scene-2d 的常量解析，不在这里重抄一遍 hex —— 改了常量这里跟着变，判据不漂。 */
+function rgbOf(hex: string): readonly [number, number, number] {
+  return [
+    Number.parseInt(hex.slice(1, 3), 16),
+    Number.parseInt(hex.slice(3, 5), 16),
+    Number.parseInt(hex.slice(5, 7), 16),
+  ];
+}
+
+const [SEL_R, SEL_G, SEL_B] = rgbOf(SELECTED);
+
+function paint(ctx: CanvasRenderingContext2D, ops: readonly DrawOp[]): void {
+  ctx.fillStyle = BG;
+  ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  ctx.lineCap = 'round';
+  for (const op of ops) {
+    ctx.strokeStyle = op.pen.color;
+    ctx.lineWidth = op.pen.widthPx;
+    ctx.setLineDash(DASH[op.pen.lineType]);
+    if (op.kind === 'polygon') {
+      ctx.beginPath();
+      op.pts.forEach((p, i) => {
+        if (i === 0) ctx.moveTo(p.x, p.y);
+        else ctx.lineTo(p.x, p.y);
+      });
+      ctx.closePath();
+      if (op.fill !== null) {
+        ctx.fillStyle = op.fill;
+        ctx.fill();
+        ctx.fillStyle = BG;
+      }
+      ctx.stroke();
+    } else if (op.kind === 'line') {
+      ctx.beginPath();
+      ctx.moveTo(op.from.x, op.from.y);
+      ctx.lineTo(op.to.x, op.to.y);
+      ctx.stroke();
+    } else {
+      ctx.setLineDash([]);
+      ctx.fillStyle = op.pen.color;
+      ctx.font = `${String(op.sizePx)}px system-ui, sans-serif`;
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(op.text, op.at.x, op.at.y);
+    }
+  }
+  ctx.setLineDash([]);
+}
+
+/** 抗锯齿让选中线边缘是渐变而不是纯色，所以按通道 ±40 数，不比 RGB 全等。 */
+function countPixels(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+): { nonBlankPx: number; selectedPx: number } {
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  let nonBlankPx = 0;
+  let selectedPx = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i]!;
+    const g = data[i + 1]!;
+    const b = data[i + 2]!;
+    if (r < 250 || g < 250 || b < 250) nonBlankPx += 1;
+    if (
+      Math.abs(r - SEL_R) <= CHANNEL_TOL &&
+      Math.abs(g - SEL_G) <= CHANNEL_TOL &&
+      Math.abs(b - SEL_B) <= CHANNEL_TOL
+    ) {
+      selectedPx += 1;
+    }
+  }
+  return { nonBlankPx, selectedPx };
+}
+
+export function PlanCanvas(): React.JSX.Element {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // 指针事件的靶子必须是**刷上屏的那一份**指令表，不是现算的副本：副本与屏幕一旦漂开，
+  // "点得中的就是画出来的"这条就只剩注释还在守着。
+  const opsRef = useRef<readonly DrawOp[]>([]);
+  const log = useEditor((s) => s.log);
+  const storeyId = useEditor((s) => s.storeyId);
+  const viewport = useEditor((s) => s.viewport);
+  const setViewport = useEditor((s) => s.setViewport);
+  const ids = useSelection((s) => s.ids);
+  const select = useSelection((s) => s.select);
+  const toggle = useSelection((s) => s.toggle);
+  const clear = useSelection((s) => s.clear);
+
+  // 尺寸 → 视口。刻意不用 getBoundingClientRect：没有 CSS 参与，视口尺寸就是窗口
+  // 内容区，shot 的期望像素数才不会随布局漂。（拖拽/缩放交互在 T5 才接管这条线。）
+  useEffect(() => {
+    const fit = (): void => {
+      const wPx = Math.max(1, Math.floor(window.innerWidth));
+      const hPx = Math.max(1, Math.floor(window.innerHeight));
+      const canvas = canvasRef.current;
+      if (canvas !== null) {
+        canvas.width = wPx;
+        canvas.height = hPx;
+        canvas.style.width = `${String(wPx)}px`;
+        canvas.style.height = `${String(hPx)}px`;
+      }
+      setViewport(fitStorey(log.document, storeyId, wPx, hPx, 60));
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, [log, storeyId, setViewport]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas === null || viewport === null) return;
+    const ctx = canvas.getContext('2d');
+    if (ctx === null) return;
+    const ops = buildDrawList(log.document, storeyId, viewport, { ids });
+    opsRef.current = ops;
+    paint(ctx, ops);
+  }, [log, storeyId, viewport, ids]);
+
+  const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>): void => {
+    // offsetX/offsetY 就是画布像素：canvas.width === style.width（上面那两行），
+    // 没有 CSS 缩放掺进来，所以屏幕坐标与 DrawOp 的坐标同一单位。
+    // DPR≠1 时图会糊，但点不偏 —— sendInputEvent 的 x/y 是 DIP，等于这里的 CSS 像素。
+    const hit = pickOne(opsRef.current, {
+      x: event.nativeEvent.offsetX,
+      y: event.nativeEvent.offsetY,
+    });
+    if (hit === null) {
+      clear();
+      return;
+    }
+    if (event.shiftKey) toggle(hit.ownerId);
+    else select(hit.ownerId);
+  };
+
+  // 钩子必须在"这一帧已经刷完"之后存在：effect 顺序 = 声明顺序，paint 在前、这条在后。
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas === null || viewport === null) return;
+    const previous = window.__dajiaDebug;
+    window.__dajiaDebug = (): DebugReport => {
+      // 读 opsRef（屏幕上那张图）而不是重算一份：重算的那份不知道选中集，
+      // T3 这么写没问题（那时选中不上屏），T4 之后再重算就是在测另一张图。
+      const ops = opsRef.current;
+      const layers: Record<string, number> = {};
+      for (const o of ops) layers[o.pen.layer] = (layers[o.pen.layer] ?? 0) + 1;
+      const ctx = canvas.getContext('2d');
+      const counted =
+        ctx === null ? { nonBlankPx: 0, selectedPx: 0 } : countPixels(ctx, canvas);
+      return {
+        ops: ops.length,
+        layers,
+        nonBlankPx: counted.nonBlankPx,
+        wPx: canvas.width,
+        hPx: canvas.height,
+        selectedIds: [...ids],
+        selectedPx: counted.selectedPx,
+        pick: probeTarget(ops, viewport),
+        selectedAfterBlank: ids.size,
+      };
+    };
+    return () => {
+      window.__dajiaDebug = previous;
+    };
+  }, [viewport, ids]);
+
+  return <canvas ref={canvasRef} onPointerDown={onPointerDown} style={{ display: 'block' }} />;
+}
+```
+
+> **`selectedAfterBlank` 为什么单独一个字段而不是复用 `selectedPx`**：`ids.size` 与"红色像素数"是两件事 —— 前者证 store 被清空，后者证屏幕跟着清。只留 `selectedPx` 的话，"store 清空但画布没重刷"（漏了 `ids` 依赖）会显示成红色像素仍在；只留 `selectedIds` 的话，"刷了但刷错了颜色"看不见。
+>
+> **`Px` 不在 import 列表里**：`DebugReport.pick` 用的是 `PickProbe`，而 `onPointerDown` 那个字面量靠 `pickOne` 的入参推断就够了 —— 多引一条 `type Px` 会被 `noUnusedLocals` 拦下（`pnpm --filter @dajia/desktop typecheck` 红），所以这条 import 就是它应有的样子。`PickProbe` 反过来必须有：`DebugReport` 的字段类型用到了它。
+
+`apps/desktop/src/main/index.ts`：`--shot` 那条路径**一行都不改**，加下面这些。**不许**从 renderer 文件 `import type { DebugReport }` —— 那会把 React 拖进 main 产物；这里的形状与 `DebugReport` 字段名对齐，JSON 是它们唯一的对账处。
+
+```ts
+interface ClickPoint {
+  x: number;
+  y: number;
+}
+
+interface PickProbeShape {
+  ownerId: string;
+  clickPx: ClickPoint;
+  blankPx: ClickPoint;
+}
+
+interface ReportShape {
+  ops: number;
+  selectedIds: string[];
+  selectedPx: number;
+  pick: PickProbeShape | null;
+  selectedAfterBlank: number;
+}
+
+function pickShotRequested(): boolean {
+  return process.argv.includes('--pick-shot');
+}
+
+/** 条件轮询，不是固定 sleep：慢窗口不该导致误判成"没反应"，等不到才是失败。 */
+async function waitUntil<T>(label: string, probe: () => Promise<T>, done: (value: T) => boolean): Promise<T> {
+  for (let i = 0; i < 200; i++) {
+    const value = await probe();
+    if (done(value)) return value;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`10 秒内没等到：${label}`);
+}
+
+async function readReport(win: BrowserWindow): Promise<ReportShape> {
+  return (await win.webContents.executeJavaScript('window.__dajiaDebug()')) as ReportShape;
+}
+
+/**
+ * 走合成指针事件，不走 `element.click()`：后者只给 DOM 派发一个 click，
+ * 我们的处理器听的是 pointerdown（而且真实点击还带着 offsetX 与 shift 修饰键）。
+ */
+async function clickPx(win: BrowserWindow, p: ClickPoint): Promise<void> {
+  const x = Math.round(p.x);
+  const y = Math.round(p.y);
+  win.webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
+  win.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
+}
+
+/** 先点中一个构件，再点空白，最后把两个状态一起写盘。坐标一律由 scene-2d 的探针给出。 */
+async function runPickShot(win: BrowserWindow, path: string): Promise<void> {
+  await whenLoaded(win);
+  await waitForDebug(win);
+  const before = await readReport(win);
+  if (before.pick === null) throw new Error('probeTarget 没给靶子：四角离图太近或没有唯一命中的边');
+  const probe = before.pick;
+  await clickPx(win, probe.clickPx);
+  const picked = await waitUntil(
+    `选中 ${probe.ownerId} 且屏幕变红`,
+    () => readReport(win),
+    (r) =>
+      r.selectedIds.length === 1 && r.selectedIds[0] === probe.ownerId && r.selectedPx > 100,
+  );
+  await clickPx(win, probe.blankPx);
+  // 三个条件一起等：React 提交 store 与重刷画布之间隔着一帧。只等 ids 归零的话，
+  // 会在红像素还没落时就把它读进报告，判据 4 假红（看起来像"清空没生效"）。
+  const cleared = await waitUntil(
+    '点空白后清空选中',
+    () => readReport(win),
+    (r) => r.selectedIds.length === 0 && r.selectedAfterBlank === 0 && r.selectedPx === 0,
+  );
+  const finalReport = {
+    ...cleared,
+    ops: before.ops,
+    pick: probe,
+    clickedOwner: picked.selectedIds[0] ?? null,
+    // 清空之后 selectedPx 会回到 0，所以"点中时红了多少"必须单独留档，
+    // 不能靠 finalReport 里那个 selectedPx —— 那是空白点的状态。
+    pickedSelectedPx: picked.selectedPx,
+  };
+  writeFileSync(path, `${JSON.stringify(finalReport, null, 2)}\n`, 'utf8');
+  process.stdout.write(`${JSON.stringify(finalReport)}\n`);
+}
+```
+
+`app.whenReady()` 那段里的分支改成（`shotPath === null` 的正常启动路径与 `runShot` 本体都不动）：
+
+```ts
+  let code = 0;
+  try {
+    if (pickShotRequested()) await runPickShot(win, shotPath);
+    else await runShot(win, shotPath);
+  } catch (err) {
+    process.stderr.write(`--shot 失败：${String(err)}\n`);
+    code = 1;
+  }
+  app.exit(code);
+```
+
+`scripts/desktop-shot.mjs`：`try` / `finally { rmSync(dir, ...) }` 那两头的骨架**原样保留**，改的是 `wantPick`、起 Electron 那一行与判据数组：
+
+```js
+const wantPick = process.argv.includes('--pick');
+const electronArgs = [
+  '.',
+  ...(wantPick ? ['--pick-shot'] : []),
+  '--shot',
+  out,
+];
+try {
+  run('pnpm', ['--filter', '@dajia/desktop', 'build']);
+  run('pnpm', ['--filter', '@dajia/desktop', 'exec', 'electron', ...electronArgs], 180_000);
+  const report = JSON.parse(readFileSync(out, 'utf8'));
+  const layers = report.layers ?? {};
+  // 前六条与 drawlist.test.ts 同源；后四条与 pick.test.ts 同源。
+  // 改样例房必须几处一起改，别只调这里。
+  const checks = [
+    ['指令表 31 条（8 轮廓 + 12 轴线 + 10 洞口线 + 1 标签）', report.ops === 31],
+    ['structure 层 20 条', layers.structure === 20],
+    ['opening 层 10 条', layers.opening === 10],
+    ['annotation 层 1 条', layers.annotation === 1],
+    ['画布尺寸 = 窗口内容区', report.wPx > 800 && report.hPx > 500],
+    ['非背景像素 > 5000（白屏恒为 0）', report.nonBlankPx > 5000],
+  ];
+  if (wantPick) {
+    checks.push(
+      ['探针给出可点的构件', typeof report.pick?.ownerId === 'string'],
+      ['点中墙后屏幕上真的有红色像素', report.pickedSelectedPx > 100],
+      ['选中的就是探针指的那面墙', report.clickedOwner === report.pick?.ownerId],
+      // 两半都要：store 空了 **且** 红色像素没了 —— 只查前者的话，paint effect 漏掉 ids
+      // 依赖（屏幕还红着）会一路绿灯。
+      ['点空白后 store 与屏幕一起清空', report.selectedAfterBlank === 0 && report.selectedPx === 0],
+    );
+  }
+```
+
+根 `package.json` 的 scripts 加一条（`shot` 保持原样，CI 与日常都还跑它）：
+
+```json
+"pick-shot": "node scripts/desktop-shot.mjs --pick"
+```
+
+- [ ] **Step 7: 真窗口点一次 + 全量闸门 + 两个提交**
+
+```bash
+pnpm --filter @dajia/desktop typecheck > /tmp/t4-dts.log 2>&1; echo exit=$?
+pnpm shot > /tmp/t4-shot-pixels.log 2>&1; echo exit=$?
+pnpm pick-shot > /tmp/t4-shot-pick.log 2>&1; echo exit=$?
+```
+Expected: 三个 exit=0；`pnpm shot` 仍是六行 PASS（**回归判据**：`ops === 31` 没因为选中上色而变 —— 选中只改 `pen.color`，一条指令都不该多）；`pnpm pick-shot` 十行 PASS。
+
+两条已知风险，按顺序试，别改判据：
+
+1. **隐藏窗收不到合成输入**：`show: false` 下 `sendInputEvent` 理应照常派发到 Blink（T3 已证明后备缓冲能读）。若 `--pick-shot` 卡在第一处 `waitUntil` 并报"10 秒内没等到：选中 …"，先把 `createWindow(shotPath === null)` 改成 `createWindow(true)` 再跑一次；两条路径都跑不通就停下来报告 —— 那时"屏幕红了"就没有客观凭据了，不许退回去用 `executeJavaScript('el.click()')` 蒙过去（它绕开了 pointerdown 与真实坐标，正是我们要证的那一层）。
+2. **`mouseDown` 不产生 `pointerdown`**：现代 Chromium 会生成。若确实是事件类型对不上，把 `onPointerDown` 换成 `onMouseDown`（React 侧一行），判据不变 —— 先跑再改，不许猜。
+
+再验一次判据能区分"画了"和"没画"：把 `buildDrawList(log.document, storeyId, viewport, { ids })` 的第四参临时改成 `EMPTY_SELECTION`（或删掉），跑 `pnpm pick-shot` —— **必须**在"点中墙后屏幕上真的有红色像素"那行 FAIL 并抛错退出（`selectedPx` 恒 0）。改回来再跑，十行全 PASS。这条是"选中真的上屏"的唯一证明，`pick.test.ts` 管不到屏幕那一侧。
+
+```bash
+pnpm verify > /tmp/t4-verify.log 2>&1; echo exit=$?
+```
+Expected: exit=0，`Test Files 24 passed`（24）、`Tests 299 passed`（**284 + 15**）。数字对不上就是有用例被 skip 或没被 include 收到，先查日志别改期望值。
+
+```bash
+git add packages/scene-2d
+git commit -m "feat: scene-2d 命中测试，屏幕像素容差 + 层序压倒距离"
+git add apps/desktop scripts package.json
+git commit -m "feat: 平面图点选与选中 store，--pick-shot 用合成指针回读证明"
+```
+第一条提交信息里带上 Step 5 的十条改坏命令与关键红字；第二条带上 `--pick-shot` 的十个实测数。
+
+---
+
 ## 尚未展开的任务边界（补齐后才进执行）
 
-- **Task 4 命中与点选**：`pick.ts` —— `SpatialIndex.query(rect: Aabb)` 取候选（索引只有墙与洞口两种 `IndexedKind`，端点不在里头），再精判（点在轮廓内 / 到轴线距离 ≤ 阈值）；阈值按**屏幕像素**给、换算成毫米比较（`pxToMm`），保证放大时吸附不变松（spec §6）。多命中的取舍必须确定性（距离最小 → id 升序），否则同一次点击在不同机器上选中不同构件。选中集另建 `stores/selectionStore.ts`（spec 明令选中不进真源、不进撤销栈）。
-- **Task 4 必须回答的一个问题**：`pick` 吃 `DrawOp[]` 的 `ownerId` 还是吃 `SpatialIndex`？前者保证"点得中的就是画出来的"（屏幕与真源同源），后者快但可能选中被遮住或没画的东西。**倾向：以指令表为准，索引只做候选加速**，但这条要在展开 Task 4 时连同遮挡取舍一起定。
 - **Task 5 拖点改墙**：pointer down 命中端点 → 拖拽期只重绘临时线（要不要给 `DrawLayer` 真加一个 `interaction` 层，在这里定）→ up 时 `quantizeMm` 后 `log.dispatch(wallMoveEndpoint)`；撤销/重做快捷键接 `log.undo()` / `log.redo()`（两者都返回 `boolean`，栈空时要反馈到 UI 而不是静默）。
 - **Task 5 必须先回答的语义裁决 —— 重影柱（计划 2 ledger Ruling ㊤，判给"计划 3 的拖拽入口"，本行是它的落点）**：拖一个挂着柱的共享端点，柱跟不跟走？现状事实三条，逐条读过源码：
   ① 柱以 `column.pointId` 引用那枚 point 实体，而 `wallMoveEndpoint` upsert 的正是那个点（`commands/wall.ts`：`const upsert: Entity[] = [{ ...moving, x, y }]`）⇒ 柱**一定**跟走。但这是引用共享的副作用，不是任何一条判据承诺的语义。
@@ -1467,6 +2488,8 @@ Expected: `verify` exit=0（**`pnpm shot` 不在其中**）；`Tests` 数与 Tas
 - `aabbOfPoints([])` **抛** `RangeError` —— 这就是 `buildDrawList` / `fitStorey` 必须先对空层短路的直接原因。
 - `EntityId = string`（无品牌类型），所以 scene-2d 的签名写 `string` 不构成第二套 id 系统。
 - `TransactionLog`：`get document`、`get affected: ReadonlySet<EntityId>`、`undo(): boolean`、`redo(): boolean`。取"刚创建的实体"只认 `affected`（见全局约束）。
+- （T4 加）`buildDrawList` 目前产的**每一条** polygon 都是 `fill: null` ⇒ `insidePolygon` 与 `distanceOfOp` 里那条 fill 分支在样例房里走不到，只有 `pick.test.ts` 的合成用例（「fill 非 null 时内部算命中」）走到它。**别把它当死代码删**：它是"点得中的就是看得见的"这条口径里唯一区分实心/空心的判据，且计划 4 的楼板填充（`slab` 的 `fill`）第一次用到它。
+- （T4 加）`webContents.sendInputEvent({ type: 'mouseDown' | 'mouseUp', x, y })` 的坐标是相对页面的 DIP；T3 的画布是 1 canvas px = 1 CSS px（刻意没做 DPR 缩放），所以它与 `DrawOp` 的像素、与 `event.nativeEvent.offsetX/offsetY` 同一单位。这句话在 2026-09-27 只由文档确认，**运行时凭据是 `--pick-shot` 的十行 PASS**。
 
 ## 执行日志
 
