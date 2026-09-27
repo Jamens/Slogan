@@ -9,7 +9,7 @@ export interface OpeningSpan {
   readonly toMm: number;
 }
 
-/** 被打断后剩下的一段实体墙（墙垛、窗下墙…），同样是沿轴区间。 */
+/** 被打断后剩下的一段实体墙（墙垛、窗下墙…），同样是沿轴区间。浮点沿轴毫米，非真源字段。 */
 export interface WallPiece {
   readonly wallId: EntityId;
   readonly fromMm: number;

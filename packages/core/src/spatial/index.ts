@@ -191,7 +191,7 @@ export class SpatialIndex {
     return this.entries.size;
   }
 
-  /** 按 id 升序的条目快照：测试用它比对局部重建与整层重建，计划 3 用它做调试面板。 */
+  /** 按 id 升序的条目快照：测试用它比对局部重建与整层重建。 */
   snapshot(): readonly IndexEntry[] {
     return [...this.entries.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   }

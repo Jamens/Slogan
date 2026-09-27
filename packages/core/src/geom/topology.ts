@@ -65,7 +65,7 @@ export function incidentWallEnds(
   return out;
 }
 
-/** 被两面以上墙共享的点。Task 4 的接头分组从它出发。 */
+/** 被两面以上墙共享的点（结果按 id 升序）。接头分组不从它出发：deriveJoints 自己按 pointId 建 members 表。 */
 export function sharedPointIds(doc: Document): EntityId[] {
   const count = new Map<EntityId, number>();
   for (const wall of doc.byKind('wall')) {

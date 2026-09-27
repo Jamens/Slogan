@@ -21,6 +21,7 @@ export type JointKind = 'free' | 'corner' | 'tee' | 'cross' | 'collinear' | 'sta
  * 某个墙端在该接头处的斜切量，两侧各一个，**可正可负**：
  * 正 = 沿 awayDir 内退，负 = 越过共享点外伸。L 角必然一侧正一侧负（见计划说明），
  * 所以不能只给一个标量。left = +normal 侧，right = -normal 侧。
+ * 两个 trim 都是浮点毫米，非真源字段：派生层的斜切量永不写回真源的整数毫米。
  */
 export interface JointMember {
   readonly wallId: EntityId;

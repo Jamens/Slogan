@@ -59,7 +59,7 @@ export function deriveWallQuads(doc: Document, joints?: readonly Joint[]): WallQ
 }
 
 /**
- * 一层的完整派生几何 —— 计划 3 的 2D 视图、计划 9 的空间索引都只吃这一个出口。
+ * 一层的完整派生几何 —— 计划 3 的 2D 视图、Task 9 的空间索引都只吃这一个出口。
  * pieces 是"沿轴区间"，不是多边形：把墙垛再切成梯形属计划 5（图纸要画断开的材料），
  * 这里保持与真源同构，避免第二份几何。
  */
