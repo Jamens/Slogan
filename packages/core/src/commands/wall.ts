@@ -9,7 +9,7 @@ import {
   resolvePointRef,
   type PointRef,
 } from '../geom/topology';
-import { assertSpansFit, type OpeningSpan } from '../geom/opening';
+import { assertSpansFit, spansOfOpenings } from '../geom/opening';
 import type { Command } from '../model/command';
 import type { Document } from '../model/document';
 import type { Entity, OpeningEntity, WallEntity } from '../model/entity';
@@ -133,11 +133,6 @@ export function wallSetThickness(input: { wallId: EntityId; thicknessMm: Mm }): 
   };
 }
 
-/** 平距时的 tie-break：与 geom/opening.ts 的 openingSpans 同一条规矩（id 升序，不看创建顺序）。 */
-function byIdAsc(a: EntityId, b: EntityId): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
 /**
  * 该墙缩到 newLengthMm 以后，把挂在它上面的洞口沿轴往起点方向夹回来。
  * 只减 distanceMm，绝不动 widthMm —— 洞口宽度是产品尺寸，静默改窄比报错危险。
@@ -176,11 +171,9 @@ function clampOpeningsToWall(
     dirty.push(clamped);
   }
   if (dirty.length === 0) return;
-  // 必须自己排序：这张表是拼出来的，没经过 openingSpans，喂给 assertSpansFit 的升序前提
-  // 不排就成立不了 —— 那时"内部错误"会以用户错误的样子抛出去。
-  const spans: OpeningSpan[] = final
-    .map((o) => ({ openingId: o.id, fromMm: o.distanceMm, toMm: o.distanceMm + o.widthMm }))
-    .sort((a, b) => a.fromMm - b.fromMm || byIdAsc(a.openingId, b.openingId));
+  // 升序（同距离按 id 升序）由 spansOfOpenings 保证：这张表与 openingSpans 走同一份产地，
+  // 喂给 assertSpansFit 的升序前提不在这儿各写一遍。
+  const spans = spansOfOpenings(final);
   // 这里不查楼层：洞口不是新数据，只是把真源里已有的东西重述一遍。
   // 跨层洞口的判定仍归 openingSpans，在 deriveStoreyGeometry 里守。
   assertSpansFit(wall.id, newLengthMm, spans);

@@ -1,6 +1,6 @@
 import type { EntityId } from '../ids';
 import type { Document } from '../model/document';
-import type { WallEntity } from '../model/entity';
+import type { OpeningEntity, WallEntity } from '../model/entity';
 
 /** 洞口在宿主墙轴线上占的区间：沿轴浮点毫米，自 start 端起算。 */
 export interface OpeningSpan {
@@ -17,28 +17,18 @@ export interface WallPiece {
 }
 
 /**
- * 洞口 → 沿轴区间，按 fromMm 升序（同距离按 id 升序，保证确定性）。
- * 楼层一致性在这里查：真源只管 id 与整数毫米，不管引用完整性，
- * 而"洞口挂在别层的墙上"会让几何凭空出现在错误的标高上。
+ * 一组洞口 → 按 fromMm 升序（同距离按 id 升序）的沿轴区间。纯函数，不看 doc。
+ * openingSpans 与"夹过一遍的洞口表"（commands/wall 的 clampOpeningsToWall）共用这份唯一产地：
+ * 喂给 assertSpansFit 的升序前提由它保证，不在调用方各写一遍排序。
  */
-export function openingSpans(doc: Document, wall: WallEntity): OpeningSpan[] {
-  const out: OpeningSpan[] = [];
-  for (const opening of doc.byKind('opening')) {
-    if (opening.hostWallId !== wall.id) continue;
-    if (opening.storeyId !== wall.storeyId) {
-      throw new TypeError(
-        `洞口 ${opening.id} 属于楼层 ${opening.storeyId}，宿主墙 ${wall.id} 属于楼层 ` +
-          `${wall.storeyId}：两者必须同层`,
-      );
-    }
-    out.push({
-      openingId: opening.id,
-      fromMm: opening.distanceMm,
-      toMm: opening.distanceMm + opening.widthMm,
-    });
-  }
-  // doc.byKind 给的是 id 升序，不是沿轴位置升序：不排就等于把文档的 id 序当成几何序，
-  // 于是分段结果随 uuidv7 的随机位抖动，尾段与墙垛的顺序在两次运行里能不一样。
+export function spansOfOpenings(openings: readonly OpeningEntity[]): OpeningSpan[] {
+  const out = openings.map((o) => ({
+    openingId: o.id,
+    fromMm: o.distanceMm,
+    toMm: o.distanceMm + o.widthMm,
+  }));
+  // 调用方给的表是 id 升序（doc.byKind）或拼表顺序，不是沿轴位置升序：不排就等于把 id 序
+  // 当成几何序，于是分段结果随 uuidv7 的随机位抖动，尾段与墙垛的顺序在两次运行里能不一样。
   return out.sort(
     (a, b) =>
       a.fromMm - b.fromMm ||
@@ -47,9 +37,30 @@ export function openingSpans(doc: Document, wall: WallEntity): OpeningSpan[] {
 }
 
 /**
+ * 洞口 → 沿轴区间，按 fromMm 升序（同距离按 id 升序，保证确定性）。
+ * 楼层一致性在这里查：真源只管 id 与整数毫米，不管引用完整性，
+ * 而"洞口挂在别层的墙上"会让几何凭空出现在错误的标高上。
+ * 区间算式与排序一律走 spansOfOpenings，本函数只多管跨层这一条。
+ */
+export function openingSpans(doc: Document, wall: WallEntity): OpeningSpan[] {
+  const hosted: OpeningEntity[] = [];
+  for (const opening of doc.byKind('opening')) {
+    if (opening.hostWallId !== wall.id) continue;
+    if (opening.storeyId !== wall.storeyId) {
+      throw new TypeError(
+        `洞口 ${opening.id} 属于楼层 ${opening.storeyId}，宿主墙 ${wall.id} 属于楼层 ` +
+          `${wall.storeyId}：两者必须同层`,
+      );
+    }
+    hosted.push(opening);
+  }
+  return spansOfOpenings(hosted);
+}
+
+/**
  * 越界与重叠的**唯一**判据：本文件的 piecesFromSpans 内建调用它，Task 7 的
  * openingCreate / openingMove 写盘前也调用它。派生与写入共用一份规则，不会漂。
- * 入参必须已按 fromMm 升序（openingSpans 保证；调用方自己拼表时要先排）。
+ * 入参必须已按 fromMm 升序（spansOfOpenings 保证；调用方自己拼表时也要走它，不要另排一遍）。
  */
 export function assertSpansFit(
   wallId: EntityId,
