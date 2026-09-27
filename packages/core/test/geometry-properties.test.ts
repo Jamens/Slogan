@@ -1276,6 +1276,13 @@ describe('随机操作序列：每步之后逐条核对', () => {
   });
 
   it('缩墙夹取确实发生过，且每次夹到 floor(轴长 − 宽)', () => {
+    // 定向那一笔**先**跑：夹取公式（floor）的靶心在它内部的 recordClamps 与 1042 行那两句上，
+    // 而随机那 80 轮在变异 7（floor → round）下会先撞在派生层的 /超出宿主墙/ 上
+    // （round 把夹完的区间尾端舍过浮点轴长，实测「墙沿轴长 8366.8，洞口占 7452–8367」），
+    // 于是红字说的是"派生抛了"而不是"夹取公式改错了"。同一处变异两种红法，靶心消息必须
+    // 落在前者上 —— 否则下一个读执行日志的人会以为这条 it 守的是派生层。
+    const directed = clampDirected();
+    expect(directed.stats.clamps).toBe(1);
     const total = newStats();
     fc.assert(
       fc.property(arbChainShape, arbChainOps, (shape, ops) => {
@@ -1303,11 +1310,8 @@ describe('随机操作序列：每步之后逐条核对', () => {
       }),
       { numRuns: NUM_RUNS_OPS },
     );
-    // 夹取的"发生过"这一票由上面那 80 轮与下面那一笔定向共同投：随机那一遍的计数
-    // 不作下界（实测理由见 clampDirected 的注释块），承重的是定向那一笔 —— 它保证
-    // Step 6 变异 7（clampOpeningsToWall 的 floor → round）必红，而不是"绿着骗人"。
-    const directed = clampDirected();
-    expect(directed.stats.clamps).toBe(1);
+    // 夹取的"发生过"这一票由上面那 80 轮与定向那一笔共同投：随机那一遍的计数不作下界
+    // （实测理由见 clampDirected 的注释块），承重的是定向那一笔 —— 它保证变异 7 必红。
     expect(total.clamps + directed.stats.clamps).toBeGreaterThan(0);
     expect(total.byKind.movePoint).toBeGreaterThan(0);
   });
