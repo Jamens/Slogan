@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as fc from 'fast-check';
-import { vec } from '@dajia/core';
+import { vec, wallAxisById } from '@dajia/core';
 import {
   DRAW_LAYERS,
   PICK_TOL_PX,
@@ -12,6 +12,7 @@ import {
   mmToPx,
   pickAt,
   pickOne,
+  pickPxOf,
   probeTarget,
   viewportOf,
   type DrawOp,
@@ -229,6 +230,83 @@ describe('命中测试 —— 样例两层房', () => {
     }
     // 空循环等于没测：8 轮廓 × 4 边 + 12 轴线 + 10 洞口线 = 54 条边
     expect(checked).toBe(54);
+  });
+
+  it('pickPxOf 点名要墙：一层的每一面墙都拿得到只命中它自己那一发的像素', () => {
+    const walls = house.doc.byKind('wall').filter((w) => w.storeyId === house.lowerStoreyId);
+    expect(walls).toHaveLength(8); // 素材自证：空表会让下面的循环什么都不判
+    let shortest: number | null = null;
+    for (const wall of walls) {
+      const px = pickPxOf(ops, wall.id);
+      expect(px).not.toBeNull();
+      if (px === null) continue;
+      // 不是"命中里有它"，是"只命中它"：删除那一步的选中集必须恰好一面墙
+      expect(owners(pickAt(ops, px))).toEqual([wall.id]);
+      const axis = wallAxisById(house.doc, wall.id);
+      shortest = shortest === null ? axis.lengthMm : Math.min(shortest, axis.lengthMm);
+    }
+    // 素材自证：最短的是 `stem`（(4000,0)→(4000,3000)），3000mm 整数
+    expect(shortest).toBe(3000);
+    // 边长下限 64px 在这一层的 0.125px/mm 下 = 512mm，最短的墙也远过这条线，
+    // 所以"每一面都给得出"不是运气 —— 但它确实**依赖** pxPerMm：极小缩放时会给 null，
+    // 那是调用方（探针）该处理的失败，不是这里放宽筛选的理由。
+    expect(shortest).toBeGreaterThan(64 / view.pxPerMm);
+  });
+
+  it('pickPxOf 找不到就说找不到：不存在的 id、只有注记的楼层、太小的多边形都给 null', () => {
+    expect(pickPxOf(ops, 'no-such-entity')).toBeNull();
+    // 楼层只有一条 text 指令，而 text 永不命中（注记不是构件）⇒ 没有候选点可挑
+    expect(pickPxOf(ops, house.lowerStoreyId)).toBeNull();
+    // 洞口只有 line 指令：本出口只扫多边形长边，给它 null 而不是"差不多的那个点"。
+    // 少了 `op.kind !== 'polygon'` 那道筛，这里会被 `op.pts` 取值炸掉或静默给出别的 owner。
+    const opening = house.doc.byKind('opening').find((o) => o.storeyId === house.lowerStoreyId);
+    expect(opening).toBeDefined();
+    if (opening !== undefined) expect(pickPxOf(ops, opening.id)).toBeNull();
+    // 唯一命中被别的指令压住 ⇒ 一路换边换不到：与 probeTarget 那两条合成用例同源，
+    // 但这里钉的是**点名**的那一支（probe 会跳过这个 owner 继续找下一个）。
+    const tight = [
+      face('tiny', PEN_S, [
+        { x: 0, y: 0 },
+        { x: 40, y: 0 },
+        { x: 40, y: 40 },
+        { x: 0, y: 40 },
+      ]),
+    ];
+    expect(pickPxOf(tight, 'tiny')).toBeNull(); // 四条边都 < 64px：一条候选都没有
+    const covered = [
+      face('w', PEN_S, [
+        { x: 0, y: 0 },
+        { x: 400, y: 0 },
+        { x: 400, y: 40 },
+        { x: 0, y: 40 },
+      ]),
+      // 两条断口线把上下两条长边的中点全压住 ⇒ 唯一命中不成立
+      seg('o1', PEN_O, { x: 200, y: -20 }, { x: 200, y: 20 }),
+      seg('o2', PEN_O, { x: 200, y: 20 }, { x: 200, y: 60 }),
+    ];
+    expect(pickPxOf(covered, 'w')).toBeNull();
+    expect(pickPxOf(covered, 'o1')).toBeNull(); // 线指令永远给 null（这一发同时证 o1 压住了边）
+  });
+
+  it('pickPxOf 与 probeTarget 同一把尺：同一个 owner 给同一个像素，且那把尺是 64px 下限', () => {
+    const probe = probeTarget(ops, view);
+    expect(probe).not.toBeNull();
+    if (probe === null) return; // 上面那条已断言非空，这里只为类型收窄
+    // 判据是"逐字相等"而不是"都非 null"：抽函数时把扫描整段抄成两套，这一发立刻红。
+    expect(pickPxOf(ops, probe.ownerId)).toEqual(probe.clickPx);
+    // 但上一句"两函数相等"抓不到**只漂 pickPxOf 的下限**那一发：两边吃同一个常量，下限翻倍时
+    // 两个函数一起跳到别的边上，等式照样成立。所以下面另钉一个像素值而不是关系 —— 实测（PK9）
+    // 红的是这一句，不是上一句。第一条够长（≥64px）的边就是上边，中点 (50, 0)；
+    // 下限翻到 128px 会跳到右边 (100, 200)。
+    const rect = [
+      face('w', PEN_S, [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 400 },
+        { x: 0, y: 400 },
+      ]),
+    ];
+    expect(pickPxOf(rect, 'w')).toEqual({ x: 50, y: 0 });
   });
 
   it('放大时吸附在屏幕上不变松、在世界里变紧（像素口径的唯一证明）', () => {
