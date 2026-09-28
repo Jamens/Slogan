@@ -10105,11 +10105,13 @@ Task 8 的属性面板、删除键与 `planDelete` 的 `unsupported` 分支全�
 - Modify: `packages/core/src/commands/column.ts`（+35：`requireColumn` + `columnDelete`）
 - Modify: `packages/core/src/commands/slab.ts`（+41：`requireSlab` + `slabDelete`）
 - Modify: `packages/core/test/joint.test.ts`（5 条既有守卫用例改 `handBuild`；条数 **18 不变**）
-- Modify: `packages/scene-2d/test/editing.test.ts` 与 `packages/scene-2d/src/editing.ts`（**只动第 4、6、7 条那三处**：一条用例改写 + 同文件的两段注释；`handles.ts` 核对过**不动**，条数 **30 不变**）
+- Modify: `packages/scene-2d/test/editing.test.ts`（**4 条既有用例改写**，见 Step 6 的实测清单，条数 **30 不变**）
+- Modify: `packages/scene-2d/test/handles.test.ts`（**3 条既有用例改写 + 删掉一个用不上的助手**，条数 **19 不变**）
+- Modify: `packages/scene-2d/src/editing.ts`（**只动注释**三处，见 Step 6 的 ①②③；代码一字不动）
 
 **`packages/core/src/index.ts` 一字不改**：那个文件对 `commands/storey` / `commands/wall` / `commands/column` / `commands/slab` / `geom/topology` / `geom/outline` 全是 `export *`（2026-09-28 核对），新出口自己就流出去了。代价是**红了不好看**：测试文件里 `import { storeyDelete } from '@dajia/core'` 在实现落地之前不会在链接期抛 `SyntaxError`，vitest 走 SSR 转译，那个名字是 `undefined`，要到**调用那一行**才炸成 `TypeError: storeyDelete is not a function`（Task 6 Step 4 已在临时工程里对十个新出口实测过这个形状）。Step 2 的"红在哪"按这个预期核对。
 
-**计数账**：core 从 **21 个文件 / 276 条** 到 **24 个文件 / 309 条**（+9 +12 +12，`joint.test.ts` 的 18 条一条不增不减）；scene-2d 的 **95 条**不动（snapping 28 + editing 30 + pick 18 + handles 19，按本计划各任务自己记的数加出来，本任务的临时工程只装 core）⇒ 全仓 **405 → 438**。基线 276 是 2026-09-28 在本任务的临时工程里对**真仓库**的 `packages/core` 重测过的（`Test Files 21 passed (21) / Tests 276 passed (276)`），不是抄计划 2 的旧数。
+**计数账**（2026-09-28 的 `.tscheck/t8` 临时工程**实跑**出来的，不是加出来的）：core 从 **21 个文件 / 276 条** 到 **24 个文件 / 309 条**（+9 +12 +12，`joint.test.ts` 的 18 条一条不增不减）；scene-2d **6 个文件 / 114 条** —— viewport 9 + drawlist 10 + pick 18 + snapping 28 + editing 30 + handles 19，本任务那七条用例改写全落在 `editing.test.ts` 与 `handles.test.ts` 两个文件里，**条数一条不增不减**。那一跑的真账：`Test Files 30 passed (30) / Tests 423 passed (423)`，`npx tsc --noEmit`（core/src + scene-2d 的 src 与 test）exit=0。临时工程不装的两段：`packages/core/test/commands-drag.test.ts` 的 **7 条**（T5）与 core / scene-2d 之外的 **8 条**（`packages/protocol/test/ipc.test.ts` + `scripts/test/deps-check.test.mjs`；2026-09-28 对真仓库跑 `npx vitest run` 得 `Tests 284 passed (284)`，正是 core 276 + 这 8）⇒ 全仓 **405 → 438**（284 + 114 + 7 + 33）。基线 276 是同一天在同一临时工程里对**真仓库**的 `packages/core` 重测过的（`Test Files 21 passed (21) / Tests 276 passed (276)`），不是抄计划 2 的旧数。
 
 ---
 
@@ -10125,10 +10127,11 @@ Task 8 的属性面板、删除键与 `planDelete` 的 `unsupported` 分支全�
 **T6 交接四条的处置**（Task 6 Step 4 末尾那条「交接给 Task 7 的四条」，本任务收两条、留两条给 T8/T9）：
 
 - ③ **收口**：`legalWallCreate` / `legalDrop` 的差额在 core 侧补齐了 —— 屏幕上"预言合法、重绘才抛"那一发从此在 `build` 就抛，`dispatch` 的 `catch` 会把它记进 `lastError`（T5 D6 的口径不变：不预检、让真源判）。
-- ④ **实测之后不迁就**：复核**没有**改变探针能挑出的候选集合，但**改变了每一枚端点的第一发可建候选**。2026-09-28 在临时工程里逐字复刻 `demoHouse()` 一层（8 面墙 + 4 个洞口 + 那两次改几何的编辑），把 `WALL_PROBE_OFFSETS` 的十发偏移 × 一层 8 枚端点 = **80 发**、`PROBE_OFFSETS` 的十发 × 16 把把手 = **160 发**，各问两遍（复核在 / 复核摘掉），结论：
-  - 拉新墙：复核在 `build` 拒 **48** 发（star 24、同向重叠 24）、可建 **32** 发；摘掉复核 `build` 全放行、派生层拒的正是**同一批 48 发**（`同一批候选？True`，新增拒绝 0、少拒绝 0）⇒ **筛 ⑥ 从此不再单独挡任何一发**，`wallProbe` 的答案不变。
-  - 拖把手：摘掉复核时 **160 发全部过 `legalDrop`**（Task 6 Step 5 里 `dragProbe` 那段注记与它下面那条"落点计数"引文块各说过一次；两处已就地标注"只对 Task 6 落地时成立"），复核在则 `build` 拒 **84** 发（全是 star）、可拖 **76** 发，同样是同一批 ⇒ `dragProbe` 的候选少了一半，但 16 把把手**每一把都还剩 ≥3 发**，靶子仍然给得出。
-  - "第一发通过 `build` 的候选"在 **8 枚端点里的 5 枚**、**12 个把手位置里的 9 个**上往后挪了 1～3 发（例：起点 `(4000,3000)` 从第 0 发 `(2000,0)` 挪到第 1 发 `(0,2000)`）。样例房那一发本来就被筛 ④ 挡着，所以最终靶子未必换 —— 但**这件事只能等 T6 与 T7 都落进真仓库才能实测**。因此本任务 Step 8 要求：`--draw-shot` 与 `--edit-shot` 在 T7 之后**各跑一遍取新字面量**，判据形状一字不改（不许把"那一发"写成"任一发"）。
+- ④ **实测之后不迁就**：复核**没有**改变"画得出的那一发"，但**改变了每一枚端点的第一发过 `build` 的候选**。2026-09-28 在 `.tscheck/t8` 临时工程里重测过这一条（**core 与 scene-2d 都在**：吃的是真 `demoHouse()`、真 `snapFieldOf` / `handleDropTarget` 的吸附落点、`WALL_PROBE_OFFSETS` 与 `PROBE_OFFSETS` 两张原表；编写期那次是手工复刻，那一版的四个数下面逐条订正），8 枚端点 × 10 发 = **80 发**、16 把把手（去重后 **8 个**位置）× 10 发 = **160 发**，各问两遍（复核在 / 复核摘掉），实测结论：
+  - 拉新墙：复核在 `build` 拒 **48** 发、可建 **32** 发；文案分两桶 —— 只提 star 的 **24** 发、star 与同向重叠写在同一句抛错里的 **24** 发，**"只提同向重叠"的文案这一批一发都没有**（编写期写的"star 24、同向重叠 24"是把两桶当成两件事，别再照它去找第三种文案）。摘掉复核 `build` 拒 **0**、`build` 过了但 `buildDrawList` 抛的正是**同一批 48 发**、可建仍是 **32** ⇒ **筛 ⑥ 从此不再单独挡任何一发**。`legalWallCreate` 与手搓 `wallCreate(...).build` 在这 80 发上**逐发同判**（`legalDiff = 0`，两侧都是 0）。
+  - 拖把手：摘掉复核时 **160 发全部过 `legalDrop`**（Task 6 Step 5 里 `dragProbe` 那段注记与它下面那条"落点计数"引文块各说过一次；两处已就地标注"只对 Task 6 落地时成立"），复核在则 `build` 拒 **84** 发（桶只有一个：`{"star":84}`，文案全是接头那句）、可拖 **76** 发。`legalDrop` 与手搓 `wallMoveEndpoint(...).build` 同样逐发同判（`legalDropDiff = 0`）。恒等落点（拖回把手自己那枚坐标）在这把尺子上**一发都没有**（`skipped = 0`），160 发全进了判决；16 把把手**每一把都还剩 ≥3 发**（`minLegal = 3`），靶子仍然给得出。
+  - **"第一发过 `build` 的候选"往后挪了，"第一发画得出的候选"一格没动**：前者在 8 枚端点里挪了 **5 枚**（`(0,0)`→第 2 发、`(4000,0)`→第 3 发、`(0,6000)` / `(800,3000)` / `(4000,3000)`→第 1 发；两个 `8000,*` 角与 `(7000,3000)` 仍在第 0 发），在 16 把把手里挪了 **12 把**（第 0 发→第 1 发，另外 4 把不动）；摘掉复核时这两张表**全是第 0 发**，所以位移是复核自己造成的，不是采样噪声。编写期那句"12 个把手位置里的 9 个"两个数都不对：把手是 **16** 把、去重位置是 **8** 个，挪动的是 16 把里的 12 把。而"第一发 `build` 与派生都过"的表在两侧**逐字相同**（8 枚端点分别还是 2/3/0/0/1/1/1/0）⇒ 样例房最终靶子不换的理由不是运气，是筛 ⑥ 早就把第 0 发挡在了外面：`(4000,3000)` 那一枚两侧都给第 1 发 `(0,2000)`，落点 `(4000,5000)`。
+  - 两道探针的**答案**在进程之间本来就会漂，这一点必须写进执行日的判据：`wallProbe` 两侧都只在那两发里挑（`(4000,3000)→(4000,5000)` 与 `(800,3000)→(800,5000)`），同一份"复核在"的配置两次独立跑给出过 **5/3** 与 **7/1** 两种分布，"摘掉复核"那一次给 **7/1** ⇒ 编写期写的"`wallProbe` 的答案不变"这句**不成立**，只有"候选集合不变"成立。`dragProbe` 报出来的靶子在两侧分布确实不同（复核在：`→(700,450)` 六次、`→(1100,-25)` 两次；摘掉：六种靶子各 1～2 次，含 `→(600,350)/mm(3986,3854)` 那种把三臂拧成 star 的一发）—— 但这里**两件事叠在一起**：候选集合被复核砍掉一半，加上 uuidv7 的并列顺序，所以不能把这组差异单独归因为"复核改了靶子"。因此本任务 Step 8 要求：`--draw-shot` 与 `--edit-shot` 在 T7 之后**各跑一遍取新字面量**，判据形状一字不改（不许把"那一发"写成"任一发"）；**执行日对不上时先把同一版本再跑一遍**，看它自己漂不漂，再怀疑复核。
 - ① **留给 T8**：`MIN_WALL_LENGTH_MM` 与数值输入第一次分家。
 - ② **留给 T8**：筛 ⑤/⑥ 的确定性夹具（复核之后 ⑥ 已经没有单独可挡的东西，那条夹具要配的是"命令层与派生层判得一样"这个新命题，见第 6 条既有写法）。
 
