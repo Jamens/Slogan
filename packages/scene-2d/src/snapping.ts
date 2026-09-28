@@ -65,8 +65,21 @@ export const ANGLE_TOL_DEG = 3;
  */
 export const SNAP_COLOR = '#ff8a00';
 
-/** 标记是 5×5 实心方块（Step 7 的 `paintSnapMarker` 照这个画）：与把手（`HANDLE_RADIUS_PX = 4.5`）同量级、不同尺寸，屏幕上两枚标记分得开。 */
+/**
+ * 标记的**内圈**半尺寸（空心方环中间挖空的那一枚 5×5，见 `SNAP_MARK_OUTER_HALF_PX`）：
+ * 与把手（`HANDLE_RADIUS_PX = 4.5`）同量级、不同尺寸，屏幕上两枚标记分得开。
+ * 挖空不是装饰 —— T5 的第五桶在**光标** ±2px 窗口里数绿色临时线像素，而这枚标记会落在
+ * 离光标 0.3px 的吸附点上；实心方块会把那 25 枚绿像素整个盖掉（实测 `previewNearCursorPx`
+ * 25 → 5 → 0），空心环让窗口里一个橙像素都不进。
+ */
 export const SNAP_MARK_HALF_PX = 2.5;
+
+/**
+ * 标记的**外沿**半尺寸：橙色只占切比雪夫距离 `> SNAP_MARK_HALF_PX` 且 `<= 4.5`（9×9 减 5×5）
+ * 那一圈环带，共恒 56 枚纯色像素。第四色桶 `snapMarkPx` 判的是 `> 0`（S8 只证存在），
+ * 环带比实心块多出来的像素数不影响任何判据。
+ */
+export const SNAP_MARK_OUTER_HALF_PX = 4.5;
 
 /** 五档吸附。前三种吸到**已有的东西**上，后两种吸到**方向**上。 */
 export type SnapKind = 'endpoint' | 'midpoint' | 'foot' | 'ortho' | 'angle15';

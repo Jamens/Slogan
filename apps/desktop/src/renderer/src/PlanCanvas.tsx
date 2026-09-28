@@ -16,7 +16,6 @@ import {
   legalWallCreate,
   mmToPx,
   moveDraft,
-  moveTargetOf,
   newWallDefaults,
   pickHandle,
   pickOne,
@@ -28,6 +27,7 @@ import {
   pruneSelection,
   SNAP_COLOR,
   SNAP_MARK_HALF_PX,
+  SNAP_MARK_OUTER_HALF_PX,
   snapFieldOf,
   SELECTED,
   wallProbe,
@@ -282,23 +282,40 @@ function paintPreview(
 }
 
 /**
- * 吸附标记：一枚 5×5 的实心方块，画在**吸附后的落点**上（不是光标上 —— 光标那儿已经有
- * `paintPreview` 的绿点）。它是第四色，所以它唯一能证的事是"这一发光标确实被吸走了"；
+ * 吸附标记：**空心方环**（外沿 9×9、中间 5×5 挖空），画在**吸附后的落点**上（不是光标上 ——
+ * 光标那儿已经有 `paintPreview` 的绿点）。它是第四色，所以它唯一能证的事是"这一发光标确实被吸走了"；
  * 吸到哪一律走毫米（`draft.end.mm` / `lastCreate.endMm`），像素不参与对账。
  *
- * `left/top` 先取整再画：`mmToPx` 给浮点，浮点原点的 `fillRect` 会把 5×5 摊成 6×6 的
- * 半透明边，而 `nearChannel` 的 ±40 容差吃不下与白底混过色的高通道（`#ff8a00` 的 G=138，
+ * 为什么中间要挖空（裁决 D1-B）：拖把手时 `drop.snap.distPx` 可以小到 0.33px（foot 恒等档），
+ * 于是这枚标记正好落在第五桶 `previewNearCursorPx` 那 **±2px 窗口的正中间**，把 `paintPreview`
+ * 的 r=4.5 绿实心圆盖掉 —— 实测 `nearMid` 25 → 5 → 0，`--edit-shot` 第 2 步随机红。
+ * 空心环的橙色只占切比雪夫距离 `> 2` 且 `<= 4` 那一圈 ⇒ 窗口里一个橙像素都不进，
+ * 而橙像素总数仍 `> 0`（S8 的存在性凭据、`--draw-shot` 那道硬 throw 都还在）。
+ * 画序保持"preview 先、marker 后"：反过来不行 —— 草稿路的 `distPx` 恒 0，r=4.5 的绿圆会把
+ * 整枚标记（半对角 3.54px）盖没，`snapMarkPx` 归 0。
+ *
+ * `left/top` 先取整再画：`mmToPx` 给浮点，浮点原点的 `fillRect` 会把方块摊成半透明边，
+ * 而 `nearChannel` 的 ±40 容差吃不下与白底混过色的高通道（`#ff8a00` 的 G=138，
  * 五成混白就是 196 > 178）—— 于是同一个标记在两种视图下数出来是 25 与 0。
- * 取整之后恒 25 个纯色像素（`SNAP_MARK_HALF_PX * 2` 见 `snapping.ts`）。
+ * 环带用四条 `fillRect` 拼（上/下/左/右），**不用 `strokeRect`**：描边要抗锯齿，
+ * 而像素桶靠与 `rgbOf(SNAP_COLOR)` 逐字节相等才计数，半透明像素会让总数变成不确定的数。
+ * 取整之后恒 56 个纯色像素（9×9 − 5×5，两个半尺寸见 `snapping.ts`）。
  */
 function paintSnapMarker(ctx: CanvasRenderingContext2D, atPx: Px): void {
+  // 与旧的实心画法同一套取整口径：先 `round(中心 - 半尺寸)` 再画 `半尺寸 * 2` 宽。
+  const innerX = Math.round(atPx.x - SNAP_MARK_HALF_PX);
+  const innerY = Math.round(atPx.y - SNAP_MARK_HALF_PX);
+  const outerX = Math.round(atPx.x - SNAP_MARK_OUTER_HALF_PX);
+  const outerY = Math.round(atPx.y - SNAP_MARK_OUTER_HALF_PX);
+  const innerSize = Math.round(SNAP_MARK_HALF_PX * 2);
+  const outerSize = Math.round(SNAP_MARK_OUTER_HALF_PX * 2);
+  // 环带宽 = 外沿与内圈的像素差的一半 = 2px（上下各盖 outerSize 宽，左右各补 innerSize 高）。
+  const band = (outerSize - innerSize) / 2;
   ctx.fillStyle = SNAP_COLOR;
-  ctx.fillRect(
-    Math.round(atPx.x - SNAP_MARK_HALF_PX),
-    Math.round(atPx.y - SNAP_MARK_HALF_PX),
-    SNAP_MARK_HALF_PX * 2,
-    SNAP_MARK_HALF_PX * 2,
-  );
+  ctx.fillRect(outerX, outerY, outerSize, band);
+  ctx.fillRect(outerX, innerY + innerSize, outerSize, band);
+  ctx.fillRect(outerX, innerY, band, innerSize);
+  ctx.fillRect(innerX + innerSize, innerY, band, innerSize);
 }
 
 interface Buckets {
@@ -516,18 +533,25 @@ export function PlanCanvas(): React.JSX.Element {
       // D5：拖之前先选中，同一趟里做完。于是"拖的那面墙"与"红着的那面墙"是同一个表达式给的。
       select(hit.wallId);
       const point = requirePoint(log.document, hit.pointId, '端点');
-      const target = moveTargetOf(viewport, px);
+      const atMm = { x: point.x, y: point.y };
       activeRef.current = true;
       setDrag({
         wallId: hit.wallId,
         end: hit.end,
         pointId: hit.pointId,
-        atMm: { x: point.x, y: point.y },
+        atMm,
         fromPx: hit.atPx,
         cursorPx: px,
-        targetMm: target,
-        // S4 ①：按下那一发**不吸**。把手已经在原地，吸一下只会把 `targetMm` 挪回 `atMm`
-        // 之外的别处，于是"零移动 ⇒ noop"那条判据（D4）会在第一发上就判错。
+        targetMm: atMm,
+        // S4 ①：按下那一发**不吸**（绝不走 `handleDropTarget`/`dropTargetOf`），但落点取
+        // **真源现值** `atMm`，不是 `moveTargetOf` 的像素反算值（裁决 D1-A）。
+        // 为什么原句"把手已经在原地，吸一下只会把 targetMm 挪回 atMm 之外的别处"是反的：
+        // 像素反算是 `intPx(pxToMm(px))` 那种量化，对同一个 px 是确定性的 —— T5 时代"落点=
+        // 反算值"所以原地重按必等，那条 noop 判据成立。但本任务把**松手落点**改成了吸附后的
+        // 毫米（实测 `raw(toPx)={796,-3}` 而落点 `drop.mm={796,0}`，foot 档 distPx=0.328）
+        // ⇒ 真源停在一枚**像素反算不可达**的整数毫米上 ⇒ 原地重按给回 `-3` ⇒ `onUp` 的
+        // noop 判据不成立 ⇒ 发出一发没被 `derivesAfterMove` 校验过的几毫米移动（转 T7 差额①）
+        // ⇒ 把直通墙族推歪 3mm ⇒ 派生层判成 star ⇒ paint effect 抛、React 树崩、`__dajiaDebug` 没了。
         handle: hit,
         drop: null,
       });
