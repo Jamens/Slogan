@@ -47,8 +47,8 @@ try {
   runElectron(electronArgs, 180_000);
   const report = JSON.parse(readFileSync(out, 'utf8'));
   const layers = report.layers ?? {};
-  // 前六条与 drawlist.test.ts 同源；后四条与 pick.test.ts 同源。
-  // 改样例房必须几处一起改，别只调这里。
+  // 前六条与 drawlist.test.ts 同源；--pick 下追加的五条：一条实测原点前提 + 四条与
+  // pick.test.ts 同源的判据。改样例房必须几处一起改，别只调这里。
   const checks = [
     ['指令表 31 条（8 轮廓 + 12 轴线 + 10 洞口线 + 1 标签）', report.ops === 31],
     ['structure 层 20 条', layers.structure === 20],
@@ -59,7 +59,13 @@ try {
     ['非背景像素 > 5000（白屏恒为 0）', report.nonBlankPx > 5000],
   ];
   if (wantPick) {
+    // 判据一人一票（I2）：main 的 waitUntil 只等 store 落定，不判归属与像素 ——
+    // 下面这四条的 FAIL 都真打得出来（改坏验证：buildDrawList 第四参删掉、选中不上屏时，
+    // "点中墙后屏幕上真的有红色像素"这一行红，而不是 main 先抛错）。
     checks.push(
+      // 画布原点必须是实测的 (0,0)：探针点（画布 px）→sendInputEvent（页面 px）的换算
+      // 靠它，Task 8 改布局后若原点漂移，这一行先红 —— 前提从此是断言不是默契。
+      ['画布原点实测 = 视口原点 (0,0)', report.canvasOriginPx?.x === 0 && report.canvasOriginPx?.y === 0],
       ['探针给出可点的构件', typeof report.pick?.ownerId === 'string'],
       ['点中墙后屏幕上真的有红色像素', report.pickedSelectedPx > 100],
       ['选中的就是探针指的那面墙', report.clickedOwner === report.pick?.ownerId],

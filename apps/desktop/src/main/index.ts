@@ -73,15 +73,22 @@ async function runShot(win: BrowserWindow, path: string): Promise<void> {
   process.stdout.write(`${JSON.stringify(report)}\n`);
 }
 
-interface ClickPoint {
+/** 画布坐标空间（CSS px，相对画布原点）：DrawOp 与 PickProbe 的 clickPx/blankPx 住这里。 */
+interface CanvasPx {
+  x: number;
+  y: number;
+}
+
+/** 页面/视口坐标空间（CSS px，相对页面原点）：sendInputEvent 与 getBoundingClientRect 的口径。 */
+interface ViewportPx {
   x: number;
   y: number;
 }
 
 interface PickProbeShape {
   ownerId: string;
-  clickPx: ClickPoint;
-  blankPx: ClickPoint;
+  clickPx: CanvasPx;
+  blankPx: CanvasPx;
 }
 
 interface ReportShape {
@@ -90,6 +97,7 @@ interface ReportShape {
   selectedPx: number;
   pick: PickProbeShape | null;
   selectedAfterBlank: number;
+  canvasOriginPx: ViewportPx;
 }
 
 function pickShotRequested(): boolean {
@@ -113,10 +121,16 @@ async function readReport(win: BrowserWindow): Promise<ReportShape> {
 /**
  * 走合成指针事件，不走 `element.click()`：后者只给 DOM 派发一个 click，
  * 我们的处理器听的是 pointerdown（而且真实点击还带着 offsetX 与 shift 修饰键）。
+ *
+ * 坐标换算：探针点是**画布 px**，sendInputEvent 吃**页面 px**，两者差一个实测的画布原点
+ * （`canvasOriginPx`）。这里显式加回原点，不假定两套空间重合 —— 今天 origin=(0,0) 时加零
+ * 等价于没加，但 Task 8 往画布区挂 StoreyTabs/PropPanel 后布局会变，换算必须在位；
+ * "前提今天成立"由闸门的 origin PASS 行断言，而不是由这条路径碰巧不出错来背书。
+ * 这不是模型几何（角点/沿墙偏移/包围盒一律没碰），是回读通道的坐标空间对齐。
  */
-async function clickPx(win: BrowserWindow, p: ClickPoint): Promise<void> {
-  const x = Math.round(p.x);
-  const y = Math.round(p.y);
+async function clickCanvasPx(win: BrowserWindow, p: CanvasPx, origin: ViewportPx): Promise<void> {
+  const x = Math.round(p.x + origin.x);
+  const y = Math.round(p.y + origin.y);
   win.webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
   win.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
 }
@@ -144,27 +158,36 @@ async function runPickShot(win: BrowserWindow, path: string): Promise<void> {
   await waitForDebug(win);
   await focusForInput(win);
   const before = await readReport(win);
-  if (before.pick === null) throw new Error('probeTarget 没给靶子：四角离图太近或没有唯一命中的边');
+  // 取 falsy 而不是 === null：旧 bundle / 字段改名时 before.pick 是 undefined，
+  // 也走这条带标签的失败，而不是在 clickCanvasPx 里炸一个裸 TypeError。
+  if (!before.pick) throw new Error('probeTarget 没给靶子：四角离图太近或没有唯一命中的边');
   const probe = before.pick;
-  await clickPx(win, probe.clickPx);
+  const origin = before.canvasOriginPx;
+  await clickCanvasPx(win, probe.clickPx, origin);
+  // waitUntil 只等 **store 半区落定**（选中集恰出现 1 个），不判"是谁"也不判像素：
+  // 归属（clickedOwner === pick.ownerId）与 selectedPx>100 的判据归脚本（I2：一个判据
+  // 一个主人），脚本那两行才可能真打 FAIL —— 两侧同判同一快照时脚本行永远红不了。
+  // 快照原子的依据：__dajiaDebug 钩子的 effect 排在 paint effect 之后（同一 commit 的
+  // effect flush，executeJavaScript 插不进中间），所以读到新 selectedIds 时画布必已重刷，
+  // 不需要在等待谓词里"捎带"像素条件防假红。
   const picked = await waitUntil(
-    `选中 ${probe.ownerId} 且屏幕变红`,
+    '点击后选中集没落成恰好 1 个（store 半区）',
     () => readReport(win),
-    (r) =>
-      r.selectedIds.length === 1 && r.selectedIds[0] === probe.ownerId && r.selectedPx > 100,
+    (r) => r.selectedIds.length === 1,
   );
-  await clickPx(win, probe.blankPx);
-  // 三个条件一起等：React 提交 store 与重刷画布之间隔着一帧。只等 ids 归零的话，
-  // 会在红像素还没落时就把它读进报告，判据 4 假红（看起来像"清空没生效"）。
+  await clickCanvasPx(win, probe.blankPx, origin);
+  // 同上：只等 store 落定（清空）。"store 与屏幕一起清空"整条判据归脚本那一行。
   const cleared = await waitUntil(
-    '点空白后清空选中',
+    '点空白后选中集没清空（store 半区）',
     () => readReport(win),
-    (r) => r.selectedIds.length === 0 && r.selectedAfterBlank === 0 && r.selectedPx === 0,
+    (r) => r.selectedIds.length === 0,
   );
   const finalReport = {
     ...cleared,
     ops: before.ops,
     pick: probe,
+    // 换算用的原点随报告一起落盘：脚本既拿它断言 (0,0)，也用它核对换算用的是同一个值。
+    canvasOriginPx: origin,
     clickedOwner: picked.selectedIds[0] ?? null,
     // 清空之后 selectedPx 会回到 0，所以"点中时红了多少"必须单独留档，
     // 不能靠 finalReport 里那个 selectedPx —— 那是空白点的状态。

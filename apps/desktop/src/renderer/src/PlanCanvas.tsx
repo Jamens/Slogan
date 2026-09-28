@@ -22,6 +22,13 @@ export interface DebugReport {
   selectedPx: number;
   pick: PickProbe | null;
   selectedAfterBlank: number;
+  /**
+   * 画布原点在**页面/视口坐标空间**（CSS px，getBoundingClientRect 口径）的位置。
+   * `pick` 里的 clickPx/blankPx 是**画布坐标空间**（相对画布原点）；sendInputEvent 吃的是
+   * 页面空间。两套空间差的就是这个值 —— 换算由 main 的 clickCanvasPx 做，断言
+   * "今天它等于 (0,0)" 由 --pick-shot 的 origin PASS 行做，不靠 body margin 归零默默兜底。
+   */
+  canvasOriginPx: { x: number; y: number };
 }
 
 declare global {
@@ -125,16 +132,25 @@ export function PlanCanvas(): React.JSX.Element {
   const toggle = useSelection((s) => s.toggle);
   const clear = useSelection((s) => s.clear);
 
-  // 页面归位（真窗口实测后补的一行）：sendInputEvent 的 x/y 是页面坐标，而探针给的
-  // clickPx/blankPx 是画布坐标 —— 默认 body margin 8px 把两套坐标错开 8px，点击落在
-  // 探针量点之外，8px 容差直接被吃光：同一判据在真窗口里间歇性"点了没反应"（实测 12 跑
-  // 5 红，红全卡在第一处 waitUntil）。把画布贴回页面原点，"点得中的就是画出来的"才成立。
+  // 页面归位（真窗口实测后补的一行）：默认 body margin 8px 会把画布原点推到 (8,8)，
+  // 而探针点/空白点的口径是画布坐标 —— 差值恰好 8px，等于吃光 PICK_TOL_PX，同一判据在
+  // 真窗口里间歇性"点了没反应"（实测 12 跑 5 红，红全卡在第一处 waitUntil）。
+  // 归零仍是必需的（它同时治了 innerWidth 画布的溢出），但它**不再是坐标系的前提**：
+  // 前提现在由 __dajiaDebug 实测的 canvasOriginPx 明说，闸门有一行 PASS 断言它等于
+  // (0,0)。谁再往路上加 margin/平移，红的是那一行，而不是随 uuid 漂移的偶发失灵。
+  // cleanup 恢复原值：样式突变不许"改了没人还"。
   useEffect(() => {
+    const previous = document.body.style.margin;
     document.body.style.margin = '0';
+    return () => {
+      document.body.style.margin = previous;
+    };
   }, []);
 
-  // 尺寸 → 视口。刻意不用 getBoundingClientRect：没有 CSS 参与，视口尺寸就是窗口
-  // 内容区，shot 的期望像素数才不会随布局漂。（拖拽/缩放交互在 T5 才接管这条线。）
+  // 尺寸 → 视口。尺寸仍取 innerWidth：没有 CSS 缩放参与，视口尺寸就是窗口内容区，
+  // shot 的期望像素数不随布局漂。原点则**必须实测**（见 debug 钩子里的 canvasOriginPx）：
+  // 尺寸不必问 rect，坐标换算要问 —— 两套空间是否重合从此是测出来的，不是注释约定的。
+  // （拖拽/缩放交互在 T5 才接管这条线。）
   useEffect(() => {
     const fit = (): void => {
       const wPx = Math.max(1, Math.floor(window.innerWidth));
@@ -193,6 +209,8 @@ export function PlanCanvas(): React.JSX.Element {
       const ctx = canvas.getContext('2d');
       const counted =
         ctx === null ? { nonBlankPx: 0, selectedPx: 0 } : countPixels(ctx, canvas);
+      // 实测画布原点（页面空间）：探针点在画布空间，闸门拿这个值做换算与断言。
+      const rect = canvas.getBoundingClientRect();
       return {
         ops: ops.length,
         layers,
@@ -203,6 +221,7 @@ export function PlanCanvas(): React.JSX.Element {
         selectedPx: counted.selectedPx,
         pick: probeTarget(ops, viewport),
         selectedAfterBlank: ids.size,
+        canvasOriginPx: { x: rect.left, y: rect.top },
       };
     };
     return () => {

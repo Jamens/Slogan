@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as fc from 'fast-check';
 import { vec } from '@dajia/core';
 import {
+  DRAW_LAYERS,
   PICK_TOL_PX,
   buildDrawList,
   demoHouse,
@@ -288,7 +289,8 @@ describe('命中测试 —— 样例两层房', () => {
       for (let i = 1; i < hits.length; i++) {
         const a = hits[i - 1]!;
         const b = hits[i]!;
-        const rank = (h: PickHit) => ['structure', 'opening', 'annotation'].indexOf(h.layer);
+        // 层序从 DRAW_LAYERS 读（本任务引入的唯一真源），不在测试里重抄一遍层表
+        const rank = (h: PickHit) => DRAW_LAYERS.indexOf(h.layer);
         expect(rank(b)).toBeLessThanOrEqual(rank(a));
         if (rank(b) === rank(a)) expect(b.distancePx).toBeGreaterThanOrEqual(a.distancePx);
         expect(a.ownerId).not.toBe(b.ownerId);
