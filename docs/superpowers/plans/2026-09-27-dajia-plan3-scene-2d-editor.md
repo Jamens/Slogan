@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
-> **状态：本计划展开了 Task 1–8。** Task 9（吸附补档：轴网交点）的边界与验收口径列在末尾，正文尚未展开成可执行步骤 —— **补齐前不得进入执行**（Task 1 起就要改根 `typecheck` 与 `vitest.config.ts`，跑到 Task 5 才发现缺口的代价是把前四步的闸门重跑一遍）。**四个真窗口闸门（`--shot` / `--pick-shot` / `--edit-shot` / `--draw-shot`）与 Task 8 的 `--prop-shot` 里所有写死的像素/毫米/条数字面量，都要在真窗口跑过之后回填实测红字**（编写期跑不了：`apps/desktop` 的 renderer 到 2026-09-28 仍是 pong 占屏页，`scripts/desktop-shot.mjs` 要 Task 3 之后才存在）。node 侧的账是实测的：Task 8 落地时临时工程 `.tscheck/t9` = **31 文件 / 449 条**（core 24/309 一字未动 + scene-2d 7/140），相对 Task 7 的 423 净增 26（panel 21 + editing 5）⇒ 真仓库预计 **438 → 464**；改坏表九条（M1~M9）逐条红名见 Task 8 Step 6，其中两条是当场把编写期的错误预言改掉的（M6 第一次全绿、M7 的红形与推的不一样）。
+> **状态：本计划展开了 Task 1–9，每一格都展开成可执行步骤 —— 可以进执行了。** **五个真窗口闸门（`--shot` / `--pick-shot` / `--edit-shot` / `--draw-shot` / `--prop-shot`）里所有写死的像素/毫米/条数字面量，都要在真窗口跑过之后回填实测红字**（编写期跑不了：`apps/desktop` 的 renderer 到 2026-09-28 仍是 pong 占屏页，`scripts/desktop-shot.mjs` 要 Task 3 之后才存在）。node 侧的账是实测的：Task 8 落地时临时工程 `.tscheck/t9` = **31 文件 / 449 条**（core 24/309 一字未动 + scene-2d 7/140），相对 Task 7 的 423 净增 26（panel 21 + editing 5）⇒ 真仓库预计 **438 → 464**；Task 9 落地时 `.tscheck/t10` = **31 文件 / 461 条**（core 24/309 仍一字未动 + scene-2d 7/152），相对 Task 8 净增 12（全部落在 `snapping.test.ts` 28 → 40）⇒ 真仓库预计 **464 → 476**。两张改坏表（Task 8 的 M1~M9、Task 9 的 N1~N9）逐条红名见各自 Step 6；Task 9 那一张里有两处是当场把边界段的错误预言改掉的（交点档对样例房进表 **0** 枚 ⇒ 五个闸门判据一字不换；Task 8 的两枚确定性夹具不必重算那四个数）。
 
 **Goal:** 把 `@dajia/scene-2d` 从一行 stub 推进到「在真窗口里看得见一层平面、点得中构件」：视口仿射、绘制指令表、命中与选中，全部保持 DOM-free 可单测；像素是否真上屏由一次性截图回读证明，不靠人眼。
 
@@ -13064,7 +13064,807 @@ git commit -m "feat(desktop): 楼层 tab 与属性面板上屏，--prop-shot 十
 ---
 
 
-## 尚未展开的任务边界（Task 9；补齐后才进执行）
+### Task 9: 吸附补档 —— 轴网交点 + 柱心/板角进表（把 T6 注释里那句"Task 9 补"兑现成代码）
+
+> **本任务的 node 侧全部实测**（临时工程 `.tscheck/t10`，2026-09-28：31 文件 / 461 条、九条变异逐条红在哪、`npx tsc --noEmit -p tsconfig.scene2d.json` 干净）。屏幕侧只有一条结论是实测的：**五个闸门的判据一个字都不必改**（含 Task 8 才落地的 `--prop-shot`，它的重跑同属执行日），凭据是"样例房一层在补档前后的表内容、sweep 计数、探针答案集合逐字相同"（Step 5 那六进程）。
+
+**Files:**
+
+| 文件 | 动什么 | 实测 |
+| --- | --- | --- |
+| `packages/scene-2d/src/snapping.ts` | 五处：① 三行 import（`intersectLines` / `vec` / 既有那些不动）② `SnapKind` 补 `'axisCross'`、`SnapPointKind` 补 `'axisCross'` ③ `GROUP` 补一格、`PRIORITY` 插一档并把 `ortho`/`angle15` 顺次后移 ④ `snapFieldOf` 的注释重写 + 端点去重键换成坐标 + 柱心/板角两段循环 + 最后一行把交点并进表 ⑤ 新增**文件内私有**函数 `axisCrossPoints` | 380 行 → 501 行；snapping 28 → 40 条 |
+| `packages/scene-2d/test/snapping.test.ts` | 追加两个 describe（交点档 6 条 + 柱心板角 6 条）+ 一个 `crossKeys` 助手；core import 补 `columnCreate` / `intersectLines` / `slabCreate` 三行 | 40 条全绿 |
+| `packages/scene-2d/test/handles.test.ts` | **只改写一条**既有用例（「探针吃的是吸附后的毫米：前两发被真源挡下，第三发被一枚既有点接住」→ 结尾换成「被**轴网交点档**接住」），判据强度一行不放宽 | 19 条不变，全绿 |
+| `packages/scene-2d/src/editing.ts` | **只改注释一处**（`planDelete` 的 doc 注释里那句「那是 Task 9 / 计划 4 的边界」把 Task 9 的边界说错了 —— 本任务只把柱心/板角喂进吸附场，指令表与命中集一行未动）；函数体一行未动 | 516 行 → 517 行；editing 35 条不变，全绿 |
+| `packages/scene-2d/src/index.ts` | **一字不动** —— 本任务没有新出口 | — |
+| `apps/desktop/**` | **一字不动** —— renderer 只把 `snapFieldOf` 的返回值往 `handleDropTarget` / `dropTargetOf` 里传，档位对它不透明 | 执行日只重跑闸门 |
+
+**Interfaces:**
+
+- Consumes（全是 core 既有的，本任务不给 core 加东西）：`intersectLines(p, dir, q, other)` → `Vec2 | null`（**无限直线**求交；平行与共线给 `null`，靠 `PARALLEL_EPS = 1e-9` 的相对容差，永不返回 `NaN`/`Infinity`）、`vec(x, y)`、`quantizeMm(n)`、`requirePoint(doc, id, 语境)`、`wallAxisById(doc, id)`；实体侧 `ColumnEntity.pointId`（一柱一枚，计划 2 T8 就这么定的）与 `SlabEntity.boundaryPointIds`（环序，长度 ≥ 3）；本文件内的 `quantizeTarget(px)`、`SnapAxis`、`SnapPoint`。
+- Produces：`SnapKind` 从五档变六档（`'endpoint' | 'midpoint' | 'foot' | 'axisCross' | 'ortho' | 'angle15'`）、`SnapPointKind` 从两种变三种（多出 `'axisCross'`）、`PRIORITY = { endpoint: 0, midpoint: 1, foot: 2, axisCross: 3, ortho: 4, angle15: 5 }`（`ortho`/`angle15` 从 3/4 后移一位）、`GROUP.axisCross = 0`。**`snapFieldOf` 的签名与返回类型不变**，变的是表的形状：入表顺序定死成 **每面墙的〔起点，终点，中点〕顺次 → 柱心 → 板角 → 轴网交点**，端点档从此吃三类真源点（墙端点、柱心、板角）。调用方（`wallProbe` / `dragProbe` / `handleDropTarget` / renderer）不需要知道这些 —— 它们只把 `field` 整个递给 `snapFromCursor`。
+
+#### 本任务的九条裁决
+
+| # | 问题 | 裁决 | 为什么，以及代价 |
+| --- | --- | --- | --- |
+| R1 | "轴网交点"在 S1 里读作什么？ | **本层墙轴线的两两求交，且按无限直线算**（含轴延长线上的交点）。 | spec §6 那六档写的是"轴网交点"，S1 没有轴网实体；能称"轴"的只有 `wallAxisById` 派出来的墙轴线。按**线段**求交等于只做了一半：两线段相交的地方本来就垂足覆盖得到（那一处根本就有靶子），这一档**独有的东西**恰恰是延长线上的交点 —— 用户拿它把新墙同时对齐两面还没碰上的老墙。凭据：`snapping.test.ts`「两墙不相接、轴延长线上相交」（那一枚 (6000,0) 离两面墙的线段都远，只有直线给得出）。代价：近平行的两轴会给出极远的交点，它进表；`SNAP_TOL_PX = 8` 天然把它挡在大多数光标位置之外，除非用户真把光标停进那一格。 |
+| R2 | 柱心与板角要不要各立一档？ | **不立。归进既有的 `endpoint` 档**，`SnapPointKind` 只多出 `'axisCross'`。 | 这一档真正的语义是"一枚**真源点**"（`pointId` 非空 ⇒ `pointRefOf` 复用它 ⇒ 接头闭合），墙端点、柱心、板角在这件事上完全同构。新开两档等于让 `PRIORITY` 回答"吸成柱还是吸成墙"这种没有答案的问题，而 `wallProbe` 的筛 ①（起点必须是 `kind === 'endpoint'`）会当场看不见柱心 —— 探针挑不上的档，屏幕上也不会吸。**改名成 `'point'` 更贵**：要动 `wallProbe` 的起点枚举、`--draw-shot`/`--edit-shot` 的字面量，换来的只有名字好看。代价：读表的人看到"endpoint"得记着它含柱心板角（注释里写死了）。 |
+| R3 | 端点档的去重键用什么？ | **坐标** `` `${x},${y}` ``，不是 `pointId`。 | `resolvePointRef` 对**坐标字面量恒返回 null** ⇒ `columnCreate({ at: { x, y } })` 拿到的是一枚**自己的**点，坐标与旁边那面墙的端点逐字相同却是两枚 id。按 id 去重就留下两枚同坐标的端点候选，`takeBest` 的并列判据（GROUP 0 → distPx 相等 → PRIORITY 相等 → **ownerId**）只能拿 uuidv7 比大小 ⇒ 赢家跨进程漂，而吸到"柱那枚孤儿点"那一发**接不上头**（墙不认识那枚点，`wallCreate` 会新建第三枚同坐标的点）。凭据：「柱用坐标字面量落在墙端点上 ⇒ 墙的那枚点赢，孤儿点抢不走」是 N8（把键换回 pointId）**唯一**咬住的一条；另一枚见证是 61 墙栅格层的端点数 **122 → 120**（同一坐标合并掉两枚）。代价：同坐标的**两层**的点本来就被 `storeyId` 过滤隔开了，这条键不背跨层的锅。 |
+| R4 | `axisCross` 排在优先级哪一格？ | **GROUP = 0（对象档）、PRIORITY = 3**：输给端点/中点/垂足，赢过正交/15°。`ortho` 与 `angle15` 顺次挪到 4/5。 | 交点是"两条轴决定的确定位置"，它比端点少了"背后有一枚真源点"这层意义 ⇒ 该输；比方向档多了"一个具体坐标" ⇒ 该赢。垂足 2 压交点 3 不是修辞：三轴共点、其中一轴的墙段真的穿过那一处时，屏幕上同时摆着两枚候选，而用户看到的"贴到墙上"才是垂足档的意思。凭据：N2（把 `axisCross` 的 PRIORITY 改成 0）**整场只红一条** ——「垂足档压过交点档」。代价：这一格挪动使 `ortho` 从 3 变 4、`angle15` 从 4 变 5，**相对次序一字未改**，所以 T6 那条"改写只许来自 `angle15`"的 sweep 判据照样成立（Step 5 实测 `rewriteKinds` 逐字相同）。 |
+| R5 | 交点与既有靶子撞在同一坐标怎么办？ | **不入表**（规则 ③），并且交点之间也按量化坐标去重（规则 ②）。 | 撞上了那一处已经有更高档的候选（端点 0 / 中点 1 都压过 3），留着的交点永远输给对面 —— 它不是候选，是**噪声**：表长度变成实现细节的读数，而 `--draw-shot` 那句"吸上了哪一档"的判据会取决于枚举顺序而不是几何。共线更要挡：三条共线横轴 × 一条竖轴 = 三枚同一坐标。凭据：N3（不与既有表去重）红三条，含「样例房一枚交点档独有的靶子都没有」；N4（交点之间不去重）红四条，含「平行与共线都不求交」。代价：表**不再**是"这一档所有几何交点"的清单，而是"这一档独有靶子"的清单 —— 读代码的人若想知道撞掉了几枚，得自己算（61 墙层：930 对 ⇒ 784 枚进表、146 枚被挡）。 |
+| R6 | T6 注释里承诺的"洞口中心"要不要一起补？ | **不补，判掉**，并把承诺那句话从注释里换成三条理由。 | ① 它不是 spec §6 那六档之一；② 它背后没有真源点，吸上去只是新建一枚坐标，而那个坐标**恰好已被垂足档覆盖**（洞口中心恒在宿主墙的轴线上）；③ 它许诺的语义是坏的 —— 把新墙的头吸到门洞中心 = 往门中间立一堵墙。想"对齐门洞边"要的是洞口的两个端点，属计划 4 的洞口编辑。代价：这句承诺从 T6 挂到今天，读者会以为漏做；所以注释必须逐字写明"到此判掉"，不能只删了事。 |
+| R7 | O(墙²) 的建场成本落在谁头上？ | **落在 paint effect 那一发**（每帧一次），不落在 `pointermove`。 | `fieldRef` 的既有纪律（T6 裁决 ①：指针事件只读不建）本来就为这个准备着。实测（`.tscheck/t10` 的 F perf，2026-09-28）：样例房建场 0.0029~0.0032ms → **0.0081ms**，一次 `dropTargetOf` **0.0010ms**；61 面墙的栅格层（31 横 × 30 竖，965 枚候选）建场 0.021ms → **0.233~0.254ms**、一次取最优 0.009 → **0.030ms**。就算写错成"每发 pointermove 重建场"也是 0.264~0.273ms ⇒ 16.7ms 帧预算的 **1.6%**。代价：S1 认这个量级；真到千面墙要的是空间索引（`spatial/` 在计划 2 T9 已经有了），不是把这一档砍掉。 |
+| R8 | 要不要重测 `--draw-shot` / `--edit-shot` 的字面量？ | **不必改判据，但执行日要重跑一遍取 PASS**。 | 本节此处原先预言了两个副作用（"探针计数与闸门字面量会再变一轮"、"Task 8 夹具的端点枚举表会跟着变"）。**实测都不成立**，理由是结构性的：样例房**无柱无板**（T5 已核实那条 ⇒ 柱心/板角两段循环对它空转），而它的 8 根轴两两求交得到的 9 枚格点**逐枚**已经落在端点或中点上（`pairTotal 28 → pairs 15 → unique 9 → dropped 9 → 进表 0 枚`）⇒ 交点档对样例房贡献 **0 枚新靶子**。六进程实测：表内容 `{endpoint:8, midpoint:8, axes:8}`、sweep `{handles:16, identity:72, rewritten:14, rewriteKinds:{angle15:14}, hitKinds:{foot:54, ortho:17, angle15:14, midpoint:1}, maxShiftPx:6.97}`、`dragProbe {toPx:{700,825}, targetMm:{4800,0}, sharedBy:3}` 三份**逐字相同**。代价：新档在屏幕上**没有见证**（它的凭据全在 node 侧的合成夹具里），所以那条"样例房 0 枚独有靶子"的用例本身就是护栏 —— 谁将来往 `demoHouse()` 里加柱加板或改成非格网布局，它会红，逼着那个人回来重测这五个闸门。 |
+| R9 | 交点候选的 `pointId` 给什么？ | **恒 `null`**，`ownerId` 取该轴对里 id 较小那面墙的 id（`axes` 已按 id 升序 ⇒ 先扫到的那面，不必再比）。 | 那一处背后没有点；给了 id 等于宣称"复用它"，而 `resolvePointRef` 只认**文档里存在**的点 id。把墙的 id 当点 id 填进去，`wallCreate` 会在 `requirePoint` 那一格抛「点 … 不存在」—— 一发无害的吸附变成命令层异常。凭据：N9（让交点带上一枚真源 id）红两条，正是「交点档给得出唯一靶子，且它是新建点不是复用」与那条属性用例（恒不给 `pointId`）。代价：`ownerId` 只用于并列破序，屏幕上没人看得见它。 |
+
+- [ ] **Step 1: 建临时工程 `.tscheck/t10` 并取基线**
+
+沿用 Task 8 的做法：`cp -a .tscheck/t9 .tscheck/t10`（t9 是 Task 8 落地的逐字副本），本任务只往里改 `packages/scene-2d` 下**四个**文件（`src/snapping.ts`、`src/editing.ts` 的那一处注释、`test/snapping.test.ts`、`test/handles.test.ts`），`core/` 一字不动。
+
+Run: `npx vitest run --config .tscheck/t10/vitest.config.ts`
+Expected: **32 文件 / 451 条全绿**（其中 449 条是本计划登记的账 + `zz-measure.test.ts` 那 2 条只打印不断言的测量用例 —— 它是 Step 5 的探针，Step 8 落回真仓库时**不带它**）。红绿都不许带进 Step 2。
+
+- [ ] **Step 2: 写失败测试 —— `snapping.test.ts` 追加两个 describe（12 条），先取红**
+
+只写测试，`snapping.ts` 一字不动。跑 `npx vitest run --config vitest.config.ts packages/scene-2d/test/snapping.test.ts packages/scene-2d/test/handles.test.ts`。
+
+**实测红形**（2026-09-28 在 `.tscheck/t9` 上把这份新测试逐字压给旧实现跑出来的）：**8 红 / 51 绿**（两个文件合计 59 条）。这与 T6/T7/T8 那种"红在 `… is not a function`"不同 —— 本任务**没有新出口**，`snapFieldOf` 早就在，所以红的全部落在断言值上：
+
+```text
+× 两墙不相接、轴延长线上相交 ⇒ 交点档给得出唯一靶子，且它是新建点不是复用
+× 平行与共线都不求交；共线的三段横轴对同一根竖轴只留一枚交点
+× 垂足档压过交点档：三轴共点且其中一轴的墙段真的穿过该点 ⇒ 赢的是 foot
+× 属性：交点档命中时恒整数毫米、恒不给 pointId、恒在容差内，且答案恒来自表里那一枚
+× 柱心在表里：吸上去复用柱引用的那枚点
+× 板角四枚全在表里，逐枚 pointId 指向真源那个顶点
+× 别层的柱与板一枚都不进本层表（上下层同位置是建筑常态，不是边角）
+× 端点集 = 本层墙端点 ∪ 柱心 ∪ 板角 的坐标去重集（全量对账，多一枚少一枚都红）
+```
+
+**剩下四条在旧实现上是绿的，这不是漏写**：「样例房一枚交点档独有的靶子都没有」「交点与既有端点同坐标 ⇒ 不重复入表」「柱引既有墙端点 ⇒ 那一枚仍只有一份候选」「柱用坐标字面量落在墙端点上 ⇒ 墙的那枚点赢」在"档根本不存在"时当然成立 —— 它们是**防回归**的形状，各自的牙齿记在 Step 6 的 N3 / N5 / N8 上（摘掉实现才红）。执行时不许因为这四条绿就把上面八条的断言放宽。
+
+下面两段就是**实测绿**的正文，逐字搬进 `snapping.test.ts` 末尾（`describe('光标 → 吸附结果' …)` 之后）。先在 core 的 import 列表里补三行（`columnCreate` / `intersectLines` / `slabCreate`，按现有字母序插进 `advance` 之后、`storeyCreate` 之前）：
+
+```ts
+import {
+  Document,
+  TransactionLog,
+  advance,
+  columnCreate,
+  intersectLines,
+  isExistingPoint,
+  length,
+  quantizeMm,
+  requirePoint,
+  resolvePointRef,
+  slabCreate,
+  storeyCreate,
+  uuidv7,
+  vec,
+  wallAxisById,
+  wallCreate,
+  type PointRef,
+  type WallEntity,
+} from '@dajia/core';
+```
+
+`@dajia/scene-2d` 那一串**一字不改**（`snapFieldOf` / `snapFromCursor` / `dropTargetOf` / `pointRefOf` / `demoHouse` / `fitStorey` / `mmToPx` / `quantizeMm` / `viewportOf` 与 `SnapField` 类型都已经在了）。追加的正文：
+
+```ts
+/** 交点档的表内容按坐标列出来（排序后比：`byKind` 的 id 序随 uuidv7 漂，数组序不是判据）。 */
+function crossKeys(fd: SnapField): string[] {
+  return fd.points.filter((p) => p.kind === 'axisCross').map((p) => `${p.mm.x},${p.mm.y}`).sort();
+}
+
+describe('Task 9 轴网交点档', () => {
+  /**
+   * 两面对不上头的墙：A 沿 y=0 走到 x=4000 就完了，B 沿 x=6000 从 y=2000 才开始。
+   * 它们的**轴延长线**交于 (6000, 0) —— 那一处既不是任何墙的端点也不是中点，
+   * 所以表里若有它，只能是求交档给的。
+   */
+  function twoDetached(): { log: TransactionLog; storeyId: string; fd: SnapField } {
+    const { log, storeyId } = synthStorey();
+    wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    wallAt(log, storeyId, { x: 6000, y: 2000 }, { x: 6000, y: 5000 });
+    return { log, storeyId, fd: snapFieldOf(log.document, storeyId) };
+  }
+
+  it('两墙不相接、轴延长线上相交 ⇒ 交点档给得出唯一靶子，且它是新建点不是复用', () => {
+    const { log, fd } = twoDetached();
+    expect(crossKeys(fd)).toEqual(['6000,0']);
+    // 素材自证：这一处确实"不是既有靶子" —— 两墙各自的端点与中点四条坐标全不在此
+    expect(kindsAt(fd, 6000, 0)).toEqual(['axisCross']);
+    const cross = fd.points.find((p) => p.kind === 'axisCross')!;
+    expect(cross.pointId).toBeNull(); // 交点背后没有真源点：谈不到复用
+    const wallIds = new Set(log.document.byKind('wall').map((w) => w.id));
+    expect(wallIds.has(cross.ownerId)).toBe(true); // ownerId 只是并列破序的把手，但必须是本层的墙
+    // 光标停在交点上方 60mm（0.125px/mm ⇒ 7.5px，容差之内）：两墙的垂足都被墙端夹掉，只剩这一档
+    const snap = snapFromCursor(view, mmToPx(view, vec(6000, 60)), { x: 6000, y: 60 }, null, fd);
+    expect(snap?.kind).toBe('axisCross');
+    expect(snap?.mm).toEqual({ x: 6000, y: 0 });
+    expect(snap?.distPx).toBeCloseTo(7.5, 6);
+    // 再退 30mm 就出容差（11.25px）⇒ 整档没有候选，落点退回裸毫米
+    expect(
+      snapFromCursor(view, mmToPx(view, vec(6000, 90)), { x: 6000, y: 90 }, null, fd),
+    ).toBeNull();
+  });
+
+  it('样例房一枚交点档独有的靶子都没有：15 对轴求出的 9 枚格点逐枚落在既有端点或中点上', () => {
+    // 这一条是"`--draw-shot` / `--edit-shot` 的字面量不必重测"的**凭据**，不是顺手写的安慰剂：
+    // 样例房是 3 横（y=0/3000/6000）× 3 竖（x=0/4000/8000）的完整格网，9 个格点全部已经被
+    // 端点（8 枚）或中点（西/北/东三墙的中点正好是 (0,3000)/(4000,6000)/(8000,3000)）占住。
+    expect(crossKeys(field)).toEqual([]);
+    expect(field.axes).toHaveLength(8);
+    // 素材自证：不是"求交没跑"。拿 core 的原始助手独立算一遍九枚，逐枚问静态表里有没有更高档。
+    let pairs = 0;
+    for (let i = 0; i < field.axes.length; i += 1) {
+      for (let j = i + 1; j < field.axes.length; j += 1) {
+        const a = field.axes[i]!;
+        const b = field.axes[j]!;
+        const hit = intersectLines(vec(a.startMm.x, a.startMm.y), a.dir, vec(b.startMm.x, b.startMm.y), b.dir);
+        if (hit === null) continue;
+        pairs += 1;
+        const mm = { x: quantizeMm(hit.x), y: quantizeMm(hit.y) };
+        const kinds = kindsAt(field, mm.x, mm.y);
+        expect(
+          kinds.includes('endpoint') || kinds.includes('midpoint'),
+          `交点 ${mm.x},${mm.y} 既不是端点也不是中点，却不在交点档表里`,
+        ).toBe(true);
+      }
+    }
+    expect(pairs).toBe(15); // 3 竖 × 5 横（y=0 与 y=3000 上各有两面共线墙）= 15 对垂直，去重后 9 个格点
+  });
+
+  it('平行与共线都不求交；共线的三段横轴对同一根竖轴只留一枚交点', () => {
+    const { log, storeyId } = synthStorey();
+    // 三段**共线但不相接**的横墙（同一条几何线 y=0）+ 一面平行横墙
+    wallAt(log, storeyId, { x: 0, y: 0 }, { x: 2000, y: 0 });
+    wallAt(log, storeyId, { x: 3000, y: 0 }, { x: 4000, y: 0 });
+    wallAt(log, storeyId, { x: 6000, y: 0 }, { x: 8000, y: 0 });
+    expect(crossKeys(snapFieldOf(log.document, storeyId))).toEqual([]); // 共线 = 平行：三对全不求交
+    wallAt(log, storeyId, { x: 0, y: 2000 }, { x: 8000, y: 2000 });
+    expect(crossKeys(snapFieldOf(log.document, storeyId))).toEqual([]); // 不同线的平行也一样
+    // 竖轴来了：与 y=0 那三条共线轴各交一次，**同一个坐标** ⇒ 表里只许有一枚
+    wallAt(log, storeyId, { x: 5000, y: -2000 }, { x: 5000, y: 4000 });
+    const fd = snapFieldOf(log.document, storeyId);
+    expect(crossKeys(fd)).toEqual(['5000,0', '5000,2000']);
+    // 素材自证：这两处都不在端点/中点上（六段墙的端点与中点逐枚不在此），所以不是被去重挡掉的
+    expect(kindsAt(fd, 5000, 0)).toEqual(['axisCross']);
+    expect(kindsAt(fd, 5000, 2000)).toEqual(['axisCross']);
+  });
+
+  it('交点与既有端点同坐标 ⇒ 不重复入表：那一处该以真源点身份被吸到，好让接头闭合', () => {
+    const { log, storeyId } = synthStorey();
+    const a = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    // L 角：第二面墙**引**第一面的 endId ⇒ 两轴的交点恰好就是那枚共享点
+    wallAt(log, storeyId, { pointId: a.endId }, { x: 4000, y: 3000 });
+    const fd = snapFieldOf(log.document, storeyId);
+    expect(fd.axes).toHaveLength(2);
+    // 独立算一遍：两轴确实交于 (4000,0)，而那一处表里已经有端点了
+    const hit = intersectLines(vec(0, 0), vec(1, 0), vec(4000, 0), vec(0, 1));
+    expect(hit).not.toBeNull();
+    expect(kindsAt(fd, 4000, 0)).toEqual(['endpoint']);
+    expect(crossKeys(fd)).toEqual([]);
+    // 判据的另一半：吸上去复用的是**墙的那枚点**，不是"另建一枚同坐标的点"
+    const snap = snapFromCursor(view, pxOf({ x: 4000, y: 0 }, view), { x: 4000, y: 0 }, null, fd);
+    expect(snap?.kind).toBe('endpoint');
+    expect(snap?.pointId).toBe(a.endId);
+  });
+
+  it('垂足档压过交点档：三轴共点且其中一轴的墙段真的穿过该点 ⇒ 赢的是 foot', () => {
+    const { log, storeyId } = synthStorey();
+    wallAt(log, storeyId, { x: 0, y: 0 }, { x: 8000, y: 0 });
+    wallAt(log, storeyId, { x: 3000, y: -1000 }, { x: 3000, y: 3000 });
+    const fd = snapFieldOf(log.document, storeyId);
+    // (3000,0) 在两墙的**线段内部** ⇒ 那一处同时是两枚垂足候选与一枚交点候选
+    expect(crossKeys(fd)).toEqual(['3000,0']);
+    const cursor = pxOf({ x: 3000, y: 0 }, view);
+    const first = snapFromCursor(view, cursor, { x: 3000, y: 0 }, null, fd);
+    expect(first?.kind).toBe('foot'); // PRIORITY：foot 2 < axisCross 3，距离并列时档位说话
+    expect(first?.mm).toEqual({ x: 3000, y: 0 });
+    expect(first?.pointId).toBeNull();
+    // 倒过来扫一遍还是同一个答案：并列判据（档位 → ownerId）是全序，不靠扫描顺序
+    expect(snapFromCursor(view, cursor, { x: 3000, y: 0 }, null, reversed(fd))).toEqual(first);
+  });
+
+  it('属性：交点档命中时恒整数毫米、恒不给 pointId、恒在容差内，且答案恒来自表里那一枚', () => {
+    // 跑在**有交点**的场上：上面那条全场属性跑的是样例房，而样例房一枚交点都没有 ⇒ 对它 vacuous。
+    const fd = twoDetached().fd;
+    expect(crossKeys(fd)).toEqual(['6000,0']);
+    fc.assert(
+      fc.property(
+        fc.record({
+          x: fc.integer({ min: 4000, max: 8000 }),
+          y: fc.integer({ min: -2000, max: 4000 }),
+          dx: fc.double({ min: -20, max: 20, noNaN: true }),
+          dy: fc.double({ min: -20, max: 20, noNaN: true }),
+        }),
+        ({ x, y, dx, dy }) => {
+          const base = pxOf({ x, y }, view);
+          const drop = dropTargetOf(view, { x: base.x + dx, y: base.y + dy }, null, fd);
+          expect(Number.isInteger(drop.mm.x) && Number.isInteger(drop.mm.y)).toBe(true);
+          if (drop.snap?.kind !== 'axisCross') return;
+          expect(drop.snap.pointId).toBeNull();
+          expect(drop.snap.distPx).toBeLessThanOrEqual(SNAP_TOL_PX);
+          // 落点恒等于表里那一枚：现算出来的交点档 candidate 不许在 `snapFromCursor` 里被重算一遍
+          expect(crossKeys(fd)).toContain(`${drop.mm.x},${drop.mm.y}`);
+        },
+      ),
+      { numRuns: 400 },
+    );
+  });
+});
+
+describe('Task 9 柱心与板角进表', () => {
+  function synth(): { log: TransactionLog; storeyId: string; projectId: string } {
+    const projectId = uuidv7();
+    const log = new TransactionLog(Document.create(projectId));
+    log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+    let storeyId = '';
+    for (const id of log.affected) {
+      if (log.document.get(id)?.kind === 'storey') storeyId = id;
+    }
+    if (storeyId === '') throw new TypeError('affected 里没有新建的楼层');
+    return { log, storeyId, projectId };
+  }
+
+  function columnAt(log: TransactionLog, storeyId: string, at: PointRef): string {
+    log.dispatch(columnCreate({ storeyId, at, widthMm: 400, depthMm: 400, heightMm: 3000 }));
+    for (const id of log.affected) {
+      const entity = log.document.get(id);
+      if (entity?.kind === 'column') return entity.pointId;
+    }
+    throw new TypeError('affected 里没有新建的柱');
+  }
+
+  function slabAt(log: TransactionLog, storeyId: string, boundary: PointRef[]): string[] {
+    log.dispatch(slabCreate({ storeyId, boundary, thicknessMm: 120 }));
+    for (const id of log.affected) {
+      const entity = log.document.get(id);
+      if (entity?.kind === 'slab') return entity.boundaryPointIds;
+    }
+    throw new TypeError('affected 里没有新建的板');
+  }
+
+  it('柱心在表里：吸上去复用柱引用的那枚点', () => {
+    const { log, storeyId } = synth();
+    const pointId = columnAt(log, storeyId, { x: 1000, y: 1000 });
+    const fd = snapFieldOf(log.document, storeyId);
+    expect(kindsAt(fd, 1000, 1000)).toEqual(['endpoint']); // 柱心走的是端点档，不是新立一档
+    const hit = fd.points.find((p) => p.mm.x === 1000 && p.mm.y === 1000)!;
+    expect(hit.pointId).toBe(pointId);
+    const snap = snapFromCursor(view, pxOf({ x: 1000, y: 1000 }, view), { x: 1000, y: 1000 }, null, fd);
+    expect(snap?.kind).toBe('endpoint');
+    expect(snap?.pointId).toBe(pointId);
+    expect(pointRefOf(snap!.mm, snap)).toEqual({ pointId }); // 复用真源点，接头才闭合
+  });
+
+  it('板角四枚全在表里，逐枚 pointId 指向真源那个顶点', () => {
+    const { log, storeyId } = synth();
+    const ids = slabAt(log, storeyId, [
+      { x: 0, y: 0 },
+      { x: 4000, y: 0 },
+      { x: 4000, y: 3000 },
+      { x: 0, y: 3000 },
+    ]);
+    const fd = snapFieldOf(log.document, storeyId);
+    const eps = fd.points.filter((p) => p.kind === 'endpoint');
+    expect(eps).toHaveLength(4); // 板的四个顶点，一枚不多一枚不少
+    expect(new Set(eps.map((p) => p.pointId))).toEqual(new Set(ids));
+    for (const p of eps) {
+      const point = requirePoint(log.document, p.pointId as string, '板角');
+      expect(p.mm).toEqual({ x: point.x, y: point.y });
+      expect(p.ownerId).toBe(eps[0]!.ownerId); // ownerId 是**板**，不是某面墙（这里根本没有墙）
+    }
+    expect(log.document.byKind('wall')).toHaveLength(0); // 素材自证：四枚候选全是板的功劳
+  });
+
+  it('柱引既有墙端点 ⇒ 那一枚仍只有一份候选（去重跨三类共用）', () => {
+    const { log, storeyId } = synth();
+    const wall = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    const pointId = columnAt(log, storeyId, { pointId: wall.endId });
+    const fd = snapFieldOf(log.document, storeyId);
+    expect(kindsAt(fd, 4000, 0)).toEqual(['endpoint']);
+    const at = fd.points.filter((p) => p.mm.x === 4000 && p.mm.y === 0);
+    expect(at).toHaveLength(1);
+    expect(at[0]!.pointId).toBe(pointId); // 与墙共用同一枚点 ⇒ 去重前后是同一枚
+    expect(at[0]!.ownerId).toBe(wall.id); // 先扫到的墙赢：ownerId 只用于并列破序，不给语义
+  });
+
+  it('柱用坐标字面量落在墙端点上 ⇒ 墙的那枚点赢，孤儿点抢不走（去重键是坐标而不是 id）', () => {
+    const { log, storeyId } = synth();
+    const wall = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    // `resolvePointRef` 对字面量恒返回 null ⇒ 柱拿到一枚**自己的**点，坐标与墙的 endId 逐字相同
+    const orphanId = columnAt(log, storeyId, { x: 4000, y: 0 });
+    expect(orphanId).not.toBe(wall.endId);
+    const fd = snapFieldOf(log.document, storeyId);
+    const at = fd.points.filter((p) => p.mm.x === 4000 && p.mm.y === 0);
+    expect(at).toHaveLength(1); // 按 pointId 去重的写法会在这里留下两枚，赢家随 uuidv7 漂
+    expect(at[0]!.pointId).toBe(wall.endId); // 恒取墙的点：复用它才接得上头
+    const snap = snapFromCursor(view, pxOf({ x: 4000, y: 0 }, view), { x: 4000, y: 0 }, null, fd);
+    expect(snap?.pointId).toBe(wall.endId);
+  });
+
+  it('别层的柱与板一枚都不进本层表（上下层同位置是建筑常态，不是边角）', () => {
+    const { log, storeyId, projectId } = synth();
+    log.dispatch(storeyCreate({ projectId, index: 1, elevationMm: 3000, heightMm: 3000 }));
+    let upperId = '';
+    for (const id of log.affected) {
+      if (log.document.get(id)?.kind === 'storey' && id !== storeyId) upperId = id;
+    }
+    if (upperId === '') throw new TypeError('第二层没建出来');
+    columnAt(log, upperId, { x: 1000, y: 1000 }); // 与下面那枚同坐标，只差一层
+    slabAt(log, upperId, [
+      { x: 0, y: 0 },
+      { x: 2000, y: 0 },
+      { x: 2000, y: 2000 },
+    ]);
+    columnAt(log, storeyId, { x: 1000, y: 1000 });
+    const fd = snapFieldOf(log.document, storeyId);
+    const upper = snapFieldOf(log.document, upperId);
+    const lowerIds = new Set(fd.points.map((p) => p.pointId).filter((id): id is string => id !== null));
+    const upperIds = new Set(upper.points.map((p) => p.pointId).filter((id): id is string => id !== null));
+    expect(upperIds.size).toBeGreaterThan(lowerIds.size); // 素材自证：别层自己有东西可漏
+    for (const id of lowerIds) expect(upperIds.has(id)).toBe(false);
+    const upperOwners = new Set<string>([
+      ...log.document.byKind('column').filter((c) => c.storeyId === upperId).map((c) => c.id),
+      ...log.document.byKind('slab').filter((s) => s.storeyId === upperId).map((s) => s.id),
+    ]);
+    expect(upperOwners).toHaveLength(2); // 素材自证：别层确实进来了一柱一板
+    for (const p of fd.points) expect(upperOwners.has(p.ownerId)).toBe(false);
+    // 同坐标不等于同一点：本层那一枚必须还在，且它是本层柱的点
+    const at = fd.points.filter((p) => p.mm.x === 1000 && p.mm.y === 1000);
+    expect(at).toHaveLength(1);
+    expect(requirePoint(log.document, at[0]!.pointId as string, '本层柱心').storeyId).toBe(storeyId);
+  });
+
+  it('端点集 = 本层墙端点 ∪ 柱心 ∪ 板角 的坐标去重集（全量对账，多一枚少一枚都红）', () => {
+    const { log, storeyId } = synth();
+    const w1 = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    wallAt(log, storeyId, { pointId: w1.endId }, { x: 4000, y: 3000 });
+    const columnPointId = columnAt(log, storeyId, { x: 800, y: 800 });
+    // 矩形往左上方去，只与 w1 共用 (0,0) 那一枚点：四个顶点里没有三个共线，`assertSimpleRing` 收得下
+    const slabIds = slabAt(log, storeyId, [
+      { pointId: w1.startId },
+      { x: -2000, y: 0 },
+      { x: -2000, y: 2000 },
+      { x: 0, y: 2000 },
+    ]);
+    const fd = snapFieldOf(log.document, storeyId);
+    const eps = fd.points.filter((p) => p.kind === 'endpoint');
+    // 期望的坐标集：墙 (0,0)(4000,0)(4000,3000) + 柱 (800,800) + 板角 (0,0)(-2000,0)(-2000,2000)(0,2000)
+    // 去重后 7 枚 —— 板与墙共用的那枚 (0,0) 只算一次（键是坐标）。
+    const expected = new Set([
+      '0,0',
+      '4000,0',
+      '4000,3000',
+      '800,800',
+      '-2000,0',
+      '-2000,2000',
+      '0,2000',
+    ]);
+    expect(new Set(eps.map((p) => `${p.mm.x},${p.mm.y}`))).toEqual(expected);
+    expect(eps).toHaveLength(expected.size);
+    expect(eps.map((p) => p.pointId)).toContain(columnPointId); // 柱心那一枚的 id 真的进了表
+    // 每一枚的 pointId 都必须是真的、属于本层的点
+    for (const p of eps) {
+      const point = requirePoint(log.document, p.pointId as string, '端点集对账');
+      expect(point.storeyId).toBe(storeyId);
+    }
+    // 中点每面墙一枚；交点档在这一格里也没有新增靶子：唯一的轴对 (w1,w2) 交于 (4000,0)，
+    // 那里已经有墙端点 ⇒ 被规则 ③ 挡掉（板角不是轴，不参与求交）。
+    expect(fd.points.filter((p) => p.kind === 'midpoint')).toHaveLength(2);
+    expect(crossKeys(fd)).toEqual([]);
+    expect(slabIds).toHaveLength(4);
+  });
+});
+```
+
+（起点行号：`crossKeys` 那三行的注释是"排序后比：`byKind` 的 id 序随 uuidv7 漂，数组序不是判据" —— 这句是本任务全部新断言的写法纪律，凡表内容都比**集合/排序后的坐标串**，不比数组下标。老库里唯一一处按下标取候选的是 `snapping.test.ts:263` 的 `list.points[0]!.ownerId`，它跑在**单面墙**的合成层上，Task 9 之后那一枚仍是那面墙的起点，所以不必动 —— 但**别学它**。）
+
+- [ ] **Step 3: 落实现 —— `snapping.ts` 的五处改动，外加 `editing.ts` 的一处注释订正**
+
+改完之后 `snapFieldOf` 的签名、返回类型、`index.ts` 的导出面都不变；变的是档位、去重键、以及表里多出那三段。六处逐字如下（①–⑤ 的行号按**改后**的 `snapping.ts` 501 行版本给，⑥ 按改后的 `editing.ts` 517 行版本给，便于对账）。
+
+**① 文件头 import（第 1–10 行）**：补 `intersectLines` 与 `vec` 两个名字，别的一律不动。
+
+```ts
+import {
+  intersectLines,
+  quantizeMm,
+  requirePoint,
+  vec,
+  wallAxisById,
+  type Document,
+  type PointRef,
+  type Vec2,
+} from '@dajia/core';
+```
+
+**② 档位（第 73–85 行）**：`SnapKind` 五档变六档；`SnapPointKind` 多出 `'axisCross'`，并把 `'endpoint'` 读作"一枚真源点"这件事写进注释（R2）。
+
+```ts
+/** 六档吸附。前四种吸到**已有的东西**上，后两种吸到**方向**上（spec §6 那张表）。 */
+export type SnapKind = 'endpoint' | 'midpoint' | 'foot' | 'axisCross' | 'ortho' | 'angle15';
+
+/**
+ * 静态点表里出现的三种档：垂足与两个角度档的候选按光标现算，不可能预先列出（见 `SnapField`）。
+ *
+ * `'endpoint'` 读作"**一枚真源点**"而不是"一面墙的头"：Task 9 把柱心与板角也归进这一档，
+ * 因为它们共享同一条语义 —— `pointId` 非空、`pointRefOf` 会复用它。改名成 `'point'` 要动
+ * `wallProbe` 的起点枚举、`--draw-shot` 与 `--edit-shot` 的字面量，换来的只有名字好看。
+ */
+export type SnapPointKind = 'endpoint' | 'midpoint' | 'axisCross';
+
+/** 表里的一枚候选点。`ownerId` 只用于并列破序，不给语义。 */
+```
+
+**③ 并列判据与场的契约（第 137–180 行）**：`GROUP` 补 `axisCross: 0`；`PRIORITY` 把 `axisCross: 3` 插进 `foot` 之后、`ortho` 之前，于是 `ortho` 4 / `angle15` 5（R4 —— 相对次序一字未动）；`snapFieldOf` 的注释从"三行 + 一句留给 Task 9 的承诺"换成五段来源的定死顺序、跨层三道防线、以及**洞口中心判掉**那三条理由（R6）。
+
+```ts
+/** 先分组（对象档永远压过方向档），组内先比距离，再比档位，最后比 ownerId。 */
+const GROUP: Record<SnapKind, number> = {
+  endpoint: 0,
+  midpoint: 0,
+  foot: 0,
+  axisCross: 0,
+  ortho: 1,
+  angle15: 1,
+};
+/**
+ * 档位优先序 = spec §6 那张表的顺序，**只有一处故意不同**：正交排在 15° 前面。
+ * 理由是 `angle15Of` 把 90 的倍数整档让给了正交（S3），于是两档同时命中的场合只剩下
+ * "方向恰好落在轴上"那一种 —— 那里该赢的是保坐标的正交。这条在 T6 就是这样，Task 9 没改它。
+ */
+const PRIORITY: Record<SnapKind, number> = {
+  endpoint: 0,
+  midpoint: 1,
+  foot: 2,
+  axisCross: 3,
+  ortho: 4,
+  angle15: 5,
+};
+
+/**
+ * 本层的吸附场：一面层的**全部既有靶子**在这里列齐，`snapFromCursor` 只读它。
+ *
+ * 五段来源，入表顺序定死成 **每面墙的〔两个端点，中点〕顺次 → 柱心 → 板角 → 轴网交点**：
+ * - **端点档**收三样真源点（墙端点、柱心、板角），它们共用同一条语义 —— `pointId` 非空，
+ *   吸上即复用。按**坐标**去重（键是 `${x},${y}`，不是 pointId）：样例房一层有六枚共享端点，
+ *   不去重就是"同一个点六个候选、六个 ownerId"，并列破序会挑出任意一面墙，`pointId` 却全都一样 ——
+ *   结果对，过程没法测；而柱/板带进来的**同坐标孤儿点**更要靠这一条挡住（见下面柱那一段）。
+ * - **轴网交点档**是本任务补的那一档：S1 没有轴网实体，所以它就是**本层墙轴线的两两求交**
+ *   （`axisCrossPoints`，含轴延长线上的交点）。
+ *
+ * 三道跨层的防线都在同一个循环里（`if (x.storeyId !== storeyId) continue`）：漏任何一道，
+ * 两层的同位置坐标就会互相吸 —— 上下层对齐是建筑的常态，所以这不是边角，是必然踩的那一发。
+ * `resolvePointRef` 紧接着拿跨层抛错，会把一发无害的吸附变成命令层异常。
+ *
+ * **洞口中心不在表里**（`snapping.ts` 在 T6 承诺"Task 9 补"的那半句，到此判掉而不是兑现）：
+ * ① 它不是 spec §6 那六档之一；② 它背后没有真源点，吸上去只会新建一枚坐标，与"随便吸到轴上
+ * 某处"没有区别 —— 而那个"某处"**恰好**已经被垂足档覆盖（洞口中心就在宿主墙的轴线上）；
+ * ③ 它许诺的语义是坏的：把新墙的头吸到门洞中心 = 往门中间立一堵墙。
+ * 想要"对齐门洞边"，那是洞口的两个端点，属计划 4 的洞口编辑，不属这一档。
+ */
+```
+
+**④ 墙那一段的去重键（第 199–203 行）**：`seen` 的键从 `pointId` 换成 `` `${point.x},${point.y}` ``，并且把 `requirePoint` 提到键计算之前（R3）。
+
+```ts
+    for (const pointId of [wall.startId, wall.endId]) {
+      const point = requirePoint(doc, pointId, '吸附端点');
+      const key = `${point.x},${point.y}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+```
+
+**⑤ 柱心、板角、交点三段（第 222–308 行）**：接在墙那个 `for` 的右花括号之后、`return { points, axes }` 之前；`axisCrossPoints` 是**文件内私有**函数，紧跟在 `snapFieldOf` 后面，不进 `index.ts`。交点档排在最后算，因为它要拿前面三段的结果去重（R5、R9）。
+
+```ts
+  // 柱心与板角走的是与墙端点完全相同的一条通路：读真源那枚点、按坐标去重、复用。
+  // 去重键是**坐标**而不是 pointId（墙那一段同理），理由是 `columnCreate` 拿坐标字面量时
+  // 会新建一枚**自己的**点（`resolvePointRef` 对字面量恒返回 null）—— 按 id 去重就会留下
+  // 两枚同坐标的端点候选，并列破序按 ownerId 挑，而 ownerId 是 uuidv7：吸到"墙的点"还是
+  // "柱那枚孤儿点"跨进程漂。孤儿点复用了也接不上头（墙不认识它），所以赢家恒取先扫到的墙端点。
+  // `seen` 跨三类共用是故意的 —— 柱落在墙端点上是常态（`columnCreate` 的 `at` 就写着可以
+  // 引既有墙端点），共用同一枚点时表里只该留一枚候选，留两枚等于让并列破序去挑"吸成墙还是吸成柱"。
+  for (const column of doc.byKind('column')) {
+    if (column.storeyId !== storeyId) continue;
+    const point = requirePoint(doc, column.pointId, '吸附柱心');
+    const key = `${point.x},${point.y}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    points.push({
+      kind: 'endpoint',
+      mm: { x: point.x, y: point.y },
+      pointId: column.pointId,
+      ownerId: column.id,
+    });
+  }
+  for (const slab of doc.byKind('slab')) {
+    if (slab.storeyId !== storeyId) continue;
+    for (const pointId of slab.boundaryPointIds) {
+      const point = requirePoint(doc, pointId, '吸附板角');
+      const key = `${point.x},${point.y}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      points.push({
+        kind: 'endpoint',
+        mm: { x: point.x, y: point.y },
+        pointId,
+        ownerId: slab.id,
+      });
+    }
+  }
+  // 交点排在最后算：它要拿上面三段的结果去重（一枚既是墙端点又是两轴交点的坐标，
+  // 该以"真源点"的身份被吸到，好让 `pointRefOf` 复用而不是新建）。
+  for (const cross of axisCrossPoints(axes, points)) points.push(cross);
+  return { points, axes };
+}
+
+/**
+ * 轴网交点档：本层墙轴线**两两求交**（spec §6 的第四档，S1 里没有轴网实体时的唯一读法）。
+ *
+ * 四条规则，每条各挡一处：
+ * ① **无限直线**求交而不是线段：线段交点 = "墙已经十字相交"，那里本来就有靶子（垂足档覆盖它）；
+ *   这一档给的新东西恰恰是**轴延长线上**的交点 —— 让新墙与两面还没碰上的老墙同时对齐。
+ *   共线与近平行由 core 的 `intersectLines` 返回 null 挡掉（`PARALLEL_EPS = 1e-9` 相对容差）。
+ * ② **量化后去重**：三条共线横墙 × 一条竖墙 = 三枚同一坐标的候选。不去重，`--draw-shot` 里
+ *   "吸上了哪一档"的判据就取决于枚举顺序而不是几何，而表长度也变成实现细节的读数。
+ * ③ **与已有真源点/中点同坐标的交点不入表**：那一处已经有更高优先档的候选（端点 0 / 中点 1
+ *   都压过本档的 3），留两枚只会被 `takeBest` 立刻丢掉 —— 清掉它，表才是"这一档独有的靶子"。
+ * ④ `ownerId` 取该对中**id 较小**的那面墙：`axes` 来自 `byKind('wall')`（已按 id 升序），
+ *   所以先扫到的那面恒为较小者，不需要再比一次。它只用于并列破序，不给语义。
+ *
+ * **代价**：表长度是 O(墙数²)。样例房一层 8 面墙 → 28 对，但交点档进表 **0** 枚（9 枚格点全被端点/中点占了）；
+ *   一张 61 面墙的栅格层 → 1830 对、进表 784 枚，建一次场实测 0.233~0.254ms。场只在按下时建一次、`pointermove` 只读，
+ *   所以这笔落在"按下那一发"上，不落在每帧上。近于平行的两轴会给出极远的交点：它进表，
+ *   但 `takeBest` 的 `SNAP_TOL_PX` 天然把它挡在候选之外 —— 除非用户真的把光标停在那一小格里，
+ *   而那一格的几何是**确定**的（同一个文档算同一个数），不是噪声。
+ */
+function axisCrossPoints(
+  axes: readonly SnapAxis[],
+  existing: readonly SnapPoint[],
+): SnapPoint[] {
+  const taken = new Set(existing.map((p) => `${p.mm.x},${p.mm.y}`));
+  const out: SnapPoint[] = [];
+  for (let i = 0; i < axes.length; i += 1) {
+    const a = axes[i]!;
+    for (let j = i + 1; j < axes.length; j += 1) {
+      const b = axes[j]!;
+      const hit = intersectLines(
+        vec(a.startMm.x, a.startMm.y),
+        a.dir,
+        vec(b.startMm.x, b.startMm.y),
+        b.dir,
+      );
+      if (hit === null) continue;
+      const mm = quantizeTarget(hit);
+      const key = `${mm.x},${mm.y}`;
+      if (taken.has(key)) continue;
+      taken.add(key);
+      out.push({ kind: 'axisCross', mm, pointId: null, ownerId: a.ownerId });
+    }
+  }
+  return out;
+}
+```
+
+**⑥ `editing.ts` 的一处注释订正（第 215–218 行，`planDelete` 的 doc 注释尾巴）**：Task 8 落地时那句「就把柱画进指令表 —— 那是 **Task 9** / 计划 4 的边界」把边界说错了：Task 9 交付的是**吸附场**吃下柱心与板角，`buildDrawList` 与 `pickAt` 一行没动（Step 5 那六进程的 sweep 逐字相同就是它的见证）。留着这句，执行完 Task 9 的人回头读 `editing.ts` 会以为指令表里该有柱了。只改注释，函数体一行未动。
+
+```ts
+ * **屏幕上今天还点不到柱与板**：`buildDrawList` 的指令表与 `pickAt` 的命中集都只认墙与洞口，
+ * 所以 ③④ 两支的凭据只能是合成夹具（手工把柱/板的 id 放进选中集）。不许为了在屏幕上"证明它"
+ * 就把柱画进指令表 —— 那是**计划 4** 的边界（Task 9 只把柱心/板角喂进**吸附场**，指令表与命中集一行未动），
+ * 混进来会让 `--draw-shot` 那 27 行像素判据全数重测。
+```
+
+Run: `npx vitest run --config vitest.config.ts packages/scene-2d/test/snapping.test.ts`
+Expected: **40 条全绿**（Step 2 那 8 条从红转绿；4 条本来绿的仍然绿 —— 它们的凭据在 Step 6）。这时 `handles.test.ts` 会**恰好红一条**（「探针吃的是吸附后的毫米」，实测 `expected { x: +0, y: -760 } to deeply equal { x: 40, y: -760 }`），那是 Step 4 的活，不许在这里就地放宽。
+
+- [ ] **Step 4: `handles.test.ts` 里那一条被新档合法改写的既有用例**
+
+Step 3 之后 `handles.test.ts` 红的**只有那一条**（实测 19 条里 1 条红）。先说清"为什么改它不算放宽判据"：
+
+- 这条用例的判据是**三件事**：① 探针吃的不是裸落点（`expect(p!.targetMm).not.toEqual(moveTargetOf(v, p!.toPx))`）、② 吸附之后那一发真过得了真源守卫（`legalDrop(..., p!.targetMm)` 为 `true`）、③ 裸的对角偏移那两发非法（末尾那个 `for` 里 `legalDrop(..., off)` 恒 `false`）。**三件事一条都没动、一条都没少。**
+- 动的只有"① 的答案具体是哪一枚毫米"：`(40,-760)` → `(0,-760)`。旧实现吸到第三面墙的**起点**（端点档，5.66px）；新实现先撞上 `(0,-760)` —— `+y` 那面墙的轴**延长线** `x=0` 与第三面墙的轴 `y=-760` 的交点，离裸落点 4px ⇒ 同一对象组内先比距离，交点赢。
+- **不许改成"挪夹具"**：交点是端点在光标那条线上的**投影**（端点 `(40,-760)` 投到 `x=0` 上就是 `(0,-760)`），所以只要场里同时有那枚端点与那两条轴，交点档的距离**恒 ≤** 端点档的距离，相等只在那枚端点已经落在光标线上的时候。把夹具挪开等于把这条用例变成"没有交点的场"，测不到东西。
+- 所以正确做法是**改答案 + 加两句素材自证**：端点那一枚仍在表里（它输的是距离不是存在），而 `(0,-760)` 不是任何一面墙的端点（证明改的那对数字判的确实是交点档）。
+
+整条用例（`handles.test.ts` 第 445–502 行，逐字实测绿）替换成：
+
+```ts
+  it('探针吃的是吸附后的毫米：前两发被真源挡下，第三发被**轴网交点档**接住', () => {
+    // 现场故意造到"前两发（+y / +x）候选全非法、第三发 (0,-800) 的裸落点离一面既成墙 5.66px"，
+    // 于是吃场的探针报**吸附之后**那枚毫米，不吃场的探针报裸的 (0,-800) —— 两个答案不同。
+    // 2026-09-28 实测这条咬住的改坏：探针传 `EMPTY_SNAP_FIELD`（HB3）与换回 `moveTargetOf`（HB4），
+    // 两条各红这条 + 下面那条「合法性判的是吸附后的毫米」。锚点（HB1）与排除（HB2）不在这里判 ——
+    // 它们收在 `handleDropTarget` 出口里，改出口会让"拖拽路径真的在吃吸附"与"把手按在原地那一发"
+    // 逐进程红（实测 8/8），判在探针调用点上反而漏（那时探针与 renderer 一起改，行为没变）。
+    // 判裸落点还是判吸附后（HB5）由下面那条专门咬：这条夹具里裸 (0,-800) 与吸 (0,-760) **两侧都合法**，判不出。
+    //
+    // **Task 9 改的是"谁接住它"，不是判据。** 这条用例原来吸的是第三面墙的起点 (40,-760)（端点档，
+    // 5.66px）；补上轴网交点档之后，同一发光标先撞上 (0,-760) —— 它是"+y 那面墙的轴**延长线** x=0"
+    // 与"第三面墙的轴 y=-760"的交点，离裸落点 4px ⇒ 按距离赢下端点档（同一对象组内先比距离）。
+    // 端点那一枚并没有消失（下面第一句自证），它只是输了距离。
+    // "复用一枚真源点"那半句的凭据不在这条：它住在「把手按在原地那一发」与 `wallProbe` 的筛 ①。
+    const projectId = uuidv7();
+    const log = new TransactionLog(Document.create(projectId));
+    log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+    let storeyId = '';
+    for (const id of log.affected) {
+      if (log.document.get(id)?.kind === 'storey') storeyId = id;
+    }
+    if (storeyId === '') throw new TypeError('affected 里没有新建的楼层');
+    // 共享 A=(0,0) 的两面墙（+x 与 +y，直角共点 ⇒ 两臂接头，S1 造得成，`sharedBy` 恰为 2）。
+    // 两面都取 1040：+y / +x 那两发把其中一面拖成轴长 240，正好撞"墙厚 240 不小于轴长 240"那条守卫。
+    log.dispatch(wallCreate({ storeyId, start: { x: 0, y: 0 }, end: { x: 1040, y: 0 }, thicknessMm: 240, heightMm: 3000 }));
+    const east = createdWallOf(log);
+    log.dispatch(wallCreate({ storeyId, start: { pointId: east.startId }, end: { x: 0, y: 1040 }, thicknessMm: 240, heightMm: 3000 }));
+    // 第三发 (0,-800) 的陷阱：一面**与 A 无关**的墙。Task 9 之前起作用的是它的起点 (40,-760)
+    // （离裸落点 56.6mm ⇒ 0.1px/mm 下 5.66px，容差 8px 之内的端点档）；Task 9 之后起作用的是
+    // 它那条**轴** y=-760 —— 与 x=0 那条延长线交于 (0,-760)，4px。两面都在，谁近谁赢。
+    log.dispatch(wallCreate({ storeyId, start: { x: 40, y: -760 }, end: { x: 1040, y: -760 }, thicknessMm: 240, heightMm: 3000 }));
+    // 1px = 10mm ⇒ 整数像素与整数毫米逐字往返，红的时候不必先排除舍入
+    const v = viewportOf(1000, 800, { pxPerMm: 0.1, center: vec(400, 100) });
+    const doc = log.document;
+    const fd = snapFieldOf(doc, storeyId);
+    // 素材自证一：端点档那一枚仍在表里（它输的是距离，不是存在）—— 摘掉交点档时这一发会退回它
+    expect(fd.points.some((q) => q.kind === 'endpoint' && q.mm.x === 40 && q.mm.y === -760)).toBe(true);
+    // 素材自证二：(0,-760) 不是任何一面墙的端点 ⇒ 上一句改的那对数字判的确实是交点档
+    expect(fd.points.some((q) => q.kind === 'endpoint' && q.mm.x === 0 && q.mm.y === -760)).toBe(false);
+    const p = dragProbe(doc, storeyId, buildDrawList(doc, storeyId, v, EMPTY_SELECTION), v);
+    expect(p).not.toBeNull();
+    expect(p!.sharedBy).toBe(2);
+    // 先自证现场：裸落点确实是第三发那一发，而探针给的是**吸上去之后**那枚毫米
+    expect(moveTargetOf(v, p!.toPx)).toEqual({ x: 0, y: -800 });
+    expect(p!.targetMm).toEqual({ x: 0, y: -760 });
+    expect(p!.targetMm).not.toEqual(moveTargetOf(v, p!.toPx));
+    // 而合法性判的也是吸附后的毫米：原地那枚既有点把墙拖成的形状必须真的过得了真源那道守卫
+    expect(legalDrop(doc, p!.wallId, p!.end, p!.targetMm)).toBe(true);
+    expect(legalDrop(doc, p!.wallId, p!.end, { x: 0, y: -800 })).toBe(true); // 两个都合法 ⇒ 上面那句不是巧合
+    // 前两发候选全非法是这套夹具的前提，不是假设：逐发当场验一遍（各把一面 1040 的墙拖成轴长 240），
+    // 前提漂了这里先红，不会让上面那两句变成猜。
+    for (const off of [
+      { x: 0, y: 800 },
+      { x: 800, y: 0 },
+    ]) {
+      expect(legalDrop(doc, p!.wallId, p!.end, off)).toBe(false);
+    }
+  });
+```
+
+Run: `npx vitest run --config vitest.config.ts packages/scene-2d`
+Expected: **7 文件 / 152 条全绿**（`zz-measure.test.ts` 那条只打印，别把它算进账）。
+
+- [ ] **Step 5: 全量验证 + 实测账**
+
+```bash
+npx vitest run --config vitest.config.ts        # 临时工程全量
+npx tsc --noEmit -p tsconfig.scene2d.json       # 本任务唯一的形式验证
+```
+
+Expected（2026-09-28 实测）：**31 文件 / 461 条全绿** —— core **24 / 309**（一字未动），scene-2d **7 / 152**（viewport 9、drawlist 10、pick 18、**snapping 40**、editing 35、handles 19、panel 21）；`tsc` **exit=0**。相对 Task 8 的 449 净增 **12**（全在 `snapping.test.ts`），⇒ 真仓库预计 **464 → 476**。
+
+**① 表内容账**（`demoHouse()` 一层 vs 一张 61 面墙的栅格层：31 横 `y = i·1000` + 30 竖 `x = i·1000`，全部用坐标字面量建端点 ⇒ 没有接头，那张层只为量规模，不过几何守卫）：
+
+| 读数 | Task 9 前（`.tscheck/t9`） | Task 9 后（`.tscheck/t10`） |
+| --- | --- | --- |
+| 样例房表 | `16 点 = endpoint 8 + midpoint 8`，`axes 8` | **逐字相同**，`axisCross 0` |
+| 样例房求交规模 | —— | `pairTotal 28 → pairs 15 → uniqueRaw 9 → dropped 9 → 进表 0` |
+| 61 墙层表 | `183 点 = endpoint 122 + midpoint 61` | `965 点 = endpoint 120 + midpoint 61 + axisCross 784` |
+| 61 墙层求交规模 | —— | `pairTotal 1830 → pairs 930 → uniqueRaw 930 → dropped 146 → 进表 784` |
+
+两个数不是巧合，逐字对得上账：样例房那 9 枚格点**全部**已经被端点或中点占住（`dropped = uniqueRaw`）⇒ 交点档对样例房**新增 0 枚靶子**，这就是 R8 那句"闸门不必重测"的算术来源；61 墙层那 `endpoint 122 → 120` 是 R3 换去重键的直接读数（两枚同坐标的孤儿点在坐标键下合并）。
+
+**② 规模与成本**（同一次 `npx vitest run` 里 `while (performance.now() - t0 < 250)` 的循环读数，取三次独立进程的区间）：
+
+| 读数 | Task 9 前 | Task 9 后 |
+| --- | --- | --- |
+| 样例房建一次场 | 0.0029 ~ 0.0032 ms | **0.0081 ms** |
+| 样例房一次 `dropTargetOf`（16 枚候选的场） | —— | **0.0010 ms** |
+| 61 墙层建一次场 | 0.0208 ~ 0.0219 ms | **0.233 ~ 0.254 ms** |
+| 61 墙层一次取最优（965 枚候选） | 0.0087 ~ 0.0092 ms | **0.029 ~ 0.032 ms** |
+| 61 墙层"每发 pointermove 重建场"（错误用法的形状） | 0.030 ~ 0.032 ms | **0.264 ~ 0.273 ms** |
+
+⇒ 帧预算 16.7ms 下最坏那一格占 **1.6%**，而 renderer 走的是"每帧一次（paint effect）"而不是"每发一次"（`fieldRef` 那条既有纪律，T6 裁决 ①）。R7 的账就是这么来的。
+
+**③ 探针与 sweep 的集合比对**（把同一份 `zz-measure.test.ts` 分别压进 t9 与 t10，各跑独立进程，比**打印出来的值**）：
+
+| 读数 | 结果 |
+| --- | --- |
+| 样例房场表 / `crosses` | 6 个进程（t9×3 + t10×3）**逐字相同**：`{endpoint:8, midpoint:8, axes:8}` + `[]` |
+| `handles` sweep 160 发 | 6 进程逐字相同：`{handles:16, identity:72, rewritten:14, rewriteKinds:{angle15:14}, hitKinds:{foot:54, ortho:17, angle15:14, midpoint:1}, maxShiftPx:6.97}` |
+| `dragProbe` | 6 进程逐字相同：`{toPx:{700,825}, targetMm:{4800,0}, sharedBy:3}` ⇒ `--edit-shot` 的字面量不必动 |
+| `wallProbe` | **两边都不是单值**：t9 九个独立进程 `(800,3000)` 4 次 / `(4000,3000)` 5 次，t10 十一个进程 5 次 / 6 次 ⇒ 候选**集合** `{(800,3000)→(800,5000), (4000,3000)→(4000,5000)}` 两边相同，二十个进程里没有第三枚 |
+
+`wallProbe` 那一行**不是本任务引入的**：它就是 T6 记在"已核实的现状事实"里那条「探针选中的**起点会跨进程漂**」（`snapFieldOf` 的端点表顺序来自 `doc.byKind('wall')`，按 uuidv7 id 升序，而同毫秒不单调）。所以"探针答案没移动"这条判据**只能按集合写、不能按单值写** —— 编写期本节此处原先那句"探针的恒等/改写计数与闸门字面量会再变一轮"就是拿单值当判据的结果，实测推翻（计数与字面量都没变，理由见 R8）。
+
+- [ ] **Step 6: 改坏验证（九条变异，逐条记下红的是哪几条）**
+
+每条 = 摘掉一处实现 → 跑全量 → 记红名 → 还原。命令形状（在 `.tscheck/t10` 根上跑）：
+
+```bash
+cp packages/scene-2d/src/snapping.ts /tmp/snap.bak
+perl -0pi -e 's/  axisCross: 3,/  axisCross: 0,/' packages/scene-2d/src/snapping.ts
+npx vitest run --config vitest.config.ts 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E "^ +Tests |× "
+cp /tmp/snap.bak packages/scene-2d/src/snapping.ts
+```
+
+（Task 8 那条"命令替换里必须剥 ANSI"的教训这里照用，一句 `sed` 不能省。九条用同一个模式串，逐条列出在下面的表里。）
+
+| # | 摘掉什么 | 实测红 | 红的是哪几条（逐字用例名） |
+| --- | --- | --- | --- |
+| N1 | 整段交点档（把 `snapFieldOf` 末尾那行 `for (const cross of axisCrossPoints(axes, points)) points.push(cross);` 摘掉） | 5 / 149 | 「两墙不相接、轴延长线上相交 ⇒ 交点档给得出唯一靶子，且它是新建点不是复用」「垂足档压过交点档：三轴共点且其中一轴的墙段真的穿过该点 ⇒ 赢的是 foot」「属性：交点档命中时恒整数毫米、恒不给 pointId、恒在容差内，且答案恒来自表里那一枚」「平行与共线都不求交；共线的三段横轴对同一根竖轴只留一枚交点」**+ `handles.test.ts` 的**「探针吃的是吸附后的毫米：前两发被真源挡下，第三发被**轴网交点档**接住」 |
+| N2 | `PRIORITY.axisCross` 从 3 改 0（交点与端点同优先级） | 1 / 153 | 「垂足档压过交点档」（**只**这一条 ⇒ R4 那一格的全部牙齿就住在这里） |
+| N3 | 规则 ③：交点不再与既有表去重（`const taken = new Set(existing.map(...))` 换成 `new Set<string>()`） | 3 / 151 | 「交点与既有端点同坐标 ⇒ 不重复入表」「样例房一枚交点档独有的靶子都没有」「端点集 = 本层墙端点 ∪ 柱心 ∪ 板角 的坐标去重集（全量对账，多一枚少一枚都红）」 |
+| N4 | 规则 ②：交点之间不按坐标去重（摘掉 `axisCrossPoints` 里的 `if (taken.has(key)) continue;`） | 4 / 150 | 「交点与既有端点同坐标 ⇒ 不重复入表」「平行与共线都不求交；共线的三段横轴对同一根竖轴只留一枚交点」「样例房一枚交点档独有的靶子都没有」「端点集 … （全量对账）」 |
+| N5 | 柱心那一段循环摘掉（`for (const column of doc.byKind('column'))` → `for (const column of [])`） | 3 / 151 | 「柱心在表里：吸上去复用柱引用的那枚点」「别层的柱与板一枚都不进本层表」「端点集 … （全量对账）」 |
+| N6 | 板角那一段循环摘掉（同上，换成 `of []`） | 3 / 151 | 「板角四枚全在表里，逐枚 pointId 指向真源那个顶点」「别层的柱与板一枚都不进本层表」「端点集 … （全量对账）」 |
+| N7 | 柱与板的 `storeyId` 过滤摘掉（两处 `if (x.storeyId !== storeyId) continue;`） | 1 / 153 | 「别层的柱与板一枚都不进本层表（上下层同位置是建筑常态，不是边角）」 |
+| N8 | 去重键换回 `pointId`（Step 3 ④ 那一处与柱/板两段的模板串键全改成 `pointId` / `column.pointId`） | 1 / 153 | 「柱用坐标字面量落在墙端点上 ⇒ 墙的那枚点赢，孤儿点抢不走（去重键是坐标而不是 id）」—— **R3 的唯一见证** |
+| N9 | 交点带上一枚真源点 id（`pointId: null` → `pointId: a.ownerId`） | 2 / 152 | 「两墙不相接、轴延长线上相交 … 且它是新建点不是复用」「属性：交点档命中时恒整数毫米、恒不给 pointId …」 |
+
+**这张表差点记错两次**（都是当场踩到的，写在这里防执行日照抄）：
+
+1. **N1 的"摘掉调用行"不能顺手连函数一起删**。只摘调用行时 `npx tsc --noEmit -p tsconfig.scene2d.json` 给 `snapping.ts(283,10): error TS6133: 'axisCrossPoints' is declared but its value is never read.`（2026-09-28 实测，exit=1）—— 那是 `noUnusedLocals` 的编译期红，与"实现被摘掉"是两件事。变异只摘调用，函数留在原地，红才落在断言上。
+2. **变异脚本崩在打印那一行，会把实现留在改坏状态**。这一轮真踩了：第一版驱动在 Windows 的 GBK 控制台上 `print` 用例名直接抛 `UnicodeEncodeError`，`finally` 没写，于是 N1 的 `// removed` 与 N2 的 `axisCross: 0` 留在盘上；第二次跑时 N1 那行锚点已经找不到（报 `ANCHOR-FAIL`），而 N2 那行测的其实是 **N1+N2 叠加** —— 数字看着像，红的名字少了两条。所以：驱动必须 `try/finally` 还原 + `ORIG` 只在开头读一次 + **跑完再验一遍全绿**（本轮最后那条"还原后 8 文件 / 154 条"就是这么出来的）。控制台上打印中文要 `sys.stdout.reconfigure(encoding='utf-8', errors='replace')`，或者只往 utf-8 文件里写。
+
+- [ ] **Step 7: 落回真仓库 —— 四个文件、九条变异复跑、五个闸门**
+
+```bash
+# 1) 把临时工程里实测过的文件逐字搬回真仓库。本任务动的是四个文件，全在 packages/scene-2d 下：
+#    src/snapping.ts（380 → 501 行）、src/editing.ts（516 → 517 行，只有 Step 3 ⑥ 那一处注释）、
+#    test/snapping.test.ts（追加 12 条）、test/handles.test.ts（改写 1 条）。
+#    ⚠ 临时工程里的 zz-measure.test.ts 与那张 61 面墙的栅格夹具**不带回真仓库**（它没有断言，
+#      带回去等于给真仓库塞一条"永远绿"的用例 —— 边界段那条纪律在这儿照样生效）。
+#    ⚠ index.ts 与 apps/desktop/** 一字不动 ⇒ 本任务只有一个提交，没有第二个。
+npx tsc --noEmit -p packages/scene-2d/tsconfig.json
+pnpm verify
+```
+
+Expected: `pnpm verify` exit=0；`Tests` 从 Task 8 落地的 **464** 涨到 **476**（净增 **12**，全部落在 `snapping.test.ts` 28 → 40；`handles.test.ts` 改写一条不涨数）；`Test Files` **一字不动**（本任务不新建任何测试文件）。core 的 `24 文件 / 309 条` 一字不动 —— 若这一步发现还得改 core（比如想给 `SnapKind` 加一个 core 侧的轴网实体），按边界段那条纪律：那是计划 4 的活，回计划 2/4，不在这里补。
+
+```bash
+# 2) Step 6 那九条变异在真仓库原样复跑（同九条模式串、同一条剥色管道、同一个 try/finally 还原）
+# 3) 五个闸门各跑一遍，判据一个字都不改
+pnpm shot        # 6 条
+pnpm pick-shot   # 10 条
+pnpm edit-shot   # 21 条
+pnpm draw-shot   # 27 条
+pnpm prop-shot   # 16 条
+```
+
+Expected: **五个闸门的判据逐字不变、且全都 PASS** —— 这不是"大概不受影响"，是 Step 5 那六进程实测出来的：样例房一层的场表 `{endpoint:8, midpoint:8, axes:8}`、sweep 计数、`dragProbe` 的落点在补档前后**逐字相同**，交点档对样例房进表 **0** 枚（28 对 → 15 不平行 → 9 枚去重坐标 → 9 枚全被端点/中点占住），而样例房无柱无板 ⇒ 柱心/板角两段循环对它空转（T5 已核实那条）。
+
+**如果某个闸门在这里红了**，按这个顺序查，别先改判据：
+
+1. 先查 `demoHouse()` 是不是被谁加了柱或板、或者把格网布局改成了非格网（那 9 枚格点一旦有漏网的，交点档就在屏幕上有了靶子，`--draw-shot` 的落点字面量会跟着动）。这一发的护栏就是「样例房一枚交点档独有的靶子都没有」那条用例 —— 它在 node 侧先红，屏幕侧的红只是回声。
+2. 再查 `wallProbe` 的起点枚举是不是被顺手改成了 `!== 'midpoint'` 之类（R2 那条"探针挑不上的档屏幕上也不吸"）。
+3. 最后才怀疑字面量。真到要换的那一步，按 Task 7 Step 8 那句处理：读新靶子、换字面量、**重跑三遍确认稳定** —— 本任务把"跨进程漂"的形状写进了 Step 5 ③，`wallProbe` 那一发有 `(800,3000)` 与 `(4000,3000)` 两枚候选，二十个进程里没有第三枚；如果第四遍跳出第三枚，那才是真回归。
+
+- [ ] **Step 8: 提交与交接**
+
+```bash
+git status --porcelain   # 只应看到 packages/scene-2d/src/{snapping,editing}.ts 与 packages/scene-2d/test/{snapping,handles}.test.ts 四条
+git add packages/scene-2d/src packages/scene-2d/test
+git commit -m "feat(scene-2d): 吸附补上轴网交点档，柱心与板角进吸附场"
+```
+
+提交信息正文带上三件事：① 交点档按**无限直线**求交（线段交点本来就有靶子，这一档独有的东西在延长线上）；② 端点档的去重键从 `pointId` 换成坐标（`resolvePointRef` 对坐标字面量恒返回 null ⇒ 柱/板带进来同坐标孤儿点，按 id 去重会让赢家跨进程漂）；③ T6 注释里那句"洞口中心 Task 9 补"**判掉**而不是兑现，理由三条写在 `snapFieldOf` 的注释里。
+
+**交接账**（这个任务做完，计划 3 的账本长这样）：
+
+- Task 1–9 **全部展开、全部实测**；计划 3 至此没有"边界未展开"的格子，末尾那一节已是交接说明（`## 任务边界与交接`）。
+- node 侧：临时工程 `.tscheck/t10` = **31 文件 / 461 条**（core 24/309 + scene-2d 7/152），`tsc` exit=0；相对 Task 8 的 449 净增 12 ⇒ 真仓库预计 **464 → 476**。
+- 屏幕侧：**零改动**。`apps/desktop` 一行没碰、五个闸门一条判据没改。本任务的屏幕证据是"闸门重跑仍 PASS"，不是"新画了什么"。
+- 下一步是**执行**：从 Task 1 起（真仓库的 `packages/scene-2d/src/index.ts` 到这里仍是一行 stub），四个真窗口闸门与 `--prop-shot` 里所有写死的像素/毫米数字面量在真窗口跑过之后回填实测红字。
+- 计划 4（洞口/柱/板编辑上屏 + 读盘）继承本任务两条欠账：① `SnapPointKind` 里那个名字叫 `'endpoint'` 却含柱心与板角（R2 的代价）；② 洞口边界的两个端点进吸附场 —— R6 判掉的是"洞口**中心**"，不是"对齐门洞边"这个需求本身。
+
+---
+
+## 任务边界与交接（Task 1–9 已全部展开；下一格是执行）
 
 Task 6 已展开（正文见上文 Task 6：八条裁决 + 八步 + 二十七行真窗口判据）。它把 T5 留下的两个接缝就地判掉了：① 吸附的插入点 = `moveTargetOf` 之后、`dispatch` 之前那一行（S4 的三条纪律：按下不吸、探针与 renderer 同一个出口、预览线恒画裸光标）；② "撤销掉正被选中的构件"拆成两半收掉 —— 删除之后用 `pruneSelection` + `selectionStore.retain` 剪掉已不存在的 id（S5），新建那一路用 `lastCreatedWall` 里的 `doc.get(id)` 复核挡住"选中指向不存在的构件"（S6：`log.affected` 在撤销后**仍然**列着那枚 id）。**没收掉的那一半**写在这里防丢：`Ctrl+Z` 撤销一次删除之后选中集不回（D7 的口径是"撤销的是文档，不是视图"）；Task 7 与 Task 8 都没接这一条，谁要做"撤销后恢复选中"，得回来改这条裁决。
 
@@ -13073,7 +13873,9 @@ Task 7 已展开（正文见上文 Task 7：四条裁决 + 八步 + 十五条改
 **为什么原来那一节"Task 7"拆成了 T7 + T8**：本节此处原先写的是"Task 7 楼层切换 + 属性面板：需要内核补口……补口放 Task 7 的第一步"。展开时把补口独立成一个任务，因为它改的是**每一条改几何命令的返回值**，`--draw-shot` 与 `--edit-shot` 两个闸门里写死的毫米/像素字面量必须跟着重测；和属性面板混在一节里重测，红了分不清是命令层还是面板。代价是本计划的既有编号整体后移一位 —— 已按新口径订正的地方：本节上一段、`snapping.ts` 里"柱/板的顶点不在表里"那句注释（原写 Task 8，现写 Task 9）、以及"本计划展开了 Task 1–7"那句状态行。
 
 Task 8 已展开（正文见上文 Task 8：九条裁决 + 八步 + 九条变异逐条红名）。它接住了 T6 交接四条里的 **②**（筛 ⑤/⑥ 的两枚确定性夹具，Step 4）与 **①**（`MIN_WALL_LENGTH_MM` 与输入框第一次分家，裁决 P5 用 `panel.test.ts` 那条实测钉死）；T7 交接的 ①② 那两条（`planDelete` 的 `unsupported` 分支、面板的合法性预言）也一并收掉。**没收掉的仍然写在这里防丢**：`Ctrl+Z` 撤销一次删除之后**选中集不回**（D7 的口径"撤销的是文档，不是视图"，Task 8 的 `--prop-shot` 第 13 步第一次把它钉成预期行为而不是缺陷，但"撤销后恢复选中"仍没人做 —— 谁要做，得回来改 Task 6 那句裁决）；面板的**多选批量改厚**（P3 现在的形状是"多选就整块不显示"）；材料候选集的**按构件分表**（P4 的代价那条：柱 / 板 / 门窗将来各列一张，不许互借）。
-- **Task 9 吸附补档**：spec §6 列的是六档（端点 / 中点 / 垂足 / **轴网交点** / 15° / 正交），T6 只落了五档 —— 缺的正是"轴网交点"（S1 没有轴网实体，那一档在 2D 里只能是**墙轴线的两两交点**，`snapFieldOf` 已经把 `axes` 交出来了，缺的是求交与优先级插入）。同一步顺手把 `snapping.ts` 里"柱/板的顶点、洞口中心不在表里"那句注释兑现成代码。注意两个已实测的副作用：① 新档给 `wallProbe` 与 `dragProbe` 多出候选，探针的"恒等 / 改写"计数与 `--draw-shot` / `--edit-shot` 的字面量会再变一轮 —— 判据照旧不许多；② 柱与板的顶点一旦进 `snapFieldOf`，Task 8 那两枚确定性夹具的**端点枚举表**会跟着变（`field.points` 里多出不属于墙的落点），夹具的"唯一答案"是靠可见区算出来的，新档进来要重算那四个数（`pxPerMm` / 尺寸 / 中心 / 期望答案），不许只把断言放宽。
+- **Task 9 吸附补档：已展开**（正文见上文 Task 9：九条裁决 R1~R9 + 八步 + 九条变异逐条红名）。它兑现了 T6 注释里那句「柱/板的顶点……不在表里：Task 9 的补档要加时改这里」，并把同一句里承诺的「洞口中心」**判掉而不是兑现**（三条理由在 `snapFieldOf` 的注释里，裁决 R6）。
+  **本节此处原先预言的两个副作用，实测都不成立**（2026-09-28，`.tscheck/t10` 六进程）：① 交点档对样例房进表 **0** 枚 —— 28 对轴 → 15 对不平行 → 去重得 9 枚坐标 → 9 枚逐枚已落在端点或中点上；而样例房无柱无板 ⇒ 柱心/板角两段循环对它空转。于是场表 `{endpoint:8, midpoint:8, axes:8}`、sweep 那 160 发的计数、`dragProbe` 的落点**逐字相同**，`--draw-shot` / `--edit-shot` 的字面量一条都不必换（凭据见 Step 5 ③）。② Task 8 那两枚确定性夹具的端点枚举表**没变**，那四个数（`pxPerMm` / 尺寸 / 中心 / 期望答案）不必重算 —— 夹具是合成层、样例房无柱无板，交点档在两者里都造不出独有靶子。真被改写的既有用例只有**一条**：`handles.test.ts` 的「探针吃的是吸附后的毫米」，答案 `(40,-760)` → `(0,-760)`，判据那三件事一件没少、还加了两句素材自证（Step 4）。
+  **没收掉的写在这里防丢**：① 新档在屏幕上**没有见证**（凭据全在 node 侧的合成夹具里），护栏是「样例房一枚交点档独有的靶子都没有」那条用例 —— 谁往 `demoHouse()` 加柱加板或改成非格网布局，它会红，红了就要回来重测这五个闸门；② `SnapPointKind` 里那个名字叫 `'endpoint'`、实际含柱心与板角（R2 的代价：改名要动 `wallProbe` 的起点枚举与三个闸门的字面量）；③「对齐门洞边」要的是洞口的两个端点进吸附场，属计划 4 —— R6 判掉的只是洞口**中心**，不是这个需求本身。
 
 ## 已核实的现状事实（2026-09-27 逐条读过源码，写给执行者省得再翻）
 
@@ -13123,6 +13925,13 @@ Task 8 已展开（正文见上文 Task 8：九条裁决 + 八步 + 九条变异
 - （T8 加）**`planDelete` 里那四处 `.sort()` 只决定同一 kind 之内的顺序**：四类混选各放一枚构件时，摘掉 sort **全绿**（实测 M6 第一次跑）。牙齿是"同一 kind 多枚 + 输入降序" ⇒ Step 3 的夹具补第二面墙、按 id 降序喂进去。这张教训推广开：任何"排好序再输出"的判据，夹具里每种只放一枚就等于没测。
 - （T8 加）**命令替换里读 vitest 输出必须剥 ANSI**：`out=$(npx vitest run … 2>&1)` 之后 `grep -E "^ +Tests "` 一条都匹配不上（八行变异全被记成"无统计行"，差点写成"摘掉实现全绿"），而 `npx vitest … | grep` 直接管道又是好的。⇒ 变异表一律带 `sed 's/\x1b\[[0-9;]*m//g'`（Step 6 那条命令里已带上）。
 - （T8 加）账（2026-09-28，临时工程 `.tscheck/t9`）：**31 文件 / 449 条** = core 24/309（一字未动）+ scene-2d 7/140（viewport 9、drawlist 10、pick 18、snapping 28、editing **35**、handles 19、panel **21**）。相对 Task 7 的 423 净增 26 ⇒ 真仓库落地预计 **438 → 464**，`Test Files` 只多 `panel.test.ts` 一个文件（执行日回填）。`npx tsc --noEmit -p tsconfig.scene2d.json` 干净（那一条 `TS2339` 修完之后）。
+
+- （T9 加）交点档的**表内容账**（2026-09-28 实测，读 `snapFieldOf` 的中间量）：样例房一层 `pairTotal 28 → 不平行 15 → 去重坐标 9 → 撞上既有靶子 9 → 进表 0`；一张 61 面墙的栅格层（31 横 × 30 竖，全部用坐标字面量建端点，只为量规模、不过几何守卫）`1830 → 930 → 930 → 撞掉 146 → 进表 784`，而同一张层的端点数 **122 → 120** —— 那两枚就是去重键从 `pointId` 换成坐标直接合并掉的孤儿点。⇒ 交点档在**格网布局**上天然没有独有靶子（每枚格点早被端点或中点占了），它独有的东西在非格网层与**轴延长线**上；这条算术同时是「五个闸门判据一字不改」的凭据来源，不是巧合。
+- （T9 加）吸附场的**规模成本**（同一次 `npx vitest run` 里 `while (performance.now() - t0 < 250)` 的读数，取三次独立进程的区间）：样例房建一次场 0.0029~0.0032ms → **0.0081ms**，一次 `dropTargetOf`（16 枚候选）**0.0010ms**；61 墙层建场 0.0208~0.0219ms → **0.233~0.254ms**，一次取最优（965 枚候选）0.0087~0.0092ms → **0.029~0.032ms**，而错误用法「每发 `pointermove` 重建场」是 0.264~0.273ms = 16.7ms 帧预算的 **1.6%**。⇒ R7 那个"落在 paint effect 那一发"的裁决在 S1 的规模上买得到；就算写错成每发一次也红不了谁 —— 挡住它的不是数字，是 `fieldRef` 那条既有纪律（T6 裁决 ①）。
+- （T9 加）**「探针答案没移动」这类判据只能按集合写，不能按单值写**：`Document.byKind` 返回的是 `out.sort(byId)`（`core/src/model/document.ts`），uuidv7 同毫秒不单调 ⇒ `snapFieldOf` 的端点枚举顺序跨进程随机（T6 已记过一次，T9 又量了一遍）。`wallProbe` 补档前跑九个独立进程（`(800,3000)` 4 次 / `(4000,3000)` 5 次）、补档后跑十一个（5 次 / 6 次）⇒ **候选集合两侧相同，二十个进程里没有第三枚**。本任务 12 条新用例一律比"排序后的坐标串/集合"（`crossKeys` 那个助手就是这个用途）；老库里唯一按下标取候选的 `snapping.test.ts:263` 跑在单面墙的合成层上，Task 9 之后那一枚仍是那面墙的起点，不必动 —— 但别学它。
+- （T9 加）**改坏验证的两条操作纪律**（这一轮真踩了才写下来的）：① 摘掉新档时**只摘调用行**、函数留在原地 —— 连函数一起删会让 `npx tsc --noEmit` 红在 `TS6133: 'axisCrossPoints' is declared but its value is never read.`（`noUnusedLocals`），那是编译期的红，与"实现被摘掉"是两件事，一条断言也读不到。② 变异驱动必须 `try/finally` 还原 + 锚点先验 + 跑完再验一遍全绿：第一版驱动在 Windows 的 GBK 控制台上 `print` 中文用例名直接抛 `UnicodeEncodeError`、`finally` 没写，于是 N1 的改动留在盘上，第二次跑 N1 报 `ANCHOR-FAIL`、N2 那行测的其实是 **N1+N2 叠加**（数字看着像，红名少两条）。控制台打中文要 `sys.stdout.reconfigure(encoding='utf-8', errors='replace')`，或者只往 utf-8 文件里写。
+- （T9 加）`resolvePointRef` 对**坐标字面量恒返回 `null`**（计划 2 立的口径）⇒ `columnCreate({ at: { x, y } })` 拿到的是柱**自己的**一枚点，坐标与旁边那面墙的端点逐字相同、id 是两枚。吸附端点档若按 `pointId` 去重，表里就留两枚同坐标候选，`takeBest` 的并列判据只能拿 ownerId（uuidv7）比大小 ⇒ 赢家跨进程漂，而吸上"柱那枚孤儿点"的那一发**接不上头**（墙不认识那枚点，`wallCreate` 会新建第三枚同坐标的点）。R3 换去重键就是为这一格，唯一见证是 N8。
+- （T9 加）计划正文里引用的 `bench/perf.test.ts`（T7 的复核成本账与本任务的规模账都挂在这个名字下）**只存在于编写期的临时工程**：真仓库没有这个文件、本计划也不打算造 —— 它是「数字产地」的名字，不是执行日要去找的测试。真要在 CI 里盯住这条性能，那是计划 4 之后的事，届时要连夹具一起落地，别只落一条 `expect(ms < X)`。
 
 ## 执行日志
 
