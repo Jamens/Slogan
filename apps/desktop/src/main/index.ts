@@ -802,25 +802,799 @@ async function runEditShot(win: BrowserWindow, out: string): Promise<void> {
   process.stdout.write(`${JSON.stringify(finalReport)}\n`);
 }
 
+type ToolShape = 'select' | 'wall';
+type SnapKindShape = 'endpoint' | 'midpoint' | 'foot' | 'ortho' | 'angle15';
+type DeleteOutcomeShape = 'ok' | 'empty' | 'ignored-in-wall-mode' | 'unsupported';
+
+interface SnapShape {
+  kind: SnapKindShape;
+  pointId: string | null;
+  mm: MmShape;
+  distPx: number;
+}
+
+/** 与 renderer 的 `DraftPoint` 对齐：`px` 是**按下处**，`snap.mm` 是**落点**（E23 的那两个值）。 */
+interface DraftPointShape {
+  mm: MmShape;
+  px: ClickPoint;
+  snap: SnapShape | null;
+}
+
+interface DropTargetShape {
+  raw: MmShape;
+  mm: MmShape;
+  snap: SnapShape | null;
+}
+
+interface DraftShape {
+  storeyId: string;
+  start: DraftPointShape;
+  cursorPx: ClickPoint;
+  end: DropTargetShape;
+  legal: boolean;
+}
+
+interface CreateShape {
+  outcome: 'ok' | 'rejected' | 'failed';
+  wallId: string | null;
+  startId: string | null;
+  endId: string | null;
+  endMm: MmShape | null;
+  pointCountBefore: number;
+  pointCountAfter: number;
+}
+
+interface HotkeyShape {
+  seq: number;
+  combo: string;
+  tool: ToolShape;
+  draftActive: boolean;
+  deleteOutcome: DeleteOutcomeShape | null;
+  depth: number;
+  revision: number;
+  lastError: string | null;
+}
+
+/** 与 `WallProbe` 逐字段对齐：主进程只读它，不猜坐标（`pxPerMm` 住在 renderer）。 */
+interface WallProbeShape {
+  startPx: ClickPoint;
+  startMm: MmShape;
+  startPointId: string;
+  endPx: ClickPoint;
+  endMm: MmShape;
+  midPx: ClickPoint;
+  lengthMm: number;
+  defaults: { thicknessMm: number; heightMm: number };
+}
+
+interface DrawReportShape extends EditReportShape {
+  tool: ToolShape;
+  draft: DraftShape | null;
+  snapMarkPx: number;
+  lastCreate: CreateShape | null;
+  deletedIds: string[];
+  unsupportedIds: string[];
+  selectionAfterDelete: string[];
+  lastHotkey: HotkeyShape | null;
+  draw: WallProbeShape | null;
+}
+
+function drawShotRequested(): boolean {
+  return process.argv.includes('--draw-shot');
+}
+
+async function readDrawReport(win: BrowserWindow, label: string): Promise<DrawReportShape> {
+  const value = (await win.webContents.executeJavaScript('window.__dajiaDebug()')) as
+    | DrawReportShape
+    | undefined;
+  if (value === undefined) {
+    throw new Error(`__dajiaDebug() 没返回报告（${label}）—— renderer 死了，不是"还没刷完"`);
+  }
+  return value;
+}
+
+/**
+ * 点数的唯一真值来源是 `points` 快照的键集合（renderer 的 `pointCountOf` 同一口径，**不数第二遍语义**）。
+ * 这里不读 `lastCreate.pointCountBefore/After`：那两个数只在松手那一发有值，而撤销 / 重做 / 删除
+ * 三步的账要靠**当前快照**问 —— 两处各数一遍必然漂，所以判据只认这一个函数。
+ */
+function pointCountOf(report: DrawReportShape, label: string): number {
+  const n = Object.keys(report.points).length;
+  if (n === 0) throw new Error(`${label}：points 快照是空的，样例房没了还是 renderer 没起来`);
+  return n;
+}
+
+async function clickPx(win: BrowserWindow, p: ClickPoint, origin: ViewportPx): Promise<void> {
+  await pressPx(win, p, origin);
+  await releasePx(win, p, origin);
+}
+
+/**
+ * 快捷键回声的等待：`seq` 必须变大，**且** `combo` 必须是这一发。
+ * 少了 `seq` 这一条，第 9 步那发 `Delete` 若根本没进 renderer，会读到上一发（`W`）的回声然后判过；
+ * 少了 `combo`，"回声的是哪一发"就无从判断 —— 与 T5 的 `waitKeyApplied` 同一条 D8 纪律，
+ * 只是这里读的是 `lastHotkey`（撤销/重做那一发不碰工具态，两类快捷键各一份回声）。
+ */
+async function waitHot(
+  win: BrowserWindow,
+  before: DrawReportShape,
+  combo: string,
+  label: string,
+): Promise<HotkeyShape> {
+  const report = await waitUntil(
+    `快捷键没生效（${label}）：renderer 的 keydown 没跑到`,
+    () => readDrawReport(win, label),
+    (r) => r.lastHotkey !== null && r.lastHotkey.seq > (before.lastHotkey?.seq ?? 0),
+  );
+  const hot = report.lastHotkey;
+  if (hot === null) throw new Error(`不可达：waitUntil 判定非空后读回 null（${label}）`);
+  if (hot.combo !== combo) {
+    throw new Error(`${label}：读到的是另一发快捷键 ${hot.combo}，期望 ${combo}`);
+  }
+  return hot;
+}
+
+/**
+ * 十六步（0…15）加一发 addendum A3 的星形接头（三发墙：横、竖两发预备 + 一发 45° 斜臂）。
+ * **整条序列必须把文档送回基线几何**：
+ * `desktop-shot.mjs` 前六条判据读的是最后落盘的那一份报告（`ops === 31` 等），所以第 8 步建的
+ * 那面墙要在第 12 步删掉、第 13/14 步各撤销与重做一次，终态停在"已删除"的基线上。
+ * （第 16 步那三发留在文档里不要紧：写盘的那份报告 spread 的是第 15 步 `fin` 的基线读数。）
+ *
+ * 坐标一个都不硬编码：三发像素、两对毫米、厚度与墙高全部来自第 0 步读到的探针。
+ * 探针**只在第 0 步取一次**并留档 —— 它是每次调用现算的（文档一变就换靶子），
+ * 后面再问一次会拿到"建了一面墙之后的场"里挑出的另一发。
+ *
+ * 每一步的读数存成独立 const，最后一起写盘：TS 的使用先于声明会替我们守住
+ * "少跑一步就编译不过"（与 `runEditShot` 同一条纪律）。
+ *
+ * 第 16 步（addendum A3 那一发）用的角点是**现造**的：起点取同一次读数里的 `pick.blankPx`，
+ * 边长由第 0 步探针给的 px↔mm 比例换算 —— 不再从 `edit` / `draw` 那两枚探针里挑既有角点，
+ * 因为那两枚都是按 uuid 序抽签抽出来的，吸得上吸不上看视口相位（根因写在第 16 步的注释里）。
+ */
+async function runDrawShot(win: BrowserWindow, out: string): Promise<void> {
+  await whenLoaded(win);
+  await waitForDebug(win);
+  // 与 runEditShot 同一条通路：合成输入要求 OS 前台焦点（focusForInput 会等，等不到就抛），
+  // 探针像素还必须等布局停下来之后再取（窗口 show/focus 后自己还会改尺寸，见 waitForLayoutSettled）。
+  await focusForInput(win);
+  await waitForLayoutSettled(win);
+
+  // 0) 起始读数 + 探针。
+  const start = await readDrawReport(win, '起始');
+  const origin = start.canvasOriginPx;
+  const probe = start.draw;
+  if (probe === null) {
+    throw new Error('探针给不出可画的空白落点 —— 样例房或视口改过了，先重跑 wallProbe 的六道筛');
+  }
+  const probeJson = JSON.stringify(probe);
+  const basePoints = pointCountOf(start, '起始');
+  if (start.snapMarkPx !== 0) {
+    throw new Error(`起始没有草稿也没有拖拽，第四色应当恒 0，实测 ${String(start.snapMarkPx)}`);
+  }
+  if (start.tool !== 'select' || start.draft !== null) {
+    throw new Error('起始状态不是"选择模式、无草稿"');
+  }
+
+  // 1) W 进拉墙。
+  await keyCombo(win, 'W', []);
+  const afterW = await waitHot(win, start, 'W', '按 W 之后');
+  if (afterW.tool !== 'wall') throw new Error(`W 没把工具切到 wall：${afterW.tool}`);
+  if (afterW.draftActive) throw new Error('按 W 不该顺手起草稿');
+  if (afterW.depth !== start.depth) throw new Error('按 W 动了真源');
+
+  // 2) 在既有端点上按下：草稿起来、起点吸上那枚点、零长 ⇒ 不合法。
+  await pressPx(win, probe.startPx, origin);
+  const pressed = await waitUntil(
+    '按下起点没起草稿',
+    () => readDrawReport(win, '按下起点后'),
+    (r) => r.draft !== null,
+  );
+  const draft0 = pressed.draft;
+  if (draft0 === null) throw new Error('不可达：waitUntil 判定非空后读回 null（按下起点后）');
+  const startSnap = draft0.start.snap;
+  if (startSnap === null || startSnap.kind !== 'endpoint') {
+    throw new Error(`起点必须吸到端点档，实测 ${String(startSnap?.kind)}`);
+  }
+  if (startSnap.pointId !== probe.startPointId) throw new Error('起点吸上的不是探针指的那枚点');
+  if (JSON.stringify(draft0.start.px) !== JSON.stringify(probe.startPx)) {
+    throw new Error('按下处的像素与探针给的像素不是同一发');
+  }
+  if (draft0.legal) throw new Error('零长草稿不该合法（S4 ①：按下不吸方向档，长度也没出来）');
+  if (pressed.snapMarkPx === 0) {
+    throw new Error('起点吸上了既有端点，第四色标记却没画出来');
+  }
+
+  // 3) 移到探针终点：落点毫米逐字等于探针给的那对，标记仍在，真源一个字没动。
+  await movePx(win, probe.endPx, origin);
+  const moved = await waitUntil(
+    '移到探针终点后落点没对上',
+    () => readDrawReport(win, '移到终点后'),
+    (r) => r.draft !== null && JSON.stringify(r.draft.end.mm) === JSON.stringify(probe.endMm),
+  );
+  const draft1 = moved.draft;
+  if (draft1 === null) throw new Error('不可达：移到终点后草稿没了');
+  if (!draft1.legal) throw new Error('探针说过合法的落点，屏幕上判不合法');
+  const endSnap = draft1.end.snap;
+  if (endSnap === null) {
+    throw new Error('方向档必命中：探针偏移全是轴对齐或 45°（实测 distPx = 0）');
+  }
+  if (endSnap.pointId !== null) {
+    throw new Error(`终点引了别人的点（${endSnap.pointId}），与筛 ② 矛盾`);
+  }
+  if (draft1.cursorPx.x !== probe.endPx.x || draft1.cursorPx.y !== probe.endPx.y) {
+    throw new Error('草稿的裸光标不是探针那一发像素（临时线该画到这里）');
+  }
+  if (moved.previewNearCursorPx === 0) {
+    throw new Error('临时线没跟到光标（S4 第三条纪律）');
+  }
+  if (moved.snapMarkPx === 0) {
+    throw new Error('落点吸上了却没有第四色标记 —— 用户只会觉得"拖不到想去的地方"');
+  }
+  if (moved.depth !== start.depth || moved.revision !== start.revision) {
+    throw new Error('中途把草稿写进真源了（D4）');
+  }
+  if (pointCountOf(moved, '移到终点后') !== basePoints) throw new Error('中途点数变了 —— 半途建墙');
+
+  // 4) Escape 取消：草稿没了、标记也没了，账一步都不许多。
+  const beforeEsc = await readDrawReport(win, '取消前');
+  await keyCombo(win, 'Escape', []);
+  const afterEsc = await waitHot(win, beforeEsc, 'Escape', '按 Escape 之后');
+  if (afterEsc.draftActive) throw new Error('Escape 没取消草稿');
+  if (afterEsc.tool !== 'wall') throw new Error('有草稿时 Escape 只该取消草稿，不该退出拉墙模式');
+  const cancelled = await waitUntil(
+    '取消后标记或账没回到原样',
+    () => readDrawReport(win, '取消读数'),
+    (r) => r.snapMarkPx === 0 && r.draft === null && r.depth === beforeEsc.depth,
+  );
+  if (pointCountOf(cancelled, '取消读数') !== basePoints) throw new Error('取消一次草稿留下了点');
+  const depthAtCancel = cancelled.depth;
+
+  // 5) 原地按下即松手：预言不合法 ⇒ 一条命令都不发（`rejected` 那一支）。
+  await pressPx(win, probe.startPx, origin);
+  await releasePx(win, probe.startPx, origin);
+  const rejected = await waitUntil(
+    '原地松手没给出 rejected 回执',
+    () => readDrawReport(win, '原地松手后'),
+    (r) => r.lastCreate !== null && r.lastCreate.outcome === 'rejected',
+  );
+  const rej = rejected.lastCreate;
+  if (rej === null) throw new Error('不可达：rejected 分支读不到回执');
+  if (rej.wallId !== null || rej.startId !== null || rej.endId !== null) {
+    throw new Error('被拒的一发不该留下任何 id');
+  }
+  if (rej.pointCountBefore !== rej.pointCountAfter) throw new Error('被拒的一发多了点');
+  if (rejected.depth !== depthAtCancel) throw new Error('被拒的一发入了栈');
+
+  // 6) 第二次按下起点 —— 与第 2 步同一发像素，这次不松手。
+  await pressPx(win, probe.startPx, origin);
+  const pressed2 = await waitUntil(
+    '第二次按下没起草稿',
+    () => readDrawReport(win, '第二次按下'),
+    (r) => r.draft !== null,
+  );
+
+  // 7) 移到终点
+  await movePx(win, probe.endPx, origin);
+  const moved2 = await waitUntil(
+    '第二次移动落点没对上',
+    () => readDrawReport(win, '第二次移到终点'),
+    (r) => r.draft !== null && JSON.stringify(r.draft.end.mm) === JSON.stringify(probe.endMm),
+  );
+
+  // 8) 松手建墙：点数 +1、起点复用探针那枚点、新建即选中。
+  await releasePx(win, probe.endPx, origin);
+  const built = await waitUntil(
+    '松手没建出墙',
+    () => readDrawReport(win, '松手建墙后'),
+    (r) => r.lastCreate !== null && r.lastCreate.outcome === 'ok',
+  );
+  const builtCreate = built.lastCreate;
+  if (builtCreate === null) throw new Error('不可达：建墙分支读不到回执');
+  if (builtCreate.startId !== probe.startPointId) {
+    throw new Error('新建的墙没有与既有墙共享起点 —— 接头全断（S7）');
+  }
+  if (JSON.stringify(builtCreate.endMm) !== JSON.stringify(probe.endMm)) {
+    throw new Error('回执落点与探针预言不一致');
+  }
+  if (builtCreate.pointCountAfter !== basePoints + 1) {
+    throw new Error(
+      `一面全新终点的墙应恰好多一枚点：${String(basePoints)} → ${String(builtCreate.pointCountAfter)}`,
+    );
+  }
+  const newWallId = builtCreate.wallId;
+  if (newWallId === null || !built.selectedIds.includes(newWallId)) {
+    throw new Error('新建即选中没生效（S6）');
+  }
+  if (built.selectedPx < 100) throw new Error(`选中红像素太少：${String(built.selectedPx)}`);
+  if (built.tool !== 'wall') throw new Error('建完一面墙不该自动退出拉墙模式');
+  const builtPoints = pointCountOf(built, '松手建墙后');
+
+  // 9) 拉墙模式下按 Delete：四色之一的"故意沉默"。
+  const beforeWallDel = await readDrawReport(win, '拉墙模式删除前');
+  await keyCombo(win, 'Delete', []);
+  const ignored = await waitHot(win, beforeWallDel, 'Delete', '拉墙模式下按 Delete');
+  const ignoredReport = await readDrawReport(win, '拉墙删除后');
+  if (ignored.deleteOutcome !== 'ignored-in-wall-mode') {
+    throw new Error(`拉墙模式的删除沉默读成 ${String(ignored.deleteOutcome)}`);
+  }
+  if (ignoredReport.depth !== beforeWallDel.depth) throw new Error('拉墙模式下的删除发了命令');
+  if (pointCountOf(ignoredReport, '拉墙删除后') !== builtPoints) throw new Error('拉墙模式下的删除动了点');
+
+  // 10) Escape 退出拉墙（此时没有草稿 ⇒ 回到 select）。
+  const beforeExit = await readDrawReport(win, '退出拉墙前');
+  await keyCombo(win, 'Escape', []);
+  const exited = await waitHot(win, beforeExit, 'Escape', '按 Escape 退出拉墙');
+  if (exited.tool !== 'select') throw new Error(`Escape 没退回 select：${exited.tool}`);
+
+  // 11) 点新墙中点：筛 ④ 保证那里建墙前一片空白，所以现在命中的只可能是新墙。
+  await clickPx(win, probe.midPx, origin);
+  const clicked = await waitUntil(
+    '点不中新墙（筛 ③ 的像素下限在真窗口里失效）',
+    () => readDrawReport(win, '点新墙后'),
+    (r) => r.selectedIds.length === 1 && r.selectedIds[0] === newWallId,
+  );
+  if (clicked.selectedPx < 100) throw new Error(`点中了但屏幕上没有红色像素：${String(clicked.selectedPx)}`);
+  if (clicked.handlePx === 0) throw new Error('回到 select 了却没画把手');
+
+  // 12) Backspace 删除：墙与它的孤儿点一起消失，选中集剪枝成空。
+  const beforeDel = await readDrawReport(win, '删除前');
+  await keyCombo(win, 'Backspace', []);
+  const delHot = await waitHot(win, beforeDel, 'Backspace', '按 Backspace 删除');
+  if (delHot.deleteOutcome !== 'ok') throw new Error(`删除读成 ${String(delHot.deleteOutcome)}`);
+  const deleted = await waitUntil(
+    '删除后账没回到基线',
+    () => readDrawReport(win, '删除后'),
+    (r) => pointCountOf(r, '删除后') === basePoints && r.selectionAfterDelete.length === 0,
+  );
+  if (deleted.deletedIds.length !== 1 || deleted.deletedIds[0] !== newWallId) {
+    throw new Error(`deletedIds 不是那一面墙：${JSON.stringify(deleted.deletedIds)}`);
+  }
+  if (deleted.unsupportedIds.length !== 0) {
+    throw new Error(`样例房里不该有 unsupported 构件：${JSON.stringify(deleted.unsupportedIds)}`);
+  }
+
+  // 13) Ctrl+Z：墙连同它那枚孤儿点一起回来（撤销不恢复选中 —— D7）。
+  const beforeUndo = await readDrawReport(win, '撤销前');
+  await keyCombo(win, 'Z', ['ctrl']);
+  const undoKey = await waitKeyApplied(win, beforeUndo, '撤销');
+  const undid = await waitUntil(
+    '撤销没把墙和它的点带回来',
+    () => readDrawReport(win, '撤销后'),
+    (r) => pointCountOf(r, '撤销后') === basePoints + 1,
+  );
+  if (undid.selectedIds.includes(newWallId)) throw new Error('撤销把选中也恢复了（D7 说不许）');
+
+  // 14) Ctrl+Shift+Z：再删回去，序列停在基线几何上。
+  const beforeRedo = await readDrawReport(win, '重做前');
+  await keyCombo(win, 'Z', ['ctrl', 'shift']);
+  const redoKey = await waitKeyApplied(win, beforeRedo, '重做');
+  const redid = await waitUntil(
+    '重做没把墙再删掉',
+    () => readDrawReport(win, '重做后'),
+    (r) => pointCountOf(r, '重做后') === basePoints,
+  );
+
+  // 15) 终态：几何回到第 0 步，探针重新算出的靶子与第 0 步**逐字相同**。
+  //     这一句是整个序列"没留痕"的总账，也是前六条基线判据能继续读最后一份报告的前提。
+  const fin = await waitUntil(
+    '终态探针没回到基线靶子',
+    () => readDrawReport(win, '终态'),
+    (r) => r.draw !== null && JSON.stringify(r.draw) === probeJson,
+  );
+  if (JSON.stringify(fin.points) !== JSON.stringify(start.points)) {
+    throw new Error('终态的 points 快照与起始不同 —— 序列改写了基线几何');
+  }
+  if (fin.tool !== 'select' || fin.draft !== null) throw new Error('终态没回到"选择模式、无草稿"');
+  if (fin.snapMarkPx !== 0) throw new Error('终态还留着吸附标记');
+
+  // 16) addendum A3 那一发（十六步之外的正式判据）：把一枚角点逼成**三臂星形**接头，看 F1 那张
+  //     兜网接不接得住。星形接头在 `buildDrawList` 里抛 RangeError（`joint.ts` 的 `kindOf` 那一支
+  //     "画不出来：…3 个墙端、3 个方向…"），F1 之前这一发是 dispatch 成功 ⇒ React 树整个卸掉、
+  //     `__dajiaDebug` 随之没掉（实测 48/48 发全抛，证据 scratch-star-gesture.test.txt）；F1 之后
+  //     要的形状是两条读数：报告还读得回来（`starAppAlive`）+ lastError 非空且走"画不出来"那一路。
+  //     斜墙与两发预备墙都留在文档里：写盘的报告 spread 的是 `fin`（第 15 步的基线读数），
+  //     基线六条不受影响。Task 7 落地 `assertDerivesAfterApply` 后这条判据的语义要改成
+  //     "两边都不许写进真源"（已登记给 T7）。
+  //     —— 为什么不"按在样例房某枚既有角点上、±1px 找吸得上的那一发"了事（run3 / run6 两轮红的根因）：
+  //     能当锚点的共享端点是 dragProbe / wallProbe 各自按 **id 的代码单元序**挑的（handles.ts:117 与
+  //     `snapFieldOf` 的 `byKind('wall')`），而 id 是每次开机重造的 uuidv7 ⇒ 每一发闸门抽到哪枚角点
+  //     是随机的。"按下吸不吸得上那枚端点"比的是 distPx：端点住在轴线上，垂足是光标到那段轴线
+  //     **线段**的正投影 ⇒ 按构造垂足永不比端点远（wallProbe 筛 ① 记过同一件事，editing.ts:365），
+  //     只有两者**逐字并列**才轮到档位优先级（`PRIORITY.endpoint = 0 < foot = 2`）。二臂直角的
+  //     "背离象限"里两枚垂足都出界 ⇒ 恒吸端点；三臂及以上每一臂都贡献一枚"出界即止"的垂足 ⇒ 环扫
+  //     只在"按下像素的量化毫米恰好落回角点坐标"那一列/那一行成立（1px ≈ 8.4mm，有没有那一列纯看
+  //     窗口宽高的相位）：run3 抽中的就是没有的那一种，九发全吸成 foot。run6 换按 wallProbe 起点更红
+  //     —— 它常是**自由端**（实测 (7000,3000)），从自由端补的第二发只凑出二臂直角 = corner，派生得
+  //     干干净净 ⇒ lastError 恒空，那张网根本没被调用。
+  //     —— 这一版把它换成**不动点**问题：角点自己在画布空白角现造，三发像素全满足"这枚点的毫米
+  //     就是这一发像素量化出来的"。W1 在 `pick.blankPx`（`probeTarget` 从四角里挑的离一切指令最远
+  //     那一枚，恒在容差外）按下、朝画布中心横拖一枚：按下不吸任何人 ⇒ 起点毫米 = 该发像素的量化
+  //     毫米（这一条当场对账，见 `不动点的前提没了`）；W2 从同一点竖拖一枚、终点吸回它 ⇒ 该点变二臂
+  //     直角（corner，派生干净、不抛）；W3 再按在**同一发像素**上：端点候选与两枚垂足候选（横墙
+  //     t=0、竖墙 t=length）的毫米逐字都是那枚点的毫米 ⇒ 三枚候选同点同 distPx，并列由 PRIORITY
+  //     判给端点 —— 这条不比"谁更近"，比的是"同一个数"，与视口相位无关。再补第三臂（45° 斜墙）⇒
+  //     三臂三方向 = star ⇒ 绘制层抛 ⇒ 走 F1 那张网。
+  //     坐标一个都不硬编码：三发像素 = `pick.blankPx` 沿"朝画布中心"的两个轴向各推
+  //     `STAR_EDGE_MM × pxPerMm`，比例取第 0 步探针自己给的 px↔mm 对比（`endPx - startPx` 对
+  //     `lengthMm`）。
+  //     `MIN_WALL_LENGTH_MM`（scene-2d 里是 500）加四成余量：短过下限会被 `legalWallCreate` 拒，
+  //     长过空白角那一方又会挤进样例房的吸附半径 —— 两头都由逐步读数当场验，不靠这里算准。
+  //     那个常量进不了主进程产物（`electron.vite.config.ts` 的 workspaceDeps 只把 @dajia/core 与
+  //     @dajia/protocol 打进 main），所以这边抄一份；下限真涨过 700 时 W1 的 `legalAtMove` 就红。
+  const STAR_EDGE_MM = 700;
+  // 一发完整的"按下 → 拖到 → 松手"，把三处的读数原样带回来（三发墙共用一条通路，判据各自在
+  // 调用点钉 —— 病根不同，报错的话也就不同，不能由助手替调用方下结论）。
+  // 两处等待钉的都是"那一发到过 renderer"：`sendInputEvent` 不等队列（T5 的实测），所以
+  // ① 松手前等目标像素落进草稿的 `cursorPx`（不等到就松手 = 用上一发光标建墙，症状在下游）；
+  // ② 松手后等 `lastCreate` 换成**新的一份** —— 上一发的回执还挂在 store 上，"非空"不算数。
+  interface StarWallReadout {
+    readonly startSnap: SnapShape | null;
+    readonly startMm: MmShape;
+    readonly endSnap: SnapShape | null;
+    readonly endMm: MmShape;
+    readonly legalAtPress: boolean;
+    readonly legalAtMove: boolean;
+    readonly markAtPress: number;
+    readonly markAtMove: number;
+    readonly create: CreateShape;
+    readonly after: DrawReportShape;
+  }
+  const drawStarWall = async (
+    label: string,
+    pressP: ClickPoint,
+    targetP: ClickPoint,
+    before: DrawReportShape,
+  ): Promise<StarWallReadout> => {
+    await pressPx(win, pressP, origin);
+    const pressedR = await waitUntil(
+      `${label}按下没起草稿（按下处 ${String(pressP.x)},${String(pressP.y)}）`,
+      () => readDrawReport(win, `${label}按下`),
+      (r) => r.draft !== null,
+    );
+    const d0 = pressedR.draft;
+    if (d0 === null) throw new Error(`不可达：按下谓词判非空后读回 null（${label}按下）`);
+    if (JSON.stringify(d0.start.px) !== JSON.stringify(pressP)) {
+      throw new Error(
+        `${label}按下处的像素不是发出去的那一发（屏幕另算了一套坐标）：` +
+          `${JSON.stringify(d0.start.px)} ≠ ${JSON.stringify(pressP)}`,
+      );
+    }
+    await movePx(win, targetP, origin);
+    const movedR = await waitUntil(
+      `${label}的拖拽没吃到目标像素（目标 ${String(targetP.x)},${String(targetP.y)}）`,
+      () => readDrawReport(win, `${label}拖到目标`),
+      (r) => r.draft !== null && r.draft.cursorPx.x === targetP.x && r.draft.cursorPx.y === targetP.y,
+    );
+    const d1 = movedR.draft;
+    if (d1 === null) throw new Error(`不可达：拖拽谓词判非空后读回 null（${label}拖到目标）`);
+    await releasePx(win, targetP, origin);
+    const beforeCreateJson = JSON.stringify(before.lastCreate);
+    const afterR = await waitUntil(
+      `${label}松手之后 lastCreate 还是上一发那一份（命令没发出？回声没读回来？）`,
+      () => readDrawReport(win, `${label}松手后`),
+      (r) => r.lastCreate !== null && JSON.stringify(r.lastCreate) !== beforeCreateJson,
+    );
+    const created = afterR.lastCreate;
+    if (created === null) {
+      throw new Error(`不可达：waitUntil 判定 lastCreate 非空后读回 null（${label}松手后）`);
+    }
+    return {
+      startSnap: d0.start.snap,
+      startMm: d0.start.mm,
+      endSnap: d1.end.snap,
+      endMm: d1.end.mm,
+      legalAtPress: d0.legal,
+      legalAtMove: d1.legal,
+      markAtPress: pressedR.snapMarkPx,
+      markAtMove: movedR.snapMarkPx,
+      create: created,
+      after: afterR,
+    };
+  };
+  if (fin.lastError !== null) {
+    throw new Error(`斜拖之前 lastError 就非空（${fin.lastError}）—— 这一发判据分不清网接到的是谁`);
+  }
+  await keyCombo(win, 'W', []);
+  const afterW2 = await waitHot(win, fin, 'W', '星形序列进墙模式');
+  if (afterW2.tool !== 'wall') throw new Error(`星形序列前 W 没切到 wall：${afterW2.tool}`);
+  // 空白角：`pick` 从 T4 起在回读通道里就是 `unknown`，这里当场验形状再用 —— 验不过就抛，
+  // 不"读到什么算什么"（图铺满画布时 `probeTarget` 给 null，那一发判据就无从落下）。
+  const blankProbe = fin.pick as { readonly blankPx?: ClickPoint } | null;
+  const cornerPx = blankProbe?.blankPx ?? null;
+  if (cornerPx === null || !Number.isInteger(cornerPx.x) || !Number.isInteger(cornerPx.y)) {
+    throw new Error(
+      `pick.blankPx 读不回一枚整数画布像素（画布被图铺满时探针给 null）：${JSON.stringify(fin.pick)}`,
+    );
+  }
+  const pxPerMm =
+    Math.hypot(probe.endPx.x - probe.startPx.x, probe.endPx.y - probe.startPx.y) / probe.lengthMm;
+  if (!Number.isFinite(pxPerMm) || pxPerMm <= 0) {
+    throw new Error(`探针那两发像素与 lengthMm 换算不出比例（${String(pxPerMm)}）—— 方形边长无所适从`);
+  }
+  const starEdgePx = Math.round(STAR_EDGE_MM * pxPerMm);
+  // 两个轴向都往画布中心推（屏幕等比缩放 ⇒ 屏幕 45° 就是世界 45°，旧那一发的取法原样留着）。
+  const sx = cornerPx.x * 2 < fin.wPx ? 1 : -1;
+  const sy = cornerPx.y * 2 < fin.hPx ? 1 : -1;
+  const eastPx: ClickPoint = { x: cornerPx.x + starEdgePx * sx, y: cornerPx.y };
+  const southPx: ClickPoint = { x: cornerPx.x, y: cornerPx.y + starEdgePx * sy };
+  const diagonalPx: ClickPoint = { x: eastPx.x, y: southPx.y };
+  const squareCorners: { name: string; p: ClickPoint }[] = [
+    { name: '角点', p: cornerPx },
+    { name: '横臂终点', p: eastPx },
+    { name: '竖臂起点', p: southPx },
+    { name: '斜臂终点', p: diagonalPx },
+  ];
+  for (const { name, p } of squareCorners) {
+    if (p.x < 0 || p.y < 0 || p.x >= fin.wPx || p.y >= fin.hPx) {
+      throw new Error(
+        `空白角那一方放不下边长 ${String(starEdgePx)}px 的方形（${name} ${String(p.x)},${String(p.y)} ` +
+          `出画布 ${String(fin.wPx)}×${String(fin.hPx)}）—— 视口或样例房改过了`,
+      );
+    }
+  }
+
+  // W1：横拖一枚预备墙。两头都不许吸到既有的东西（空白角离一切指令都在容差外），
+  //      终点吸的是方向档 ⇒ 两枚全新端点 ⇒ 点数 +2；角点那枚的毫米必须逐字等于按下像素的量化值，
+  //      这一条就是后面两发"不动点"的前提，它不成立就说明 `pick.blankPx` 那发像素被改过。
+  const w1 = await drawStarWall('预备横墙', cornerPx, eastPx, fin);
+  if (w1.startSnap !== null) {
+    throw new Error(
+      `空白角按下了吸附（${JSON.stringify(w1.startSnap)}）—— pick.blankPx 不再空白，样例房或视口改过了`,
+    );
+  }
+  if (w1.markAtPress !== 0) {
+    throw new Error(`谁都没吸的按下却画出第四色标记（${String(w1.markAtPress)}）—— 标记与吸附不是同一份账`);
+  }
+  if (w1.endSnap === null || w1.endSnap.pointId !== null) {
+    throw new Error(`横拖那一发的落点没吸到方向档，或引了别人的点（${JSON.stringify(w1.endSnap)}）`);
+  }
+  if (w1.markAtMove === 0) throw new Error('横拖吸上了却没画第四色标记');
+  if (!w1.legalAtMove) {
+    throw new Error(
+      `预备横墙判不合法（边长 ${String(starEdgePx)}px ≈ ${String(STAR_EDGE_MM)}mm，` +
+        `${String(pxPerMm)}px/mm）—— 下限涨过 ${String(STAR_EDGE_MM)} 了就改这一处`,
+    );
+  }
+  if (w1.create.outcome !== 'ok' || w1.create.startId === null || w1.create.endId === null) {
+    throw new Error(`第一发预备墙没建成：${JSON.stringify(w1.create)}`);
+  }
+  if (w1.create.pointCountBefore !== basePoints || w1.create.pointCountAfter !== basePoints + 2) {
+    throw new Error(
+      `两头全新的墙应恰好多两枚点：${String(w1.create.pointCountBefore)} → ${String(w1.create.pointCountAfter)}（基线 ${String(basePoints)}）`,
+    );
+  }
+  if (JSON.stringify(w1.create.endMm) !== JSON.stringify(w1.endMm)) {
+    throw new Error('横墙回执落点与草稿预言不是同一个数（两边各算了一套 px→mm）');
+  }
+  if (w1.after.lastError !== null) {
+    throw new Error(
+      `预备横墙就把绘制层打到报错（${w1.after.lastError}）—— 星形那一发的兜网分不清接的是哪一发`,
+    );
+  }
+  const starCornerId = w1.create.startId;
+  const cornerMm = w1.after.points[starCornerId];
+  if (cornerMm === undefined) {
+    throw new Error(`松手后的 points 快照里没有刚建的那枚角点（${starCornerId}）`);
+  }
+  if (JSON.stringify(w1.startMm) !== JSON.stringify(cornerMm)) {
+    throw new Error(
+      `角点的真源毫米与按下那发的量化毫米不等（${JSON.stringify(cornerMm)} ≠ ${JSON.stringify(w1.startMm)}）` +
+        '—— 不动点的前提没了，后面两发不必再按',
+    );
+  }
+
+  // W2：竖拖一枚、终点吸回那枚角点 ⇒ 该点凑成二臂直角（corner，派生干净 ⇒ lastError 仍空）。
+  const w2 = await drawStarWall('预备竖墙', southPx, cornerPx, w1.after);
+  if (w2.startSnap !== null) {
+    throw new Error(`竖臂起点按下了吸附（${JSON.stringify(w2.startSnap)}）—— 空白角那一方不再空白`);
+  }
+  if (w2.endSnap === null || w2.endSnap.kind !== 'endpoint' || w2.endSnap.pointId !== starCornerId) {
+    throw new Error(`竖墙终点没吸回刚建的那枚角点（实测 ${JSON.stringify(w2.endSnap)}）—— 星形缺一臂`);
+  }
+  const w2EndSnap = w2.endSnap;
+  if (JSON.stringify(w2EndSnap.mm) !== JSON.stringify(cornerMm)) {
+    throw new Error(
+      `吸上既有端点却把它挪了毫米（${JSON.stringify(w2EndSnap.mm)} ≠ ${JSON.stringify(cornerMm)}）` +
+        '—— snapping.ts 那句"直读真源，不做像素往返"漂了',
+    );
+  }
+  if (w2.markAtMove === 0) throw new Error('竖墙终点吸上了既有端点，第四色标记却没上屏');
+  if (!w2.legalAtMove) throw new Error('预备竖墙判不合法（同横墙那条下限）');
+  if (w2.create.outcome !== 'ok' || w2.create.endId !== starCornerId) {
+    throw new Error(`竖墙没复用那枚角点（回执 ${JSON.stringify(w2.create)}）—— 接头断了`);
+  }
+  if (w2.create.pointCountAfter !== basePoints + 3) {
+    throw new Error(
+      `竖墙只该多一枚新点（终点复用角点）：${String(w2.create.pointCountBefore)} → ${String(w2.create.pointCountAfter)}`,
+    );
+  }
+  if (w2.after.lastError !== null) {
+    throw new Error(
+      `二臂直角就报错了（${w2.after.lastError}）—— 现造角点的前提不成立，星形那一发无从谈起`,
+    );
+  }
+
+  // W3：再按在**同一发像素**上（端点档与两枚垂足档逐字并列 ⇒ PRIORITY 判给端点），往 45° 补第三臂。
+  const w3 = await drawStarWall('星形斜墙', cornerPx, diagonalPx, w2.after);
+  if (w3.startSnap === null || w3.startSnap.kind !== 'endpoint' || w3.startSnap.pointId !== starCornerId) {
+    throw new Error(
+      `角点重按没吸回自己（实测 ${JSON.stringify(w3.startSnap)}）—— 不动点失效，` +
+        `这一发压根没落在角点上（对照 run3：吸成 foot 就是并列没成立）`,
+    );
+  }
+  const starStartSnap = w3.startSnap;
+  if (JSON.stringify(w3.startMm) !== JSON.stringify(cornerMm)) {
+    throw new Error(
+      `重按起点的毫米与真源那枚点不同（${JSON.stringify(w3.startMm)} ≠ ${JSON.stringify(cornerMm)}）—— 复用顺手挪了点`,
+    );
+  }
+  if (w3.legalAtPress) throw new Error('零长草稿（刚按下还没拖）判合法 —— S4 ① 那条漂了');
+  if (w3.markAtPress === 0) throw new Error('按在既有端点上却没画第四色标记');
+  if (
+    w3.endSnap === null ||
+    (w3.endSnap.kind !== 'ortho' && w3.endSnap.kind !== 'angle15') ||
+    w3.endSnap.pointId !== null
+  ) {
+    throw new Error(
+      `45° 斜臂的落点不是方向档或引了别人的点（${JSON.stringify(w3.endSnap)}）—— ` +
+        '第三臂吸到别处去的就不是这枚角点的星形',
+    );
+  }
+  const starEndSnap = w3.endSnap;
+  if (!w3.legalAtMove) {
+    throw new Error(
+      `斜墙草稿在屏幕上判不合法（落点 ${String(w3.endMm.x)},${String(w3.endMm.y)}）—— ` +
+        '命令发不出去，F1 要测的那一发没有发生（legal 预言漂了）',
+    );
+  }
+  if (w3.create.outcome !== 'ok' || w3.create.startId !== starCornerId) {
+    throw new Error(`斜墙没复用角点（回执 ${JSON.stringify(w3.create)}）—— 第三臂没接上，star 的账不成立`);
+  }
+  if (w3.create.pointCountAfter !== basePoints + 4) {
+    throw new Error(
+      `斜墙只该多一枚新点：${String(w3.create.pointCountBefore)} → ${String(w3.create.pointCountAfter)}`,
+    );
+  }
+
+  // 松手在上面已经发生，命令也真发出去了（`w3.create` 就是凭据）—— 抛的是**派生那一步**：
+  // 三臂三方向的接头在 `buildDrawList` 里进 `kindOf` 的 else 支。前面两发都钉过 lastError 为空
+  // （`w1.after` / `w2.after`），所以这一发等到的 non-null 只可能是星形那一抛，不存在"网接住了
+  // 上一发的旧错"那种读法。绘制错误与 store 更新挨着落地，`w3.after` 那份可能已经带着错误 ——
+  // 那就第一趟等待立刻返回；晚一拍也是同一句判据，不另开一条通路。
+  const starred = await waitUntil(
+    '三臂星形没走到画层抛错（lastError 恒空）—— 要么接头分类没抛（那是几何变了），要么网没接住',
+    () => readDrawReport(win, '星形松手后'),
+    (r) => r.lastError !== null,
+  );
+  const starError = starred.lastError;
+  if (starError === null) throw new Error('不可达：waitUntil 判定 lastError 非空后读回 null（星形松手后）');
+  if (!starError.includes('画不出来')) {
+    throw new Error(`星形斜墙的报错不来自绘制兜网（应以"画不出来"开头）：${starError.slice(0, 80)}`);
+  }
+  // 读到这儿本身**就是** `__dajiaDebug` 仍在的凭据：React 树被卸掉时 readDrawReport 直接抛，
+  // 走不到这一行（所以 `starAppAlive` 在写盘时恒真 —— 它不是自洽断言，是"读到了"的记录）。
+  const starAppAlive = typeof starred.ops === 'number';
+
+
+  const out1 = {
+    ...fin,
+    // ↓ 探针与逐步读数全部留档：脚本侧判据拿它们对账，改一步就少一个键。
+    probeJsonAtStart: probeJson,
+    basePoints,
+    depthAtStart: start.depth,
+    revisionAtStart: start.revision,
+    toolAfterW: afterW.tool,
+    depthAfterW: afterW.depth,
+    startSnapKind: startSnap.kind,
+    startSnapPointId: startSnap.pointId,
+    pressPxMatches: JSON.stringify(draft0.start.px) === JSON.stringify(probe.startPx),
+    legalAtPress: draft0.legal,
+    snapMarkAtPress: pressed.snapMarkPx,
+    endSnapKind: endSnap.kind,
+    endSnapDistPx: endSnap.distPx,
+    endSnapPointId: endSnap.pointId,
+    legalAtMove: draft1.legal,
+    cursorPxAtMove: draft1.cursorPx,
+    previewNearCursorPx: moved.previewNearCursorPx,
+    snapMarkAtMove: moved.snapMarkPx,
+    depthAtMove: moved.depth,
+    revisionAtMove: moved.revision,
+    pointsAtMove: pointCountOf(moved, '移到终点后'),
+    toolAfterEsc: afterEsc.tool,
+    snapMarkAfterEsc: cancelled.snapMarkPx,
+    rejectedOutcome: rej.outcome,
+    rejectedWallId: rej.wallId,
+    rejectedCounts: `${String(rej.pointCountBefore)}→${String(rej.pointCountAfter)}`,
+    rejectedDepth: rejected.depth,
+    depthAtCancel,
+    pressed2Draft: pressed2.draft !== null,
+    moved2Mm: moved2.draft?.end.mm ?? null,
+    builtOutcome: builtCreate.outcome,
+    builtWallId: newWallId,
+    builtStartId: builtCreate.startId,
+    builtEndId: builtCreate.endId,
+    builtEndMm: builtCreate.endMm,
+    builtCounts: `${String(builtCreate.pointCountBefore)}→${String(builtCreate.pointCountAfter)}`,
+    builtSelectedPx: built.selectedPx,
+    builtTool: built.tool,
+    builtSelected: built.selectedIds.includes(newWallId),
+    builtPointsBefore: builtCreate.pointCountBefore,
+    builtPointsAfter: builtCreate.pointCountAfter,
+    builtDepth: built.depth,
+    deleteOutcomeInWallMode: ignored.deleteOutcome,
+    depthInWallMode: ignored.depth,
+    toolAfterEscape: exited.tool,
+    clickedSelectedIds: clicked.selectedIds,
+    clickedSelectedPx: clicked.selectedPx,
+    clickedHandlePx: clicked.handlePx,
+    deleteOutcomeAfterBackspace: delHot.deleteOutcome,
+    deletedCount: deleted.deletedIds.length,
+    unsupportedCount: deleted.unsupportedIds.length,
+    comboAfterUndo: undoKey.combo,
+    pointsAfterUndo: pointCountOf(undid, '撤销后'),
+    selectedAfterUndo: undid.selectedIds.length,
+    comboAfterRedo: redoKey.combo,
+    pointsAfterRedo: pointCountOf(redid, '重做后'),
+    probeMatchesStart: JSON.stringify(fin.draw) === probeJson,
+    pointsMatchStart: JSON.stringify(fin.points) === JSON.stringify(start.points),
+    // ↓ addendum A3 那一发的读数（脚本第 22 行判据拿它们对账）。三发像素、两枚 id、四份账全留档：
+    //   哪一发的吸附变了，`starPrep*` 与 `star*` 这两组就能一眼指出是预备墙还是斜臂。
+    starEdgeMm: STAR_EDGE_MM,
+    starEdgePx,
+    starPxPerMm: pxPerMm,
+    starPressPx: cornerPx,
+    starEastPx: eastPx,
+    starSouthPx: southPx,
+    starTargetPx: diagonalPx,
+    starBuiltCornerId: starCornerId,
+    starBuiltCornerMm: cornerMm,
+    starPrepEdgeCounts: `${String(w1.create.pointCountBefore)}→${String(w1.create.pointCountAfter)}`,
+    starPrepCornerCounts: `${String(w2.create.pointCountBefore)}→${String(w2.create.pointCountAfter)}`,
+    starPrepEndSnapKind: w1.endSnap === null ? null : w1.endSnap.kind,
+    starPrepCornerSnapPointId: w2.endSnap === null ? null : w2.endSnap.pointId,
+    starCounts: `${String(w3.create.pointCountBefore)}→${String(w3.create.pointCountAfter)}`,
+    starStartSnapKind: starStartSnap.kind,
+    starStartPointId: starStartSnap.pointId,
+    starStartMm: starStartSnap.mm,
+    starStartDistPx: starStartSnap.distPx,
+    starEndSnapKind: starEndSnap.kind,
+    starEndSnapPointId: starEndSnap.pointId,
+    starMarkAtPress: w3.markAtPress,
+    starLegalAtMove: w3.legalAtMove,
+    starAppAlive,
+    starLastError: starError,
+  };
+  writeFileSync(out, `${JSON.stringify(out1, null, 2)}\n`, 'utf8');
+  process.stdout.write(`${JSON.stringify(out1)}\n`);
+}
+
+/**
+ * 四段分支（T5 的三段再加一段）。顺序是**从具体到通用**：`--draw-shot` 判在
+ * `editShotRequested()` 之前 —— 四个 runner 共用 `--shot` 那份落盘路径，谁先命中谁写盘。
+ * 脚本侧同样只允许一个具体 flag 生效（`mode` 只有一个值），两边配成一对。
+ */
 void app.whenReady().then(async () => {
-  // fail-fast：三个开关的路径都在起窗之前读完，任何一个开关后面缺路径或跟了另一个开关，
+  // fail-fast：四个开关的路径都在起窗之前读完，任何一个开关后面缺路径或跟了另一个开关，
   // 立刻 stderr + exit(2)（毫秒级），绝不落到被丢弃的 promise rejection 里挂到脚本超时。
   let shotPath: string | null;
   let editPath: string | null;
   let pickPath: string | null;
+  let drawPath: string | null;
   try {
     shotPath = argPath('--shot');
     editPath = argPath('--edit-shot');
     pickPath = argPath('--pick-shot');
+    drawPath = argPath('--draw-shot');
   } catch (err) {
     process.stderr.write(`--shot 参数无效：${String(err)}\n`);
     app.exit(2);
     return;
   }
-  // --pick-shot 与 --edit-shot 都派发合成输入（鼠标/键盘），要求窗口拿到 OS 前台焦点
-  // （见 focusForInput），隐藏窗在 Windows 前台锁下拿不到焦点是 T4 实测过的。纯 --shot
+  // --draw-shot 与 --pick-shot、--edit-shot 一样派发合成输入（鼠标/键盘），要求窗口拿到 OS
+  // 前台焦点（见 focusForInput），隐藏窗在 Windows 前台锁下拿不到焦点是 T4 实测过的。纯 --shot
   // 保持 6ddb090 落地的隐藏绘制路径不变 —— 它不派发输入，只回读像素。
-  const wantInput = pickShotRequested() || editShotRequested();
+  const wantInput = drawShotRequested() || pickShotRequested() || editShotRequested();
   // 摘默认应用菜单必须发生在**建窗之前**：菜单条占着约 26px 客户端高度，运行中摘掉等于给窗口
   // 来一发 resize ⇒ renderer 重算视口 ⇒ 闸门已经发出去的探针像素全体作废（实测：第一次 Ctrl+Z
   // 之后同一个把手从 (253,74) 漂到 (332,75)，第 7 步"原地松手"按到空白，红成"noop 没给出"）。
@@ -835,7 +1609,8 @@ void app.whenReady().then(async () => {
   }
   let code = 0;
   try {
-    if (editShotRequested()) await runEditShot(win, editPath ?? shotPath);
+    if (drawShotRequested()) await runDrawShot(win, drawPath ?? shotPath);
+    else if (editShotRequested()) await runEditShot(win, editPath ?? shotPath);
     else if (pickShotRequested()) await runPickShot(win, pickPath ?? shotPath);
     else await runShot(win, shotPath);
   } catch (err) {

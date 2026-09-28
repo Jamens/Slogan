@@ -35,22 +35,44 @@ function runElectron(args, timeoutMs) {
 
 const dir = mkdtempSync(join(tmpdir(), 'dajia-shot-'));
 const out = join(dir, 'report.json');
-const wantPick = process.argv.includes('--pick');
-const wantEdit = process.argv.includes('--edit');
-// `--shot out` 不是"再写一份报告"：主进程用 `argPath('--shot') !== null` 判定进不进 shot 模式
-// （隐藏窗口、跑完 exit）。少了它，`--edit-shot` / `--pick-shot` 那份路径根本没人读。
-// 一次运行只有 `runEditShot` 或 `runPickShot` 或 `runShot` 会写盘 ⇒ 三个开关共用 `out` 这一个路径。
-// 开关与路径成对（`--pick-shot out` / `--edit-shot out`）：主进程的 `argPath(flag)` 现在读各自
-// 开关后面的路径，`--pick-shot` 不再当裸开关 —— 这也收掉了 T4 那个"裸开关被当成缺路径"的隐患。
-const electronArgs = wantEdit
-  ? ['.', '--edit-shot', out, '--shot', out]
-  : ['.', ...(wantPick ? ['--pick-shot', out] : []), '--shot', out];
+// mode 判定链：`mode` 只有一个值。三个 `includes` 各自为政的旧形状里，`--edit --draw` 会给
+// 主进程两个具体 flag，而主进程分支只认第一个、脚本却按后攒的判据读报告 ⇒ 红在"报告里没这个键"。
+// 走这条链后两侧永远只认同一个模式，这件事在构造上不可能发生。
+const mode = process.argv.includes('--draw')
+  ? 'draw'
+  : process.argv.includes('--edit')
+    ? 'edit'
+    : process.argv.includes('--pick')
+      ? 'pick'
+      : 'shot';
+const wantPick = mode === 'pick';
+const wantEdit = mode === 'edit';
+const wantDraw = mode === 'draw';
+// 具体 flag 与 `--shot` 成对给：`--shot out` 不是"再写一份报告"，主进程用它判定进不进 shot 模式
+// （隐藏窗口、跑完 exit）。少了它，`--draw-shot` 那份路径根本没人读。
+// 一次运行只有 `runDrawShot` 或 `runEditShot` 或 `runPickShot` 或 `runShot` 会写盘 ⇒ 四个开关
+// 共用 `out` 这一个路径；开关与路径成对（`--draw-shot out`），主进程的 `argPath` 读各自开关
+// 后面的路径 —— 裸开关被当成缺路径的 T4 隐患早已被那条 fail-fast 收掉。
+const specificFlag = wantDraw
+  ? '--draw-shot'
+  : wantEdit
+    ? '--edit-shot'
+    : wantPick
+      ? '--pick-shot'
+      : null;
+const electronArgs = ['.', ...(specificFlag === null ? [] : [specificFlag, out]), '--shot', out];
 try {
   runPnpm('pnpm --filter @dajia/desktop build');
-  runElectron(electronArgs, 180_000);
+  // 只有 draw 那一发放宽到 300 秒：它一次跑要过 30 处等待（每处上限 10 秒 —— 但一处等不到就抛、
+  // 进程当场退出，所以真上界是"走完序列的实测一分多钟 + 一处超时"，300 秒是给慢机器留的余量）。
+  // 另三条**不跟着放宽** —— 它们的等待数量一字没动，跟着涨等于把"变慢了"这件事抹平。
+  runElectron(electronArgs, wantDraw ? 300_000 : 180_000);
   const report = JSON.parse(readFileSync(out, 'utf8'));
   const layers = report.layers ?? {};
   const edit = report.edit ?? {};
+  // `draw` 是**探针**那一份；序列的逐步读数全部平铺在报告根上 —— 与 `edit` 那一份的形状
+  // 不同，那些是 `runEditShot` 自己组的嵌套对象。
+  const probe = report.draw ?? {};
   // 前六条与 drawlist.test.ts 同源；--pick 下追加的五条：一条实测原点前提 + 四条与
   // pick.test.ts 同源的判据。改样例房必须几处一起改，别只调这里。
   const checks = [
@@ -103,6 +125,58 @@ try {
       // 后两条各管一头：noop 证"零移动不入栈"（D4），空栈反馈证"没发生的事要说出来"（D7）。
       ['原地松手 = noop，撤销栈一步都不许多', report.dropOutcomeAfterNoop === 'noop' && report.depthAfterNoop === report.depthAfterRedo],
       ['重做栈空时再按 Ctrl+Shift+Z 给中文反馈且不动真源', report.lastErrorAfterEmptyRedo === '没有可重做的操作' && report.comboAfterEmptyRedo === 'Ctrl+Shift+Z' && report.depthAfterEmptyRedo === report.depthAfterRedo],
+    );
+  }
+  if (wantDraw) {
+    // 前六条与 drawlist.test.ts 同源（序列把文档送回基线，所以 `ops === 31` 在这里仍是回归判据）；
+    // 这二十二条与 editing.test.ts + snapping.test.ts 同源，但只测它们管不到的那一层：
+    // 真窗口里"发的像素 → 吸附的落点 → 真源的账 → 撤销栈"（最后一条是 addendum A3 的星形接头那一发，
+    // 测的是绘制层那张兜网，unit 侧没有对应文件 —— 命令发得出去、派生抛错，只有真窗口走得到那一步）。
+    checks.push(
+      ['D1 探针给得出靶子，起点吸在既有端点上（S7 的复用那一半）', typeof report.startSnapPointId === 'string' && report.startSnapPointId.length > 0 && report.startSnapKind === 'endpoint'],
+      ['D2 按下处的像素就是探针给的那一发（屏幕不另算一套坐标）', report.pressPxMatches === true],
+      ['D3 零长草稿判不合法，但吸附标记已经上屏', report.legalAtPress === false && report.snapMarkAtPress > 0],
+      // 档位只钉到「是方向档、且零位移」：钉死 ortho 还是 angle15 等于拿判据赌 uuidv7 的端点顺序（探针挑中哪枚起点会漂，见 S8 ① 那段实测）。
+      // S3 那句"画 4000 的水平墙必须是 ortho"由 snapping.test.ts 的档位互斥用例负责，那一份是确定性的。
+      // distPx 的 0 订正为 ≤1.5（D2a 实测）：S8 ① 那句"十发 distPx 逐字为 0"量在 8mm=1px 的二进制对齐格点上
+      // （pxPerMm=0.125）；真窗口 fitStorey(1427×865,60) 实测 pxPerMm≈0.12417，整数毫米落不到整数像素上，
+      // `intPx → pxToMm → quantize → mmToPx` 的往返残差按构造 ≤1px/轴（√2≈1.42）。"零位移"的毫米侧对账
+      // 由第 3 步与 D12 的 `end.mm === probe.endMm` **逐字相等**钉着；这一行只钉"方向档不把落点拽离光标一像素以上"
+      // —— 拽去 8px 容差内的别处、或拽去别面墙，都会红在这一行。
+      ['D4 终点吸的是方向档、没引别人的点、位移在量化往返残差内（S7 的另一半 + S8 ① 订正版）', report.endSnapPointId === null && (report.endSnapKind === 'ortho' || report.endSnapKind === 'angle15') && report.endSnapDistPx <= 1.5],
+      ['D5 中途临时线跟到光标（S4 第三条纪律）', report.previewNearCursorPx > 0],
+      // 橙色桶只证存在不证位置（A1/S8）：整幅画布的橙色总数只能 `> 0` / 比较，位置对账一律走毫米。
+      ['D6 中途第四色标记在屏（S8 只证存在）', report.snapMarkAtMove > 0],
+      ['D7 中途真源一个字没动：depth、revision、点数三者', report.depthAtMove === report.depthAtStart && report.revisionAtMove === report.revisionAtStart && report.pointsAtMove === report.basePoints],
+      ['D8 Escape 只取消草稿、留在拉墙模式，标记跟着消失', report.toolAfterEsc === 'wall' && report.snapMarkAfterEsc === 0 && report.depthAtCancel === report.depthAtStart],
+      ['D9 原地松手 = rejected，一条命令都不发（D4 的第三色）', report.rejectedOutcome === 'rejected' && report.rejectedWallId === null && report.rejectedCounts === `${String(report.basePoints)}→${String(report.basePoints)}`],
+      ['D10 被拒那一发不入栈：depth 与取消后逐字相同', report.rejectedDepth === report.depthAtCancel],
+      ['D11 松手建墙，起点复用探针指的那枚点（接头没断）', report.builtOutcome === 'ok' && report.builtStartId === report.startSnapPointId],
+      ['D12 回执落点逐字等于探针预言（两边同一个纯函数）', JSON.stringify(report.builtEndMm) === JSON.stringify(probe.endMm)],
+      ['D13 一面全新终点的墙恰好多一枚点（S7 的删除账靠它）', report.builtPointsBefore === report.basePoints && report.builtPointsAfter === report.basePoints + 1],
+      ['D14 新建即选中，且屏幕上真有红色像素', report.builtSelected === true && report.builtSelectedPx > 100],
+      ['D15 建完仍在拉墙模式（连画不该每面退出一次）', report.builtTool === 'wall'],
+      ['D16 拉墙模式下按 Delete = 故意沉默，账一步不动', report.deleteOutcomeInWallMode === 'ignored-in-wall-mode' && report.depthInWallMode === report.builtDepth],
+      ['D17 再按一次 Escape 才退出拉墙', report.toolAfterEscape === 'select'],
+      ['D18 点新墙中点：唯一命中就是刚建那面，把手也画出来了（筛 ④ 的像素下限在真窗口里成立）', Array.isArray(report.clickedSelectedIds) && report.clickedSelectedIds.length === 1 && report.clickedSelectedIds[0] === report.builtWallId && report.clickedHandlePx > 20],
+      ['D19 Backspace 只删那一面墙，unsupported 空，选中集剪空', report.deleteOutcomeAfterBackspace === 'ok' && report.deletedCount === 1 && report.unsupportedCount === 0 && Array.isArray(report.selectionAfterDelete) && report.selectionAfterDelete.length === 0],
+      ['D20 撤销把墙连同它的孤儿点一起带回来，选中不跟着回来（D7 那半句）', report.pointsAfterUndo === report.basePoints + 1 && report.selectedAfterUndo === 0 && report.comboAfterUndo === 'Ctrl+Z'],
+      // 倒数第二条是总账：②③ 两条纪律的凭据都在它身上 —— 序列没留痕，前六条才还读得到基线。
+      ['D21 重做回到基线，终态探针与 points 快照逐字回到第 0 步', report.pointsAfterRedo === report.basePoints && report.probeMatchesStart === true && report.pointsMatchStart === true && report.comboAfterRedo === 'Ctrl+Shift+Z'],
+      // 最后一条 = addendum A3 的正式判据（十六步之外那一发）：主进程在画布空白角**现造**一枚角点
+      // （横、竖两发预备墙把它凑成二臂直角），再按在**同一发像素**上补一发 45° 斜臂 ⇒ 三臂三方向
+      // = star ⇒ `buildDrawList` 抛 ⇒ 走 F1 那张网。为什么不是"按在样例房某枚既有角点上"：那枚角点
+      // 是探针按 uuid 序抽出来的，而"按下吸不吸得上"比的是 distPx，垂足按构造永不比端点远 —— 旧写法
+      // （±1px 与环扫 49 发）赌的是"量化毫米恰好落回角点坐标"那一列/那一行，看视口相位（run3 九发全
+      // 吸成 foot、run6 抽中自由端补出干净 corner 而 lastError 恒空，根因钉在 main 第 16 步的注释里）。
+      // 现造这一枚靠的是不动点：端点候选与两枚垂足候选的毫米**逐字相同**，并列由 `PRIORITY` 判给端点，
+      // 比的不是"谁更近"。
+      // F1 之前这一发把 React 树卸掉、`__dajiaDebug` 整个没了（48/48 全抛）；现在要的读数走**两条**：
+      // 报告能读回来（starAppAlive —— 树没了 executeJavaScript 就抛，走不到写盘）且 lastError 非空。
+      // 第三行是"复用"的对账，走毫米不走像素（A1：第四色标记只证存在，`> 0` 那一判在 main 里，
+      // 位置一律由真源毫米钉）：斜墙起点吸的那枚 id 与那份毫米，逐字等于刚建的那枚角点。
+      // Task 7 落地 `assertDerivesAfterApply` 后这一条的语义要改成"两边都不许写进真源"（已登记）。
+      ['D22 空白角现造角点、按同一发像素补一发 45° 斜臂把它逼成三臂星形：__dajiaDebug 仍在返回报告、lastError 非空、斜墙起点逐字复用现造那枚角点（F1 兜网，addendum A3）', report.starAppAlive === true && typeof report.starLastError === 'string' && report.starLastError.length > 0 && report.starStartPointId === report.starBuiltCornerId && JSON.stringify(report.starStartMm) === JSON.stringify(report.starBuiltCornerMm)],
     );
   }
   let bad = 0;
