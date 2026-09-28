@@ -301,8 +301,12 @@ function paintPreview(
  * `left/top` 先取整再画：`mmToPx` 给浮点，浮点原点的 `fillRect` 会把方块摊成半透明边，
  * 而 `nearChannel` 的 ±40 容差吃不下与白底混过色的高通道（`#ff8a00` 的 G=138，
  * 五成混白就是 196 > 178）—— 于是同一个标记在两种视图下数出来是 25 与 0。
- * 环带用四条 `fillRect` 拼（上/下/左/右），**不用 `strokeRect`**：描边要抗锯齿，
- * 而像素桶靠与 `rgbOf(SNAP_COLOR)` 逐字节相等才计数，半透明像素会让总数变成不确定的数。
+ * 环带用四条 `fillRect` 拼（上/下/左/右），**不用 `strokeRect`**：描边要抗锯齿，于是环带上会出现
+ * 与底图混过色的半透明像素，而橙色桶数的是"每通道与 `rgbOf(SNAP_COLOR)` 相差 `<= PIXEL_CHANNEL_TOL`
+ * （±40）"（`nearChannel`，T4 的口径）—— **不是**逐字节相等，那个前提是写错的。真理由在这儿：
+ * 混色像素落不落进桶取决于它底下是什么颜色 ⇒ 同一个标记在不同底图上数出不同的总数，
+ * `snapMarkPx` 的读数变得不可解释。空心环这条裁决（D1-B）的根据不变：它让 `previewNearCursorPx`
+ * 不再被橙标记盖住（`--edit-shot` 的 `nearMid` 实测 20/20/20/20/25）。
  * 取整之后恒 56 个纯色像素（9×9 − 5×5，两个半尺寸见 `snapping.ts`）。
  */
 function paintSnapMarker(ctx: CanvasRenderingContext2D, atPx: Px): void {

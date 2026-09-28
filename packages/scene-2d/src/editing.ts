@@ -80,7 +80,14 @@ export function newWallDefaults(doc: Document, storeyId: string): NewWallDefault
  */
 export interface DraftPoint {
   readonly mm: MoveTarget;
-  /** 按下那一发的**光标像素**（不是吸附点：起点标记画在哪儿由它决定）。 */
+  /**
+   * 按下那一发的**光标像素**（不是吸附点的像素）。它的读者是**预览线的起点** ——
+   * `PlanCanvas.tsx` 里 `paintPreview(ctx, draft.start.px, draft.cursorPx)` 用它当临时线那一头，
+   * 于是"手指按在哪儿"与"落点吸到哪儿"在屏幕上是两个值。
+   * 起点那枚吸附标记**不读它**：标记画在 `snap.mm` 换算的像素上（`mmToPx(viewport, snap.mm)`），
+   * 位置一律走毫米对账 —— 同 `snapping.ts` 里 `SNAP_COLOR` 那条注的口径（第四色只证"吸走了"，
+   * 吸到哪由毫米说）。
+   */
   readonly px: Px;
   readonly snap: SnapResult | null;
 }
