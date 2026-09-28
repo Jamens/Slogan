@@ -1017,7 +1017,7 @@ async function runDrawShot(win: BrowserWindow, out: string): Promise<void> {
   if (!draft1.legal) throw new Error('探针说过合法的落点，屏幕上判不合法');
   const endSnap = draft1.end.snap;
   if (endSnap === null) {
-    throw new Error('方向档必命中：探针偏移全是轴对齐或 45°（实测 distPx = 0）');
+    throw new Error('方向档必命中：探针偏移全是轴对齐或 45°（位移只剩量化往返残差，实测 0.33 / 0.45px）');
   }
   if (endSnap.pointId !== null) {
     throw new Error(`终点引了别人的点（${endSnap.pointId}），与筛 ② 矛盾`);

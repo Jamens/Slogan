@@ -295,7 +295,8 @@ function paintPreview(
  * 的 r=4.5 绿实心圆盖掉 —— 实测 `nearMid` 25 → 5 → 0，`--edit-shot` 第 2 步随机红。
  * 空心环的橙色只占切比雪夫距离 `> 2` 且 `<= 4` 那一圈 ⇒ 窗口里一个橙像素都不进，
  * 而橙像素总数仍 `> 0`（S8 的存在性凭据、`--draw-shot` 那道硬 throw 都还在）。
- * 画序保持"preview 先、marker 后"：反过来不行 —— 草稿路的 `distPx` 恒 0，r=4.5 的绿圆会把
+ * 画序保持"preview 先、marker 后"：反过来不行 —— 草稿路的 `distPx` 只有量化往返残差（`--draw-shot`
+ * 实测 0.33 / 0.45px，仍落进 ±2 窗口），r=4.5 的绿圆会把
  * 整枚标记（半对角 3.54px）盖没，`snapMarkPx` 归 0。
  *
  * `left/top` 先取整再画：`mmToPx` 给浮点，浮点原点的 `fillRect` 会把方块摊成半透明边，
