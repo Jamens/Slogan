@@ -3,16 +3,22 @@ import {
   deriveStoreyGeometry,
   endPointId,
   incidentWallEnds,
-  quantizeMm,
   requirePoint,
   wallAxisById,
   wallMoveEndpoint,
   type Document,
   type WallEnd,
 } from '@dajia/core';
-import { mmToPx, pxToMm, type Px, type Viewport } from './viewport';
+import { mmToPx, type Px, type Viewport } from './viewport';
 import type { DrawOp, Selection } from './drawlist';
 import { PICK_TOL_PX, pickOne } from './pick';
+import {
+  dropTargetOf,
+  snapFieldOf,
+  type DropTarget,
+  type MoveTarget,
+  type SnapField,
+} from './snapping';
 
 /**
  * 编辑器画在屏幕上、却**不进指令表**的那一层（Task 5 D2）：把手、拖拽临时线、
@@ -22,10 +28,16 @@ import { PICK_TOL_PX, pickOne } from './pick';
  * 可施工图都直接吃它，把蓝点掺进去等于往施工图上印编辑器家具，而"指令表还是 31 条"
  * 这类回归判据恰好看不见多印了什么。代价是这个文件外面要再多两个画家（PlanCanvas 的
  * `paintHandles` / `paintPreview`），"只有一条绘制通路"这条纪律改由像素计数来守（Step 5/6）。
+ *
+ * T6 之后本文件不再自带"像素 → 毫米"：`MoveTarget` / `moveTargetOf` 搬进了 `snapping.ts`
+ * （吸附必须接在换算之后，两者分居两文件就会长出第二条 px→mm 的路，那正是 D4 禁止的）。
+ * 本文件因此只剩两个**读者**：`dragProbe` 吃 `dropTargetOf`（吸附后的落点，与 renderer 松手
+ * 那一发同一个函数、同一个场），`legalDrop` 只吃已经定好的 `MoveTarget`。
  */
 
 /**
- * 三种颜色给 `countPixels` 认道：选中（红）、把手（蓝）、临时线（绿）。
+ * 四种颜色给 `countPixels` 认道：选中（红）、把手（蓝）、临时线（绿）、吸附标记（橙，
+ * 常量在 `snapping.ts` 的 `SNAP_COLOR`）。
  * 两两最大通道差必须 > 2×`PIXEL_CHANNEL_TOL`（`handles.test.ts` 最后一条钉死）：
  * 认色是按通道 ±TOL 开窗的，两种颜色挨太近时同一片像素会同时进两个桶，
  * Step 6 的 `handlePx` / `previewPx` 就全是假绿。#1668dc 与 #12b886 的差只在 G/B 上
@@ -36,25 +48,6 @@ export const PREVIEW_COLOR = '#12b886';
 export const PIXEL_CHANNEL_TOL = 40;
 export const HANDLE_RADIUS_PX = 4.5;
 
-/** 落在真源上的整数毫米。与 core 的 `Vec2` 结构相同，但语义是"已过 quantizeMm"。 */
-export interface MoveTarget {
-  readonly x: number;
-  readonly y: number;
-}
-
-/**
- * 屏幕像素 → 真源整数毫米的唯一出口（D4）。T6 的吸附（端点/中点/15°）插在它**之后**、
- * `dispatch` 之前，不许有第二条 px→mm 的路绕过这里。
- *
- * 非有限输入（NaN / ±Infinity）由 `quantizeMm` 直接抛 RangeError：指针事件的坐标恒为有限数，
- * 真出 NaN 说明上面有人算了个 0/0 —— 那种东西静默兜成 0 就是"一拖就飞到原点"，
- * 比当场崩掉难查得多。调用方（PlanCanvas 的落点分支）整段包在 try/catch 里报 `lastError`。
- */
-export function moveTargetOf(v: Viewport, cursorPx: Px): MoveTarget {
-  const mm = pxToMm(v, cursorPx);
-  return { x: quantizeMm(mm.x), y: quantizeMm(mm.y) };
-}
-
 /** 一枚可拖把手：`end` 与 `pointId` 配对钉死（计划 1 的角色反转 bug 就是这个配对松开过）。 */
 export interface DragHandle {
   readonly wallId: string;
@@ -64,6 +57,12 @@ export interface DragHandle {
   readonly atMm: MoveTarget;
   /** 它在线上的哪一端：与 `wallAxisById` 同源，所以和墙多边形永远对齐。 */
   readonly atPx: Px;
+  /**
+   * 另一端那对整数毫米：T6 的角度档（正交 / 15°）要一个**毫米**锚点，而 `anchorPx` 是浮点像素，
+   * 拿它反算毫米会引入一次往返。与 `anchorPx` 同产地（都取自 `wallAxisById` 的另一端），
+   * 所以两枚永远指同一头 —— 它不进 `dispatch`，只当锚，不必像 `atMm` 那样另立"直读实体"这一票。
+   */
+  readonly anchorMm: MoveTarget;
   /** 另一端：拖到这里必然'零长墙'，压扁拖的回读判据要的就是这个值。 */
   readonly anchorPx: Px;
 }
@@ -100,6 +99,7 @@ export function dragHandlesOf(
     for (const end of WALL_ENDS) {
       const pointId = endPointId(wall, end);
       const point = requirePoint(doc, pointId, '墙端点');
+      const anchor = end === 'start' ? axis.end : axis.start;
       out.push({
         wallId: wall.id,
         end,
@@ -108,7 +108,9 @@ export function dragHandlesOf(
         // 只从轴取 atMm 的话，"轴算错了"和"点被人改了"会红在同一条断言上。
         atMm: { x: point.x, y: point.y },
         atPx: mmToPx(v, end === 'start' ? axis.start : axis.end),
-        anchorPx: mmToPx(v, end === 'start' ? axis.end : axis.start),
+        // anchorMm 与 anchorPx 同产地、同一端：角度档吃毫米，命中与探针吃像素。
+        anchorMm: { x: anchor.x, y: anchor.y },
+        anchorPx: mmToPx(v, anchor),
       });
     }
   }
@@ -194,6 +196,30 @@ function derivesAfterMove(
   }
 }
 
+/**
+ * 拖拽与松手**共用**的那一发落点：锚点与被排除的坐标都从把手自己身上取，两个调用点
+ * （`dragProbe` 与 PlanCanvas 的 `onMove`/松手）拿到的是同一个函数、同一对参数。
+ *
+ * 这一层薄壳不是 convenience，是**把 S4 第二条纪律变成可红的判据**。分开写两遍时，"探针传
+ * `null` 锚点 / 忘了排除"是可写的，而实测那种改坏时红时不红（2026-09-28 八个进程里红 5 个：
+ * 落点是否依赖锚点取决于探针挑到哪一面墙）—— 拿不稳的判据不算凭据。收进这一个出口之后，
+ * 改锚点/改排除只有"改出口"这一种写法，而它必然同时打到两个调用点：实测摘锚点红
+ * 「拖拽路径真的在吃吸附」、摘排除红「把手按在原地那一发」，两条都是 8/8 进程逐字红。
+ *
+ * 说清楚它**不**保证什么：有人绕过本出口、在探针里另抄一遍 `dropTargetOf(...)` 并漏掉排除
+ * （改坏清单 HE3），本层拦不住 —— 实测那条零红，恒等筛也兜不住它（HE3 + 摘掉恒等筛的联合
+ * 改坏 HE4 同样零红，样例房那十发候选里没有一发吸回原地）。出口买到的是"参数只有一处可写"，
+ * 不是"参数写错必然红"；后者靠的是判探针与 renderer 同一个调用那两条。
+ */
+export function handleDropTarget(
+  v: Viewport,
+  cursorPx: Px,
+  h: DragHandle,
+  field: SnapField,
+): DropTarget {
+  return dropTargetOf(v, cursorPx, h.anchorMm, field, { excludeMm: h.atMm });
+}
+
 /** 一次自动拖拽的全部坐标：`--edit-shot` 只读它，不猜靶子。 */
 export interface DragProbe {
   readonly wallId: string;
@@ -209,8 +235,9 @@ export interface DragProbe {
 }
 
 /**
- * `sendInputEvent` 只收整数 DIP，而 renderer 松手时算的是 `moveTargetOf(视图, 那一发整数像素)`。
- * 所以探针**先取整像素、再由像素反算毫米**：这样"探针给的毫米"与"屏幕上真会落下的毫米"
+ * `sendInputEvent` 只收整数 DIP，而 renderer 松手时算的是
+ * `dropTargetOf(视图, 那一发整数像素, 锚点, 场, 排除原地)`。
+ * 所以探针**先取整像素、再由像素定落点**：这样"探针给的毫米"与"屏幕上真会落下的毫米"
  * 是同一个纯函数的同一个输出，不是近似。反过来（先定毫米再算像素）会在 0.125 px/mm 这种
  * 比例上差出最多 4mm —— 回读判据就会变成"有时候差一点"的随机红。
  */
@@ -229,8 +256,21 @@ function insideCanvas(v: Viewport, p: Px): boolean {
 }
 
 /**
- * 候选落点按顺序试，第一个"取整后真的动了且合法"的赢。偏移全写成整数毫米 ⇒ 同一份文档、
+ * 候选落点按顺序试，第一个"**吸附之后**真的动了且合法"的赢。偏移全写成整数毫米 ⇒ 同一份文档、
  * 同一个视图，每次问都给出同一个靶子（"撤销后回到原值"这条判据的前提就是靶子可复现）。
+ *
+ * 这一串候选**会**被吸走，别把"偏移取得远"当成"吸不上"。样例房一层 16 把把手 × 这十发 = 160 问
+ * （2026-09-28 实测，十个进程逐字相同）：86 问吸上了东西，其中 72 问吸成**恒等** —— 垂足 54、
+ * 正交 17、中点 1，那些落点本来就在自己那面墙的轴线上，吸附只是原样还回来；剩下 14 问被 15° 档
+ * 挪走，最大位移 55.79mm = 6.97px（仍在 `SNAP_TOL_PX` 之内），且这 160 问的落点**在 Task 6 落地时**全部过得了 `legalDrop`。
+ * （Task 7 把派生复核搬进 `wallMoveEndpoint.build` 之后这一句不再成立：160 发里 `build` 拒 84 发、全是 star，
+ * 可拖 76 发，且"第一发可拖"从第 0 发挪到第 1 发的有 **16 把把手里的 12 把**（去重是 8 个位置，另外 4 把不动）—— 实测见 Task 7 的 T6 交接第 ④ 条。）
+ * 所以"整数百米毫米"买到的是靶子可复现与恒等落点上的稳定，不是"探针不吃吸附"。
+ *
+ * `handles.test.ts` 的「拖拽路径真的在吃吸附」把这几个计数钉成判据（恒等 ≥ 8、改写 ≥ 1、
+ * 改写只许来自 `angle15`）。它红的那天不是回归，是要回来重量的那天：`--edit-shot` 的
+ * "松手落点逐字等于探针给的毫米"仍成立（两边同吃 `dropTargetOf`），但"拖了 800mm"这类
+ * 位移预期从此不再等于偏移本身 —— 到那天要改的是判据，不是把吸附从拖拽路径上摘掉。
  */
 const PROBE_OFFSETS: readonly MoveTarget[] = [
   { x: 0, y: 800 },
@@ -257,6 +297,9 @@ export function dragProbe(
   ops: readonly DrawOp[],
   v: Viewport,
 ): DragProbe | null {
+  // 场在入口取一次：`snapFieldOf` 要展开本层全部墙与点，放在候选循环里就是 O(候选² × 墙)。
+  // 判据（`--edit-shot` 逐字相等）要的是"探针与 renderer 同一个函数、同一个场"，不是"更快一点"。
+  const field = snapFieldOf(doc, storeyId);
   const wallIds = doc
     .byKind('wall')
     .filter((w) => w.storeyId === storeyId)
@@ -275,7 +318,10 @@ export function dragProbe(
       const toPx = snapPx(mmToPx(v, { x: h.atMm.x + off.x, y: h.atMm.y + off.y }));
       // 落点越界 = 这一发会被 sendInputEvent 夹到边界上，测的就不再是探针声称的那个落点
       if (!insideCanvas(v, toPx)) continue;
-      const targetMm = moveTargetOf(v, toPx);
+      // 与 renderer 松手那一发**同一个调用**：`handleDropTarget(视图, 那一发整数像素, 这把把手, 场)`。
+      // 锚点与排除集都在那个出口里从把手身上取（见它的注释）：原地要排掉的是**被拖那枚点的坐标**
+      // 而不是 `pointId`（原地同时是端点候选又是它自己轴线上的垂足），锚点要给另一端，角度档才有方向可对齐。
+      const { mm: targetMm } = handleDropTarget(v, toPx, h, field);
       // 极小比例视图下取整会把这一发抹回原地：那不是"移动"，撤销/重做判据会全部空转，换下一个候选。
       if (targetMm.x === h.atMm.x && targetMm.y === h.atMm.y) continue;
       if (!legalDrop(doc, h.wallId, h.end, targetMm)) continue;
