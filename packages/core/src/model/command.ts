@@ -5,15 +5,20 @@ import type { Patch } from './patch';
 export type CommandType =
   | 'storey.create'
   | 'storey.setElevation'
+  | 'storey.delete'
   | 'wall.create'
   | 'wall.moveEndpoint'
   | 'wall.setThickness'
+  | 'wall.setMaterial'
+  | 'wall.setLoadBearing'
   | 'wall.delete'
   | 'opening.create'
   | 'opening.move'
   | 'opening.delete'
   | 'column.create'
-  | 'slab.create';
+  | 'column.delete'
+  | 'slab.create'
+  | 'slab.delete';
 
 export interface Command {
   readonly type: CommandType;
