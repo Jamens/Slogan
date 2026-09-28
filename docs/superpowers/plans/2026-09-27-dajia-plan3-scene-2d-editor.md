@@ -2523,6 +2523,19 @@ git commit -m "feat: 平面图点选与选中 store，--pick-shot 用合成指�
 
 ---
 
+#### 执行回填（Task 4，2026-09-28 实测；commits `c025668` + `5756c12` + `fa05e41`）
+
+- **账**：`pnpm verify` exit=0 **26 文件 / 318 条**（+`pick.test.ts` 15 条，含 2 条属性）。`pnpm pick-shot` **11 行 PASS**（正文那张十行表 + 新增的原点行），`ops=31` 与 T3 同值；连测 **7** 轮全绿（`5756c12` 正文写「6 轮」少算一轮，按 `fa05e41` 的日志核实为 7；口径 = P0 修复之后的绿测，故意打红的哨兵按名字与时间戳排除）。RED 形状：15 条全红在 `TypeError: pickAt is not a function`。
+- **本节正文那套点击序列在这台机器上物理性坏**（T4 最大的实测收获，**T5/T6 抄闸门之前先读这条**）：`apps/desktop` 的 `index.html` **一行 CSS 都没有** ⇒ UA 的 `body { margin: 8px }` 把画布顶开，而 **8px 正好等于 `PICK_TOL_PX`**，实测 `rect=[8,8]`。探针点是**画布坐标**、`sendInputEvent` 吃**页面坐标**，正文把两者当同一套用了。`PICK_TOL_PX` 一分未改的前提下，判定会随 uuid 顺序漂、表现成"点了没反应"。
+- **R4（本轮裁决）：前提必须由实测断言，不许由 CSS 或注释背书。** 落成的形态：`PlanCanvas.tsx` 挂载时清零 `document.body.style.margin`（**带 cleanup**，样式突变不许"改了没人还"）、`DebugReport` 新增 `canvasOriginPx`（`getBoundingClientRect()` 实测）、`main/index.ts` 里两套空间各有名字（`CanvasPx` / `ViewportPx`）并有 `clickCanvasPx(win, p, origin)` 加**实测**原点、闸门新增一行断言原点 `= (0,0)`。**RED 证过**：临时把 margin 设成 24px ⇒ exit=1 且**只有那一行红**，而换算后的点击仍然命中 —— 能在 24px 偏移下还命中的机制只有 `p + origin` 这一条路（渲染侧用 `offsetX/offsetY`，Chromium 已经是画布口径，所以它**不该**再加原点，也确实没加）。为什么值得做到这一步：**T8 要往 PlanCanvas 区域挂 `<StoreyTabs/>` 与 `<PropPanel/>`**，这套布局注定变；T5/T6 的 `--edit-shot` / `--draw-shot` 复用同一条探针通道。
+- **R5：一个判据一个主人。** 正文那张表里**四行原本永远印不出 FAIL**（`pick===null`、`selectedPx>100`、`clickedOwner`、空白点后清零）—— main 侧 `waitUntil` 已经拿同一份快照判过，脚本只是回读。不是假绿（行为判得响、exit 归闸门），坏在「十行 PASS」把独立判据的条数吹大、且阈值两份会漂。`fa05e41` 之后 main 只轮询**需要 settle 的那一半**（`selectedIds.length` 到 1 / 到 0），恒等与像素阈值只活在 `scripts/desktop-shot.mjs`。反证：**反向哨兵现在真能红成 FAIL 行**（实测红在「点中墙后屏幕上真的有红色像素」、其余行绿、exit=1），修之前它红成 main 的一个 throw —— 那是这条缺陷的症状，不是时机问题。唯一刻意留在 main 侧的阈值是 `!before.pick`（探针没给靶子就没得点），已声明。
+- **正文被实测推翻的另两条**：① 改坏第 9 条预言 shuffle 属性会红，实测**只有定值用例红** —— 当前 fixture 里不存在"同层同距离"的一对，属性碰不到 `ownerId` 平手那一档（对层序与距离仍有牙，不属 plan:22 禁的"任何输入都不会红"）→ 转终审。② `--pick-shot` 不带 `--shot` 会静默走交互启动 → 转 T5（它本来要把 `shotPathFromArgv()` 换成通用 `argPath(flag)`，配对校验顺带收掉）。
+- **交接给 T5/T6 的三条硬事实**：`probeTarget` **只扫 `polygon`** ⇒ 真窗口那 11 行结构上只可能选中墙轮廓，洞口/轴线的命中只在 node 里证过，别把 11 行读成三层都覆盖；合成输入要求窗口有 **OS 前台焦点**，T4 实测到**一次瞬态红**（`focusForInput` 过了、那一发仍没派发，重跑绿）—— 这条**不许用静默重试糊过去**，效果观察不到时必须响亮地失败（现状：store 不变 ⇒ `waitUntil` 10 秒 throw ⇒ `app.exit(1)`，响亮但慢，是设计选择）；`shotPathFromArgv` 的守卫只拦 `undefined` 与 `--` 前缀（T3 那条截断路径就是"成功"到下一行才死的）。
+- 评审结论：首轮 **Needs fixes**（I1 前提没被断言、I2 四行不可能红，加两行 Minor：`if (before.pick === null)` 漏 `undefined`；`pick.test.ts` 的层序 oracle 重抄数组而没用本任务刚导出的 `DRAW_LAYERS` —— **`drawlist.test.ts` 那个局部 `layerRank` 按正文继续不动**）。fix round 1（`fa05e41`，4 文件 +75/−25）后 scoped re-review：**四条全部 addressed、0 回归、Ready to close**；`--shot` 那六条基础判据逐字节未变，`ClickPoint`→`CanvasPx`/`ViewportPx` 改名无残留。
+- **事故记录（控制位自己的账）**：本轮的 scoped re-review seat 违反了"只读"约定，19:51:09 在 reflog 里留下 `checkout: moving from plan3-scene-2d-editor to main`。没有提交落进 `main`（main 仍停在 `ab3115e`），代价是工作树被换到 `main`、控制位当时正编辑的计划文件落成了 main 那一份。此后所有 seat 的 dispatch 一律带一条硬禁：**不许 `git checkout` / `switch` / `restore` / `stash` / `reset`，你在哪条分支就在哪条分支干活。**
+
+---
+
 ### Task 5: 拖端点改墙（屏幕上的像素落到真源，且撤销栈知道发生了什么）
 
 **Files:**
@@ -13967,7 +13980,8 @@ Task 8 已展开（正文见上文 Task 8：九条裁决 + 八步 + 九条变异
 | T1 视口仿射与包接线 | `86f2a3c` | exit=0，**24 文件 / 293 条**（基线 23/284 ⇒ +1 文件 / +9 条，全在 `viewport.test.ts`） | RED = `TypeError: viewportOf is not a function`；评审员自跑 `tsc --listFilesOnly` 证明根 `typecheck` 真的把 scene-2d 的 src+test 收进去了 | Spec ✅ / Approved；0 Critical、0 Important；Minors m1–m6 全挂账（m3→T4、m4→T3/T5、m2 改判不并入 T2） |
 | T2 绘制指令表与样例两层房 | `2a6879d` | exit=0，**25 / 303**（+10 条） | 改坏 1–8 逐条红、9 必须绿（实测全绿）；第 6 条按正文位置挪会先撞 `penFor` TDZ，挪到 ① 之前才是单点红；第 7 条红在标签越界的边界断言（`expected -43.26923… >= 0`）而不是预言的张幅断言 | Spec ✅ / Approved；0 Critical、0 Important、5 Minor（三条转 T3 真消费者、两条转终审） |
 | T3 真窗口出像素（`--shot`） | `b7c0455` + `6ddb090` | exit=0，**25 / 303 不变**（本格零新增用例，刻意） | `pnpm shot` 六行 PASS + `{"ops":31,"layers":{"structure":20,"opening":10,"annotation":1},"nonBlankPx":30633,"wPx":1427,"hPx":839}`；`hPx` 两次实测 839 / **865** ⇒ 绝对像素不是常数；负测喂空 ⇒ `nonBlankPx=0` / exit=1；隐藏窗口回读 `nonBlankPx=31710`；坏参数 fail-fast exit=2 / 267ms | 首轮 Spec ✅ / **Needs fixes**（1 Important = 计划正文自带的 `shell:true` 拆路径缺陷）；fix round 1 修 I1+m2+m3+m4，**scoped re-review：四条全 addressed、0 回归、Ready to close** |
+| T4 命中与点选（`--pick-shot`） | `c025668` + `5756c12` + `fa05e41` | exit=0，**26 / 318**（+15 条，含 2 条属性） | RED 15 条全红在 `TypeError: pickAt is not a function`；`pnpm pick-shot` **11 行 PASS**、连测 **7** 轮（提交正文的「6 轮」少算一轮）；**`index.html` 无 CSS ⇒ UA `body{margin:8px}` 正好等于 `PICK_TOL_PX`（实测 `rect=[8,8]`）** —— 从此 `CanvasPx` / `ViewportPx` 两套空间分开命名、`canvasOriginPx` 实测、`clickCanvasPx` 加实测原点、闸门有一行断言原点 `(0,0)`（24px margin 的 RED 只让那一行红）；反向哨兵从"红成 main 的 throw"改成"红成脚本的 FAIL 行" | 首轮 Spec ✅ / **Needs fixes**（I1 前提由 CSS 造成而非断言、I2 十行里四行不可能红）；fix round 1（4 文件 +75/−25）修 I1+I2+两行 Minor，**scoped re-review：四条全 addressed、0 回归、Ready to close**（`--shot` 那六条逐字节未变）。**事故：该 review seat 违反只读约定，reflog 19:51:09 `checkout: moving from plan3-scene-2d-editor to main`；无提交落进 main，代价是控制位当时未提交的计划编辑落到了 main 那一份上** |
 
 - T3 的六个实测数（本节原先要的就是这个）：`ops=31`、`structure=20`、`opening=10`、`annotation=1`、`nonBlankPx=30633`（可见那版）/ `31710`（隐藏那版）、`wPx=1427`、`hPx=839`（另一次 865）。
-- 挂账中、当前没人踩的：T2 的三条（property 半自反、`fitStorey` 边界圈含 annotation、`fitStorey`+`buildDrawList` 双算派生）与 T1 的 m3/m4，都指向 **T4**（命中吃指针坐标）与 **T5**（拖拽把浮点喂回入口）。
+- 挂账中、当前没人踩的：**T4 收口时一条都没踩到**，所以照旧挂着 —— T2 的三条（property 半自反、`fitStorey` 边界圈含 annotation、`fitStorey`+`buildDrawList` 双算派生）与 T1 的 m3/m4（`mmToPx`/`pxToMm` 不拦非有限、`Viewport` 是裸结构接口），现在全部指向 **T5**（拖拽第一次把屏幕浮点喂回命令入口，非有限与手搓视口在这才可达）与 **T6**；T4 自己新挂的四条写在上面 T4 那节末尾（shuffle 属性的 `ownerId` 平手档 → 终审；`selectedAfterBlank` 与名字 → 下次真动 `DebugReport` 那一格；`probeTarget` 只扫 `polygon` → T5/T6 的闸门作者；`willReadFrequently` → 有实测数字再动）。
 - **闸门不在 `verify` 里**（`pnpm shot` / `pick-shot` / `edit-shot` / `draw-shot` 全是本地手动），CI 只跑 `verify` + desktop build。不许为了让 CI 绿把断言写成"跑不起来就跳过"。
