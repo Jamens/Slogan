@@ -10202,12 +10202,14 @@ Task 8 的属性面板、删除键与 `planDelete` 的 `unsupported` 分支全�
 - Modify: `packages/core/src/commands/slab.ts`（+41：`requireSlab` + `slabDelete`）
 - Modify: `packages/core/test/joint.test.ts`（5 条既有守卫用例改 `handBuild`；条数 **18 不变**）
 - Modify: `packages/scene-2d/test/editing.test.ts`（**4 条既有用例改写**，见 Step 6 的实测清单，条数 **30 不变**）
-- Modify: `packages/scene-2d/test/handles.test.ts`（**3 条既有用例改写 + 删掉一个用不上的助手**，条数 **19 不变**）
+- Modify: `packages/scene-2d/test/handles.test.ts`（**3 条既有用例改写 + 删掉一个用不上的助手**，条数 **20 不变**；订正 2026-09-29：编写期那本账写的是棒 C/D 之前的 19，Task 6 落地后盘上实测 20 条）
 - Modify: `packages/scene-2d/src/editing.ts`（**只动注释**三处，见 Step 6 的 ①②③；代码一字不动）
 
 **`packages/core/src/index.ts` 一字不改**：那个文件对 `commands/storey` / `commands/wall` / `commands/column` / `commands/slab` / `geom/topology` / `geom/outline` 全是 `export *`（2026-09-28 核对），新出口自己就流出去了。代价是**红了不好看**：测试文件里 `import { storeyDelete } from '@dajia/core'` 在实现落地之前不会在链接期抛 `SyntaxError`，vitest 走 SSR 转译，那个名字是 `undefined`，要到**调用那一行**才炸成 `TypeError: storeyDelete is not a function`（Task 6 Step 4 已在临时工程里对十个新出口实测过这个形状）。Step 2 的"红在哪"按这个预期核对。
 
 **计数账**（2026-09-28 的 `.tscheck/t8` 临时工程**实跑**出来的，不是加出来的）：core 从 **21 个文件 / 276 条** 到 **24 个文件 / 309 条**（+9 +12 +12，`joint.test.ts` 的 18 条一条不增不减）；scene-2d **6 个文件 / 114 条** —— viewport 9 + drawlist 10 + pick 18 + snapping 28 + editing 30 + handles 19，本任务那七条用例改写全落在 `editing.test.ts` 与 `handles.test.ts` 两个文件里，**条数一条不增不减**。那一跑的真账：`Test Files 30 passed (30) / Tests 423 passed (423)`，`npx tsc --noEmit`（core/src + scene-2d 的 src 与 test）exit=0。临时工程不装的两段：`packages/core/test/commands-drag.test.ts` 的 **7 条**（T5）与 core / scene-2d 之外的 **8 条**（`packages/protocol/test/ipc.test.ts` + `scripts/test/deps-check.test.mjs`；2026-09-28 对真仓库跑 `npx vitest run` 得 `Test Files 23 passed (23) / Tests 284 passed (284)`，正是 core 276 + 这 8）⇒ 全仓 **405 → 438**（284 + 114 + 7 + 33）。基线 276 是同一天在同一临时工程里对**真仓库**的 `packages/core` 重测过的（`Test Files 21 passed (21) / Tests 276 passed (276)`），不是抄计划 2 的旧数。
+
+> **2026-09-29 盘上真账（Task 6 收尾后 `pnpm verify` 逐字）**：`Test Files 30 passed (30)` / `Tests 406 passed (406)`，分区 = core **22 文件 / 283 条**（含 `commands-drag.test.ts` 7 条）、scene-2d **6 文件 / 115 条**（handles 已是 20 条）、protocol 3、scripts 5。本任务只往 core 加 33 条 ⇒ 执行日的判据 = **33 文件 / 439 条**，core 段 = **25 文件 / 316 条**，scene-2d 段一条不增不减（115）。
 
 ---
 
@@ -11846,21 +11848,21 @@ Task 6 文本里那段（自带 `projectId` / 楼层 / 两面共点墙 / 可选�
 `handles.ts` 的 `legalDrop` 注释**不动**（核对过：它只讲"试跑真命令、不抄轴长比较"，没有"不跑派生层"这类措辞 —— 那句差额记在计划文本的注记里，不在源码里）。
 
 Run: `npx vitest run packages/scene-2d/test packages/core/test`
-Expected: scene-2d **114 条**（六个文件：viewport 9 + drawlist 10 + pick 18 + snapping 28 + editing 30 + handles 19，七条改写全在 `editing.test.ts` 与 `handles.test.ts` 里，**条数一条不增不减**）、core **309 条**，合起来 **`Test Files 30 passed (30) / Tests 423 passed (423)`**。这组数不是加出来的：2026-09-28 在 `.tscheck/t8` 临时工程（core 与 scene-2d 的全量副本）逐字跑过，重复三遍逐字相同，`npx tsc --noEmit`（core/src + scene-2d 的 src 与 test）exit=0。口径要看清：**这个 423 只覆盖 core 与 scene-2d 两个包**，不等于下面 Step 7 的全仓数 —— 临时工程不装 `packages/protocol/test/ipc.test.ts` 与 `scripts/test/deps-check.test.mjs` 那 8 条，也不装 Task 5 的 `commands-drag.test.ts` 那 7 条。
+Expected: scene-2d **115 条**（六个文件：viewport 9 + drawlist 10 + pick 18 + snapping 28 + editing 30 + handles **20**，七条改写全在 `editing.test.ts` 与 `handles.test.ts` 里，**条数一条不增不减**）、core **309 条**，合起来 **`Test Files 30 passed (30) / Tests 423 passed (423)`**。这组数不是加出来的：2026-09-28 在 `.tscheck/t8` 临时工程（core 与 scene-2d 的全量副本）逐字跑过，重复三遍逐字相同，`npx tsc --noEmit`（core/src + scene-2d 的 src 与 test）exit=0。口径要看清：**这个 423 只覆盖 core 与 scene-2d 两个包**，不等于下面 Step 7 的全仓数 —— 临时工程不装 `packages/protocol/test/ipc.test.ts` 与 `scripts/test/deps-check.test.mjs` 那 8 条，也不装 Task 5 的 `commands-drag.test.ts` 那 7 条。
 
 ---
 
 - [ ] **Step 7: 全量验证 + 改坏表**
 
 Run: `pnpm verify`（= `typecheck && lint:deps && test`）
-Expected: **`Tests 438 passed (438)`**，typecheck exit=0，lint:deps 不报新边（`commands → geom` 与 `geom → model` 都是既有方向）。
+Expected: **`Test Files 33 passed (33)` / `Tests 439 passed (439)`**（订正 2026-09-29：编写期那三段账拼出的是 405→438，而 Task 6 的 D 棒落地后盘上基线是 **406**（`handles.test.ts` 实测 20 条、当时那份临时工程数的是 19）⇒ 本任务只加 core 的 33 条，执行日判 **439**。下面"这个 438…"那三段照旧当作 2026-09-28 的实测来源读，别再拿它的合计去对今天的盘），typecheck exit=0，lint:deps 不报新边（`commands → geom` 与 `geom → model` 都是既有方向）。
 
 **这个 438 是"两段实测 + 一段既有回填"拼出来的，三段来源不同，别混着当实测引用**：
 - **实测段 A**：`.tscheck/t8` 临时工程 `Test Files 30 passed (30) / Tests 423 passed (423)` = core **24 文件 / 309 条** + scene-2d **6 文件 / 114 条**（2026-09-28 重复三遍逐字相同；本任务的 33 条净增 9 + 12 + 12 就在这里，所以它是**量出来的**，不是推算的）。
 - **实测段 B**：同日对**真仓库**跑 `npx vitest run` 得 `Test Files 23 passed (23) / Tests 284 passed (284)` = core 21 文件 / 276 条 + 临时工程不装的那 **8** 条（`packages/protocol/test/ipc.test.ts` 与 `scripts/test/deps-check.test.mjs`）。A 与 B 相减正好差那 8 条 + Task 5 的 `commands-drag.test.ts` **7** 条 —— 这两段就是 438 与 423 之间那道口子，执行日对不上账时先从这里找。
 - **既有回填段**：405 是计划 3 的 Task 6 执行回填里记的全仓数（= 284 + 114 + 7），本任务没重跑全量。
 
-⇒ 全仓 **405 → 438** = 405 + 33，加的那 33 是实测段 A 里 core 的净增。执行日 `pnpm verify` 的真账要对三样：全仓 `Tests`（判 438）、全仓 `Test Files`（**A、B 两段都没给过这个数** —— A 是 30 但只含两个包，B 是 23 但还没有 scene-2d；按 A+B 的分解推算是 **33** = A 的 30 + `commands-drag.test.ts` + `ipc.test.ts` + `deps-check.test.mjs`，跑出来写进这里的「执行回填」，对不上就是有一个文件没被 `include` 收到）、以及 core 是否仍是 **24 / 309**。对不上时先怀疑 T5/T6 那两段有没有漂（其它包的既有绿数不该被本任务改动），再怀疑本任务。
+⇒ 全仓 **405 → 438** = 405 + 33，加的那 33 是实测段 A 里 core 的净增。**（2026-09-29 订正：盘上基线已是 406 ⇒ 执行日判 439，差的那 1 条是 `handles.test.ts` 的第 20 条，Task 6 棒 C/D 落地时补的。）**执行日 `pnpm verify` 的真账要对三样：全仓 `Tests`（判 438）、全仓 `Test Files`（**A、B 两段都没给过这个数** —— A 是 30 但只含两个包，B 是 23 但还没有 scene-2d；按 A+B 的分解推算是 **33** = A 的 30 + `commands-drag.test.ts` + `ipc.test.ts` + `deps-check.test.mjs`，跑出来写进这里的「执行回填」，对不上就是有一个文件没被 `include` 收到）、以及 core 是否仍是 **24 / 309**。对不上时先怀疑 T5/T6 那两段有没有漂（其它包的既有绿数不该被本任务改动），再怀疑本任务。
 
 **改坏表**（15 条，每条改一次、跑 `npx vitest run packages/core/test`、跑完立刻改回。2026-09-28 在临时工程里逐条实测，括号里是当时的 `Test Files / Tests / tsc`）：
 
