@@ -4634,7 +4634,7 @@ try {
   }
 ```
 
-数一下：`wantEdit` 那段是 **15** 条判据，基础六条照旧 ⇒ `pnpm edit-shot` 应当打印 **21 行 PASS**（`pick-shot` 仍是 10 行，`shot` 仍是 6 行）。改样例房或改判据时，这几处要一起改：`drawlist.test.ts`、`pick.test.ts`、`handles.test.ts`、`commands-drag.test.ts`、`desktop-shot.mjs`。
+数一下：`wantEdit` 那段是 **15** 条判据，基础六条照旧 ⇒ `pnpm edit-shot` 应当打印 **21 行 PASS**（`pick-shot` 仍是 **11** 行，`shot` 仍是 6 行）。改样例房或改判据时，这几处要一起改：`drawlist.test.ts`、`pick.test.ts`、`handles.test.ts`、`commands-drag.test.ts`、`desktop-shot.mjs`。
 
 根 `package.json` 的 scripts 再加一条（`shot` 与 `pick-shot` 都保持原样）：
 
@@ -4650,7 +4650,7 @@ pnpm shot > /tmp/t5-shot-pixels.log 2>&1; echo exit=$?
 pnpm pick-shot > /tmp/t5-shot-pick.log 2>&1; echo exit=$?
 pnpm edit-shot > /tmp/t5-shot-edit.log 2>&1; echo exit=$?
 ```
-Expected: 四个 exit=0。`shot` **六行**、`pick-shot` **十行**都照旧全绿（回归判据：T5 不该动它们的行为，`--pick-shot` 与 T4 唯一的差别是 `electronArgs` 换成成对写法）；`edit-shot` **二十一行**全 PASS。把 stdout 里那三行进度读数原样抄进提交信息：`探针：<wallId>:<end> 共享 N 面`（证靶子是**共享**端点，孤端点拖不出邻墙）、`中途：previewPx=… nearMid=… depth=…`（证"拖拽中有东西上屏、线跟着手、真源没动"）与 `被拒：…`（那一句中文报错的前 80 字）。
+Expected: 四个 exit=0。`shot` **六行**、`pick-shot` **十一行**都照旧全绿（Task 4 起实测 11 行）（回归判据：T5 不该动它们的行为，`--pick-shot` 与 T4 唯一的差别是 `electronArgs` 换成成对写法）；`edit-shot` **二十一行**全 PASS。把 stdout 里那三行进度读数原样抄进提交信息：`探针：<wallId>:<end> 共享 N 面`（证靶子是**共享**端点，孤端点拖不出邻墙）、`中途：previewPx=… nearMid=… depth=…`（证"拖拽中有东西上屏、线跟着手、真源没动"）与 `被拒：…`（那一句中文报错的前 80 字）。
 
 三条已知风险，按顺序试，**别改判据**：
 
@@ -4722,7 +4722,7 @@ git commit -m "feat: 拖端点改墙：屏幕像素落到真源，撤销栈全�
 - Modify: `packages/scene-2d/src/pick.ts`（把 `probeTarget` 的候选点扫描抽成文件内私有 `uniqueHitOf`，新增出口 `pickPxOf`）
 - Modify: `packages/scene-2d/test/pick.test.ts`（+3 条 ⇒ 18）
 - Modify: `packages/scene-2d/src/handles.ts`（`MoveTarget`/`quantizeTarget`/`moveTargetOf` 迁出、`DragHandle` 补 `anchorMm`、`dragProbe` 改吃吸附后的毫米、**新增出口 `handleDropTarget`**）
-- Modify: `packages/scene-2d/test/handles.test.ts`（+7 条 ⇒ 19；合成把手 `handleAt` 补一行 `anchorMm`；末条配色判据从三色列成四色；T5 那句 `moveTargetOf(view, p.toPx) === p.targetMm` **换成恒等式**，见"既有写法"第 3 条）
+- Modify: `packages/scene-2d/test/handles.test.ts`（+7 条 ⇒ **20**（正文原先的 19 是编写期账：13 条保留 + 7 条新增 = 20，棒 C 在 `d642466` 已按实测改口）；合成把手 `handleAt` 补一行 `anchorMm`；末条配色判据从三色列成四色；T5 那句 `moveTargetOf(view, p.toPx) === p.targetMm` **换成恒等式**，见"既有写法"第 3 条）
 - Modify: `packages/scene-2d/src/index.ts`（两行出口）
 - Modify: `apps/desktop/src/renderer/src/stores/editorStore.ts`（状态加 `tool`、`draft` 两格，出口加 `setTool`、`setDraft`、`dispatchBatch`）
 - Modify: `apps/desktop/src/renderer/src/stores/selectionStore.ts`（新增 `retain`，给删除后的选中剪枝用）
@@ -4753,7 +4753,7 @@ git commit -m "feat: 拖端点改墙：屏幕像素落到真源，撤销栈全�
    **原计划文本在这里写过一句错话，订正如下**：原文断言"`handles.test.ts` 里那句 `expect(moveTargetOf(view, p.toPx)).toEqual(p.targetMm)` **照样绿**，因为样例房在 0.125px/mm 下探针落点距任何靶子都 > 8px"。实测**不成立**：样例房那把被挑中的把手，其候选落点里有 14/160 发被 15° 档改写（最大 6.97px），那句话十个进程红 2 个 —— 它判的是"探针没吃吸附"，而本任务让探针吃了吸附，所以它**必须换掉**，不是"照样绿"。换成同一个纯函数的自比对（`handleDropTarget(view, p.toPx, 同一把把手, 同一个场).mm === p.targetMm`，恒成立），判据从"落点等于裸毫米"升级为"探针与 renderer 同一个调用"。新增用例里有专门判"落点内容"的两条（吸上了什么、合法性判在哪一侧），牙齿在它们身上。
 4. **`handles.test.ts` 末条配色判据**：三色列成四色（多 `SNAP_COLOR`），判据本身一字不改。这是**加一格**，不是放宽 —— 它让新颜色也过同一把尺。
 5. **`PlanCanvas.tsx` 的 `Buckets` / `NO_PIXELS` / `countPixels`**：多第 6 个桶 `snapMarkPx`。`countPixels` 的**签名不变**（S8 已定：橙色桶不带位置窗口），所以 T5 的两处调用点与 5 条像素判据一行不动。
-6. **`apps/desktop/src/main/index.ts` 的 `whenReady` 分支** 与 **`scripts/desktop-shot.mjs` 的 `electronArgs` 三元式**：各加第四个开关 `--draw-shot`。`--edit-shot` 的 21 行 PASS 与 `--pick-shot` 的 10 行、`--shot` 的 6 行**判据一字不改**（新增的全是加字段与加读数）。
+6. **`apps/desktop/src/main/index.ts` 的 `whenReady` 分支** 与 **`scripts/desktop-shot.mjs` 的 `electronArgs` 三元式**：各加第四个开关 `--draw-shot`。`--edit-shot` 的 21 行 PASS 与 `--pick-shot` 的 11 行、`--shot` 的 6 行**判据一字不改**（新增的全是加字段与加读数）。
 
 **Interfaces:**
 - Consumes：
@@ -4845,7 +4845,7 @@ git commit -m "feat: 拖端点改墙：屏幕像素落到真源，撤销栈全�
 
   Task 8 对它们的依赖：`newWallDefaults` 是"数值输入"要替换掉的唯一占位入口；`pointRefOf` 是"新建即共享端点"这条拓扑纪律在屏幕侧的唯一出口；`planDelete` 的 `unsupported` 是 Task 8 补 `columnDelete`/`slabDelete`/`storeyDelete` 时唯一要接的口子（补完之后 `DeletePlan.unsupported` 在样例房里恒空，那条用例要跟着改成"柱"—— 别删用例，改判据）。
 
-  **本任务实测出来的两条差额，交给 T7 收口，别在 UI 侧私自补**：① `legalDrop` 只试跑命令的 `build`，**不跑 `deriveStoreyGeometry`** ⇒ "把一枚共享点拖成星形接头（≥3 个方向过同一点）"会被预言为合法、在松手重绘时由派生层抛 `RangeError`。S1 的构造暂时让屏幕走不到那一发（把手都来自已有墙，方向数不会凭空 +1），但"复制墙 / 批量拖"一接上就可达 —— 真要补的是 core 侧的派生复核，不是 UI 再算一遍接头分类（复述派生规则必漂）。② 极小比例下吸附会**改写位移本身**，但那一档 `dragProbe` 拿不到落点。本段原句写的是"探针的落点会吸到别面墙的中点"，实测不成立，订正如下。测量条件：样例房一层、16 把把手 × 5 发偏移 = 80 发、`viewportOf(1200, 900, { pxPerMm, center: 拟合中心 })`（2026-09-28 实测，逐档重复稳定）：
+  **本任务实测出来的两条差额，交给 T7 收口，别在 UI 侧私自补**：① `legalDrop` 只试跑命令的 `build`，**不跑 `deriveStoreyGeometry`** ⇒ "把一枚共享点拖成星形接头（≥3 个方向过同一点）"会被预言为合法、在松手重绘时由派生层抛 `RangeError`。**Task 6 证伪了"走不到"这半句**：S7 要求拉墙草稿的起点复用既有端点 ⇒ 新墙天生往共享点加臂。控制位在样例房上实测（一次性扫描，未提交）：按在任意二臂角点的 ±1px 内 ⇒ `start.snap.kind='endpoint'` 且复用既有 `pointId`，此后 45°/60°/30°/15°/135°/−45° 任一起手 ⇒ `legal=true`、`dispatch` 不抛、`buildDrawList` 抛 `RangeError`；扫到 8 枚角点 × 6 个角度 = **48 发，48 发全抛**。"复制墙 / 批量拖"接上只是扩大可达范围，不再是这条差额成立的前提。屏幕侧的保险已在 T6 落地（paint effect 的 `try/catch` → `editorStore.reportPaintError`，走 `lastError`「画不出来：…」，**只动 lastError、零 revision**）；真源侧的收口仍是 core 的派生复核（见 Task 7 的 `assertDerivesAfterApply`），**不许**在 UI 侧复述四道派生守卫（复述的规则一定漂）。② 极小比例下吸附会**改写位移本身**，但那一档 `dragProbe` 拿不到落点。本段原句写的是"探针的落点会吸到别面墙的中点"，实测不成立，订正如下。测量条件：样例房一层、16 把把手 × 5 发偏移 = 80 发、`viewportOf(1200, 900, { pxPerMm, center: 拟合中心 })`（2026-09-28 实测，逐档重复稳定）：
 
 | `pxPerMm` | 8px 换成 | `dragProbe` | 80 发里落点 ≠ 名义落点 | 最大偏差 | 吸到别墙中点 | 单发容差内静态候选 |
 |---|---|---|---|---|---|---|
@@ -5372,7 +5372,7 @@ describe('落点出口与复用引用', () => {
 
 **排序判据的形状**（S2 的落地，`takeBest` 里那四行 `if`）：先比**组**（端点/中点/垂足 = 吸到已有的东西，正交/15° = 吸到方向，组 0 永远压过组 1），组内先比 `distPx`，再比 `PRIORITY`（端点 0 < 中点 1 < 垂足 2 < 正交 3 < 15° 4），最后比 `ownerId`。四级判据必须构成**全序**，否则并列时"谁赢"取决于扫描序 —— 测试里 `reversed(field)`（两个池子各自整个倒过来扫）与原场的结果必须逐字节相等，那一句就是全序的凭据，也是 Step 2 第 6 条改坏的靶子。
 
-> **属性为什么仍然要有**（它抓不到随机搜的东西，但抓得到实现退化）：`numRuns: 400` 落在 40001² 的整数网格上，撞上"跳变超过 8px"那一发的概率约千分之几，所以**这条属性的红不靠随机**。它靠的是三件事：① 落点必须是整数毫米（量化漏在任一档，浮点落点会以每秒一次的频率撞到）；② `drop.mm` 与 `drop.snap.mm` 必须同源（吸附点被二次改写就红）；③ 非端点档不许带 `pointId`（把靶子表的 `pointId` 抄进角度档的结果里，200 次里必撞）。Step 2 的第 12、13 条改坏就是①②两句的**实测见证**：那两条改坏之后 27 条手搭用例全绿，只有属性红 —— 手搭用例挑的是"吸附对不对"，属性挑的是"出口有没有把吸附带出去"。反过来第 16 条（垂足不量化）只红手搭用例、属性还绿，因为样例房全是正交墙 ⇒ 属性的覆盖面等于它那一份靶子场的覆盖面。
+> **属性为什么仍然要有**（它抓不到随机搜的东西，但抓得到实现退化）：`numRuns: 400` 落在 40001² 的整数网格上，撞上"跳变超过 8px"那一发的概率约千分之几，所以**这条属性的红不靠随机**。它靠的是三件事：① 落点必须是整数毫米（量化漏在任一档，浮点落点会以每秒一次的频率撞到）；② `drop.mm` 与 `drop.snap.mm` 必须同源（吸附点被二次改写就红）；③ 非端点档不许带 `pointId`（把靶子表的 `pointId` 抄进角度档的结果里，200 次里必撞）。Step 2 的第 12、13 条改坏就是①②两句的**实测见证**：那两条改坏之后 26 条手搭用例全绿（磁盘实测：`snapping.test.ts` 共 28 个 `it(`，减去下一段点名的 2 条属性），只有属性红 —— 手搭用例挑的是"吸附对不对"，属性挑的是"出口有没有把吸附带出去"。反过来第 16 条（垂足不量化）只红手搭用例、属性还绿，因为样例房全是正交墙 ⇒ 属性的覆盖面等于它那一份靶子场的覆盖面。
 
 **Step 1 的 `it` 合计 28 条**（吸附靶子表 4 + 光标→吸附 11 + 角度档 8 + 落点出口与复用 5；其中 2 条属性在最后一段）。
 
@@ -8424,7 +8424,7 @@ export function pointSnapshot(doc: Document, storeyId: string): Record<string, M
 > **四处形状，执行时最容易"顺手改平"的地方**：
 >
 > ① `legalDrop` 的 `catch` 是**宽到一切异常**的，且它试跑的是真命令的 `build`。别收紧它、也别在屏幕上重写轴长比较（改坏 HD6 实测：换成"自己算 `hypot(target, anchor) > thickness`"红两条 —— 「legalDrop 就是真源那道守卫的预言」与「探针吃的是吸附后的毫米」。第二那条是 T6 新长的牙：自算那一版漏掉的是**邻墙**那两道，而吸上去那一发恰好撞在邻墙的墙厚上）。
-> 还要记下它**没有**覆盖的东西：`build` 不跑 `deriveStoreyGeometry`，所以"这一发拖出一个星形接头（≥3 个方向过同一点）"在 `legalDrop` 这里预言为合法，松手后却在派生层抛。S1 的构造保证真窗口里不会走到那儿（屏幕上的点来自已有墙，接头方向数不会凭空 +1），但这条差额**记在 Task 7 的边界表里**，不许在 UI 侧另搭一套星形预判 —— 那是复述派生规则，复述的规则一定漂。
+> 还要记下它**没有**覆盖的东西：`build` 不跑 `deriveStoreyGeometry`，所以"这一发拖出一个星形接头（≥3 个方向过同一点）"在 `legalDrop` 这里预言为合法，松手后却在派生层抛。**Task 6 实测：真窗口里走得到**（草稿起点复用既有端点 ⇒ 往共享点加臂；样例房 8 枚角点 × 6 个角度 = 48/48 发在重绘时抛）。屏幕上现由 paint effect 那层 `try/catch` 兜住（`lastError`「画不出来：…」，白屏不再发生、`__dajiaDebug` 的引用留得住），但**兜住不等于挡住** —— 命令层仍会落盘（实测一次 `depth 30→31`），所以这条差额**记在 Task 7 的边界表里**，不许在 UI 侧另搭一套星形预判 —— 那是复述派生规则，复述的规则一定漂。
 >
 > ② `PROBE_OFFSETS` 那十发**会被吸走**，别把"偏移取得远"读成"探针不吃吸附"。样例房 16 把把手 × 10 发 = 160 问（2026-09-28 实测，十个进程逐字相同）：86 问吸上了东西，其中 72 问吸成**恒等**（垂足 54、正交 17、中点 1 —— 那些落点本来就在自己那面墙的轴线上，吸附只是原样还回来），剩下 14 问被 15° 档挪走，最大位移 55.79mm = 6.97px，仍在 `SNAP_TOL_PX` 之内；160 问的落点全部过得了 `legalDrop`（**这一句只对 Task 6 落地时成立** —— Task 7 的复核进了 `build` 之后是 76/160 过、84 发拒于 star，见 Task 7 的 T6 交接第 ④ 条）。所以"整数百米毫米"买到的是**靶子可复现**与恒等落点上的稳定，不是"探针免疫吸附"。这个计数同时是 A 块那条 sweep 用例的判据来源（它只要求 `identity ≥ 8`、`rewritten ≥ 1`、改写只许来自 `angle15`）。
 >
@@ -8471,7 +8471,7 @@ Expected: exit=0，**`Tests 19 passed`**。同一条命令**连跑十个进程**
 
 > **两处"红了但不是凭据"的偶发**（第 6、7 行各自附带的那一句），原因和 Step 4 开头第 ③ 条同一颗：探针挑哪面墙吃 `byKind` 的 uuidv7 序。处置口径也照抄：**判据不许靠"多半会红"** —— 恒红的那几条（HB1 / HB2 / HB5 / HE2 / HC2 / HA3）就是凭据，偶发的那两句（「三枚像素在分数尺子下…」与「探针给的落点必然合法…」的恒等式）在这两行上不算凭据，它们在别的行上是（第 11、12 行）。
 
-> **交接给 Task 7 的两条**：① `legalDrop` 只试跑 `build`，**不跑派生层** ⇒ "拖出一颗星形接头"这一发会被预言为合法、在重绘时抛（① 里已写明）。真窗口里 S1 的构造暂时挡住它，T7 若把"复制墙""批量拖"接上屏幕，这条差额就会开始可达 —— 到时候要补的是**派生层复核**（core 侧），不是 UI 侧再算一遍接头分类。② 凡"探针/命令挑哪个候选"进判据，都必须自带同坐标的合成夹具（本步第 8 行那层"共线两面 + 一枚游离点"就是这么搭的）；样例房只能提供**性质**，不能提供**靶子**。
+> **交接给 Task 7 的两条**：① `legalDrop` 只试跑 `build`，**不跑派生层** ⇒ "拖出一颗星形接头"这一发会被预言为合法、在重绘时抛（① 里已写明）。**真窗口里 Task 6 已经走到了**（拉墙草稿按在既有角点上就能把三臂拧成 star，实测 48/48 发起），屏幕侧只有一层 `lastError` 保险、命令照旧落盘 ⇒ T7 的派生复核**不是"以后可达才要"，是现在就要**。要补的仍是**派生层复核**（core 侧），不是 UI 侧再算一遍接头分类。② 凡"探针/命令挑哪个候选"进判据，都必须自带同坐标的合成夹具（本步第 8 行那层"共线两面 + 一枚游离点"就是这么搭的）；样例房只能提供**性质**，不能提供**靶子**。
 
 - [ ] **Step 6: desktop —— renderer 接线：工具态、草稿、删除派发、第四色标记**
 
@@ -9506,7 +9506,8 @@ export function PlanCanvas(): React.JSX.Element {
 
 **② 探针只读一次，第 15 步拿它逐字对账。** `draw` 是每次调用 `__dajiaDebug()` 现算的（Step 6 第 ⑧ 条），文档一变靶子就换。所以第 0 步 `JSON.stringify(probe)` 留档，终态再算一次比"逐字相同"—— 这一句是整个序列"没留痕"的总账，比"点数回到基线"更严：点数回到基线但探针换了一发，说明几何看着一样、靶子已换。
 
-**③ 序列必须把文档送回基线几何。** 第 8 步建的那面墙要在第 12 步删掉、第 13 步撤销回来、第 14 步重做再删掉，终态停在"已删除"上。原因很实在：`desktop-shot.mjs` 那六条基线判据（`ops === 31` 等）读的是**最后落盘的那一份报告**，序列留一面墙在文档里，那六条就红在"样例房指令数变了"上 —— 与①同一条理由，闸门不许红在错的地方。
+**③ 序列必须把文档送回基线几何。** 第 8 步建的那面墙要在第 12 步删掉、第 13 步撤销回来、第 14 步重做再删掉，终态停在"已删除"上。原因很实在：`desktop-shot.mjs` 那六条基线判据（`ops === 31` 等）读的必须是"序列不留痕"之后那份账，序列留一面墙在文档里，那六条就红在"样例房指令数变了"上 —— 与①同一条理由，闸门不许红在错的地方。
+**落地机制按实测说清（评审 I3）**：那六条读的不是"最后落盘的一份报告"，而是**第 15 步重做之后**落盘的快照 `fin`（`main/index.ts:1480` 的 `out1 = { ...fin, … }`）；第 16 步的三面星形墙落在它**之后**、故意留在文档里，它自己的判据（`starStart* / starEnd* / starCounts / starAppAlive / starLastError`）只吃那一发的前后差，不冒充基线。牙齿没丢 —— "回到基线"那几处硬 throw 全在第 9–15 步。评审给的另一个选项（末尾补一发 Ctrl+Z×3 再读一份快照）判定**不做**：那为了对上正文去补输入，属同一类"把闸门改成迁就说法的形状"。
 
 **④ 等不到就抛，绝不把"没等到"当成通过。** 18 处等待（12 处 `waitUntil` + 4 处 `waitHot` + 2 处沿用 T5 的 `waitKeyApplied`），每处上限 10 秒，超时抛中文；每一处拿到报告之后还有一串硬 `throw`。最坏 180 秒加上起窗与加载，所以 Step 7 末把这一条 electron 调用的超时给到 `300_000`（**只给这一条**，`shot`/`pick-shot`/`edit-shot` 仍是 180 秒 —— 它们的等待数量没变）。
 
@@ -9654,9 +9655,12 @@ async function waitHot(
 }
 
 /**
- * 十六步（0…15）。**整条序列必须把文档送回基线几何**：`desktop-shot.mjs` 前六条判据读的是
- * 最后落盘的那一份报告（`ops === 31` 等），所以第 8 步建的那面墙要在第 12 步删掉、
+ * 十六步（0…15）加一发 addendum A3 的星形接头（三发墙：横、竖两发预备 + 一发 45° 斜臂）。
+ * **整条序列必须把文档送回基线几何**：`desktop-shot.mjs` 前六条判据读的是那份报告里
+ * **spread 自第 15 步 `fin` 的基线读数**（`ops === 31` 等），所以第 8 步建的那面墙要在第 12 步删掉、
  * 第 13/14 步各撤销与重做一次，终态停在"已删除"的基线上。
+ * （第 16 步那三发星形墙落在 `fin` **之后**、留在文档里不要紧：它自己的判据只吃那一发的前后差，
+ * 不冒充基线 —— 评审 I3 要求把这件事说白，而不是补一发 Ctrl+Z 去对正文。）
  *
  * 坐标一个都不硬编码：三发像素、两对毫米、厚度与墙高全部来自第 0 步读到的探针。
  * 探针**只在第 0 步取一次**并留档 —— 它是每次调用现算的（文档一变就换靶子），
@@ -9997,7 +10001,7 @@ void app.whenReady().then(async () => {
 });
 ```
 
-> **顺序是从具体到通用**：`--draw-shot` 必须在 `editShotRequested()` 之前判，`--edit-shot` 在 `--pick-shot` 之前，`runShot` 兜最后。理由是四个 runner **共用 `--shot` 那一份落盘路径**（`argPath('--shot') !== null` 才是"进 shot 模式、隐藏窗口、跑完 exit"的开关），谁先命中谁写盘 —— 反过来排不会编译错，只会让 `--draw-shot` 悄悄跑成 `--edit-shot` 那份报告，然后在 27 行判据里红成一地对不上的读数。
+> **顺序是从具体到通用**：`--draw-shot` 必须在 `editShotRequested()` 之前判，`--edit-shot` 在 `--pick-shot` 之前，`runShot` 兜最后。理由是四个 runner **共用 `--shot` 那一份落盘路径**（`argPath('--shot') !== null` 才是"进 shot 模式、隐藏窗口、跑完 exit"的开关），谁先命中谁写盘 —— 反过来排不会编译错，只会让 `--draw-shot` 悄悄跑成 `--edit-shot` 那份报告，然后在 28 行判据里红成一地对不上的读数。
 >
 > `?? shotPath` 那三个兜底照 T5 的原样保留（脚本一定会成对给路径；手写命令少给一个时宁可退回 `--shot` 那份路径，也不要让 runner 拿 `null` 当文件名去 `writeFileSync`）。
 
@@ -10059,7 +10063,10 @@ try {
       ['D3 零长草稿判不合法，但吸附标记已经上屏', report.legalAtPress === false && report.snapMarkAtPress > 0],
       // 档位只钉到「是方向档、且零位移」：钉死 ortho 还是 angle15 等于拿判据赌 uuidv7 的端点顺序（探针挑中哪枚起点会漂，见 S8 ① 那段实测）。
       // S3 那句"画 4000 的水平墙必须是 ortho"由 snapping.test.ts 的档位互斥用例负责，那一份是确定性的。
-      ['D4 终点吸的是方向档、没引别人的点、位移逐字为 0（S7 的另一半 + S8 ①）', report.endSnapPointId === null && (report.endSnapKind === 'ortho' || report.endSnapKind === 'angle15') && report.endSnapDistPx === 0],
+      // distPx 的「逐字 0」按实测订正为 ≤1.5（D2a 落地即如此，评审 Q1 独立裁定保留）：真窗口 pxPerMm≈0.12417，
+      // 整数像素取整的往返残差按构造 ≤0.5px/轴（对角 ≤0.71）；实测只取 0.3298 / 0.4508 两个离散值。
+      // 「吸错别面墙」不靠这一行抓：第 3 步与第 8 步和 D12 的 `end.mm === probe.endMm` 三处逐字相等钉着。
+      ['D4 终点吸的是方向档、没引别人的点、位移在量化往返残差内（S7 的另一半 + S8 ① 订正版）', report.endSnapPointId === null && (report.endSnapKind === 'ortho' || report.endSnapKind === 'angle15') && report.endSnapDistPx <= 1.5],
       ['D5 中途临时线跟到光标（S4 第三条纪律）', report.previewNearCursorPx > 0],
       ['D6 中途第四色标记在屏（S8 只证存在）', report.snapMarkAtMove > 0],
       ['D7 中途真源一个字没动：depth、revision、点数三者', report.depthAtMove === report.depthAtStart && report.revisionAtMove === report.revisionAtStart && report.pointsAtMove === report.basePoints],
@@ -10076,7 +10083,8 @@ try {
       ['D18 点新墙中点：唯一命中就是刚建那面，把手也画出来了（筛 ④ 的像素下限在真窗口里成立）', Array.isArray(report.clickedSelectedIds) && report.clickedSelectedIds.length === 1 && report.clickedSelectedIds[0] === report.builtWallId && report.clickedHandlePx > 20],
       ['D19 Backspace 只删那一面墙，unsupported 空，选中集剪空', report.deleteOutcomeAfterBackspace === 'ok' && report.deletedCount === 1 && report.unsupportedCount === 0 && Array.isArray(report.selectionAfterDelete) && report.selectionAfterDelete.length === 0],
       ['D20 撤销把墙连同它的孤儿点一起带回来，选中不跟着回来（D7 那半句）', report.pointsAfterUndo === report.basePoints + 1 && report.selectedAfterUndo === 0 && report.comboAfterUndo === 'Ctrl+Z'],
-      // 最后一条是总账：②③ 两条纪律的凭据都在它身上 —— 序列没留痕，前六条才还读得到基线。
+      // 倒数第二条是总账：②③ 两条纪律的凭据都在它身上 —— 第 15 步为止序列没留痕，前六条读的就是这份基线
+      //   （第 16 步的三面星形墙落在它之后，只吃自己的前后差，不冒充基线）。
       ['D21 重做回到基线，终态探针与 points 快照逐字回到第 0 步', report.pointsAfterRedo === report.basePoints && report.probeMatchesStart === true && report.pointsMatchStart === true && report.comboAfterRedo === 'Ctrl+Shift+Z'],
     );
   }
@@ -10088,7 +10096,7 @@ try {
 "draw-shot": "node scripts/desktop-shot.mjs --draw"
 ```
 
-数一下：`wantDraw` 那段是 **21** 条判据，基础六条照旧 ⇒ `pnpm draw-shot` 应当打印 **27 行 PASS**。另外三道闸门一行不动：`pnpm shot` 6 行、`pnpm pick-shot` 10 行、`pnpm edit-shot` 21 行。改样例房或改判据时，这几处要一起改：`drawlist.test.ts`、`pick.test.ts`、`snapping.test.ts`、`editing.test.ts`、`handles.test.ts`、`commands-drag.test.ts`、`desktop-shot.mjs`。
+数一下：`wantDraw` 那段是 **22** 条判据（`D1`–`D22`，第 22 条是 addendum A3 要求的星形接头那一发），基础六条照旧 ⇒ `pnpm draw-shot` 应当打印 **28 行 PASS**（实测 28）。另外三道闸门一行不动：`pnpm shot` 6 行、`pnpm pick-shot` **11** 行（正文原先写 10，Task 4 起实测就是 11）、`pnpm edit-shot` 21 行。改样例房或改判据时，这几处要一起改：`drawlist.test.ts`、`pick.test.ts`、`snapping.test.ts`、`editing.test.ts`、`handles.test.ts`、`commands-drag.test.ts`、`desktop-shot.mjs`。
 
 > **D13 那一句为什么钉"恰好 +1"而不是"> 基线"**：S7 让终点全新建，所以一面新墙在真源里留下的点是**一枚**（`wallCreate` 建两端、起点走 `{ pointId }` 复用既有那一枚）。多出来的那一枚如果没被删干净，D19 的"点数回基线"会红；反过来，若起点没复用而走了 `{x,y}`，D11 先红 —— 两条一起才把"共享端点退化成一堆独立点"这条路堵死（计划 2 Task 3 的 `resolvePointRef` 守卫在屏幕侧的镜像）。
 >
@@ -10103,7 +10111,7 @@ pnpm pick-shot > /tmp/t6-shot-pick.log 2>&1; echo exit=$?
 pnpm edit-shot > /tmp/t6-shot-edit.log 2>&1; echo exit=$?
 pnpm draw-shot > /tmp/t6-shot-draw.log 2>&1; echo exit=$?
 ```
-Expected: 五个 exit=0。`shot` **六行**、`pick-shot` **十行**、`edit-shot` **二十一行**照旧全绿（本任务不该动它们的判据 —— 见下面"红线"那条），`draw-shot` **二十七行**全 PASS。把 stdout 里那三行读数原样抄进提交信息：探针那一发的 `startMm → endMm` 与 `startPointId` 的前 8 字（证靶子从**既有端点**起画）、`snapMarkAtPress / snapMarkAtMove / previewNearCursorPx` 三个数（证"按下就有标记、中途标记与线都在、线跟着手"）、`builtCounts` 那一串 `N→N+1`（证"恰好一枚新点"）。
+Expected: 五个 exit=0。`shot` **六行**、`pick-shot` **十一行**、`edit-shot` **二十一行**照旧全绿（本任务不该动它们的判据 —— 见下面"红线"那条），`draw-shot` **二十八行**全 PASS（实测 28 = 基础六条 + `D1`–`D22`）。把 stdout 里那三行读数原样抄进提交信息：探针那一发的 `startMm → endMm` 与 `startPointId` 的前 8 字（证靶子从**既有端点**起画）、`snapMarkAtPress / snapMarkAtMove / previewNearCursorPx` 三个数（证"按下就有标记、中途标记与线都在、线跟着手"）、`builtCounts` 那一串 `N→N+1`（证"恰好一枚新点"）。
 
 **四条已知风险**（前三条是 `--draw-shot` 独有的新风险，T5 没证过这些形状）。按顺序试，**一次只动一个变量**，都不许把判据改成"读到什么算什么"：
 
@@ -10119,8 +10127,8 @@ Expected: 五个 exit=0。`shot` **六行**、`pick-shot` **十行**、`edit-sho
 | # | 改坏（各一处） | 必须红在哪一处 | 为什么是这一处 |
 |---|---|---|---|
 | DR1 | 注释掉 paint effect 里草稿那两支 `paintSnapMarker(...)`（起点与终点，`drag` 那一支保留） | 第 2 步的 `snapMarkPx === 0` 硬 throw：「起点吸上了既有端点，第四色标记却没画出来」 | 证明橙色像素是**这个画家**画的，不是别的东西混色。`countPixels` 一字没动，所以只有画家那一处能解释"颜色没了" |
-| DR2 | `paintPreview(ctx, draft.start.px, draft.cursorPx)` 的终点改成吸附落点（`mmToPx(viewport, draft.end.mm)`） | 第 3 步 `waitUntil` 抛「移到探针终点后落点没对上」或硬 throw「临时线没跟到光标（S4 第三条纪律）」 | S4 ③ 那处"看得见的取舍"的哨兵：预览线恒画裸光标、吸附点交给第四色。改成画到吸附点，屏幕上"线在、标记在"两桶都还满足，但**线的位置不再等于手的位置** |
-| DR3 | `draftAtPress(viewport, px, field)` 多传一个锚点（按下也吃方向档） | 第 2 步硬 throw「起点必须吸到端点档」 | S3/S4 ① 的落地：按下那一发不许自动变正交，否则 `--edit-shot` 的"零移动 ⇒ noop"那条判据在拉墙这条路上就没有对应物了 |
+| DR2 | `paintPreview(ctx, draft.start.px, draft.cursorPx)` 的终点改成吸附落点（`mmToPx(viewport, draft.end.mm)`） | **实测恒绿（2026-09-29，`dr2-run.log` = 28 行 PASS，无牙）**：预言那两处读的都是毫米侧数据（`draft.end.mm`）与光标 ±2px 窗口，而现手势的终点吸附位移实测只有 **0.33 / 0.45px 两个离散值**，落进 `previewNearCursorPx` 的 ±2px 第五桶 ⇒ 画到吸附点与画到裸光标像素不可分（`PlanCanvas.tsx:294` 那句注释早已自证标记正落在第五桶正中） | S4 ③ 那处"看得见的取舍"的哨兵：预览线恒画裸光标、吸附点交给第四色。**挂 Task 8，具名出口**（与 HB5 挂 T7 同一先例）：现手势补不出可见位移 —— 故意偏 5–6px 的那一发只在"没有 group-0 候选来抢"时保持 `end.mm === probe.endMm`，而 uuidv7 挑中的探针点某次开机旁边就有 8px 内的静态候选、另一次没有（`main/index.ts:1199-1217` 记过的相位抖动）。稳的形状是给 `wallProbe` 加一条**邻域无候选筛**（scene-2d 改动 + 自带单测，加在 `editing.ts:401-411` 筛②–⑥旁边）。**不许**用"橙像素必须是 56 的整数倍"这类计数等式凑牙（A1/S8 的禁令：那既脆又假） |
+| DR3 | **按实测重写（2026-09-29）**：本行原先的写法抓不到东西，三处各自独立成立 —— ①`draftAtPress(viewport, px, field)` 根本没有"多传一个锚点"这个入参（`editing.ts:110-113` 内部硬写 `null`）；②即便写成"按下也吃方向档"（锚点 = 按下裸毫米）也是**等价变异**：`snapping.ts:272` 的零位移筛（`dx !== 0 \|\| dy !== 0` 才把方向档投进池子）⇒ 锚点 ≡ 裸落点时给不给锚点逐字相同，与按下位踩不踩端点无关（实测资源哈希 `index-DoffTLFe.js` ≠ 基线 `index-Blnm6r8A.js`，证明变异确实进了产物）；③预言的第 2 步「起点必须吸到端点档」根本走不到 —— 探针按在既有端点上，`GROUP` 让实体档恒赢方向档（`snapping.ts:143` + `takeBest` 228-237）。**能红的形状**：把 `draftAtPress` 里的 `null` 换成"按下裸毫米 **+1mm**"的锚点（= 真的让方向档参与） | 第 16 步 W1 硬 throw「空白角按下了吸附（`kind:'ortho' … distPx 0.054…`）」（`main/index.ts:1341`；实测 `dr3pp-run.log` = 0 行 PASS） | S3/S4 ① 的落地：按下那一发不许自动变正交。**判据一字未动** —— 牙齿本来就在第 16 步那条 `w1.startSnap === null` 与单测「起点在空白处按下：什么都不吸，也不吃角度档」（`editing.test.ts:181-192`）；本行只订正"怎么改坏才抓得到它" |
 | DR4 | 在 `onUp` 的草稿分支开头加 `legalWallCreate` 预检、不合法直接 `return`（不写 `rejected` 回执） | 第 5 步 `waitUntil` 抛「原地松手没给出 rejected 回执（超时 10s）」 | 与 T5 的 R5 同一类：D3 的纪律是"屏幕上不重写守卫"，而**预检最像"什么都没发生"** —— 少一份回执，`--draw-shot` 就分不出"被预言挡下"与"那一发根本没到" |
 | DR5 | `planDelete` 摘掉 `tool === 'wall'` 特判（拉墙模式下照删选中集） | 第 9 步硬 throw「拉墙模式的删除沉默读成 ok」，`depthInWallMode` 那一处跟着红 | S5 的四色判据里唯一一条"故意沉默"。摘掉之后正在拉墙时按 Delete 会把用户上一发的选中集一起吃掉，而屏幕上没有任何一条中文报错能证明它发生过 |
 | DR6 | 摘掉删除之后那两句 `useSelection.getState().retain(kept)` | 第 12 步 `waitUntil` 抛「删除后账没回到基线（超时 10s）」（谓词含 `selectionAfterDelete.length === 0`） | 剪枝只在这条路上有读者：`buildDrawList` 与 `dragHandlesOf` 都按 `doc.get` 找不到就跳过，所以**不剪枝屏幕上看不出任何异常** —— 只有那份留档的 `selectionAfterDelete` 抓得到（D7 留给 Task 8 的那个接缝，本任务先在删除这条路上收掉） |
@@ -10132,7 +10140,7 @@ Expected: 五个 exit=0。`shot` **六行**、`pick-shot` **十行**、`edit-sho
 ```bash
 pnpm verify > /tmp/t6-verify.log 2>&1; echo exit=$?
 ```
-Expected: exit=0，`Test Files 30 passed`（**28 + 2**：本任务新增 `snapping.test.ts` 与 `editing.test.ts` 两个文件）、`Tests 405 passed`（**337 + 68** = snapping 28 + editing 30 + pick 3 + handles 7，全部落在 scene-2d，core 零改动零新增）。同时**老用例一条都不许改**：Step 3 与 Step 5 动了 `pick.ts` / `handles.ts` 的既有写法，那六处订正逐条列在"本任务会改到 T4/T5 的六处既有写法"里 —— 在那六处之外的任何一条老用例变红，都是本任务把某处判据改松了，停下来核对。
+Expected: exit=0，`Test Files 30 passed`（**28 + 2**：本任务新增 `snapping.test.ts` 与 `editing.test.ts` 两个文件）、`Tests 406 passed`（**338 + 68**；正文原先的 337 是 T5 编写期的账，T5 实测 338，差源见 Task 5 回填。68 = snapping 28 + editing 30 + pick 3 + handles 7，全部落在 scene-2d，core 零改动零新增：`git diff 14aa415..01d0226 -- packages/core` 为空）。同时**老用例一条都不许改**：Step 3 与 Step 5 动了 `pick.ts` / `handles.ts` 的既有写法，那六处订正逐条列在"本任务会改到 T4/T5 的六处既有写法"里 —— 在那六处之外的任何一条老用例变红，都是本任务把某处判据改松了，停下来核对。
 
 ```bash
 git status --porcelain
@@ -10140,9 +10148,38 @@ git diff --stat
 git add packages/scene-2d
 git commit -m "feat: 五档吸附、拉墙草稿与删除计划进 scene-2d"
 git add apps/desktop scripts package.json
-git commit -m "feat: 拉墙与删除接上屏幕，--draw-shot 二十七行判据"
+git commit -m "feat: 拉墙与删除接上屏幕，--draw-shot 二十八行判据"
 ```
-第一条提交信息带上：snapping 28 条 + editing 30 条 + pick 3 条 + handles 7 条、Step 4 与 Step 5 的改坏清单里那些**恒红**的行号与红字（E14 / E15 / E25 / E26 各一句）、`Tests 30 passed` 与 `Tests 19 passed` 那两行、以及标了"偶发"的 E17 / E27 / E28 三行**连同它们的处置**（这三条最容易被下一个人当成"判据写坏了"重新查一遍）。第二条带上：`--draw-shot` 的二十七行 PASS、上面那三行实测读数、DR1–DR8 各自红在哪一处。`git status --porcelain` 在两次提交之后应当只剩计划文档一类，并且 **`apps/desktop/.tscheck/` 这类临时 harness 目录必须已经删掉**（它不属于任何一个提交）。
+第一条提交信息带上：snapping 28 条 + editing 30 条 + pick 3 条 + handles 7 条、Step 4 与 Step 5 的改坏清单里那些**恒红**的行号与红字（E14 / E15 / E25 / E26 各一句）、`Tests 30 passed` 与 `Tests 19 passed` 那两行、以及标了"偶发"的 E17 / E27 / E28 三行**连同它们的处置**（这三条最容易被下一个人当成"判据写坏了"重新查一遍）。第二条带上：`--draw-shot` 的二十八行 PASS、上面那三行实测读数、DR1–DR8 + DR1b 各自红在哪一处（含两条实测无牙的如实登记）。`git status --porcelain` 在两次提交之后应当只剩计划文档一类，并且 **`apps/desktop/.tscheck/` 这类临时 harness 目录必须已经删掉**（它不属于任何一个提交）。
+
+
+#### 执行回填（Task 6，2026-09-28/29 实测；commits `5f760f4` … `9dd6d85`）
+
+- **账**：`pnpm --filter @dajia/desktop typecheck` exit=0；`pnpm verify` exit=0 **`Test Files 30 passed (30)` / `Tests 406 passed (406)`**（338 基线 + 68 新增 = snapping 28 / editing 30 / pick 18（+3）/ handles 20（+7），全部落在 scene-2d；`git diff 14aa415..01d0226 -- packages/core` **为空**，core 一行未改）。真窗口四闸门：`shot` **6 行**、`pick-shot` **11 行**、`edit-shot` **21 行**、`draw-shot` **28 行**全 PASS。
+- **座位事故两次（同形状）**：本 range 里两发实现座位都在 **150 轮天花板**处断、**零提交**（D2a 临终那句是"现在写确定性的第 16 步替换"，代码其实已写完，只差报告与提交）。裁决沿用 T5 那条：**接管而非再派第三棒** —— 控制位实测五道闸门后自己提交 `01d0226`。教训入库：**别在一个座位里塞 Step 7 + Step 8**，把"实现"与"验证 + 收口"拆成两棒（D2b 就是这么拆的，它正常交收了九条）。
+- **Step 7 的第 16 步（星形那一发）比控制位的 addendum 好，收下**：addendum 写的是"按在样例房某枚既有角点 ±1px"，实测两版都不稳定；实施改成了**不动点构造** —— 角点自己在闸门里现造（横竖两发预备墙 = 二臂直角，当场验 `lastError` 为空），第三发按在**同一发像素**上 ⇒ 端点候选与两枚垂足候选毫米逐字相同、并列由 `PRIORITY` 判给端点，与视口相位无关。**根因值得所有后续真窗口"按在既有角点上"的判据记住**：可当锚点的共享端点是按 **id 的代码单元序**挑的（`handles.ts` 的 `byKind('wall')` 同一条），id 是每次开机重造的 uuidv7 ⇒ 抽到哪枚角点本来就随机；而垂足是到轴线**线段**的正投影，按构造永不比端点远，只有逐字并列才轮到档位优先级。**跨运行检验过了**：同一份树连跑 5 次全 exit=0 / 28 行，`startPointId` 换过 3 枚、`previewNearCursorPx` 在 16/20 之间跳，而 `starStartDistPx` **五次逐字相同** = 0.054114724374674544、`snapMarkAtMove` 恒 112 ⇒ 第 16 步确实与"抽到哪枚角点 / 视口相位"无关。
+- **`D4` 的 `distPx`：正文那个"逐字 0"是写错的预言，实测与判据都已改口（评审 Q1 独立裁定：不收回、不加重）**。真窗口 `pxPerMm ≈ 0.12417`（探针两发像素 ÷ `lengthMm` 现算，`main/index.ts:1310`），而 S8 ① 那个 0 量在合成夹具的 8mm=1px 二进制对齐格点（0.125）上。实测离散值只有 **0.3298 / 0.4508** 两个（跨 15 次干净运行）；构造上界：终点毫米与探针 guess 逐字相同时，残差只剩整数像素取整的 ≤0.5px/轴（对角 **≤0.71px**），正文注释原先写的"≤1px/轴（√2≈1.42）"把界说宽了一倍。**位置对账不在这一行**：第 3 步 `JSON.stringify(r.draft.end.mm) === JSON.stringify(probe.endMm)`（`main/index.ts:1013`）、第 8 步 `builtCreate.endMm === probe.endMm`（`:1097`）与 `D12` 三处**逐字相等**钉着 —— 吸错别面墙先红在那三处，`≤1.5` 只允许"吸对了"的方向档把落点拽离光标一个亚像素。代码旁白里那两处"distPx 恒 0"也一并改成实测口径（`2e1aa7c`）。
+- **Step 8 的九条改坏（DR1–DR8 + DR1b）实测**：七条有牙（DR1、DR4、DR5、DR6、DR7、DR8、DR1b），两条无牙（DR2、DR3）。凭据 = `task-6D2b-report.md` 那张九行表 + `dr<N>-run.log` 九份落盘日志（控制位逐条重数过：七条 `PASS=0` + 一条 `--shot 失败：Error:`，DR2/DR3 `PASS=28`）。
+  - **DR1b 推翻 addendum A1 的"恒绿"裁决**：只摘终点那一支 `paintSnapMarker` ⇒ `exit=1`，红在 `main/index.ts:1352`（W1「横拖吸上了却没画第四色标记」）—— 星形那发起点按构造**不吸任何人**（按在空白角），橙色像素唯一来源就是终点支。A1 的结构性论证只覆盖了第 2、3 步（那里起点恒吸端点、全局橙色计数恒 >0）。**"两支分家无牙"降级为"仅对第 2/3 步成立"**；判据一字未动，也没有为了满足它去加"橙像素必须是 56 的整数倍"那种计数等式（A1 的禁令照守）。
+  - **DR3 是等价变异，不是"那一发没测到"**（改坏表那行已按实测重写）：`snapping.ts:272` 的零位移筛（`dx !== 0 || dy !== 0` 才把方向档投进池子）⇒ 只要锚点 ≡ 裸落点，给不给锚点结果逐字相同，与按下位踩不踩端点**无关**。三种形状各实测过：照正文字面 ⇒ 绿（且资源哈希 `index-DoffTLFe.js` ≠ 基线 `index-Blnm6r8A.js`，证明变异**确实进了产物**）；锚点 `{x:0,y:0}` ⇒ 绿（方向候选跑到 8px 容差外）；锚点"裸毫米 +1mm"（= 真的让按下吃方向档）⇒ **红在第 16 步 W1**「空白角按下了吸附」。单测侧的牙齿本来就在（`editing.test.ts` 的「起点在空白处按下：什么都不吸，也不吃角度档」）。
+  - **DR2 是真无牙，按 HB5 的先例挂给 Task 8 并带具名出口**：现手势终点吸附位移只有 0.33/0.45px，落进 `previewNearCursorPx` 的 ±2px 第五桶 ⇒ "线画到吸附点"与"画到裸光标"像素不可分。**为什么不在这里补**：一发故意偏 5–6px 的光标只在"没有 group-0 候选来抢"时才保持 `end.mm === probe.endMm`，而 uuidv7 挑中的探针点某次开机旁边就有 8px 内的静态候选、另一次没有 —— 那正是 `main/index.ts:1199–1217` 记过的相位抖动。稳的形状是给 `wallProbe` 加一条**邻域无候选筛**（scene-2d 改动 + 自带单测，`editing.ts:401–411` 的筛②–⑥旁边加一条），Task 8 落地。
+  - **DR6 红得比预言晚一步**：摘掉 `retain(kept)` 后第 12 步的谓词读的是**留档值** `kept`（`:801`/`:803` 照常跑）所以照过，未剪枝的**活体**选中集在第 13 步撤销时以 `undid.selectedIds` 现形才红。与 T5 的 R3 同一形状：红的位置不同、判定不变、判据不动。
+- **本节正文一条都没预言到、由累计评审抓出的 Critical（已修）**：真人手势可达的 star **白屏**。修 = paint effect 函数体 `try/catch` → 新增 `editorStore.reportPaintError(err)`（**只动 lastError、零 revision**，沿用 `拖不动：`/`删不动：` 的中文形状，新增 `画不出来：`），没有在 UI 侧复述四道派生守卫、也没有在 catch 里再试跑派生。**反控做过**：把 catch 体改回 `throw err` ⇒ 同一份 CDP driver `alive=false`、`lastError=null`、`depth=null`、exit=1 ⇒ "白屏不再发生"这句有牙齿。可达性是控制位自己扫的（48/48 发，见上面正文订正）。
+- **同一轮修掉的三条 Important**：`deletedIds` 改记真源账（派发后按 `log.document.get(id) === undefined` 筛，不动 `dispatchBatch` 的公共 API）；三条恒真断言换成与独立来源比对（`snapping.test.ts` 新增 `isCandidateForSnap`，只吃 `field` 表与锚点，不调 `snapFromCursor`/`dropTargetOf`；`editing.test.ts` 那两条改与命令层独立现算的形状比），**用例条数一字未动**；两处说明文字与代码对齐。
+- **Step 7 纪律 ③ 的机制与正文不同（评审 I3，已按代码真话订正，牙齿没丢）**：正文说"前六条基线判据读的是**最后落盘的那一份报告**"，落地读的是第 15 步重做之后那份快照 `fin`（`main/index.ts:1480` 的 `out1 = { ...fin, … }`）；第 16 步的三面星形墙落在它**之后**、故意留在文档里，它自己的判据只吃那一发的前后差。"回到基线"那几处硬 throw 全在第 9–15 步，所以没有任何一条判据把星形之后的状态当基线读。评审给了两个选项（末尾补 Ctrl+Z×3 再读一份 / 改正文措辞），**选后者**：与 HB5 同一种处理 —— 说出代码的真话，不为了对上正文去补一发输入。
+- **裁决教训（入库）**：给一条判据找理由时，机制要自己 grep 读到函数体。本轮三处栽在"把编写期预言当实测"——A1 的"恒绿"、"颜色逐字节相等"、"distPx 恒 0"，各被 DR1b / F4 / Q1 推翻一次。**新口径**：任何"每帧像素距离"进判据前先连跑几次看是不是**双峰**，别把一次读数当常数。
+- **顺带扫出的同类残留（已一并改口，2026-09-29）**：正文里凡是把 `--draw-shot` 数成 27 行的十处
+  （Task 6 的 Step 7 判据行与两条 commit message、Task 7 的 P9 那一格、Task 8/9 正文与代码 listing 里「那 27 行像素判据」之类）统一改成 **28**；
+  `pick-shot` 写作「十行 / 10 行」的**六处**改成 **11 行**（Task 4 起实测就是 11；Task 4 正文那两处预言保留原样，
+  由它自己的回填记成「正文那张十行表 + 新增的原点行 = 11 行」）；Task 6 Files 里 `handles.test.ts +7 ⇒ 19` 改成 **⇒ 20**；
+  verify 账 `405（337+68）` 改成 **406（338+68）**。另订正 5375：那句「27 条手搭用例」按盘上事实改成 **26 条**
+  （`snapping.test.ts` 实测 28 个 `it(`，其中 494 / 542 两条带 `fc.assert` 是属性用例 ⇒ 手搭 26；正文 5377 自己写的合计 28 条与此一致）。
+- **Task 7 Step 8 那两行命令指的是不存在的文件**（`node scripts/desktop-draw.mjs --draw-shot` / `desktop-edit.mjs --edit-shot`）：
+  四道闸门一直是同一个 runner `scripts/desktop-shot.mjs` 上的开关，由根 `package.json` 起（`shot` / `pick-shot` / `edit-shot` / `draw-shot`）。
+  已按盘上事实改写，并写明 **T7 若要加 `--prop`，加的是同一个文件里的第四个 mode 与一条 script**，别凭空造第六个文件。
+- **交接给 Task 7 的账**：① `assertDerivesAfterApply` 一落地，本节 ⑥ 那条"命令层放行、派生层抛"的单测判据要换成"两层同判"（Task 7 正文 Step 6 已写逐字改法），`legalDrop` 与真源同判后 `derivesAfterMove` 那层遮蔽（HB5 恒绿的根因）自动解套，复测口径 = 改坏 HB5 恰好红 6.6 与 6.7。② 真窗口侧的 star 保险（`lastError`「画不出来：…」）在复核挂上之后应当**两边都不许写进真源**，`D22` 的语义随之从"活着且有报错"改成"落盘被拒"。③ uuidv7 随机角点那条告警适用于 T7/T9 任何"按在既有角点上"的判据。
+- **挂账**：`wallProbe` 邻域无候选筛（DR2 的牙）→ **T8**；快捷键不判 `event.target`（在输入框里敲 `w` 会切工具）→ **T8**；`fieldRef` 没省下它注释声称省下的东西（性能观察，样例房八面墙看不出来）；IME 下 `event.key` 可能是 `'Process'`（闸门只发合成事件，抓不到）→ **T8/T9**。
+- **评审结论**：单座 `t6-reviewer`（`14aa415..01d0226`）判 **Ready to close**，**0 Critical / 3 Important**，三条都是"记录面"（正文与旁白与代码不符），无判据被放宽、无 `throw` 被换成 `console.warn`、无等待条件调松；三件单独裁的事各裁完（Q1 保留 `≤1.5` 并给出一条更紧的可行替代 `≤1.0` 但判定不必；Q2 判 DR3 = 改坏表写错行、DR2 = 挂 T8 并具名出口、DR1b = 如实登记；Q3 硬账逐条核过，含 `it.skip`/`it.only` 零命中、老用例只动授权那六处、导出全部有消费者（仅 `pickPxOf` 只被测试吃，属正文授权，Minor））。报告 `task-6-review.md`。
 
 
 ### Task 7: core 补口 —— 派生复核与属性/删除命令（"能改"落到真源）
@@ -11852,8 +11889,12 @@ Expected: **`Tests 438 passed (438)`**，typecheck exit=0，lint:deps 不报新�
 复核改的是**每一条改几何命令的返回值**，所以两个真窗口闸门在 T7 之后各跑一遍。**判据形状一字不改**，只允许更新其中写死的毫米/像素字面量：
 
 ```bash
-node scripts/desktop-draw.mjs --draw-shot    # 27 条判据
-node scripts/desktop-edit.mjs --edit-shot    # 21 条判据
+pnpm draw-shot    # 28 行 PASS（基础六条 + D1–D22；实测 28）
+pnpm edit-shot    # 21 行 PASS
+# 订正（2026-09-29）：四道闸门都是同一个 runner `scripts/desktop-shot.mjs` 上的开关，
+# 由根 package.json 的 scripts 起（shot / pick-shot / edit-shot / draw-shot）。
+# 正文原先写的 `desktop-draw.mjs` / `desktop-edit.mjs` **从来没有存在过**，照抄会凭空造一个文件。
+# 执行日 T7 若要加 `--prop`，加的是同一个文件里的第四个 mode 与 `"prop-shot"` 那条 script。
 ```
 
 Expected: 两个闸门**都绿**。若 `--draw-shot` 红在"新建的墙与既有墙共享一枚点"或毫米逐字对账那两句上，按本任务「T6 交接四条的处置」第 ④ 条处理：先在 Node 侧跑一遍 `wallProbe`，读它这一轮给的 `startMm / endMm / midPx`，把闸门里写死的那几个数换成新值，**并重跑三遍确认稳定**；不许把"那一发"改成"任一发候选都行"来迁就 —— 那是把 D4 的凭据换成 vacuous truth。
@@ -11905,7 +11946,7 @@ git commit -m "feat(core): 派生复核进改几何的三条命令，补属性�
 | P6 | 楼层 tab 的顺序与标高从哪儿来？ | **按真源 `index` 升序**（不是照抄 `byKind`）、标高读 `StoreyEntity.elevationMm`（不算 `index × heightMm`）、标签 `第 ${index + 1} 层`。 | `byKind` 按 id 升序返回，而 uuidv7 在同一毫秒内不单调 ⇒ 照抄它，两层项目的 tab 顺序会跨进程漂（实测：十轮打乱里"id 序 ≠ index 序"的轮数跑出 9、8、9、8、7、9）。样例房二层被 `storeySetElevation` 从 6000 改成 3000 ⇒ 算出来的 tab 上是假数字。代价：`index` 必须唯一（`storeyCreate` 已守卫），这个排序因此是全序，不必再排第二次。 |
 | P7 | Delete 键到底接几类构件？ | **接四类**：墙、独立洞口、柱、板。派发顺序定死成 **洞口 → 柱 → 板 → 墙**（各自按 id 升序）。`storeyDelete` **不接** Delete 键。 | 柱与板的删除命令 T7 已经补好（`column.delete` / `slab.delete`，各自收掉自己独占的落点），屏幕上只差把它接到 `planDelete` 的 `unsupported` 那一格里。顺序定死是为了撤销栈可读：栈顶恒是 `wall.delete`，一次 Ctrl+Z 把"墙 + 它自己级联掉的洞口"整组还回来。`storeyDelete` 的入口是楼层 tab 上那条显式动作而不是删除键 —— 删整层要连带删光该层所有构件，需要确认框，S1 没有确认框。代价：`unsupported` 从此只装两样屏幕上根本取不到的东西（裸点与楼层本身）+ 别层构件。 |
 | P8 | T 接两侧改不成同厚怎么办？ | **只显示真源文案，不试图绕过。** 不加"同时改两面墙"的隐藏命令，也不让面板偷偷多派一条。 | 复核是逐发问"这一发之后的世界"，两侧各发一条 ⇒ 每条都看见对面还是原厚 ⇒ 两条都拒（实测：`.tscheck/tmp/scratch2.txt` 的 A 组 —— 连发 (800,800) 两条全 `REJ-同厚`，摘掉中间那根 stem 再连发才成 800/800）。真给用户第二条路只有"改画成 L 角"，那是几何编辑，不属面板。代价：样例房一层八面墙里有四面被这道守卫锁死（B 组：`southWest` 与 `southEast` 四档全 `REJ-同厚`，`partEast` / `partWest` 只有同值那一档 OK），`--prop-shot` 必须挑**改得动**那四面之一当靶子。 |
-| P9 | 柱与板屏幕上点不到，怎么证明"删得掉"？ | **由合成夹具证明，不把柱画进指令表。** | `buildDrawList` 与 `pickAt` 都只认墙与洞口，所以 ③④ 两支的凭据只能是手工把柱 / 板的 id 塞进选中集（`editing.test.ts` 里的 `kindId` 助手就是这件事的形状）。为了"在屏幕上证明它"把柱掺进指令表 = 混进 Task 9 / 计划 4 的边界，且 `--draw-shot` 那 27 行像素判据要全数重测。代价：`--prop-shot` 里删柱那一步**不能**当验收凭据；这一支只有 node 侧红绿可看。 |
+| P9 | 柱与板屏幕上点不到，怎么证明"删得掉"？ | **由合成夹具证明，不把柱画进指令表。** | `buildDrawList` 与 `pickAt` 都只认墙与洞口，所以 ③④ 两支的凭据只能是手工把柱 / 板的 id 塞进选中集（`editing.test.ts` 里的 `kindId` 助手就是这件事的形状）。为了"在屏幕上证明它"把柱掺进指令表 = 混进 Task 9 / 计划 4 的边界，且 `--draw-shot` 那 28 行像素判据要全数重测。代价：`--prop-shot` 里删柱那一步**不能**当验收凭据；这一支只有 node 侧红绿可看。 |
 
 - [ ] **Step 1: 建临时工程并取基线**
 
@@ -12584,7 +12625,7 @@ export interface DeletePlan {
  *
  * **屏幕上今天还点不到柱与板**：`buildDrawList` 的指令表与 `pickAt` 的命中集都只认墙与洞口，
  * 所以 ③④ 两支的凭据只能是合成夹具（手工把柱/板的 id 放进选中集）。不许为了在屏幕上"证明它"
- * 就把柱画进指令表 —— 那是 Task 9 / 计划 4 的边界，混进来会让 `--draw-shot` 那 27 行像素判据全数重测。
+ * 就把柱画进指令表 —— 那是 Task 9 / 计划 4 的边界，混进来会让 `--draw-shot` 那 28 行像素判据全数重测。
  */
 export function planDelete(
   doc: Document,
@@ -13104,7 +13145,7 @@ Expected: `pnpm verify` exit=0；`Tests` 从 Task 7 落地的 **438** 涨到 **4
 pnpm shot        # 6 条
 pnpm pick-shot   # 10 条
 pnpm edit-shot   # 21 条
-pnpm draw-shot   # 27 条
+pnpm draw-shot   # 28 条
 pnpm prop-shot   # 本任务新增，判据条数执行日回填
 ```
 
@@ -13716,7 +13757,7 @@ function axisCrossPoints(
  * **屏幕上今天还点不到柱与板**：`buildDrawList` 的指令表与 `pickAt` 的命中集都只认墙与洞口，
  * 所以 ③④ 两支的凭据只能是合成夹具（手工把柱/板的 id 放进选中集）。不许为了在屏幕上"证明它"
  * 就把柱画进指令表 —— 那是**计划 4** 的边界（Task 9 只把柱心/板角喂进**吸附场**，指令表与命中集一行未动），
- * 混进来会让 `--draw-shot` 那 27 行像素判据全数重测。
+ * 混进来会让 `--draw-shot` 那 28 行像素判据全数重测。
 ```
 
 Run: `npx vitest run --config vitest.config.ts packages/scene-2d/test/snapping.test.ts`
@@ -13891,7 +13932,7 @@ Expected: `pnpm verify` exit=0；`Tests` 从 Task 8 落地的 **464** 涨到 **4
 pnpm shot        # 6 条
 pnpm pick-shot   # 10 条
 pnpm edit-shot   # 21 条
-pnpm draw-shot   # 27 条
+pnpm draw-shot   # 28 条
 pnpm prop-shot   # 16 条
 ```
 
@@ -13925,7 +13966,7 @@ git commit -m "feat(scene-2d): 吸附补上轴网交点档，柱心与板角进�
 
 ## 任务边界与交接（Task 1–9 已全部展开；下一格是执行）
 
-Task 6 已展开（正文见上文 Task 6：八条裁决 + 八步 + 二十七行真窗口判据）。它把 T5 留下的两个接缝就地判掉了：① 吸附的插入点 = `moveTargetOf` 之后、`dispatch` 之前那一行（S4 的三条纪律：按下不吸、探针与 renderer 同一个出口、预览线恒画裸光标）；② "撤销掉正被选中的构件"拆成两半收掉 —— 删除之后用 `pruneSelection` + `selectionStore.retain` 剪掉已不存在的 id（S5），新建那一路用 `lastCreatedWall` 里的 `doc.get(id)` 复核挡住"选中指向不存在的构件"（S6：`log.affected` 在撤销后**仍然**列着那枚 id）。**没收掉的那一半**写在这里防丢：`Ctrl+Z` 撤销一次删除之后选中集不回（D7 的口径是"撤销的是文档，不是视图"）；Task 7 与 Task 8 都没接这一条，谁要做"撤销后恢复选中"，得回来改这条裁决。
+Task 6 已展开（正文见上文 Task 6：八条裁决 + 八步 + 二十八行真窗口判据）。它把 T5 留下的两个接缝就地判掉了：① 吸附的插入点 = `moveTargetOf` 之后、`dispatch` 之前那一行（S4 的三条纪律：按下不吸、探针与 renderer 同一个出口、预览线恒画裸光标）；② "撤销掉正被选中的构件"拆成两半收掉 —— 删除之后用 `pruneSelection` + `selectionStore.retain` 剪掉已不存在的 id（S5），新建那一路用 `lastCreatedWall` 里的 `doc.get(id)` 复核挡住"选中指向不存在的构件"（S6：`log.affected` 在撤销后**仍然**列着那枚 id）。**没收掉的那一半**写在这里防丢：`Ctrl+Z` 撤销一次删除之后选中集不回（D7 的口径是"撤销的是文档，不是视图"）；Task 7 与 Task 8 都没接这一条，谁要做"撤销后恢复选中"，得回来改这条裁决。
 
 Task 7 已展开（正文见上文 Task 7：四条裁决 + 八步 + 十五条改坏）。它收掉了 T6 交接四条里的 ③（`legalDrop` / `legalWallCreate` 与真源同判，差额在 core 侧补齐）与 ④（探针候选集合的实测差额：拉墙 80 发拒 48、拖把手 160 发拒 84，"第一发过 `build`"在 8 枚端点里挪了 **5** 枚、16 把把手里挪了 **12** 把，而"第一发 `build` 与派生都过"那张表两侧逐字相同）；**① 与 ② 原样交接给 Task 8**。T7 没动屏幕上的任何一行逻辑代码 —— scene-2d 侧只改 `editing.ts` 的三处注释、改写七条既有用例、删掉一个没人读的助手（见 T7 的"本任务会改到的既有写法"第 4、6、7 条与 Step 6）。
 
@@ -13954,7 +13995,7 @@ Task 8 已展开（正文见上文 Task 8：九条裁决 + 八步 + 九条变异
 - `EntityId = string`（无品牌类型），所以 scene-2d 的签名写 `string` 不构成第二套 id 系统。
 - `TransactionLog`：`get document`、`get affected: ReadonlySet<EntityId>`、`undo(): boolean`、`redo(): boolean`。取"刚创建的实体"只认 `affected`（见全局约束）。
 - （T4 加）`buildDrawList` 目前产的**每一条** polygon 都是 `fill: null` ⇒ `insidePolygon` 与 `distanceOfOp` 里那条 fill 分支在样例房里走不到，只有 `pick.test.ts` 的合成用例（「fill 非 null 时内部算命中」）走到它。**别把它当死代码删**：它是"点得中的就是看得见的"这条口径里唯一区分实心/空心的判据，且计划 4 的楼板填充（`slab` 的 `fill`）第一次用到它。
-- （T4 加）`webContents.sendInputEvent({ type: 'mouseDown' | 'mouseUp', x, y })` 的坐标是相对页面的 DIP；T3 的画布是 1 canvas px = 1 CSS px（刻意没做 DPR 缩放），所以它与 `DrawOp` 的像素、与 `event.nativeEvent.offsetX/offsetY` 同一单位。这句话在 2026-09-27 只由文档确认，**运行时凭据是 `--pick-shot` 的十行 PASS**。
+- （T4 加）`webContents.sendInputEvent({ type: 'mouseDown' | 'mouseUp', x, y })` 的坐标是相对页面的 DIP；T3 的画布是 1 canvas px = 1 CSS px（刻意没做 DPR 缩放），所以它与 `DrawOp` 的像素、与 `event.nativeEvent.offsetX/offsetY` 同一单位。这句话在 2026-09-27 只由文档确认，**运行时凭据是 `--pick-shot` 的十一行 PASS**（Task 4 的回填记作 11 行：正文那张十行表 + 新增的原点行）。
 - （T5 加）`webContents.sendInputEvent` 在 Electron 44 自带的 `electron.d.ts` 里有一条原文注记：**"The `BrowserWindow` containing the contents needs to be focused for `sendInputEvent()` to work."** 所以每条发合成输入的路径都要先 `win.focus()` + `win.webContents.focus()`（Step 6 的 `focusForInput`）。同一份 `.d.ts` 里 `InputEvent.type` 的联合明列 `mouseMove` 与 `pointerDown`/`pointerUp`/`pointerMove`，`KeyboardInputEvent` 则是 `keyCode: string`（必填，取 Accelerator 键名）+ `type: 'rawKeyDown' | 'keyDown' | 'keyUp' | 'char'` + 继承来的 `modifiers: Array<'shift' | 'control' | 'ctrl' | ...>` —— **`modifiers` 里没有 `'meta'` 之外的 Windows 键，`ctrl` 与 `control` 同义**，Step 6 用 `'ctrl'`。
 - （T5 加）`TransactionLog` 的 `get depth()` 就是 `undoStack.length`：`undo()` 会**减一**、`redo()` 加一、`dispatch()` 加一并**清空 redo 栈**。所以"撤销后回到 `depthAtStart`、重做后回到 `depthAtStart + 1`"是同一句事实的两种说法，`--edit-shot` 的两条 depth 判据不是重复劳动。
 - （T5 加）`wallMoveEndpoint.build` 里"端点与另一端重合"那条是**逐字坐标相等**（`anchor.x === x && anchor.y === y`），紧跟其后的才是"墙厚不小于轴长"。取整像素反算回来的毫米几乎不可能与锚点逐字相同 ⇒ 压扁拖撞到的是**后一条**。所以 Step 6 的正则是 `/轴长|零长/`，写死"零长墙"会变成一条随取整方向随机红的判据。
@@ -14003,6 +14044,7 @@ Task 8 已展开（正文见上文 Task 8：九条裁决 + 八步 + 九条变异
 | T3 真窗口出像素（`--shot`） | `b7c0455` + `6ddb090` | exit=0，**25 / 303 不变**（本格零新增用例，刻意） | `pnpm shot` 六行 PASS + `{"ops":31,"layers":{"structure":20,"opening":10,"annotation":1},"nonBlankPx":30633,"wPx":1427,"hPx":839}`；`hPx` 两次实测 839 / **865** ⇒ 绝对像素不是常数；负测喂空 ⇒ `nonBlankPx=0` / exit=1；隐藏窗口回读 `nonBlankPx=31710`；坏参数 fail-fast exit=2 / 267ms | 首轮 Spec ✅ / **Needs fixes**（1 Important = 计划正文自带的 `shell:true` 拆路径缺陷）；fix round 1 修 I1+m2+m3+m4，**scoped re-review：四条全 addressed、0 回归、Ready to close** |
 | T4 命中与点选（`--pick-shot`） | `c025668` + `5756c12` + `fa05e41` | exit=0，**26 / 318**（+15 条，含 2 条属性） | RED 15 条全红在 `TypeError: pickAt is not a function`；`pnpm pick-shot` **11 行 PASS**、连测 **7** 轮（提交正文的「6 轮」少算一轮）；**`index.html` 无 CSS ⇒ UA `body{margin:8px}` 正好等于 `PICK_TOL_PX`（实测 `rect=[8,8]`）** —— 从此 `CanvasPx` / `ViewportPx` 两套空间分开命名、`canvasOriginPx` 实测、`clickCanvasPx` 加实测原点、闸门有一行断言原点 `(0,0)`（24px margin 的 RED 只让那一行红）；反向哨兵从"红成 main 的 throw"改成"红成脚本的 FAIL 行" | 首轮 Spec ✅ / **Needs fixes**（I1 前提由 CSS 造成而非断言、I2 十行里四行不可能红）；fix round 1（4 文件 +75/−25）修 I1+I2+两行 Minor，**scoped re-review：四条全 addressed、0 回归、Ready to close**（`--shot` 那六条逐字节未变）。**事故：该 review seat 违反只读约定，reflog 19:51:09 `checkout: moving from plan3-scene-2d-editor to main`；无提交落进 main，代价是控制位当时未提交的计划编辑落到了 main 那一份上** |
 | T5 拖端点改墙（`--edit-shot`） | `39a7824` + `6dc9efe` | exit=0，**28 / 338**（正文预言 337；差源 = `handles.test.ts` 实测 13 条而非 12，第 13 条是控制器补危险时后加的。seat 那发 GREEN 逐字 `Tests 19 passed (19)` = 7+12，与预言相同） | RED 12 条全红在 `TypeError: dragHandlesOf is not a function`；`shot` 6 行 / `pick-shot` 11 行 / **`edit-shot` 21 行全 PASS**，修复后**连续 13 次绿**；R1–R7 闸门级改坏**七条全红**（R3 比预言早一处红）；**五个正文未预言的危险**：① `sendInputEvent` 静默夹画布外坐标（假阴，`insideCanvas` 筛）② 菜单栏占约 26px、摘晚了当场触发 resize ③ `fit()` 读的 `log.document` 是活 getter × resize ⇒ 像素前提全体作废 ④ star 接头令 `deriveStoreyGeometry` 抛 ⇒ **renderer 白屏**（`derivesAfterMove` 筛；真人手动那一档挂 T7）⑤ **输入队列竞态**（约 1/6）：`await sendInputEvent` 不等事件被处理，`onUp` 读的是最后一发**已处理**的 `move` ⇒ 用 `dragTargetMm`/`dragCursorPx` + `waitDragAt()` 做**条件等待**（不是重试），并把第 2 步"跟手"从自指改成发送方判 | 首轮 Spec ✅ / **Needs fixes**（I1 压扁那发缺 `movePx`、I2 R1–R7 从未跑；m3 是我写进注释的假因果、m6 是报告里两个不存在的符号名）；fix round 1（2 文件 +98/−13）修 I1+I2+m3+m4，**scoped re-review：Ready to close，无需第 2 轮代码返工**。**事故：implementer seat 在第 150 轮天花板中止、零提交 ⇒ 控制位接管落地（独立性只剩评审 seat）**；**凭据抄写缺陷：驱动取第一条 `Error:` 命中，而 `RangeError:` 含 `Error:` ⇒ R7 那格抄成 stdout 诊断，已单独重跑订正** |
+| T6 拉新墙/删除/五档吸附（`--draw-shot`） | `5f760f4` … `9dd6d85`（代码棒 + 两发控制位接管 + 三发评审修） | exit=0，**30 / 406**（+2 文件 / +68 条，全在 scene-2d；`packages/core` 零改动） | `pnpm draw-shot` **28 行 PASS**；改坏 DR1–DR8 + DR1b = 七牙两无牙（DR2 位移 0.33/0.45px 落进 ±2px 桶、DR3 是等价变异）；Critical = 真人手势可达的 star 白屏（48/48 发实测）已收进 `lastError` 并做过反控 | 单座 `t6-reviewer`：**Ready to close**，0 Critical / 3 Important（全是记录面），Q1 保留 `≤1.5`、Q2 判 DR3 改坏表写错行 + DR2 挂 T8、Q3 硬账全过 |
 
 - T3 的六个实测数（本节原先要的就是这个）：`ops=31`、`structure=20`、`opening=10`、`annotation=1`、`nonBlankPx=30633`（可见那版）/ `31710`（隐藏那版）、`wPx=1427`、`hPx=839`（另一次 865）。
 - 挂账中、当前没人踩的：**T4 收口时一条都没踩到**，所以照旧挂着 —— T2 的三条（property 半自反、`fitStorey` 边界圈含 annotation、`fitStorey`+`buildDrawList` 双算派生）与 T1 的 m3/m4（`mmToPx`/`pxToMm` 不拦非有限、`Viewport` 是裸结构接口），现在全部指向 **T5**（拖拽第一次把屏幕浮点喂回命令入口，非有限与手搓视口在这才可达）与 **T6**；T4 自己新挂的四条写在上面 T4 那节末尾（shuffle 属性的 `ownerId` 平手档 → 终审；`selectedAfterBlank` 与名字 → 下次真动 `DebugReport` 那一格；`probeTarget` 只扫 `polygon` → T5/T6 的闸门作者；`willReadFrequently` → 有实测数字再动）。
