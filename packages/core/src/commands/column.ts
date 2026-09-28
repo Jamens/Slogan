@@ -3,10 +3,11 @@ import { assertMm, positiveMm, quantizeMm } from '../units/mm';
 import type { Command } from '../model/command';
 import type { Document } from '../model/document';
 import type { ColumnEntity, Entity, PointEntity } from '../model/entity';
-import { requireStorey } from '../model/read';
+import { mustExist, requireStorey } from '../model/read';
 import {
   assertNoGhostColumn,
   isExistingPoint,
+  pointStillReferenced,
   resolvePointRef,
   type PointRef,
 } from '../geom/topology';
@@ -21,6 +22,13 @@ export interface ColumnCreateInput {
   heightMm?: number;
   loadBearing?: boolean;
   material?: string;
+}
+
+/** 与 `commands/opening.ts` 里那份 `requireOpening` 同一口径：读取断言长在用的那个文件里。 */
+function requireColumn(doc: Document, id: EntityId): ColumnEntity {
+  const entity = mustExist(doc, id, '柱');
+  if (entity.kind !== 'column') throw new TypeError(`${id} 不是柱，是 ${entity.kind}`);
+  return entity;
 }
 
 export function columnCreate(input: ColumnCreateInput): Command {
@@ -75,6 +83,25 @@ export function columnCreate(input: ColumnCreateInput): Command {
       };
       upsert.push(column);
       return { upsert, remove: [] };
+    },
+  };
+}
+
+/**
+ * 删一根柱，并把它**独占**的那枚落点一起带走（孤儿判定问 `pointStillReferenced`，
+ * 与 `wallDelete` 同一份产地：柱落点常常就是墙端点，不查就是删柱拆墙）。
+ * 不跑派生复核：柱不在 `deriveStoreyGeometry` 的表里（那张表只读墙），而且删除路径
+ * 一律不许被守卫挡住（见 `storeyDelete` 的 ② 与 `commands/opening.ts` 顶部那句）。
+ */
+export function columnDelete(input: { columnId: EntityId }): Command {
+  return {
+    type: 'column.delete',
+    build(doc: Document) {
+      const column = requireColumn(doc, input.columnId);
+      const remove: EntityId[] = [column.id];
+      const except = new Set<EntityId>([column.id]);
+      if (!pointStillReferenced(doc, column.pointId, except)) remove.push(column.pointId);
+      return { upsert: [], remove };
     },
   };
 }

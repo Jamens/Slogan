@@ -1,6 +1,7 @@
 import type { EntityId } from '../ids';
 import type { Document } from '../model/document';
 import { mustExist } from '../model/read';
+import { applyPatch, type Patch } from '../model/patch';
 import { cornerPoint, wallAxis, type WallAxis } from './axis';
 import { deriveJoints, memberTrim, type Joint, type JointMember } from './joint';
 import { openingSpans, piecesFromSpans, type WallPiece } from './opening';
@@ -103,4 +104,23 @@ export function deriveStoreyGeometry(doc: Document, storeyId: EntityId): StoreyG
     piecesFromSpans(wall.id, wallAxis(doc, wall).lengthMm, openingSpans(doc, wall)),
   );
   return { storeyId, walls: quads, joints, pieces };
+}
+
+/**
+ * 命令层的**派生复核**：把候选补丁贴到草稿文档上跑一次整层派生，派生抛则命令抛。
+ *
+ * 为什么在写入侧而不是 UI 侧：`deriveStoreyGeometry` 的四道守卫（star 接头、同向重叠、
+ * 近平行求不出接缝点、轮廓翻面）只有这一个产地。屏幕若自己再算一遍接头分类去预言"这一发
+ * 画不画得出来"，就是第二份规则 —— 复述的规则一定漂，而漂掉的那一遍永远没人看
+ * （`commands/opening.ts` 顶部那句"命令层绝不复述区间规则"同一条理由）。
+ * `applyPatch` 是纯函数、不动传进来的 doc，所以这张草稿是免费的（`assertFitsAfterInsert` 同一条手法）。
+ *
+ * 只给**改几何**的命令用（wall.create / wall.moveEndpoint / wall.setThickness）。删除路径
+ * 一律不复核：坏数据必须还能删，守卫挡住删除就等于把文档锁死（`openingMove` 把正数那条
+ * 守卫放在 move 而不是 requireOpening 里，是同一条纪律）。柱与板不在这张派生表里
+ * （`deriveStoreyGeometry` 只读墙），所以 column/slab 命令也不必复核。
+ */
+export function assertDerivesAfterApply(doc: Document, patch: Patch, storeyId: EntityId): void {
+  const next = applyPatch(doc, patch).doc;
+  deriveStoreyGeometry(next, storeyId);
 }

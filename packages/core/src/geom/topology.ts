@@ -65,6 +65,36 @@ export function incidentWallEnds(
   return out;
 }
 
+/**
+ * 除 `exceptIds` 里那些实体之外，还有谁引用这枚点：墙（两端）、柱（落点）、板（边界）。
+ * 三类都查 —— 少查一类就会把别人还在用的点删掉，真源留下悬空引用。
+ *
+ * 这里是 `wallDelete` 原来那份文件私有 `stillReferenced` 的**唯一产地**（计划 1 Task 9 落地时
+ * 只有墙要删点，所以它长在 wall.ts 里）。计划 3 Task 7 的 `columnDelete` / `slabDelete`
+ * 是第二个和第三个调用者，同一条孤儿判定不许有三份。
+ * `exceptIds` 取集合而不是单个 id：调用方给的是"本次补丁正要带走的那批实体"，
+ * 而删一面挂板的墙时，那枚点可能同时被这块板引用（板也在本次删除集里时它不该算数）。
+ */
+export function pointStillReferenced(
+  doc: Document,
+  pointId: EntityId,
+  exceptIds: ReadonlySet<EntityId>,
+): boolean {
+  for (const wall of doc.byKind('wall')) {
+    if (exceptIds.has(wall.id)) continue;
+    if (wall.startId === pointId || wall.endId === pointId) return true;
+  }
+  for (const column of doc.byKind('column')) {
+    if (exceptIds.has(column.id)) continue;
+    if (column.pointId === pointId) return true;
+  }
+  for (const slab of doc.byKind('slab')) {
+    if (exceptIds.has(slab.id)) continue;
+    if (slab.boundaryPointIds.includes(pointId)) return true;
+  }
+  return false;
+}
+
 /** 被两面以上墙共享的点（结果按 id 升序）。接头分组不从它出发：deriveJoints 自己按 pointId 建 members 表。 */
 export function sharedPointIds(doc: Document): EntityId[] {
   const count = new Map<EntityId, number>();

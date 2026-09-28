@@ -3,8 +3,13 @@ import { assertMm, positiveMm, quantizeMm } from '../units/mm';
 import type { Command } from '../model/command';
 import type { Document } from '../model/document';
 import type { Entity, PointEntity, SlabEntity } from '../model/entity';
-import { requireStorey } from '../model/read';
-import { isExistingPoint, resolvePointRef, type PointRef } from '../geom/topology';
+import { mustExist, requireStorey } from '../model/read';
+import {
+  isExistingPoint,
+  pointStillReferenced,
+  resolvePointRef,
+  type PointRef,
+} from '../geom/topology';
 import { assertSimpleRing } from '../geom/ring';
 import { vec } from '../geom/vec';
 
@@ -14,6 +19,13 @@ export interface SlabCreateInput {
   boundary: PointRef[];
   thicknessMm: number;
   elevationOffsetMm?: number;
+}
+
+/** 与 `commands/opening.ts` 里那份 `requireOpening` 同一口径：读取断言长在用的那个文件里。 */
+function requireSlab(doc: Document, id: EntityId): SlabEntity {
+  const entity = mustExist(doc, id, '板');
+  if (entity.kind !== 'slab') throw new TypeError(`${id} 不是板，是 ${entity.kind}`);
+  return entity;
 }
 
 export function slabCreate(input: SlabCreateInput): Command {
@@ -70,6 +82,31 @@ export function slabCreate(input: SlabCreateInput): Command {
       };
       const upsert: Entity[] = [...points.filter((p) => !doc.get(p.id)), slab];
       return { upsert, remove: [] };
+    },
+  };
+}
+
+/**
+ * 删一块板，并把它**独占**的边界点一起带走。孤儿判定问 `pointStillReferenced`
+ * （与 `wallDelete` / `columnDelete` 同一份产地）：板的角点常常就是墙端点。
+ * 被删点的顺序跟着 `boundaryPointIds` 的环序走 —— 那是真源里已有的顺序，
+ * 不必再按 id 重排（重排是第二套口径，且 `remove` 的顺序只影响 `affected` 的迭代序）。
+ */
+export function slabDelete(input: { slabId: EntityId }): Command {
+  return {
+    type: 'slab.delete',
+    build(doc: Document) {
+      const slab = requireSlab(doc, input.slabId);
+      const remove: EntityId[] = [slab.id];
+      const except = new Set<EntityId>([slab.id]);
+      for (const pointId of slab.boundaryPointIds) {
+        if (pointStillReferenced(doc, pointId, except)) continue;
+        // 引用早就悬空（点不在文档里）时跳过：`applyPatch` 对不存在的 remove id 是**抛**的，
+        // 而"坏数据必须还能删"—— 一块角点已经丢了的板，绝不能因为删不掉而把文档锁死。
+        if (!doc.get(pointId)) continue;
+        remove.push(pointId);
+      }
+      return { upsert: [], remove };
     },
   };
 }

@@ -4,6 +4,7 @@ import type { Command } from '../model/command';
 import type { Document } from '../model/document';
 import type { StoreyEntity } from '../model/entity';
 import { requireStorey } from '../model/read';
+import { dependentsOf } from '../geom/topology';
 
 export interface StoreyCreateInput {
   projectId: EntityId;
@@ -73,6 +74,65 @@ export function storeySetElevation(input: { storeyId: EntityId; elevationMm: num
       // 能当 M1.7 的 3D 唯一写路径：拖动整层 = 改一个整数，不碰任何构件几何。
       assertNoVerticalOverlap(doc, { ...storey, elevationMm });
       return { upsert: [{ ...storey, elevationMm }], remove: [] };
+    },
+  };
+}
+
+/**
+ * 删一层 = 连它的全部构件一起带走。三条口径：
+ *
+ * ① **级联不自己数，问 `dependentsOf`。** 楼层的下游（墙 / 洞口 / 柱 / 板）已经在
+ *    `geom/topology.ts` 里有一份，且那份的返回顺序写进了注释。这里再数一遍就是第二个产地，
+ *    将来多一类构件（计划 4 的家具？）漂掉的必然是本函数这一遍。点不在这张表里
+ *    （`dependentsOf` 的 storey 分支只列构件），所以点按 `storeyId` 单独收 —— 那也不是
+ *    复述引用规则，点是**属于**这层的，不是被这层引用的。
+ * ② **删完不许留悬空引用，靠闭合性检查而不是靠"上面那条规则肯定全了"。**
+ *    真源不校验引用完整性（`Document` 只管整数毫米与 id 形状），所以"别层的墙指着本层的点"
+ *    这种文档是可能被读盘或手搓造出来的。逐条问 `dependentsOf`：被删的每个 id，它的下游
+ *    必须也在删除集里，否则抛。这条检查顺带是 ① 那份表写错时的哨兵。
+ * ③ **最后一层不许删。** 零层项目在数据上没有毛病，但 `fitStorey` / `buildDrawList` 走的
+ *    `aabbOfPoints([])` 是**抛**的（计划 2 立的口径），于是"删掉最后一层"会让屏幕进入一个
+ *    画不出任何东西、且每次重绘都抛的状态。与其让 UI 兜，不如让真源不产这种状态。
+ *    代价：删错了不能靠"删空再重建"回到起点，得先 `storeyCreate` 一层再删旧的。
+ *
+ * 撤销：`invertPatch` 按前像逐条重插，所以一次 Ctrl+Z 把整层（含构件与点）原样还回来 ——
+ * 不需要"批事务"，因为这一条命令的补丁本来就是一整块。
+ */
+export function storeyDelete(input: { storeyId: EntityId }): Command {
+  return {
+    type: 'storey.delete',
+    build(doc: Document) {
+      const storey = requireStorey(doc, input.storeyId);
+      const hasSibling = doc
+        .byKind('storey')
+        .some((s) => s.projectId === storey.projectId && s.id !== storey.id);
+      if (!hasSibling) {
+        throw new RangeError(
+          `楼层 ${storey.id} 是项目 ${storey.projectId} 的最后一层：S1 不许出现零层项目`,
+        );
+      }
+      const remove: EntityId[] = [storey.id];
+      const removal = new Set<EntityId>([storey.id]);
+      for (const id of dependentsOf(doc, storey.id)) {
+        removal.add(id);
+        remove.push(id);
+      }
+      for (const point of doc.byKind('point')) {
+        if (point.storeyId !== storey.id) continue;
+        removal.add(point.id);
+        remove.push(point.id);
+      }
+      for (const id of remove) {
+        for (const dependentId of dependentsOf(doc, id)) {
+          if (removal.has(dependentId)) continue;
+          const dependent = doc.get(dependentId);
+          throw new RangeError(
+            `删除楼层 ${storey.id} 会留下悬空引用：${dependentId}` +
+              `（${dependent?.kind ?? '未知'}）引用着本层的东西，但它不在本层，删不掉`,
+          );
+        }
+      }
+      return { upsert: [], remove };
     },
   };
 }
