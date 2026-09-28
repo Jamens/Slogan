@@ -19,6 +19,14 @@ import {
 } from './viewport';
 
 export type DrawLayer = 'structure' | 'opening' | 'annotation';
+
+/**
+ * 绘制顺序 = 指令数组的顺序 = 层序。数组下标越大越靠上（后画的盖住先画的），
+ * 命中测试的取舍按它排（见 pick.ts 的 R3）—— 所以它是层序的唯一真源，
+ * 不是给人看的注释：加一层必须同时改 buildDrawList 的产出顺序，否则层序压倒距离就是空话。
+ */
+export const DRAW_LAYERS: readonly DrawLayer[] = ['structure', 'opening', 'annotation'];
+
 export type LineType = 'solid' | 'dashed' | 'dash-dot';
 
 export interface Pen {
