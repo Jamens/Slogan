@@ -46,7 +46,7 @@
 | `packages/scene-2d/src/editing.ts` | 工具态与画墙草稿：`Tool`、`draftAtPress`/`moveDraft`/`draftRefs`/`legalWallCreate`/`draftCommand`、`newWallDefaults`、`planDelete`/`pruneSelection`、`lastCreatedWall`、`wallProbe`（六道筛）。**T7 只改注释**：`derivesCleanly` 那条从"唯一防线"改成"第二道保险"（`wallCreate` 的 `build` 已复核，两侧同判），代码不动 | T6 |
 | `packages/scene-2d/test/editing.test.ts` | 编辑判据 30 条（含 1 条属性）：草稿三态、删除四色出口、`unsupported`、探针六筛与自洽。**T7 改**其中「⑥ 的前提：命令层放行、派生层抛」那条 ⇒ 改名并断言**两层同判**，**30 条不变** | T6 |
 | `packages/scene-2d/src/handles.ts` | 拖拽的屏幕侧全部纯函数：`HANDLE_COLOR`/`PREVIEW_COLOR`/`PIXEL_CHANNEL_TOL`/`HANDLE_RADIUS_PX`、`dragHandlesOf`、`pickHandle`、`legalDrop`（试跑 core 的 `build` 当合法性预言）、`dragProbe`、`pointSnapshot`。**T5 的 `moveTargetOf` 三件套 T6 迁往 `snapping.ts`**；`DragHandle` 补 `anchorMm`；`dragProbe` 的落点改吃 `dropTargetOf`，并新增出口 `handleDropTarget`。**T7 只改注释**：那句"`legalDrop` 试跑 `build`，不跑 `deriveStoreyGeometry`"在 T7 之后是错的 ⇒ 换成"core 的三条改几何命令已在 `build` 末尾复核派生，`legalDrop` 与真源同判" | T5 |
-| `packages/scene-2d/test/handles.test.ts` | 12 条：把手只给选中的墙、顺序与插入序无关、并列按 key、NaN、`legalDrop` 三条（含"坏的是邻墙"）、探针四性质、快照键集合、三种颜色互相分得开。**T6 +7 条 ⇒ 19 条**（合成把手补 `anchorMm`；配色那条从三色列成四色；`moveTargetOf` 那句换成恒等式） | T5 |
+| `packages/scene-2d/test/handles.test.ts` | **13 条**（实测；正文原写 12 条，多出来的那条是执行中撞出来的：`探针的落点像素必须在画布内、且那一发派生得出` ⇒ 同时钉住 `insideCanvas` 与 `derivesAfterMove` 两道新筛）：把手只给选中的墙、顺序与插入序无关、并列按 key、NaN、`legalDrop` 三条（含"坏的是邻墙"）、探针四性质、快照键集合、三种颜色互相分得开。**T6 +7 条 ⇒ 20 条**（合成把手补 `anchorMm`；配色那条从三色列成四色；`moveTargetOf` 那句换成恒等式） | T5 |
 | `packages/core/test/commands-drag.test.ts` | 7 条：柱跟走（对象同一性）/ 重影柱抛错 / 同一句文案的第二个产地 / 跨层正对照 / 原地拖不抛 / `end:'start'` 角色反转两条 | T5 |
 | `packages/core/src/geom/topology.ts` | 加 `assertNoGhostColumn(doc, storeyId, at, exceptPointId?)` —— 判据从 `columnCreate` 里搬出来，第二个产地是拖动落点复核。**T7 加** `pointStillReferenced(doc, pointId, exceptIds)`：孤儿点判定的唯一产地（墙两端 / 柱落点 / 板边界三类都查），`wallDelete` 那份文件私有 `stillReferenced` 删掉搬上来，`columnDelete` / `slabDelete` 共用 | T5 |
 | `packages/core/src/model/command.ts` | **T7**：`CommandType` 11 → 16（`storey.delete` / `wall.setMaterial` / `wall.setLoadBearing` / `column.delete` / `slab.delete`）。`Command` 接口不动 | T7 |
@@ -56,7 +56,7 @@
 | `packages/core/test/{derive-guard,commands-attributes,commands-delete}.test.ts` | **T7 新增 9 / 12 / 12 条**：复核的正反两组、属性命令的补丁形状与撤销栈、三条删除命令的级联与孤儿点。core 计数 21 文件 / 276 条 ⇒ **24 / 309** | T7 |
 | `packages/core/test/joint.test.ts` | 派生层四道守卫（同向重叠 / 翻面 / 直通异厚 / star）的哨兵。**T7 改**：五条用例的造图从"走命令"换成 `handBuild(...)` 手工贴实体（命令层 T7 起会先挡），**18 条不变** | T2 |
 | `apps/desktop/electron.vite.config.ts` | renderer 侧补 `@dajia/core` + `@dajia/scene-2d` 的 alias（scene-2d 源码里 import 的是裸说明符） | T3 |
-| `apps/desktop/src/renderer/src/PlanCanvas.tsx` | 一块 canvas：量尺寸 → `fitStorey` → `buildDrawList` → 刷；并挂 `window.__dajiaDebug`。**T4 起**：选中进绘制、`onPointerDown` 走 `pickOne`、`opsRef` 让钩子读刷上屏那份、`DebugReport` 补 `selectedIds`/`selectedPx`/`pick`/`selectedAfterBlank`。**T5 起**：`paintHandles` + `paintPreview` 两个专用画家、window 级 `pointermove/up/cancel` 状态机、`Ctrl+Z`/`Ctrl+Shift+Z`、`DebugReport` 再补 12 个字段（`revision`/`depth`/`canUndo`/`canRedo`/`lastError`/`handlePx`/`previewPx`/`previewNearCursorPx`/`points`/`edit`/`lastDrop`/`lastKeyEvent`）。**T6 起**：`paintSnapMarker` 第四色画家 + 第 6 个像素桶、模式分支（`W` 进拉墙 / `Escape` 两级退场 / `Delete`+`Backspace` 删除）、拖拽落点改走 `handleDropTarget`、`DebugReport` 再补 9 个字段（`tool`/`draft`/`snapMarkPx`/`lastCreate`/`deletedIds`/`unsupportedIds`/`selectionAfterDelete`/`lastHotkey`/`draw`） | T3 |
+| `apps/desktop/src/renderer/src/PlanCanvas.tsx` | 一块 canvas：量尺寸 → `fitStorey` → `buildDrawList` → 刷；并挂 `window.__dajiaDebug`。**T4 起**：选中进绘制、`onPointerDown` 走 `pickOne`、`opsRef` 让钩子读刷上屏那份、`DebugReport` 补 `selectedIds`/`selectedPx`/`pick`/`selectedAfterBlank`。**T5 起**：`paintHandles` + `paintPreview` 两个专用画家、window 级 `pointermove/up/cancel` 状态机、`Ctrl+Z`/`Ctrl+Shift+Z`、`DebugReport` 再补 **14** 个字段（实测；正文原写 12 个，补竞态时加了 `dragTargetMm`/`dragCursorPx`：`revision`/`depth`/`canUndo`/`canRedo`/`lastError`/`handlePx`/`previewPx`/`previewNearCursorPx`/`points`/`edit`/`dragTargetMm`/`dragCursorPx`/`lastDrop`/`lastKeyEvent`；连同 T4 之前的 10 个 ⇒ 共 24 个读数）。**T6 起**：`paintSnapMarker` 第四色画家 + 第 6 个像素桶、模式分支（`W` 进拉墙 / `Escape` 两级退场 / `Delete`+`Backspace` 删除）、拖拽落点改走 `handleDropTarget`、`DebugReport` 再补 9 个字段（`tool`/`draft`/`snapMarkPx`/`lastCreate`/`deletedIds`/`unsupportedIds`/`selectionAfterDelete`/`lastHotkey`/`draw`） | T3 |
 | `apps/desktop/src/renderer/src/stores/editorStore.ts` | zustand：`TransactionLog`、当前层、视口。**T5 起**：`revision` 扳机（只在成功后 +1）、`lastError`、`drag` 态、`dispatch` 的 `catch`。**T6 起**：`tool` / `draft` 两格 + `setTool` / `setDraft` / `dispatchBatch`。**选中集不在这儿** —— spec 明令 selection 不进真源/撤销栈 | T3 |
 | `apps/desktop/src/renderer/src/stores/selectionStore.ts` | zustand：`ids: ReadonlySet<string>` + `select`/`toggle`/`clear`，每次给新 Set。**T6 加** `retain`（删除后给选中剪枝）。**没有 node 测试**（`apps/` 不在 vitest include 里，也没 jsdom），正确性由 `--pick-shot` 在真窗口钉 | T4 |
 | `apps/desktop/src/main/index.ts` | 加 `--shot <path>`：`executeJavaScript('window.__dajiaDebug()')` → 写 JSON → `app.exit(code)`。**T4 加** `--pick-shot`：`sendInputEvent` 点探针给的两个点 + 条件轮询。**T5 加** `--edit-shot`：`pressPx`/`movePx`/`releasePx`/`keyCombo` 八步拖拽 + 撤销重做，每步读数分别留档；`argPath(flag)` 让开关与路径成对。**T6 加** `--draw-shot`：`runDrawShot` 十六步（进模式 → 按下吸端点 → 移动 → Escape → 原地松手被拒 → 真建一面墙 → 拉墙模式删除沉默 → Escape 退模式 → 点新墙 → Backspace 删 → 撤销 → 重做 → 终态探针回基线逐字相等），加 `DrawReportShape` | T3 |
@@ -2545,9 +2545,9 @@ git commit -m "feat: 平面图点选与选中 store，--pick-shot 用合成指�
 - Create: `packages/core/test/commands-drag.test.ts`（7 条：重影柱与跟走 5 条 + `end:'start'` 角色反转 2 条）
 - Create: `packages/scene-2d/src/handles.ts`（把手、落点换算、合法性预言、拖拽探针、端点快照、编辑器配色）
 - Modify: `packages/scene-2d/src/index.ts`（`export * from './handles';`）
-- Create: `packages/scene-2d/test/handles.test.ts`（12 条，全是 node 里跑的纯函数）
+- Create: `packages/scene-2d/test/handles.test.ts`（**13 条**实测，正文原写 12；全是 node 里跑的纯函数）
 - Modify: `apps/desktop/src/renderer/src/stores/editorStore.ts`（`revision` / `lastError` / `drag` + `dispatch`/`undo`/`redo` 三个动作）
-- Modify: `apps/desktop/src/renderer/src/PlanCanvas.tsx`（整体替换：指针状态机、把手与临时线的绘制、`DebugReport` 补 12 个字段、快捷键）
+- Modify: `apps/desktop/src/renderer/src/PlanCanvas.tsx`（整体替换：指针状态机、把手与临时线的绘制、`DebugReport` 补 **14** 个字段（实测，正文原写 12）、快捷键）
 - Modify: `apps/desktop/src/main/index.ts`（新增 `--edit-shot` 八步序列与四个发事件的小助手；`shotPathFromArgv()` 换成通用的 `argPath(flag)`；`runShot` 本体与六条基础判据一行不动）
 - Modify: `scripts/desktop-shot.mjs`（`--edit` 开关 + 十五条新判据 ⇒ 21 行 PASS）
 - Modify: `package.json`（根：`"edit-shot"`）
@@ -3598,7 +3598,7 @@ export const useEditor = create<EditorState>((set, get) => ({
 >
 > **`set` 里没有 `drag: null`**：松手时谁清 `drag` 谁负责（PlanCanvas 的 `onUp`），store 不在命令路径上偷偷改视图态 —— 否则"拖完临时线还在屏幕上"这种残留只能靠约定来防。
 
-`apps/desktop/src/renderer/src/PlanCanvas.tsx` 整体替换（T4 那份的骨架保留：`opsRef`、`countPixels`、`whenLoaded` 那套绘制顺序注释都不动，加把手画家、拖拽状态机、撤销快捷键，`DebugReport` 补 12 个字段）：
+`apps/desktop/src/renderer/src/PlanCanvas.tsx` 整体替换（T4 那份的骨架保留：`opsRef`、`countPixels`、`whenLoaded` 那套绘制顺序注释都不动，加把手画家、拖拽状态机、撤销快捷键，`DebugReport` 补 **14** 个字段 —— 实测；下面那份代码正文写 12 个，竞态修复补 `dragTargetMm`/`dragCursorPx` 两个）：
 
 ```tsx
 import { useEffect, useRef } from 'react';
@@ -3663,7 +3663,7 @@ export interface DebugReport {
   selectedPx: number;
   pick: PickProbe | null;
   selectedAfterBlank: number;
-  // ↓ T5 的 12 个
+  // ↓ T5 的 14 个
   revision: number;
   depth: number;
   canUndo: boolean;
@@ -4677,7 +4677,7 @@ Expected: 四个 exit=0。`shot` **六行**、`pick-shot` **十行**都照旧全
 ```bash
 pnpm verify > /tmp/t5-verify.log 2>&1; echo exit=$?
 ```
-Expected: exit=0，`Test Files 28 passed`（28）、`Tests 337 passed`（**318 + 19**：T4 收尾时是 26 个文件 / 318 条，本任务加 `commands-drag.test.ts` 7 条与 `handles.test.ts` 12 条，各一个新文件）。同时**老用例一条都不许改**：Step 1 把重影柱的判据从 `columnCreate` 搬进 `assertNoGhostColumn`，`commands-column-slab.test.ts` 里那条 `/已有柱/` 是部分匹配，搬动之后它必须原样还绿 —— 真需要动那句断言，说明搬运改了文案，那是行为变更，停下来核对而不是顺手放宽。
+Expected: exit=0，实测两行 `Test Files  28 passed (28)` / `Tests  338 passed (338)`（vitest 5 的排版是两个空格 + 括号计数，别按"Tests 338 passed"子串去 grep）。**338 是实测；正文原算式 `318 + 19 = 337` 差 1 条**，差源是 `handles.test.ts` 实际 13 条而非 12 条 ⇒ 正确算式 **318 + 20**：T4 收尾时是 26 个文件 / 318 条，本任务加 `commands-drag.test.ts` 7 条与 `handles.test.ts` 13 条，各一个新文件。同时**老用例一条都不许改**：Step 1 把重影柱的判据从 `columnCreate` 搬进 `assertNoGhostColumn`，`commands-column-slab.test.ts` 里那条 `/已有柱/` 是部分匹配，搬动之后它必须原样还绿 —— 真需要动那句断言，说明搬运改了文案，那是行为变更，停下来核对而不是顺手放宽。
 
 ```bash
 git status --porcelain
@@ -4689,6 +4689,26 @@ git commit -m "feat: 拖端点改墙：屏幕像素落到真源，撤销栈全�
 ```
 第一条提交信息带上：core 的 7 条 + scene-2d 的 12 条、Step 4 逐条改坏的关键红字、`Tests 19 passed` 那一行。第二条带上：`--edit-shot` 的二十一行 PASS、上面那三行实测读数、R1–R7 各自红在哪一处。**`git status --porcelain` 在两次提交之后应当只剩计划文档一类**，出现别的文件就是漏 add 或多 add 了。
 
+
+---
+
+#### 执行回填（Task 5，2026-09-28/29 实测；commits `39a7824` + `6dc9efe`）
+
+- **账**：`pnpm typecheck` exit=0；`pnpm verify` exit=0 **`Test Files  28 passed (28)` / `Tests  338 passed (338)`**（正文算式 337 差 1，差源见上）。`pnpm shot` 6 行（画布 1427×865）、`pnpm pick-shot` **11 行**、`pnpm edit-shot` **21 行全 PASS**（正文那张十五判据 + 基础六条，数值与预言一致）。修复后**连续 13 次绿**。RED/GREEN 逐字留档：seat 那次 RED 是 `packages/scene-2d/test/handles.test.ts (12 tests | 12 failed)`，全红在 `TypeError: dragHandlesOf is not a function`（与 T1 同一条通路，不是链接期错误）；随后 GREEN `Tests 19 passed (19)` = 7 + 12 —— **与正文预言逐字相同**。第 13 条是控制器修危险 1 与 4 时补的（见下），于是全量 337 → 338。
+- **两个提交并成一个**（评审 m5，裁决为记账不改史）：正文 Step 7 要 `git add packages/core packages/scene-2d` 与 `git add apps/desktop scripts package.json` 两发；实施时 core/scene-2d/desktop 三层在同一次改动里互相咬合（`assertNoGhostColumn` 的第二个读者、`DebugReport` 的两格新读数），拆开会让第一发单独不可编。 fix round 是独立第二发 `6dc9efe`。**下一任务的口径**：并发的判据是"这一发单独 checkout 能不能 typecheck"，不是"正文列了几条 `git add`"。
+- **本节正文一条都没预言到的五个危险**（**T6 抄 `--edit-shot` 之前先读这五条**，它们全是复制即中的坑）：
+  1. **`sendInputEvent` 静默夹坐标**。落点算出 `to=(253,-18)`（画布高 865、y 为负）时 Electron 不报错、不裁剪上报，只把事件夹进边界 ⇒ 那发"压扁拖"从未发生，而闸门把**没测到**报成**没被拒**（假阴，最坏那种）。修法：`dragProbe` 用 `insideCanvas(fromPx)` / `insideCanvas(toPx)` 筛掉越界候选。
+  2. **应用菜单栏占约 26px 客户端高度**，`Menu.setApplicationMenu(null)` 摘晚了就当场触发一次 resize：正文原先摘在 `keyCombo` 里 ⇒ 同一串输入的前半与后半坐标系不同（实测同一点从 `(253,74)` 变 `(332,75)`）。修法：只在 shot 模式、且在 `createWindow` **之前**摘。
+  3. **`fit()` 读的 `log.document` 是可变实例上的活 getter**：拖拽改过内容之后再触发一发 resize，`fitStorey` 按**当时**的文档边界重缩放，先前算定的像素前提全体作废。真正的治法是第 2 条 + `waitForLayoutSettled`（`{wPx,hPx}` 连读三次一致才算稳，否则抛）。**订正一处我自己的假因果**：评审 m3 建议"把 `log` 从 fit effect 的依赖里去掉"，`log` 引用永不变 ⇒ 那次改动**今天是零行为差**，它治的是"以后有人替换 `log` 实例"这一档 —— 该档**挂 Task 8**（换楼层/载入文档会真换实例）。同一句假因果还写进了 `39a7824` 的提交正文（"fitStorey 不再跟着文档 revision 重跑（每拖一下整张图自己重缩放）"）：**不 amend**，以本条为准 —— 核过改前依赖是 `[log, storeyId, setViewport]`，`revision` 从来不在其中，"每拖一下重缩放"那件事从来没有发生过。
+  4. **star 接头让 renderer 白屏**。命令层两道守卫全放行，`deriveStoreyGeometry` 抛 `RangeError: 接头 … star，S1 不支持` ⇒ `__dajiaDebug` 没了，之后每一条判据都失败（症状是"超时"，根因在上一层）。修法：`derivesAfterMove`（`applyPatch` → `deriveStoreyGeometry` 试算，抛错即弃该候选）。**踩过的坑**：第一版把派生检查塞进 `legalDrop`，把 `wallsAtJunction()` 本来就是 star 的那条既有夹具打红了 ⇒ 拆成两个各自有主的谓词。**残留**：这一档只挡了**自动**通道，真人手拖到 star 落点仍会白屏 ⇒ **挂 Task 7**（`assertDerivesAfterApply` 落地后 `legalDrop` 与真源同判，自动收掉）。
+  5. **输入队列竞态（约 1/6 概率）**。`sendInputEvent` 只把事件塞进浏览器输入队列，`await` **不等它被处理**；而 `onUp` 读的是最后一发**已处理** `pointermove` 决定的 `drag.targetMm` ⇒ `movePx(to)` 之后立刻 `releasePx(to)` 是在赌队列不压。赌输的那一发**确实落了盘**（`depth 30→31`、`outcome:'ok'`、`previewPx=0`），只是落成了**按下那一像素**反算的毫米（实测 `(1106,4478)`），症状却报在下游的落点断言上。修法**不是重试**，是把等待挪到上游并让它可证伪：`DebugReport` 加 `dragTargetMm`/`dragCursorPx` 把"松手前 store 里的目标"变成可读量，`waitDragAt()` 在第 3 步等到逐字等于、第 4 步压扁等到**离开**落点、第 7 步按下后先等 `dragTargetMm !== null`（证明真起拖了，否则红话会说成"没给出 noop 诊断"）。同时第 2 步的"跟手"判据从**自指**（量 store 自报的光标，光标落后一帧也照样绿）改成**发送方判**（对照实发的 `midPx`）。四条新断言各自证伪过。**边界**：这治的是症状通路，不是队列本身 —— 13 次绿不等于概率问题归零。
+- **Step 4 的 12 条 ⇒ 实测 13 条**：多出来的那条是 `探针的落点像素必须在画布内、且那一发派生得出`，钉的正是上面第 1、4 两条危险的筛 —— 它不在 seat 那发 `19 passed` 里，是控制器补危险时后加的（⇒ 全量 337 → 338 的唯一差源）。
+- **Step 5 的改坏凭据 R1–R7**：七条全红、无一条"改坏了还绿"（凭据 `t5-r1-r7.md`）。两处与预言不符，按实测记：
+  - **R3 红得比正文早一处** —— 摘掉 `drag` 依赖后，第 1 步的 `waitUntil` 谓词（含 `previewPx > 20`）就先接住了，不必走到第 2 步。同一处像素缺失，两条预言合成一条 ⇒ 记录差异，**不改判据**。
+  - **凭据抄写自身错过一次**：驱动挑红字用 `/没等到|…|Error:/` 取第一条命中，而 `RangeError:` 里含 `Error:` ⇒ R7 那一格抄成了第 4 步自己打的 stdout 诊断。单独重跑确认闸门确实红在第 5 步那句，**R7 判定不变**；R1–R6 逐条核过形态，无同类错位。**给 T6 的口径**：改坏清单的红字要取**最后一条** `--shot 失败：Error:` 那一行，或直接把全量输出留盘再对。
+- **交接给 Task 6 的四条硬约束**：① 本节 Step 5 那份 `PlanCanvas` 代码 listing 的 `DebugReport` 字段块**比仓库少两格**（`dragTargetMm`/`dragCursorPx`，竞态修复补的），复制时以仓库为准 ⇒ T6 的 9 个新字段接在 **24** 之后。② `dispatch` 之前**不许**加 `legalDrop` 预检（Step 5 末那条纪律原样成立，R5 就是它的凭据），但松手侧现在读的是 store 里的 `drag` —— 吸附只能加在 `onMove`，第 3/4/7 步那三处 `waitDragAt` 一字不改地留着。③ 第 2 步的 `previewNearCursorPx > 0` 不许为"让吸附点上屏"而放宽（预览线恒画到裸光标，吸附点另用第四色）。④ `handles.test.ts` 第 13 条里 `not.toBeNull()` 的牙齿是**概率性**的（评审 m8），T6 复制该写法时不许放宽、也不许当成恒绿凭据。
+- **探针可达形状比正文假设窄**：调试期做过一次"强制形状"实验（`dragProbe` 里加 `if (fromPx.y < 200) continue;`），结果不是拿到预期的内侧把手，而是红在第 0 步「dragProbe 没给靶子」⇒ 样例房里可被筛出的把手形状集合有限，那次偶发竞态的**具体形状此后未被复现**，上面的 1/6 是修前观测频率，不是修后回归频率。
+- 真窗口三闸门在 `6dc9efe` 上的复跑由**控制位独占**执行（评审 seat 不跑闸门）⇒ scoped re-review 的"无回归"覆盖 verify / 静态 / 范围，**不**覆盖真窗口实测。
 
 ---
 
@@ -4710,7 +4730,7 @@ git commit -m "feat: 拖端点改墙：屏幕像素落到真源，撤销栈全�
 - Modify: `apps/desktop/src/main/index.ts`（`--draw-shot`：`runDrawShot` 十六步 + `DrawReportShape`）
 - Modify: `scripts/desktop-shot.mjs`（`modeOf()` + `wantDraw` + 判据段）
 - Modify: `package.json`（根：`"draw-shot"`）
-- **core 一行都不改**：`wallCreate` 的 `{ pointId }` 复用、`wallDelete` 的级联与孤儿点判定、`openingDelete` 全在计划 1/2 落好了。本任务只是把它们接到屏幕上，所以**没有任何 core 测试要加**（`337 → 405` 全部落在 scene-2d：28 + 30 + 3 + 7）。
+- **core 一行都不改**：`wallCreate` 的 `{ pointId }` 复用、`wallDelete` 的级联与孤儿点判定、`openingDelete` 全在计划 1/2 落好了。本任务只是把它们接到屏幕上，所以**没有任何 core 测试要加**（`338 → 406` 全部落在 scene-2d：28 + 30 + 3 + 7。基数原写 337，T5 实测 338 ⇒ 终点跟着挪一格）。
 
 **先落八条裁决。** 末尾边界表给 Task 6 留的两个接缝（吸附插入点、撤销掉正被选中的构件）在这里判掉，判据写进代码与测试，不许留在纸面。
 
@@ -7349,7 +7369,7 @@ function intPx(p: Px): Px {
 > ⑦ 按下那一发**不吃角度档**：`draftAtPress` 调 `dropTargetOf` 时锚点恒给 `null`，于是 15°/正交两档在按下时物理上不存在。E22（误把终点锚传进去）红「起点在空白处按下：什么都不吸，也不吃角度档」；E23（把起点像素存成吸附点的像素）红「按下处的像素与吸附点的像素是两个值」—— 后者是第四色标记能画在"按下处"、而落点吸到"那枚点"的前提（S8 在屏幕侧的镜像）。
 
 Run: `npx vitest run packages/scene-2d/test/editing.test.ts > /tmp/t6s4-green.log 2>&1; echo exit=$?`
-Expected: exit=0，**`Tests 30 passed (30)`**。同一条命令再跑一次（两次 `30 passed` 逐字相同）—— 这一份测试里有探针与 uuidv7 的交叉，**跨进程确定性**在它身上不是修辞：本步开头第 ③ 条那些合成夹具就是为了这句才搭的。跑全量时 core 侧一条不动（本任务 core 零改动），scene-2d 侧**只加 68 条**：snapping 28（Step 1）+ editing 30（本步）+ pick 3（Step 3）+ handles 7（Step 5），计划总数 **337 → 405**。
+Expected: exit=0，**`Tests 30 passed (30)`**。同一条命令再跑一次（两次 `30 passed` 逐字相同）—— 这一份测试里有探针与 uuidv7 的交叉，**跨进程确定性**在它身上不是修辞：本步开头第 ③ 条那些合成夹具就是为了这句才搭的。跑全量时 core 侧一条不动（本任务 core 零改动），scene-2d 侧**只加 68 条**：snapping 28（Step 1）+ editing 30（本步）+ pick 3（Step 3）+ handles 7（Step 5），计划总数 **338 → 406**（原写 `337 → 405`，基数按 T5 实测挪一格）。
 
 ---
 
@@ -8774,7 +8794,7 @@ export interface DebugReport {
   selectedPx: number;
   pick: PickProbe | null;
   selectedAfterBlank: number;
-  // ↓ T5 的 12 个
+  // ↓ T5 的 14 个
   revision: number;
   depth: number;
   canUndo: boolean;
@@ -13981,7 +14001,9 @@ Task 8 已展开（正文见上文 Task 8：九条裁决 + 八步 + 九条变异
 | T2 绘制指令表与样例两层房 | `2a6879d` | exit=0，**25 / 303**（+10 条） | 改坏 1–8 逐条红、9 必须绿（实测全绿）；第 6 条按正文位置挪会先撞 `penFor` TDZ，挪到 ① 之前才是单点红；第 7 条红在标签越界的边界断言（`expected -43.26923… >= 0`）而不是预言的张幅断言 | Spec ✅ / Approved；0 Critical、0 Important、5 Minor（三条转 T3 真消费者、两条转终审） |
 | T3 真窗口出像素（`--shot`） | `b7c0455` + `6ddb090` | exit=0，**25 / 303 不变**（本格零新增用例，刻意） | `pnpm shot` 六行 PASS + `{"ops":31,"layers":{"structure":20,"opening":10,"annotation":1},"nonBlankPx":30633,"wPx":1427,"hPx":839}`；`hPx` 两次实测 839 / **865** ⇒ 绝对像素不是常数；负测喂空 ⇒ `nonBlankPx=0` / exit=1；隐藏窗口回读 `nonBlankPx=31710`；坏参数 fail-fast exit=2 / 267ms | 首轮 Spec ✅ / **Needs fixes**（1 Important = 计划正文自带的 `shell:true` 拆路径缺陷）；fix round 1 修 I1+m2+m3+m4，**scoped re-review：四条全 addressed、0 回归、Ready to close** |
 | T4 命中与点选（`--pick-shot`） | `c025668` + `5756c12` + `fa05e41` | exit=0，**26 / 318**（+15 条，含 2 条属性） | RED 15 条全红在 `TypeError: pickAt is not a function`；`pnpm pick-shot` **11 行 PASS**、连测 **7** 轮（提交正文的「6 轮」少算一轮）；**`index.html` 无 CSS ⇒ UA `body{margin:8px}` 正好等于 `PICK_TOL_PX`（实测 `rect=[8,8]`）** —— 从此 `CanvasPx` / `ViewportPx` 两套空间分开命名、`canvasOriginPx` 实测、`clickCanvasPx` 加实测原点、闸门有一行断言原点 `(0,0)`（24px margin 的 RED 只让那一行红）；反向哨兵从"红成 main 的 throw"改成"红成脚本的 FAIL 行" | 首轮 Spec ✅ / **Needs fixes**（I1 前提由 CSS 造成而非断言、I2 十行里四行不可能红）；fix round 1（4 文件 +75/−25）修 I1+I2+两行 Minor，**scoped re-review：四条全 addressed、0 回归、Ready to close**（`--shot` 那六条逐字节未变）。**事故：该 review seat 违反只读约定，reflog 19:51:09 `checkout: moving from plan3-scene-2d-editor to main`；无提交落进 main，代价是控制位当时未提交的计划编辑落到了 main 那一份上** |
+| T5 拖端点改墙（`--edit-shot`） | `39a7824` + `6dc9efe` | exit=0，**28 / 338**（正文预言 337；差源 = `handles.test.ts` 实测 13 条而非 12，第 13 条是控制器补危险时后加的。seat 那发 GREEN 逐字 `Tests 19 passed (19)` = 7+12，与预言相同） | RED 12 条全红在 `TypeError: dragHandlesOf is not a function`；`shot` 6 行 / `pick-shot` 11 行 / **`edit-shot` 21 行全 PASS**，修复后**连续 13 次绿**；R1–R7 闸门级改坏**七条全红**（R3 比预言早一处红）；**五个正文未预言的危险**：① `sendInputEvent` 静默夹画布外坐标（假阴，`insideCanvas` 筛）② 菜单栏占约 26px、摘晚了当场触发 resize ③ `fit()` 读的 `log.document` 是活 getter × resize ⇒ 像素前提全体作废 ④ star 接头令 `deriveStoreyGeometry` 抛 ⇒ **renderer 白屏**（`derivesAfterMove` 筛；真人手动那一档挂 T7）⑤ **输入队列竞态**（约 1/6）：`await sendInputEvent` 不等事件被处理，`onUp` 读的是最后一发**已处理**的 `move` ⇒ 用 `dragTargetMm`/`dragCursorPx` + `waitDragAt()` 做**条件等待**（不是重试），并把第 2 步"跟手"从自指改成发送方判 | 首轮 Spec ✅ / **Needs fixes**（I1 压扁那发缺 `movePx`、I2 R1–R7 从未跑；m3 是我写进注释的假因果、m6 是报告里两个不存在的符号名）；fix round 1（2 文件 +98/−13）修 I1+I2+m3+m4，**scoped re-review：Ready to close，无需第 2 轮代码返工**。**事故：implementer seat 在第 150 轮天花板中止、零提交 ⇒ 控制位接管落地（独立性只剩评审 seat）**；**凭据抄写缺陷：驱动取第一条 `Error:` 命中，而 `RangeError:` 含 `Error:` ⇒ R7 那格抄成 stdout 诊断，已单独重跑订正** |
 
 - T3 的六个实测数（本节原先要的就是这个）：`ops=31`、`structure=20`、`opening=10`、`annotation=1`、`nonBlankPx=30633`（可见那版）/ `31710`（隐藏那版）、`wPx=1427`、`hPx=839`（另一次 865）。
 - 挂账中、当前没人踩的：**T4 收口时一条都没踩到**，所以照旧挂着 —— T2 的三条（property 半自反、`fitStorey` 边界圈含 annotation、`fitStorey`+`buildDrawList` 双算派生）与 T1 的 m3/m4（`mmToPx`/`pxToMm` 不拦非有限、`Viewport` 是裸结构接口），现在全部指向 **T5**（拖拽第一次把屏幕浮点喂回命令入口，非有限与手搓视口在这才可达）与 **T6**；T4 自己新挂的四条写在上面 T4 那节末尾（shuffle 属性的 `ownerId` 平手档 → 终审；`selectedAfterBlank` 与名字 → 下次真动 `DebugReport` 那一格；`probeTarget` 只扫 `polygon` → T5/T6 的闸门作者；`willReadFrequently` → 有实测数字再动）。
 - **闸门不在 `verify` 里**（`pnpm shot` / `pick-shot` / `edit-shot` / `draw-shot` 全是本地手动），CI 只跑 `verify` + desktop build。不许为了让 CI 绿把断言写成"跑不起来就跳过"。
+- **T5 收口后的挂账总账**（谁踩谁知道，别提前"顺手补"）：T1 的 m3/m4 与 T2 的三条**在 T5 一次都没被踩到**（拖拽把"屏幕浮点喂回命令入口"这条通路走通了，没有一条判据因非有限入参或手搓 `Viewport` 变红；**注意这不等于它们被挡住了** —— 量化只是 `Math.round`，NaN 进去还是 NaN，只是这条路上没人喂 NaN 进去），继续指向 **T6**；T4 的四条照旧（`probeTarget` 只扫 `polygon` ⇒ 三闸门那 6/11/21 行**结构上只覆盖墙轮廓**，读 PASS 时别读成三层都覆盖）。**T5 新增三条定向交接**：真人手拖到 star 落点仍白屏 → **T7**（`assertDerivesAfterApply` 之后 `legalDrop` 与真源同判）；"以后替换 `log` 实例要不要重算视口" → **T8**；`handles.test.ts` 第 13 条里 `not.toBeNull()` 的牙齿是概率性的 → **T6 复制该写法时不许放宽、也不许当恒绿凭据**。两提交并一（m5）与"改坏红字要取最后一条 `Error:`"这两条已经写在上面，属规则不属挂账。
