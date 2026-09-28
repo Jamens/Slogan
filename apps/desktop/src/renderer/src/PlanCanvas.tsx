@@ -7,6 +7,7 @@ import {
   fitStorey,
   HANDLE_COLOR,
   HANDLE_RADIUS_PX,
+  handleDropTarget,
   moveTargetOf,
   pickHandle,
   pickOne,
@@ -15,6 +16,8 @@ import {
   PREVIEW_COLOR,
   probeTarget,
   SELECTED,
+  EMPTY_SNAP_FIELD,
+  snapFieldOf,
   type DragHandle,
   type DragProbe,
   type DrawOp,
@@ -22,6 +25,7 @@ import {
   type Pen,
   type PickProbe,
   type Px,
+  type SnapField,
 } from '@dajia/scene-2d';
 import { useEditor } from './stores/editorStore';
 import { useSelection } from './stores/selectionStore';
@@ -290,7 +294,13 @@ export function PlanCanvas(): React.JSX.Element {
   const keySeqRef = useRef<number>(0);
   // "这次按下落在把手上"的同步副本：window 级监听器只注册一次、依赖里没有 drag，
   // 它判断"当前这串 move/up 属不属于一次拖"只能读 ref。屏幕上的那一半住 store（管重绘）。
+  // T6 起它同时表示"这串手势归我管"：把手拖与拉墙的按下都置 true，`onMove`/`onUp` 再按
+  // store 里是 `drag` 还是 `draft` 分岔 —— 两条路共用一个手势标志，因为一次按下只会走一条。
   const activeRef = useRef<boolean>(false);
+  // 吸附的场：paint effect 每次上屏时刷新，指针事件只读不建（`snapFieldOf` 要展开本层全部墙，
+  // 放在 `pointermove` 里就是每发一次整层遍历）。它必须是**刷上屏那一份**：场与屏幕不同步，
+  // 判据就会说"吸上了一个屏幕上根本不存在的东西"。
+  const fieldRef = useRef<SnapField>(EMPTY_SNAP_FIELD);
 
   const log = useEditor((s) => s.log);
   const storeyId = useEditor((s) => s.storeyId);
@@ -357,6 +367,8 @@ export function PlanCanvas(): React.JSX.Element {
     const ops = buildDrawList(log.document, storeyId, viewport, { ids });
     opsRef.current = ops;
     paint(ctx, ops);
+    // 场与指令表在同一趟里取：指针事件的靶子、吸附的候选，全都来自刚刷上屏那一份几何。
+    fieldRef.current = snapFieldOf(log.document, storeyId);
     const handles = dragHandlesOf(log.document, storeyId, { ids }, viewport);
     handlesRef.current = handles;
     paintHandles(ctx, handles);
@@ -411,7 +423,11 @@ export function PlanCanvas(): React.JSX.Element {
       const s = useEditor.getState();
       const current = s.drag;
       if (current === null) return;
-      setDrag({ ...current, cursorPx: px, targetMm: moveTargetOf(viewport, px) });
+      // S4 ②：中途走 `handleDropTarget` —— 锚点与被排除的原地都从**按下那一把**把手身上取，
+      // 与 `dragProbe` 里那一发是同一个函数、同一对入参，于是"探针给的毫米"与
+      // "屏幕上真会落下的毫米"仍然是同一个纯函数的同一个输出。
+      const drop = handleDropTarget(viewport, px, current.handle, fieldRef.current);
+      setDrag({ ...current, cursorPx: px, targetMm: drop.mm, drop });
     };
     const onUp = (): void => {
       if (!activeRef.current) return;
