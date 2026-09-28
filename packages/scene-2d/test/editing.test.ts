@@ -776,30 +776,33 @@ describe('新建回执与探针', () => {
     const base = pressAtOrigin(fd, storeyId);
     const defaults = newWallDefaults(log.document, storeyId);
     const wallsBefore = log.document.byKind('wall').length;
+    // 起点恒复用 (0,0) 那枚端点（`pressAtOrigin` 按在它上面），终点是草稿的 `end.mm`。
+    // 于是这一批候选上能生效的守卫只有真源那两条（手抄自 `commands/wall.ts` 的 `assertWallShape`）：
+    //   ① 两端点量化后重合 ⇒ 零长墙；② `thicknessMm >= lengthMm` ⇒ 轮廓自相交。
+    // 其余四道（墙厚/墙高为正、楼层存在、跨层复用点）在这份夹具上**结构性不可能**触发：
+    // 240 与 3000 是常量、`storeyId` 就是刚建的那层、`field` 只收本层的点。
+    // 期望值**必须**来自这张手写的表，不许再调一次 `wallCreate().build()` 现算 —— 那样
+    // `legalWallCreate`（它就是同一句的 try/catch 包装）与预言永远同生同灭，本条谁也抓不到：
+    // 摘掉 core 的 `assertWallShape`（真源不再拒零长墙）时，现算的 `ok` 与 `legal` 一起变成恒真，
+    // 这一行照样绿 —— 而"屏幕上的预言"与"真命令实际拦不拦"已经漂开了，正是本条标题点名的失效。
+    expect(defaults).toEqual({ thicknessMm: 240, heightMm: 3000 });
+    // 240 是**手抄的字面量**（不是从 `defaults` 读回来的）：默认墙厚改了，屏幕上"最短拉得出"
+    // 这条产品口径得跟着想清楚，红在这儿比漂在真源里便宜。上面那句 `toEqual` 是这一发的素材自证。
+    const expectLegal = (endMm: MoveTarget): boolean => {
+      const dx = endMm.x - base.start.mm.x;
+      const dy = endMm.y - base.start.mm.y;
+      return !(dx === 0 && dy === 0) && 240 < Math.hypot(dx, dy);
+    };
     fc.assert(
       fc.property(mmInt, mmInt, (x, y) => {
         const draft = moveDraft(log.document, base, sv, pxOf({ x, y }, sv), fd);
-        // 预言与真命令吃同一对入参：这里的 `ok` 就是 `legalWallCreate` 该给的答案
-        const refs = draftRefs(draft);
-        let ok = true;
-        try {
-          wallCreate({
-            storeyId,
-            start: refs.start,
-            end: refs.end,
-            thicknessMm: defaults.thicknessMm,
-            heightMm: defaults.heightMm,
-          }).build(log.document);
-        } catch {
-          ok = false;
-        }
-        expect(draft.legal).toBe(ok);
+        expect(draft.legal).toBe(expectLegal(draft.end.mm));
         const command = draftCommand(draft, defaults);
         if (command === null) {
-          expect(ok).toBe(false); // 只有 legal 为假才许给 null
+          expect(draft.legal).toBe(false); // 只有 legal 为假才许给 null
           return;
         }
-        expect(ok).toBe(true);
+        expect(draft.legal).toBe(true);
         const fresh = new TransactionLog(log.document);
         expect(() => fresh.dispatch(command)).not.toThrow();
         expect(fresh.document.byKind('wall').length).toBe(wallsBefore + 1);

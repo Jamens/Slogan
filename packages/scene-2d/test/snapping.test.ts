@@ -70,6 +70,61 @@ const reversed = (fd: SnapField): SnapField => ({
   axes: [...fd.axes].reverse(),
 });
 
+/**
+ * 量化留下的那一格：候选毫米是 `quantizeMm` 之后的整数，而真值在量化前每根坐标最多偏 0.5mm
+ * ⇒ 垂直距离最多 0.71mm。判据用它当容差，红的时候说的是"`mm` 没接吸附的答案"，不是"浮点差了一点"。
+ */
+const QUANT_SLACK_MM = 0.75;
+
+/**
+ * 「这一对毫米是不是**这一档的候选**」—— 只按档位的几何定义判，入参一律来自 `field` 那张表与锚点，
+ * **不调** `snapFromCursor` / `dropTargetOf`（拿结论证结论就是恒真）。
+ * 五档各判各的：端点档复用真源那枚点 ⇒ 坐标与表里那条逐字相同；中点档同理；垂足档必须在某条轴线
+ * **那一段**里；正交档**钉坐标**（某一根必须等于锚点那一根）；15° 档绕锚点**保距旋转**，
+ * 于是落点到某条 15° 射线的垂距与半径差都只剩量化那一格。
+ */
+function isCandidateForSnap(
+  fd: SnapField,
+  anchor: MoveTarget,
+  raw: MoveTarget,
+  snap: SnapResult,
+  mm: MoveTarget,
+): boolean {
+  switch (snap.kind) {
+    case 'endpoint': {
+      const hit = fd.points.find((p) => p.pointId === snap.pointId);
+      return hit?.kind === 'endpoint' && hit.mm.x === mm.x && hit.mm.y === mm.y;
+    }
+    case 'midpoint':
+      return fd.points.some((p) => p.kind === 'midpoint' && p.mm.x === mm.x && p.mm.y === mm.y);
+    case 'foot':
+      return fd.axes.some((a) => {
+        const dx = mm.x - a.startMm.x;
+        const dy = mm.y - a.startMm.y;
+        const along = dx * a.dir.x + dy * a.dir.y;
+        const across = Math.abs(dx * a.dir.y - dy * a.dir.x);
+        return (
+          across <= QUANT_SLACK_MM && along >= -QUANT_SLACK_MM && along <= a.lengthMm + QUANT_SLACK_MM
+        );
+      });
+    case 'ortho':
+      return mm.x === anchor.x || mm.y === anchor.y;
+    case 'angle15': {
+      const vx = mm.x - anchor.x;
+      const vy = mm.y - anchor.y;
+      const deg = (Math.atan2(vy, vx) * 180) / Math.PI;
+      const n = Math.round((((deg + 360) % 360) / 15));
+      if (n % 6 === 0) return false; // 0 / ±90 / 180 / 270 是正交档的地盘，不该出现在这一档
+      const rad = (n * 15 * Math.PI) / 180;
+      const across = Math.abs(vx * Math.sin(rad) - vy * Math.cos(rad));
+      const radiusDelta = Math.abs(
+        Math.hypot(vx, vy) - Math.hypot(raw.x - anchor.x, raw.y - anchor.y),
+      );
+      return across <= QUANT_SLACK_MM && radiusDelta <= QUANT_SLACK_MM;
+    }
+  }
+}
+
 /** 独立的一层（无墙），给角度档当"没有别的靶子"的对照组。 */
 function synthStorey(): { log: TransactionLog; storeyId: string } {
   const projectId = uuidv7();
@@ -435,6 +490,7 @@ describe('落点出口与复用引用', () => {
   });
 
   it('属性：任意光标下落点恒为整数毫米、离光标不超过 SNAP_TOL_PX，非端点档不给 pointId', () => {
+    let snapped = 0; // 素材自证：400 发里必须真的走过"吸上了"那一支，否则下面的候选判据是空转
     fc.assert(
       fc.property(
         fc.record({
@@ -445,19 +501,28 @@ describe('落点出口与复用引用', () => {
         }),
         ({ x, y, dx, dy }) => {
           const base = pxOf({ x, y }, view);
-          const drop = dropTargetOf(view, { x: base.x + dx, y: base.y + dy }, { x: 0, y: 0 }, field);
+          const cursor = { x: base.x + dx, y: base.y + dy };
+          const drop = dropTargetOf(view, cursor, { x: 0, y: 0 }, field);
           expect(Number.isInteger(drop.mm.x) && Number.isInteger(drop.mm.y)).toBe(true);
           if (drop.snap !== null) {
+            snapped += 1;
             expect(drop.snap.distPx).toBeLessThanOrEqual(SNAP_TOL_PX);
             if (drop.snap.kind !== 'endpoint') expect(drop.snap.pointId).toBeNull();
-            expect(drop.mm).toEqual({ x: drop.snap.mm.x, y: drop.snap.mm.y });
+            // 吸上了 ⇒ 落点必须是**这一档的候选**（判据只吃 `field` 那张表与锚点，见上面那条注）。
+            // 旧写法 `expect(drop.mm).toEqual(drop.snap.mm)` 是 `dropTargetOf` 里那句
+            // `mm: snap.mm` 的同义反复：把 `mm` 改回裸落点（吸了等于没吸）它也不红。
+            expect(isCandidateForSnap(field, { x: 0, y: 0 }, drop.raw, drop.snap, drop.mm)).toBe(true);
           } else {
-            expect(drop.mm).toEqual(drop.raw);
+            // 没吸上 ⇒ 落点必须是**这一发光标的量化值**，由测试自己重问一遍 `moveTargetOf`
+            // （`handles.test.ts` 那句恒等式的同一写法：同一个纯函数、同一对入参，破的是接线 ——
+            // 这里红的是"`dropTargetOf` 的 `mm`/`raw` 没走光标那一发的量化"，不是"两边写了同一句"）。
+            expect(drop.mm).toEqual(moveTargetOf(view, cursor));
           }
         },
       ),
       { numRuns: 400 },
     );
+    expect(snapped).toBeGreaterThan(0);
   });
 
   it('pointRefOf 只认 `pointId` 非 null 那一支：吸到中点也必须新建点', () => {
