@@ -63,6 +63,12 @@ export interface EditorState {
   dispatch: (cmd: Command) => void;
   /** 一批命令 = 一个循环，**不是一个事务**（见下面那条注释）。 */
   dispatchBatch: (cmds: readonly Command[]) => void;
+  /**
+   * 绘制/派生那一趟抛了时的报告口：**只动 `lastError`、绝不动 `revision`** —— 上面那条纪律
+   * （失败路径动 revision 等于"为一件没发生的事重绘整张图"）在这里一字不差地成立，
+   * 而且更狠：这一抛什么都没改（真源没动、几何没变），重绘只会拿同一份坏几何再抛一次。
+   */
+  reportPaintError: (err: unknown) => void;
   undo: () => void;
   redo: () => void;
 }
@@ -120,6 +126,14 @@ export const useEditor = create<EditorState>((set, get) => ({
       revision: applied > 0 ? s.revision + 1 : s.revision,
       lastError: failed === null ? null : `删不动：${failed}`,
     }));
+  },
+  /**
+   * 绘制那一趟的抛点记账：**只动 lastError，一个字的 revision 都不碰**（接口上那条注释是纪律原文）。
+   * 文案沿用 `拖不动：` / `删不动：` 的同一口径 —— 屏幕上出现的中文报错只有一种形状，
+   * 判据（与以后 T7 的 `assertDerivesAfterApply`）才分得出"哪一路抛的"而不用读栈。
+   */
+  reportPaintError: (err) => {
+    set({ lastError: `画不出来：${String(err)}` });
   },
   undo: () => {
     if (!get().log.undo()) {

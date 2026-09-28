@@ -497,27 +497,43 @@ export function PlanCanvas(): React.JSX.Element {
     if (canvas === null || viewport === null) return;
     const ctx = canvas.getContext('2d');
     if (ctx === null) return;
-    const doc = log.document;
-    const ops = buildDrawList(doc, storeyId, viewport, { ids });
-    opsRef.current = ops;
-    paint(ctx, ops);
-    // 场与指令表在同一趟里取：指针事件的靶子、吸附的候选，全都来自刚刷上屏那一份几何。
-    fieldRef.current = snapFieldOf(doc, storeyId);
-    // S2：拉墙时屏幕上不许有把手。不画还不算完 —— `handlesRef` 也要清空，否则
-    // `pickHandle` 会在墙模式下继续吃上一趟留下的把手（按下就该起草稿，不该拖老墙）。
-    const handles = tool === 'wall' ? [] : dragHandlesOf(doc, storeyId, { ids }, viewport);
-    handlesRef.current = handles;
-    paintHandles(ctx, handles);
-    if (drag !== null) {
-      paintPreview(ctx, drag.fromPx, drag.cursorPx);
-      const dragSnap = drag.drop?.snap ?? null;
-      if (dragSnap !== null) paintSnapMarker(ctx, mmToPx(viewport, dragSnap.mm));
-    }
-    if (draft !== null) {
-      // 临时线**恒**画到裸光标（`draft.cursorPx`），不画到吸附点：吸附点由橙色方块说。
-      paintPreview(ctx, draft.start.px, draft.cursorPx);
-      if (draft.start.snap !== null) paintSnapMarker(ctx, mmToPx(viewport, draft.start.snap.mm));
-      if (draft.end.snap !== null) paintSnapMarker(ctx, mmToPx(viewport, draft.end.snap.mm));
+    // 整趟绘制包在 try 里，任何抛点都退化成本任务已有的 `lastError` 通道。
+    // **这一支不是判据、不是预判**：它不复述任何派生规则（星形 / 同向重叠 / 接缝点 / 翻面
+    // 只有 `deriveStoreyGeometry` 一个产地，计划 8427/8474 那条禁令在这儿原样有效），
+    // 只保证"派生层任何抛点都不会把 React 树卸掉"—— renderer 全仓没有 ErrorBoundary，
+    // 一次裸抛的 `RangeError` 就是白屏 + `window.__dajiaDebug` 一起消失，后续判据全读不到东西。
+    // 真源的收口在 T7：`assertDerivesAfterApply` 挂上 `wallCreate.build` 之后，星形接头那一发
+    // 在 `dispatch` 就抛、被既有的 catch 记进 `lastError`、`outcome` 报 `failed`，
+    // 屏幕上根本不会留下这一发几何 —— 届时这一支 catch 退化成不会被走到的保险。
+    // 失败那一帧 `opsRef` / `fieldRef` / `handlesRef` 留的是**上一趟的好值**：`buildDrawList`
+    // 在赋值之前抛 ⇒ 引用不会变成半成品（不为此加清理逻辑：清成空表等于让指针事件打空）。
+    try {
+      const doc = log.document;
+      const ops = buildDrawList(doc, storeyId, viewport, { ids });
+      opsRef.current = ops;
+      paint(ctx, ops);
+      // 场与指令表在同一趟里取：指针事件的靶子、吸附的候选，全都来自刚刷上屏那一份几何。
+      fieldRef.current = snapFieldOf(doc, storeyId);
+      // S2：拉墙时屏幕上不许有把手。不画还不算完 —— `handlesRef` 也要清空，否则
+      // `pickHandle` 会在墙模式下继续吃上一趟留下的把手（按下就该起草稿，不该拖老墙）。
+      const handles = tool === 'wall' ? [] : dragHandlesOf(doc, storeyId, { ids }, viewport);
+      handlesRef.current = handles;
+      paintHandles(ctx, handles);
+      if (drag !== null) {
+        paintPreview(ctx, drag.fromPx, drag.cursorPx);
+        const dragSnap = drag.drop?.snap ?? null;
+        if (dragSnap !== null) paintSnapMarker(ctx, mmToPx(viewport, dragSnap.mm));
+      }
+      if (draft !== null) {
+        // 临时线**恒**画到裸光标（`draft.cursorPx`），不画到吸附点：吸附点由橙色方环说。
+        paintPreview(ctx, draft.start.px, draft.cursorPx);
+        if (draft.start.snap !== null) paintSnapMarker(ctx, mmToPx(viewport, draft.start.snap.mm));
+        if (draft.end.snap !== null) paintSnapMarker(ctx, mmToPx(viewport, draft.end.snap.mm));
+      }
+    } catch (err) {
+      // 走 `getState()` 而不是订阅：报告口是稳定的方法引用，但把它写进依赖表等于
+      // "每一次抛错都自己再上一次屏"，那正是 D6 要避免的事（见上面 `revision` 那条注）。
+      useEditor.getState().reportPaintError(err);
     }
   }, [log, storeyId, viewport, revision, ids, drag, draft, tool]);
 
