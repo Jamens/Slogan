@@ -18,6 +18,7 @@ import {
   type DragHandle,
   type DragProbe,
   type DrawOp,
+  type MoveTarget,
   type Pen,
   type PickProbe,
   type Px,
@@ -79,6 +80,12 @@ export interface DebugReport {
   previewNearCursorPx: number;
   points: Record<string, { x: number; y: number }>;
   edit: DragProbe | null;
+  /** 拖拽进行中 store 里那一发 `targetMm`：没在拖就是 null。松手前 main 用它确认
+   *  最后一发 `pointermove` 真的进了 store —— 早一步 release 用的是**旧光标**。 */
+  dragTargetMm: MoveTarget | null;
+  /** 拖拽进行中 store 里那一发**已处理**的光标像素。主进程拿它对照"我到底发了哪个像素"：
+   *  `previewNearCursorPx` 量的就是 store 自报的光标，自洽 ⇒ 光标落后一帧它也照样绿。 */
+  dragCursorPx: Px | null;
   lastDrop: DropReport | null;
   lastKeyEvent: KeyEventReport | null;
 }
@@ -325,11 +332,14 @@ export function PlanCanvas(): React.JSX.Element {
         canvas.style.width = `${String(wPx)}px`;
         canvas.style.height = `${String(hPx)}px`;
       }
-      // 故意不订阅 `log`：视口跟着文档走 = 每拖一下整张图自己重缩放，编辑器不能这么动。
-      // 而且它会让闸门的坐标前提失效 —— `--edit-shot` 的探针像素在第 0 步一次算定、八步按住，
-      // 跟着 revision 重算后同一个把手从 (253,74) 漂到 (332,75)，第 7 步"原地松手"按到了空白。
-      // 要当下的文档就从 store 取（一次性读，不建立订阅，所以不会有漏刷新的问题：
-      // 换层与改尺寸才是重算视口的两个真实理由）。
+      // 视口只在挂载、换层、窗口改尺寸这三件事上重算，**不跟着重渲染重算**。
+      // 依赖里不写 `log`：`log` 是可变类实例、引用永不变，写进依赖挡不住任何东西 ——
+      // 真正会咬人的是下面这句 `log.document` 是个**活读**的 getter：窗口改尺寸那一发
+      // 触发 `fit()`，算的是**当时**的文档，于是中途改过坐标之后再来一发 resize，
+      // 整张图按新边界重缩放，之前算定的探针像素全体失效（实测同一把手从 (253,74)
+      // 漂到 (332,75)，第 7 步「原地松手」按到了空白）。闸门侧由 `waitForLayoutSettled`
+      // 把 resize 收敛掉，这里则由"要当下的文档就从 store 一次性取"保证读到的不是陈旧闭包。
+      // 换层与改尺寸才是重算视口的两个真实理由。
       setViewport(fitStorey(useEditor.getState().log.document, storeyId, wPx, hPx, 60));
     };
     fit();
@@ -504,6 +514,11 @@ export function PlanCanvas(): React.JSX.Element {
         previewNearCursorPx: counted.previewNearCursorPx,
         points: pointSnapshot(s.log.document, s.storeyId),
         edit: dragProbe(s.log.document, s.storeyId, ops, viewport),
+        // 拖拽目标由 renderer 自己算（`moveTargetOf(viewport, px)`）：这一行让主进程能在
+        // **松手之前**看见它，于是"那一发 pointermove 到底进没进 store"是可等的，而不是
+        // 只能从"落点不对"倒推。
+        dragTargetMm: s.drag?.targetMm ?? null,
+        dragCursorPx: s.drag?.cursorPx ?? null,
         lastDrop: dropRef.current,
         lastKeyEvent: keyRef.current,
       };

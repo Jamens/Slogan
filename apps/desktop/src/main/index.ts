@@ -43,13 +43,17 @@ function createWindow(visible: boolean): BrowserWindow {
   // 闸门期间把 renderer 的 error 级 console 原样转发到 stdout：executeJavaScript 里抛异常时
   // Electron 只在主进程回一句 "check the renderer console"，真凶（renderer 抛的那行 + 栈）
   // 全留在没人看的通道里。没有这一转发，`__dajiaDebug()` 失败只能看到"脚本没跑成"。
-  win.webContents.on('console-message', (...args: unknown[]) => {
-    // 声明里详情在第二参，实测这台运行时把它放在**第一**参（第二参是数字 level），
-    // 所以取 args[0]，并用 level 字符串判错误级。形状对不上时不打印 —— 宁可不报也别报错东西。
-    const first = args[0] as { level?: unknown; message?: unknown };
-    if (first?.level !== 'error' || typeof first.message !== 'string') return;
-    process.stdout.write(`[renderer] ${first.message}\n`);
-  });
+  // 只在 shot 模式装（三条闸门都带 `--shot`，交互模式不带）：往 stdout 打 renderer 日志是
+  // 闸门的取证手段，不该变成正常用法的运行时行为。
+  if (process.argv.includes('--shot')) {
+    win.webContents.on('console-message', (...args: unknown[]) => {
+      // 声明里详情在第二参，实测这台运行时把它放在**第一**参（第二参是数字 level），
+      // 所以取 args[0]，并用 level 字符串判错误级。形状对不上时不打印 —— 宁可不报也别报错东西。
+      const first = args[0] as { level?: unknown; message?: unknown };
+      if (first?.level !== 'error' || typeof first.message !== 'string') return;
+      process.stdout.write(`[renderer] ${first.message}\n`);
+    });
+  }
 
   // 只在可见模式补 show：--shot 从头到尾走 show:false 的隐藏绘制路径——canvas 画进 backing
   // store，getImageData 不依赖合成器上屏（Step 4 注释的那条主张，此前被这行无条件 show 架空）。
@@ -313,6 +317,10 @@ interface EditReportShape {
   previewNearCursorPx: number;
   points: Record<string, MmShape>;
   edit: DragProbeShape | null;
+  /** 拖拽进行中的目标毫米（不在拖 = null）。松手前读它，见 `waitDragAt`。 */
+  dragTargetMm: MmShape | null;
+  /** 拖拽中 store 里已处理的光标像素（不在拖 = null）。见 `samePx` 那条中途判据。 */
+  dragCursorPx: ClickPoint | null;
   lastDrop: DropShape | null;
   lastKeyEvent: KeyShape | null;
 }
@@ -338,6 +346,29 @@ async function readEditReport(win: BrowserWindow, label: string): Promise<EditRe
     throw new Error(`__dajiaDebug() 没返回报告（${label}）—— renderer 死了，不是"还没刷完"`);
   }
   return value;
+}
+
+/**
+ * 松手之前先等 store 里的拖拽目标就位。
+ *
+ * `sendInputEvent` 只是把事件塞进浏览器输入队列，`await` 不等它被处理；而 `onUp` 读的是
+ * **当下 store 的 `drag.targetMm`** —— 那由最后一发**已处理**的 `pointermove` 决定。于是
+ * `movePx(to)` 之后立刻 `releasePx(to)` 是在赌队列不压：实测约 6 次里 1 次，松手用的还是
+ * 上一发（中途）的光标，落点差出几百毫米，红在「松手后没落到」那道 throw 上 —— 症状在下游，
+ * 病根在这一发没等到。这里把它挪到上游等，红的时候说的是真话。
+ *
+ * 这不是重试：等的就是"那一发到了"这一件事，等不到照样 10 秒 throw、照样 exit=1。
+ */
+async function waitDragAt(
+  win: BrowserWindow,
+  want: (r: EditReportShape) => boolean,
+  label: string,
+): Promise<EditReportShape> {
+  return waitUntil(
+    `松手前拖拽目标没就位：${label}`,
+    () => readEditReport(win, '松手前'),
+    want,
+  );
 }
 
 /** 快照里少一枚点 = 真源被写坏了。"读不到"绝不允许当成"没变"。 */
@@ -512,7 +543,14 @@ async function runEditShot(win: BrowserWindow, out: string): Promise<void> {
     `拖拽中临时线没跟到光标 (${String(midPx.x)}, ${String(midPx.y)})：` +
       '要么画家画的终点不是光标，要么 `drag` 没进 paint effect 的依赖',
     () => readEditReport(win, '拖动中'),
-    (r) => r.previewNearCursorPx > 0,
+    (r) =>
+      r.previewNearCursorPx > 0 &&
+      // 只数 `previewNearCursorPx` 是**自洽**的：它量的是 store 自报的光标，光标落后一帧
+      // 时那撮像素照样跟着落后光标走，照样绿。这里额外要求 store 的光标 == 我发出去的那个像素，
+      // 于是"指针到底到没到位"由发送方判，不由被观察方自证。
+      r.dragCursorPx !== null &&
+      Math.abs(r.dragCursorPx.x - midPx.x) <= 0.5 &&
+      Math.abs(r.dragCursorPx.y - midPx.y) <= 0.5,
   );
   const midMm = mmOf(during, edit.pointId, '拖动中');
   if (during.depth !== start.depth || during.revision !== start.revision) {
@@ -535,6 +573,14 @@ async function runEditShot(win: BrowserWindow, out: string): Promise<void> {
   //    探针的 targetMm 是"取整像素反算回来的毫米"（`snapPx` → `moveTargetOf`），
   //    renderer 松手时算的是同一个纯函数的同一个入参 ⇒ 这里不许有 ±1mm 的"差不多"。
   await movePx(win, edit.toPx, origin);
+  await waitDragAt(
+    win,
+    (r) =>
+      r.dragTargetMm !== null &&
+      r.dragTargetMm.x === edit.targetMm.x &&
+      r.dragTargetMm.y === edit.targetMm.y,
+    `要 (${String(edit.targetMm.x)}, ${String(edit.targetMm.y)})，最后一发 pointermove 没进 store`,
+  );
   await releasePx(win, edit.toPx, origin);
   const dropped = await waitUntil(
     `松手后没落到 (${String(edit.targetMm.x)}, ${String(edit.targetMm.y)})，` +
@@ -561,8 +607,23 @@ async function runEditShot(win: BrowserWindow, out: string): Promise<void> {
   // 4) 压扁：从落点拖回**这面墙自己的锚点**。锚点在上一发里没动过，所以 anchorPx 依然有效；
   //    此刻选中集只有这一面墙 ⇒ 两个把手分别在 toPx 与 anchorPx（相距 ≥ 墙厚 240mm ≈ 31px），
   //    按在 toPx 上不可能认错。取整反算的毫米离锚点不到 1 像素（≈ 8mm）⇒ 必然撞几何守卫。
+  //    与第 2 步同形：先 `movePx` 再 `pressPx`。第 3 步的 `releasePx` 就落在**同一个** toPx 上，
+  //    "上一次 mouseUp 之后没移动过就 mouseDown"在第 1 步实测过是不保证再产生 pointerdown 的 ——
+  //    这里两者坐标还相同，正是那条教训描述的形状。`movePx` 在无 drag 时于 renderer 是 no-op，不写真源。
+  await movePx(win, edit.toPx, origin);
   await pressPx(win, edit.toPx, origin);
   await movePx(win, edit.anchorPx, origin);
+  // 同上：这一发要的是"目标已经离开刚落点"，等不到就红在松手之前，而不是红在
+  // 「压扁拖没被拒」（那一句会把真病因——没跟到的 move——读成"守卫没拦住"）。
+  await waitDragAt(
+    win,
+    (r) =>
+      r.dragTargetMm !== null &&
+      (r.dragTargetMm.x !== edit.targetMm.x || r.dragTargetMm.y !== edit.targetMm.y),
+    `要离开 (${String(edit.targetMm.x)}, ${String(edit.targetMm.y)}) 往锚点 (${String(
+      edit.anchorPx.x,
+    )}, ${String(edit.anchorPx.y)}) 走，最后一发 pointermove 没进 store`,
+  );
   await releasePx(win, edit.anchorPx, origin);
   const crushed = await waitUntil(
     '压扁拖没被拒：lastError 一直是空的',
@@ -644,7 +705,16 @@ async function runEditShot(win: BrowserWindow, out: string): Promise<void> {
   }
 
   // 7) 原地按下即松手：D4 的零移动不发命令 ⇒ 撤销栈一步都不许多。
+  //    先 `movePx` 再 `pressPx`（第 2 步那条实测教训），再等 store 里真的起了 `drag`：
+  //    没有这一句 witnesses，"按下没触发"会一路走到 `lastDrop` 还是上一发的 'failed'，
+  //    红是红了，红的却是一句"没给出 noop 诊断"——症状在下游，病根在这一发没落到屏上。
+  await movePx(win, edit.toPx, origin);
   await pressPx(win, edit.toPx, origin);
+  await waitUntil(
+    '原地按下没起拖：store 里没有 drag ⇒ 这一发 pointerdown 根本没进 renderer',
+    () => readEditReport(win, '原地按下后'),
+    (r) => r.dragTargetMm !== null,
+  );
   await releasePx(win, edit.toPx, origin);
   const nooped = await waitUntil(
     '原地松手没给出 noop 诊断，或撤销栈被空操作污染了',
