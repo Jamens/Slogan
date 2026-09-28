@@ -68,7 +68,7 @@ export interface DebugReport {
    * 由 --pick-shot / --edit-shot 的 origin PASS 行断言，不靠 body margin 归零默默兜底。
    */
   canvasOriginPx: { x: number; y: number };
-  // ↓ T5 的 12 个
+  // ↓ T5 的 14 个
   revision: number;
   depth: number;
   canUndo: boolean;

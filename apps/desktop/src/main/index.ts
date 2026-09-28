@@ -319,7 +319,8 @@ interface EditReportShape {
   edit: DragProbeShape | null;
   /** 拖拽进行中的目标毫米（不在拖 = null）。松手前读它，见 `waitDragAt`。 */
   dragTargetMm: MmShape | null;
-  /** 拖拽中 store 里已处理的光标像素（不在拖 = null）。见 `samePx` 那条中途判据。 */
+  /** 拖拽中 store 里已处理的光标像素（不在拖 = null）。只有第 2 步拿它对照 `midPx`，
+   *  证"那一发 pointermove 真被处理过"；第 3/4/7 步松手前看的是邻居 `dragTargetMm`。 */
   dragCursorPx: ClickPoint | null;
   lastDrop: DropShape | null;
   lastKeyEvent: KeyShape | null;
