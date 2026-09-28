@@ -1,6 +1,15 @@
 import { create } from 'zustand';
 import type { Command, TransactionLog, WallEnd } from '@dajia/core';
-import { demoHouse, type MoveTarget, type Px, type Viewport } from '@dajia/scene-2d';
+import {
+  demoHouse,
+  type DraftWall,
+  type DragHandle,
+  type DropTarget,
+  type MoveTarget,
+  type Px,
+  type Tool,
+  type Viewport,
+} from '@dajia/scene-2d';
 
 // demoHouse() 只调一次（T3 的理由照旧：调两次就是"屏幕画 B、命中查 A"，且不报错）。
 const demo = demoHouse();
@@ -15,6 +24,18 @@ export interface DragState {
   readonly fromPx: Px;
   readonly cursorPx: Px;
   readonly targetMm: MoveTarget;
+  /**
+   * 按下命中的那把把手（S4 ②）：吸附的**锚点**（`handle.anchorMm`）与**排除集**
+   * （`handle.atMm`）都长在它身上，所以拖拽态必须带上它 —— 不带就只能在 `onMove` 里
+   * 重算 `pickHandle`，而重算出来的把手与按下那一把不是同一个对象，中途换墙就是改语义。
+   */
+  readonly handle: DragHandle;
+  /**
+   * 吸附后的完整落点（`raw` / `mm` / `snap`）。`targetMm` 恒等于 `drop.mm`，两个字段都留着
+   * 是因为 T5 的三处判据（noop 比对、`wallMoveEndpoint` 入参、`DropReport.targetMm`）写的是
+   * `targetMm`，而第四色标记要读的是 `drop.snap`。按下那一发 `drop === null`（S4 ①：不吸）。
+   */
+  readonly drop: DropTarget | null;
 }
 
 export interface EditorState {
@@ -25,15 +46,23 @@ export interface EditorState {
   /**
    * 唯一的"该重绘了"扳机（D6）。`log` 是可变类实例，引用永远不变 ⇒ zustand 的
    * `Object.is` 判定相等 ⇒ 只订阅 `{log}` 的组件**永不重渲**，所以这不是保险，是唯一的通路。
-   * 它只在 `dispatch`/`undo`/`redo` **成功**之后 +1：失败不动它 ⇒ 既不重绘也无副作用，
+   * 它只在 `dispatch`/`dispatchBatch`/`undo`/`redo` **成功**之后 +1：失败不动它 ⇒ 既不重绘也无副作用，
    * 于是计划 2 转下游 #11（`log.lastAffected` 在抛错后留着上一批 id）在本任务里根本没有读者。
    */
   readonly revision: number;
   readonly lastError: string | null;
   readonly drag: DragState | null;
+  /** 工具态。`'wall'` 时不画把手、点选不生效，按下即起草稿（S2 的屏幕侧形状）。 */
+  readonly tool: Tool;
+  /** 进行中的墙草稿。中途只活在这里，不进真源（与 `drag` 同一条 D4 纪律）。 */
+  readonly draft: DraftWall | null;
   setViewport: (viewport: Viewport | null) => void;
   setDrag: (drag: DragState | null) => void;
+  setTool: (tool: Tool) => void;
+  setDraft: (draft: DraftWall | null) => void;
   dispatch: (cmd: Command) => void;
+  /** 一批命令 = 一个循环，**不是一个事务**（见下面那条注释）。 */
+  dispatchBatch: (cmds: readonly Command[]) => void;
   undo: () => void;
   redo: () => void;
 }
@@ -45,8 +74,12 @@ export const useEditor = create<EditorState>((set, get) => ({
   revision: 0,
   lastError: null,
   drag: null,
+  tool: 'select',
+  draft: null,
   setViewport: (viewport) => set({ viewport }),
   setDrag: (drag) => set({ drag }),
+  setTool: (tool) => set({ tool }),
+  setDraft: (draft) => set({ draft }),
   // 失败路径**必须**只动 lastError：动 revision 就是"为一件没发生的事重绘整张图"。
   dispatch: (cmd) => {
     try {
@@ -56,6 +89,37 @@ export const useEditor = create<EditorState>((set, get) => ({
       return;
     }
     set((s) => ({ revision: s.revision + 1, lastError: null }));
+  },
+  /**
+   * 删除走这里，拉墙仍走 `dispatch`（一条命令一条路，别为了"统一"把单发也套进循环）。
+   *
+   * **它不是一个事务**：读过源码，`TransactionLog` 只有 `dispatch` / `undo` / `redo` 三个动作
+   * 与 `affected` / `depth` / `canUndo` / `canRedo` 四个读数，没有 begin/commit/rollback。
+   * 所以一次删除（N 面墙 + M 樘独立洞口）= 撤销栈上的 **N+M 步**，连按 Ctrl+Z 会一条条退回去；
+   * 而 `S5` 排的"洞口在前、墙在后"保证了第 ② 条命令不会 `requireOpening` 抛在半途 ——
+   * 顺序反了才真会留下半套状态（那条由 `editing.test.ts` 的 E1 钉住）。
+   * 代价照付：批语义（一次撤销退一整组）是计划 4 真源侧的决定，UI 不许私自拿
+   * "连发多条 + 出错回滚" 拼一个假事务：回滚要逆序重放补丁，那是第二套 `invertPatch`。
+   */
+  dispatchBatch: (cmds) => {
+    const log = get().log;
+    let applied = 0;
+    let failed: string | null = null;
+    for (const cmd of cmds) {
+      try {
+        log.dispatch(cmd);
+        applied += 1;
+      } catch (err) {
+        failed = String(err);
+        break;
+      }
+    }
+    // 应用了几条就只 +1 一次 revision：扳机管的是"该重绘了"，不是"重绘几次"。
+    // 半途失败时 `applied > 0` 也要 +1 —— 真源已经变了，不动它才是"屏幕画旧账"。
+    set((s) => ({
+      revision: applied > 0 ? s.revision + 1 : s.revision,
+      lastError: failed === null ? null : `删不动：${failed}`,
+    }));
   },
   undo: () => {
     if (!get().log.undo()) {

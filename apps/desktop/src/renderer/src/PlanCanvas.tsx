@@ -385,6 +385,10 @@ export function PlanCanvas(): React.JSX.Element {
         fromPx: hit.atPx,
         cursorPx: px,
         targetMm: target,
+        // S4 ①：按下那一发**不吸**。把手已经在原地，吸一下只会把 `targetMm` 挪回 `atMm`
+        // 之外的别处，于是"零移动 ⇒ noop"那条判据（D4）会在第一发上就判错。
+        handle: hit,
+        drop: null,
       });
       return;
     }
