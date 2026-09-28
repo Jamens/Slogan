@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
-> **状态：本计划展开了 Task 1–6。** 只剩 Task 7（楼层切换 + 属性面板）的边界与验收口径列在末尾，正文尚未展开成可执行步骤 —— **补齐前不得进入执行**（Task 1 起就要改根 `typecheck` 与 `vitest.config.ts`，跑到 Task 5 才发现缺口的代价是把前四步的闸门重跑一遍）。Task 6 的 27 行 `--draw-shot` 判据、DR1–DR8 那张改坏表里标"按 throw 文案推"的每一行，都要在真窗口跑过之后把实测红字回填（编写期跑不了：`apps/desktop` 的 renderer 与 `scripts/desktop-shot.mjs` 要 Task 3 之后才存在）。
+> **状态：本计划展开了 Task 1–7。** Task 8（楼层切换 + 属性面板 + 删除接屏）与 Task 9（吸附补档：轴网交点）的边界与验收口径列在末尾，正文尚未展开成可执行步骤 —— **补齐前不得进入执行**（Task 1 起就要改根 `typecheck` 与 `vitest.config.ts`，跑到 Task 5 才发现缺口的代价是把前四步的闸门重跑一遍）。Task 6 的 27 行 `--draw-shot` 判据、DR1–DR8 那张改坏表里标"按 throw 文案推"的每一行，都要在真窗口跑过之后把实测红字回填（编写期跑不了：`apps/desktop` 的 renderer 与 `scripts/desktop-shot.mjs` 要 Task 3 之后才存在）。同一条纪律适用于 Task 7 的 Step 7/8：全仓 `Tests 438` 是**两段实测相加**（core 24/309 实测 + T6 回填的 405），`Test Files` 全仓数与两个真窗口的字面量都要在执行日重测回填。
 
 **Goal:** 把 `@dajia/scene-2d` 从一行 stub 推进到「在真窗口里看得见一层平面、点得中构件」：视口仿射、绘制指令表、命中与选中，全部保持 DOM-free 可单测；像素是否真上屏由一次性截图回读证明，不靠人眼。
 
@@ -43,12 +43,18 @@
 | `packages/scene-2d/src/index.ts` | 出口（现在是 `export const SCENE_2D_PACKAGE = 'scene-2d';` 一行 stub） | T1 起逐个补；T6 加 `snapping` / `editing` 两行 |
 | `packages/scene-2d/src/snapping.ts` | 五档吸附（端点/中点/垂足/正交/15°）：`SNAP_TOL_PX`/`ANGLE_TOL_DEG`/`SNAP_COLOR`/`SNAP_MARK_HALF_PX`、`snapFieldOf`、`snapFromCursor`、`dropTargetOf`、`pointRefOf`；T5 的 `MoveTarget` 三件套（`MoveTarget`/`quantizeTarget`/`moveTargetOf`）从 `handles.ts` 迁到这里 | T6 |
 | `packages/scene-2d/test/snapping.test.ts` | 吸附的判据 28 条（含 2 条属性）：分组压倒距离、并列按 `ownerId`、档位互斥、`excludeMm`、NaN | T6 |
-| `packages/scene-2d/src/editing.ts` | 工具态与画墙草稿：`Tool`、`draftAtPress`/`moveDraft`/`draftRefs`/`legalWallCreate`/`draftCommand`、`newWallDefaults`、`planDelete`/`pruneSelection`、`lastCreatedWall`、`wallProbe`（六道筛） | T6 |
-| `packages/scene-2d/test/editing.test.ts` | 编辑判据 30 条（含 1 条属性）：草稿三态、删除四色出口、`unsupported`、探针六筛与自洽 | T6 |
-| `packages/scene-2d/src/handles.ts` | 拖拽的屏幕侧全部纯函数：`HANDLE_COLOR`/`PREVIEW_COLOR`/`PIXEL_CHANNEL_TOL`/`HANDLE_RADIUS_PX`、`dragHandlesOf`、`pickHandle`、`legalDrop`（试跑 core 的 `build` 当合法性预言）、`dragProbe`、`pointSnapshot`。**T5 的 `moveTargetOf` 三件套 T6 迁往 `snapping.ts`**；`DragHandle` 补 `anchorMm`；`dragProbe` 的落点改吃 `dropTargetOf`，并新增出口 `handleDropTarget` | T5 |
+| `packages/scene-2d/src/editing.ts` | 工具态与画墙草稿：`Tool`、`draftAtPress`/`moveDraft`/`draftRefs`/`legalWallCreate`/`draftCommand`、`newWallDefaults`、`planDelete`/`pruneSelection`、`lastCreatedWall`、`wallProbe`（六道筛）。**T7 只改注释**：`derivesCleanly` 那条从"唯一防线"改成"第二道保险"（`wallCreate` 的 `build` 已复核，两侧同判），代码不动 | T6 |
+| `packages/scene-2d/test/editing.test.ts` | 编辑判据 30 条（含 1 条属性）：草稿三态、删除四色出口、`unsupported`、探针六筛与自洽。**T7 改**其中「⑥ 的前提：命令层放行、派生层抛」那条 ⇒ 改名并断言**两层同判**，**30 条不变** | T6 |
+| `packages/scene-2d/src/handles.ts` | 拖拽的屏幕侧全部纯函数：`HANDLE_COLOR`/`PREVIEW_COLOR`/`PIXEL_CHANNEL_TOL`/`HANDLE_RADIUS_PX`、`dragHandlesOf`、`pickHandle`、`legalDrop`（试跑 core 的 `build` 当合法性预言）、`dragProbe`、`pointSnapshot`。**T5 的 `moveTargetOf` 三件套 T6 迁往 `snapping.ts`**；`DragHandle` 补 `anchorMm`；`dragProbe` 的落点改吃 `dropTargetOf`，并新增出口 `handleDropTarget`。**T7 只改注释**：那句"`legalDrop` 试跑 `build`，不跑 `deriveStoreyGeometry`"在 T7 之后是错的 ⇒ 换成"core 的三条改几何命令已在 `build` 末尾复核派生，`legalDrop` 与真源同判" | T5 |
 | `packages/scene-2d/test/handles.test.ts` | 12 条：把手只给选中的墙、顺序与插入序无关、并列按 key、NaN、`legalDrop` 三条（含"坏的是邻墙"）、探针四性质、快照键集合、三种颜色互相分得开。**T6 +7 条 ⇒ 19 条**（合成把手补 `anchorMm`；配色那条从三色列成四色；`moveTargetOf` 那句换成恒等式） | T5 |
 | `packages/core/test/commands-drag.test.ts` | 7 条：柱跟走（对象同一性）/ 重影柱抛错 / 同一句文案的第二个产地 / 跨层正对照 / 原地拖不抛 / `end:'start'` 角色反转两条 | T5 |
-| `packages/core/src/geom/topology.ts` | 加 `assertNoGhostColumn(doc, storeyId, at, exceptPointId?)` —— 判据从 `columnCreate` 里搬出来，第二个产地是拖动落点复核 | T5 |
+| `packages/core/src/geom/topology.ts` | 加 `assertNoGhostColumn(doc, storeyId, at, exceptPointId?)` —— 判据从 `columnCreate` 里搬出来，第二个产地是拖动落点复核。**T7 加** `pointStillReferenced(doc, pointId, exceptIds)`：孤儿点判定的唯一产地（墙两端 / 柱落点 / 板边界三类都查），`wallDelete` 那份文件私有 `stillReferenced` 删掉搬上来，`columnDelete` / `slabDelete` 共用 | T5 |
+| `packages/core/src/model/command.ts` | **T7**：`CommandType` 11 → 16（`storey.delete` / `wall.setMaterial` / `wall.setLoadBearing` / `column.delete` / `slab.delete`）。`Command` 接口不动 | T7 |
+| `packages/core/src/geom/outline.ts` | **T7 加** `assertDerivesAfterApply(doc, patch, storeyId)`：命令层的派生复核，`deriveStoreyGeometry` 那四道守卫在写入侧的唯一出口 | T7 |
+| `packages/core/src/commands/wall.ts` | **T7**：`wallCreate` / `wallMoveEndpoint` / `wallSetThickness` 的 `build` 末尾挂复核；新增 `assertMaterial` / `wallSetMaterial` / `wallSetLoadBearing`；`wallDelete` 改问 `pointStillReferenced` | T1 |
+| `packages/core/src/commands/{storey,column,slab}.ts` | **T7 加** `storeyDelete`（级联问 `dependentsOf` + 闭合性检查 + 最后一层不许删）、`columnDelete`、`slabDelete`，并各补一份文件私有读取断言 | T1 |
+| `packages/core/test/{derive-guard,commands-attributes,commands-delete}.test.ts` | **T7 新增 9 / 12 / 12 条**：复核的正反两组、属性命令的补丁形状与撤销栈、三条删除命令的级联与孤儿点。core 计数 21 文件 / 276 条 ⇒ **24 / 309** | T7 |
+| `packages/core/test/joint.test.ts` | 派生层四道守卫（同向重叠 / 翻面 / 直通异厚 / star）的哨兵。**T7 改**：五条用例的造图从"走命令"换成 `handBuild(...)` 手工贴实体（命令层 T7 起会先挡），**18 条不变** | T2 |
 | `apps/desktop/electron.vite.config.ts` | renderer 侧补 `@dajia/core` + `@dajia/scene-2d` 的 alias（scene-2d 源码里 import 的是裸说明符） | T3 |
 | `apps/desktop/src/renderer/src/PlanCanvas.tsx` | 一块 canvas：量尺寸 → `fitStorey` → `buildDrawList` → 刷；并挂 `window.__dajiaDebug`。**T4 起**：选中进绘制、`onPointerDown` 走 `pickOne`、`opsRef` 让钩子读刷上屏那份、`DebugReport` 补 `selectedIds`/`selectedPx`/`pick`/`selectedAfterBlank`。**T5 起**：`paintHandles` + `paintPreview` 两个专用画家、window 级 `pointermove/up/cancel` 状态机、`Ctrl+Z`/`Ctrl+Shift+Z`、`DebugReport` 再补 12 个字段（`revision`/`depth`/`canUndo`/`canRedo`/`lastError`/`handlePx`/`previewPx`/`previewNearCursorPx`/`points`/`edit`/`lastDrop`/`lastKeyEvent`）。**T6 起**：`paintSnapMarker` 第四色画家 + 第 6 个像素桶、模式分支（`W` 进拉墙 / `Escape` 两级退场 / `Delete`+`Backspace` 删除）、拖拽落点改走 `handleDropTarget`、`DebugReport` 再补 9 个字段（`tool`/`draft`/`snapMarkPx`/`lastCreate`/`deletedIds`/`unsupportedIds`/`selectionAfterDelete`/`lastHotkey`/`draw`） | T3 |
 | `apps/desktop/src/renderer/src/stores/editorStore.ts` | zustand：`TransactionLog`、当前层、视口。**T5 起**：`revision` 扳机（只在成功后 +1）、`lastError`、`drag` 态、`dispatch` 的 `catch`。**T6 起**：`tool` / `draft` 两格 + `setTool` / `setDraft` / `dispatchBatch`。**选中集不在这儿** —— spec 明令 selection 不进真源/撤销栈 | T3 |
@@ -5465,7 +5471,7 @@ const PRIORITY: Record<SnapKind, number> = {
  *
  * 去重是必须的：样例房一层有六枚共享端点，不去重就是"同一个点六个候选、六个 ownerId"，
  * 并列破序会挑出任意一面墙，`pointId` 却全都一样 —— 结果对，过程没法测。
- * 柱/板的顶点、洞口中心不在表里：Task 8 的柱要加端点档时改这里，不在 UI 侧另搭一份。
+ * 柱/板的顶点、洞口中心不在表里：Task 9 的补档（柱端点、轴网交点）要加时改这里，不在 UI 侧另搭一份。
  */
 export function snapFieldOf(doc: Document, storeyId: string): SnapField {
   const points: SnapPoint[] = [];
@@ -8262,7 +8268,9 @@ function snapPx(p: Px): Px {
  * 这一串候选**会**被吸走，别把"偏移取得远"当成"吸不上"。样例房一层 16 把把手 × 这十发 = 160 问
  * （2026-09-28 实测，十个进程逐字相同）：86 问吸上了东西，其中 72 问吸成**恒等** —— 垂足 54、
  * 正交 17、中点 1，那些落点本来就在自己那面墙的轴线上，吸附只是原样还回来；剩下 14 问被 15° 档
- * 挪走，最大位移 55.79mm = 6.97px（仍在 `SNAP_TOL_PX` 之内），且 160 问的落点全部过得了 `legalDrop`。
+ * 挪走，最大位移 55.79mm = 6.97px（仍在 `SNAP_TOL_PX` 之内），且这 160 问的落点**在 Task 6 落地时**全部过得了 `legalDrop`。
+ * （Task 7 把派生复核搬进 `wallMoveEndpoint.build` 之后这一句不再成立：160 发里 `build` 拒 84 发、全是 star，
+ * 可拖 76 发，且"第一发可拖"在 12 个把手位置里的 9 个上往后挪了 1～3 发 —— 实测见 Task 7 的 T6 交接第 ④ 条。）
  * 所以"整数百米毫米"买到的是靶子可复现与恒等落点上的稳定，不是"探针不吃吸附"。
  *
  * `handles.test.ts` 的「拖拽路径真的在吃吸附」把这几个计数钉成判据（恒等 ≥ 8、改写 ≥ 1、
@@ -8360,7 +8368,7 @@ export function pointSnapshot(doc: Document, storeyId: string): Record<string, M
 > ① `legalDrop` 的 `catch` 是**宽到一切异常**的，且它试跑的是真命令的 `build`。别收紧它、也别在屏幕上重写轴长比较（改坏 HD6 实测：换成"自己算 `hypot(target, anchor) > thickness`"红两条 —— 「legalDrop 就是真源那道守卫的预言」与「探针吃的是吸附后的毫米」。第二那条是 T6 新长的牙：自算那一版漏掉的是**邻墙**那两道，而吸上去那一发恰好撞在邻墙的墙厚上）。
 > 还要记下它**没有**覆盖的东西：`build` 不跑 `deriveStoreyGeometry`，所以"这一发拖出一个星形接头（≥3 个方向过同一点）"在 `legalDrop` 这里预言为合法，松手后却在派生层抛。S1 的构造保证真窗口里不会走到那儿（屏幕上的点来自已有墙，接头方向数不会凭空 +1），但这条差额**记在 Task 7 的边界表里**，不许在 UI 侧另搭一套星形预判 —— 那是复述派生规则，复述的规则一定漂。
 >
-> ② `PROBE_OFFSETS` 那十发**会被吸走**，别把"偏移取得远"读成"探针不吃吸附"。样例房 16 把把手 × 10 发 = 160 问（2026-09-28 实测，十个进程逐字相同）：86 问吸上了东西，其中 72 问吸成**恒等**（垂足 54、正交 17、中点 1 —— 那些落点本来就在自己那面墙的轴线上，吸附只是原样还回来），剩下 14 问被 15° 档挪走，最大位移 55.79mm = 6.97px，仍在 `SNAP_TOL_PX` 之内；160 问的落点全部过得了 `legalDrop`。所以"整数百米毫米"买到的是**靶子可复现**与恒等落点上的稳定，不是"探针免疫吸附"。这个计数同时是 A 块那条 sweep 用例的判据来源（它只要求 `identity ≥ 8`、`rewritten ≥ 1`、改写只许来自 `angle15`）。
+> ② `PROBE_OFFSETS` 那十发**会被吸走**，别把"偏移取得远"读成"探针不吃吸附"。样例房 16 把把手 × 10 发 = 160 问（2026-09-28 实测，十个进程逐字相同）：86 问吸上了东西，其中 72 问吸成**恒等**（垂足 54、正交 17、中点 1 —— 那些落点本来就在自己那面墙的轴线上，吸附只是原样还回来），剩下 14 问被 15° 档挪走，最大位移 55.79mm = 6.97px，仍在 `SNAP_TOL_PX` 之内；160 问的落点全部过得了 `legalDrop`（**这一句只对 Task 6 落地时成立** —— Task 7 的复核进了 `build` 之后是 76/160 过、84 发拒于 star，见 Task 7 的 T6 交接第 ④ 条）。所以"整数百米毫米"买到的是**靶子可复现**与恒等落点上的稳定，不是"探针免疫吸附"。这个计数同时是 A 块那条 sweep 用例的判据来源（它只要求 `identity ≥ 8`、`rewritten ≥ 1`、改写只许来自 `angle15`）。
 >
 > ③ `dragProbe` 里恒等筛那句（`targetMm === h.atMm` 就换下一个候选）在现有夹具下**单独摘掉不红**（HB6 实测 8/8 进程零红），它的凭据是联合改坏 HE1（插 `{0,0}` + 摘筛 ⇒ 红 3 条）。这不代表可以删掉它：`--edit-shot` 的"撤销后回到原值"判的前提是探针报出的**必然不是原地空放**，而那个前提靠的就是这一句。同理第 12 条筛（`pickOne` 必须选中被拖那面墙，HC4）在单测里零红，凭据在 Step 7 的真窗口闸门 —— 与 T5 的处置口径一字不差。
 >
@@ -10078,12 +10086,1550 @@ git commit -m "feat: 拉墙与删除接上屏幕，--draw-shot 二十七行判�
 第一条提交信息带上：snapping 28 条 + editing 30 条 + pick 3 条 + handles 7 条、Step 4 与 Step 5 的改坏清单里那些**恒红**的行号与红字（E14 / E15 / E25 / E26 各一句）、`Tests 30 passed` 与 `Tests 19 passed` 那两行、以及标了"偶发"的 E17 / E27 / E28 三行**连同它们的处置**（这三条最容易被下一个人当成"判据写坏了"重新查一遍）。第二条带上：`--draw-shot` 的二十七行 PASS、上面那三行实测读数、DR1–DR8 各自红在哪一处。`git status --porcelain` 在两次提交之后应当只剩计划文档一类，并且 **`apps/desktop/.tscheck/` 这类临时 harness 目录必须已经删掉**（它不属于任何一个提交）。
 
 
+### Task 7: core 补口 —— 派生复核与属性/删除命令（"能改"落到真源）
+
+计划 3 的前六个任务把屏幕搭完了：能看（T2/T3）、能点（T4）、能拖（T5）、能拉新墙（T6）。这七处里**唯一不动屏幕的一节**在 core：属性面板与删除键要的三条命令（`wall.setMaterial` / `wall.setLoadBearing` / `storey.delete`）与 T8 要的 `column.delete` / `slab.delete` 今天还不存在，而 T5/T6 一路记在边界表里的那条差额 ——「`legalDrop` / `legalWallCreate` 只试跑命令的 `build`，不跑派生层 ⇒ 拖出或拉出一颗星会被预言为合法、在重绘时抛」—— 也只在 core 收口才收得干净。本任务一次做两件事：**补口**（五条新命令 + `CommandType` 从 11 种到 16 种）与**复核**（改几何的三条命令在 `build` 末尾把整层派生跑一遍）。
+
+Task 8 的属性面板、删除键与 `planDelete` 的 `unsupported` 分支全部压在这一步的出口上（Task 6 开头「T7 对它们的依赖」那段里那句"`planDelete` 的 `unsupported` 是 T7 补 `columnDelete`/`slabDelete`/`storeyDelete` 时唯一要接的口子"；同段还有一句"补完之后 `DeletePlan.unsupported` 在样例房里恒空，那条用例要跟着改成'柱'" —— 那句判据的改动归 **Task 8**，因为要接的是 `planDelete` 接屏时才会用到的柱/板夹具），所以这一步的产物是**命令与判据**，UI 侧只碰三处既有写法（见"本任务会改到的既有写法"第 4、6、7 条，全在 scene-2d 的两个文件里）。
+
+**Files:**
+
+- Create: `packages/core/test/derive-guard.test.ts`（**9 条**：三条改几何命令的复核各一组，加"复核只挂这三条"的反面一组）
+- Create: `packages/core/test/commands-attributes.test.ts`（**12 条**：`assertMaterial` 的三种文案、`wallSetMaterial` / `wallSetLoadBearing` 的补丁形状与撤销栈）
+- Create: `packages/core/test/commands-delete.test.ts`（**12 条**：`storeyDelete` 的级联与闭合性、`columnDelete` / `slabDelete` 的孤儿点、`pointStillReferenced` 本身）
+- Modify: `packages/core/src/model/command.ts`（`CommandType` 11 → 16）
+- Modify: `packages/core/src/geom/outline.ts`（+20 行：`assertDerivesAfterApply` 的唯一产地）
+- Modify: `packages/core/src/geom/topology.ts`（+30 行：`pointStillReferenced`，从 `wall.ts` 的文件私有函数搬上来）
+- Modify: `packages/core/src/commands/wall.ts`（+94/−25：三条命令挂复核、`assertMaterial`、`wallSetMaterial` / `wallSetLoadBearing`、`wallDelete` 改问拓扑那份）
+- Modify: `packages/core/src/commands/storey.ts`（+60：`storeyDelete`）
+- Modify: `packages/core/src/commands/column.ts`（+35：`requireColumn` + `columnDelete`）
+- Modify: `packages/core/src/commands/slab.ts`（+41：`requireSlab` + `slabDelete`）
+- Modify: `packages/core/test/joint.test.ts`（5 条既有守卫用例改 `handBuild`；条数 **18 不变**）
+- Modify: `packages/scene-2d/test/editing.test.ts` 与 `packages/scene-2d/src/editing.ts`（**只动第 4、6、7 条那三处**：一条用例改写 + 同文件的两段注释；`handles.ts` 核对过**不动**，条数 **30 不变**）
+
+**`packages/core/src/index.ts` 一字不改**：那个文件对 `commands/storey` / `commands/wall` / `commands/column` / `commands/slab` / `geom/topology` / `geom/outline` 全是 `export *`（2026-09-28 核对），新出口自己就流出去了。代价是**红了不好看**：测试文件里 `import { storeyDelete } from '@dajia/core'` 在实现落地之前不会在链接期抛 `SyntaxError`，vitest 走 SSR 转译，那个名字是 `undefined`，要到**调用那一行**才炸成 `TypeError: storeyDelete is not a function`（Task 6 Step 4 已在临时工程里对十个新出口实测过这个形状）。Step 2 的"红在哪"按这个预期核对。
+
+**计数账**：core 从 **21 个文件 / 276 条** 到 **24 个文件 / 309 条**（+9 +12 +12，`joint.test.ts` 的 18 条一条不增不减）；scene-2d 的 **95 条**不动（snapping 28 + editing 30 + pick 18 + handles 19，按本计划各任务自己记的数加出来，本任务的临时工程只装 core）⇒ 全仓 **405 → 438**。基线 276 是 2026-09-28 在本任务的临时工程里对**真仓库**的 `packages/core` 重测过的（`Test Files 21 passed (21) / Tests 276 passed (276)`），不是抄计划 2 的旧数。
+
 ---
 
-## 尚未展开的任务边界（只剩 Task 7；补齐后才进执行）
+**裁决（本任务定下的四条，加上 T6 交接过来的一张账）**
+
+| # | 问题 | 裁决 | 理由与代价 |
+| - | ---- | ---- | ---------- |
+| A1 | 「建得出但画不出」的那一发在哪里挡？UI 再算一遍接头分类，还是 core 的 `build` 里复核一遍派生？ | **core**：`assertDerivesAfterApply(doc, patch, storeyId)` 放在 `wallCreate` / `wallMoveEndpoint` / `wallSetThickness` 三条命令 `build` 的**最后一行**，删除路径一条不挂 | 派生的四道守卫（star、同向重叠、近平行求不出接缝点、轮廓翻面）只有 `deriveStoreyGeometry` 一个产地；UI 侧预言"画不画得出来"必须复述这四道，而 `commands/opening.ts` 顶部那句"命令层绝不复述区间规则"早就给复述定过价。`applyPatch` 是纯函数、不动传进来的 doc ⇒ 草稿免费（`assertFitsAfterInsert` 同一条手法）。**代价实测**：一次带复核的 `build` 在 13 墙 0.055ms、31 墙 0.069ms、61 墙 0.161ms（2026-09-28，`bench/perf.test.ts`，整层派生本身 0.033 / 0.056 / 0.135ms）⇒ `pointermove` 每帧几次的量级仍然便宜，`legalWallCreate` / `legalDrop` 白捡一道。**副作用要写清**：复核吃的是**整份文档**（`deriveJoints` 是全局的），所以任何一层藏着坏数据，别层的每一条改几何命令都替它抛 —— 计划 4 的读盘读到坏层时本层是**冻结写入**的，`derive-guard.test.ts` 有一条专门钉这个形状。 |
+| A2 | 孤儿点的判定谁说了算？ | **`geom/topology.ts` 的 `pointStillReferenced(doc, pointId, exceptIds)`**，`wallDelete` 原来那份文件私有 `stillReferenced` 删掉、搬上来，`columnDelete` / `slabDelete` 共用 | 三类引用者（墙两端 / 柱落点 / 板边界）少查一类就会删掉别人还在用的点，而真源不校验引用完整性（`Document.replaceEntities` 只查整数毫米与 id 形状）⇒ 悬空引用一旦写进去，屏幕与图纸两头各自解释。参数从"单个 exclude id"改成 `ReadonlySet` 是因为删一面挂着板的墙时，那枚点同时被这块板引用，而板也在同一批删除里 —— 它不该算数。**代价**：柱与板的删除从此必须记得传 `exceptIds`，`commands-delete.test.ts` 里那条"墙、柱、板三种引用都认"就是这条判据的哨兵。 |
+| A3 | `storeyDelete` 怎么数下游？删到最后一层怎么办？ | 级联**不复述**：问 `dependentsOf`（楼层的墙/洞口/柱/板那份表），点按 `storeyId` 单独收；再叠一道**闭合性检查**（被删实体的下游必须也在删除集里，否则抛）；**最后一层不许删** | `dependentsOf` 已经存在且返回顺序写进了注释，这里再数一遍就是第二个产地，计划 4 加家具时漂掉的必然是本函数那一遍。点不在那张表里（`dependentsOf` 的 storey 分支只列构件），所以单独收 —— 那也不是复述引用规则，点是**属于**这层的而不是被这层引用的。闭合性检查兜的是"上面那张表写错/写漏"和读盘造出来的跨层悬空两种情况。最后一层的判据不是审美：`aabbOfPoints([])` 是**抛**的（计划 2 立的口径），删空之后屏幕每次重绘都炸，与其让 UI 兜不如真源不产这种状态。**代价**：删错了不能靠"删空再重建"回去，得先 `storeyCreate` 一层再删旧的。 |
+| A4 | 属性命令要不要"值没变就不发补丁"？要不要跑复核？ | **都不**：`wallSetMaterial` / `wallSetLoadBearing` 各 upsert 一个字段，不查新旧、不跑 `assertDerivesAfterApply`；但材料名的写法纪律有**一个产地**（`assertMaterial`，`wallCreate` 的可选入参与 `wallSetMaterial` 共用） | 不查新旧买的是"面板反复点同一个选项各留一条撤销记录"——这是**可接受的代价**而不是遗漏，`commands-attributes.test.ts` 有一条用例专门把它钉成预期行为（判据是 `build().upsert` 逐字等于那面墙 + `depth` 每次 +2），否则下一个读到它的人会以为是 bug 顺手加短路。材料不进派生表（`deriveStoreyGeometry` 只读墙的几何与厚度），跑复核等于给每条属性命令加一次整层派生。写法纪律只挡"存进去就没法看"的三种（空、带首尾空白、超 32 字符），下拉框的候选集是产品选项不是数据约束，留在 UI 侧。**改坏实测 M7**：给 `wallSetLoadBearing` 加 noop 短路，第一次跑**居然是绿的** —— 原判据只问 `depth` 变没变，而短路之后 `build` 返回空 upsert、`applyPatch` 不产生变更、`dispatch` 也就不加深度，于是断言分不出"发了空补丁"与"根本没发"。把判据加固成"`build().upsert` 必须逐字是那面墙"之后 M7 才红（`AssertionError: expected [] to deeply equal [ { kind: 'wall', …(9) } ]`）。这条纪律与全局约束里那句"断言要分得开故障"是同一件事。 |
+
+**T6 交接四条的处置**（Task 6 Step 4 末尾那条「交接给 Task 7 的四条」，本任务收两条、留两条给 T8/T9）：
+
+- ③ **收口**：`legalWallCreate` / `legalDrop` 的差额在 core 侧补齐了 —— 屏幕上"预言合法、重绘才抛"那一发从此在 `build` 就抛，`dispatch` 的 `catch` 会把它记进 `lastError`（T5 D6 的口径不变：不预检、让真源判）。
+- ④ **实测之后不迁就**：复核**没有**改变探针能挑出的候选集合，但**改变了每一枚端点的第一发可建候选**。2026-09-28 在临时工程里逐字复刻 `demoHouse()` 一层（8 面墙 + 4 个洞口 + 那两次改几何的编辑），把 `WALL_PROBE_OFFSETS` 的十发偏移 × 一层 8 枚端点 = **80 发**、`PROBE_OFFSETS` 的十发 × 16 把把手 = **160 发**，各问两遍（复核在 / 复核摘掉），结论：
+  - 拉新墙：复核在 `build` 拒 **48** 发（star 24、同向重叠 24）、可建 **32** 发；摘掉复核 `build` 全放行、派生层拒的正是**同一批 48 发**（`同一批候选？True`，新增拒绝 0、少拒绝 0）⇒ **筛 ⑥ 从此不再单独挡任何一发**，`wallProbe` 的答案不变。
+  - 拖把手：摘掉复核时 **160 发全部过 `legalDrop`**（Task 6 Step 5 里 `dragProbe` 那段注记与它下面那条"落点计数"引文块各说过一次；两处已就地标注"只对 Task 6 落地时成立"），复核在则 `build` 拒 **84** 发（全是 star）、可拖 **76** 发，同样是同一批 ⇒ `dragProbe` 的候选少了一半，但 16 把把手**每一把都还剩 ≥3 发**，靶子仍然给得出。
+  - "第一发通过 `build` 的候选"在 **8 枚端点里的 5 枚**、**12 个把手位置里的 9 个**上往后挪了 1～3 发（例：起点 `(4000,3000)` 从第 0 发 `(2000,0)` 挪到第 1 发 `(0,2000)`）。样例房那一发本来就被筛 ④ 挡着，所以最终靶子未必换 —— 但**这件事只能等 T6 与 T7 都落进真仓库才能实测**。因此本任务 Step 8 要求：`--draw-shot` 与 `--edit-shot` 在 T7 之后**各跑一遍取新字面量**，判据形状一字不改（不许把"那一发"写成"任一发"）。
+- ① **留给 T8**：`MIN_WALL_LENGTH_MM` 与数值输入第一次分家。
+- ② **留给 T8**：筛 ⑤/⑥ 的确定性夹具（复核之后 ⑥ 已经没有单独可挡的东西，那条夹具要配的是"命令层与派生层判得一样"这个新命题，见第 6 条既有写法）。
+
+---
+
+**本任务会改到的既有写法**（一次列全，免得执行时把订正当成抄错）
+
+1. `packages/core/test/joint.test.ts` 里**五条**"合法命令造得出画不出的文档"的哨兵用例（`sameRay` / `threeOnOneLine` / `insideTee` / 夹角小到翻面 / 直通两墙厚度不同 / Y 形三臂 star —— 前三条在同一条用例里，所以是**五条用例六处造图**）必须改成 `handBuild(...)` 手工造文档。改完 `deriveJoints(...)` 的入参从 `log.document` 变成 `doc`。**不是删用例**：那四道守卫是计划 4 的读盘与计划 6 的协作写入唯一的哨兵，命令层提前挡住不等于派生层可以不测。
+2. `packages/core/src/commands/wall.ts` 文件末尾的私有函数 `stillReferenced` **整段删除**，`wallDelete` 改问 `topology.pointStillReferenced`（A2）。签名从 `(doc, pointId, excludeWallId)` 变成 `(doc, pointId, ReadonlySet)`。
+3. `wallCreate` 的 `material` 从"什么都不查"变成构造期过一次 `assertMaterial(input.material, '墙材料')`。**只有传了才查**：`input.material === undefined` 仍然走 `'brick'` 兜底，所以既有 21 个测试文件里没传 `material` 的建墙调用一条都不必改（实测 276 条基线原样绿）。
+4. `packages/scene-2d/src/editing.ts` 里**三处**"命令层不跑派生"的措辞（2026-09-28 逐字核对过，`handles.ts` 里**没有**同类注释 —— `legalDrop` 的 doc 注释只讲"试跑真命令、不抄轴长比较"，那一条 T7 不动，别去它里面找）：① `wallProbe` 头部那串六道筛的第 ⑥ 句「命令层的 `build` 不含接头分类」；② `wallProbe` 循环里那句行内注释「`legalWallCreate` 只跑命令的 `build`，看不见接头分类」；③ `derivesCleanly` 的 doc 注释首句「`legalWallCreate` 只跑命令的 `build`，那一道里没有接头分类」与末段「它只护住探针 —— 用户手拉的那一发斜墙仍然只过 `legalWallCreate`，星形接头在屏幕上的缺口原样登记给 T7」。三段**在 T7 之后是错的**（`wallCreate` 与 `wallMoveEndpoint` 的 `build` 末尾就复核派生），统一改成"core 的三条改几何命令已在 `build` 末尾复核（`assertDerivesAfterApply`），`legalWallCreate` / `legalDrop` 与真源同判"。T5/T6 边界表里那条差额在本任务收口，注释留着旧说法就是下一轮误判的源头。
+5. 计划 2 的口径要跟着记一句：`deriveJoints` 全局 ⇒ 复核吃整份文档。这条不是新事实，是把第 4 段"删除路径永不复核"与它分开：坏数据**删得掉**（`wallDelete` / `openingDelete` / `columnDelete` / `slabDelete` / `storeyDelete` 全不挂复核），但**改不动**（三条改几何命令一律替别层的坏数据抛）。`commands-delete.test.ts` 里"坏数据必须还能删：逐面删掉星臂之后这一层重新派生得动"那条就是这条口径的凭据。
+6. `packages/scene-2d/test/editing.test.ts` 的「⑥ 的前提：同一发候选命令层放行、派生层抛（星形接头）」**会红**，且红在两处：`expect(legalWallCreate(log.document, draft)).toBe(true)`（现在给 false）与它下面那句 `trial.dispatch(command)`（现在抛 `/star/`，用例直接炸）。改法见 Step 6 —— 判据从"命令层放行、派生层抛"换成**"两层同判"**，这正是 A1 想要的那个命题，用例不改名、条数不变。
+7. `packages/scene-2d/src/editing.ts` 的 `derivesCleanly` 注释里"每个候选多一次整层派生 … 它只护住探针"要补一句：T7 之后它与 `legalWallCreate` **判得一样**（同一发命令、同一个 storey、同一份结果文档），它从此是第二道保险而不是唯一防线。**与第 4 条 ③ 是同一段注释，一次改完**，别分两次动那个文件。代码不动 —— 删掉它的唯一凭据是"真仓库里跑一遍 E28 那条改坏"，那属于执行日的事，写在 Step 6 的验证里。
+
+---
+
+**Interfaces:**
+
+- Consumes：计划 2 落地的 `deriveStoreyGeometry` / `applyPatch` / `dependentsOf` / `requireStorey` / `mustExist`，计划 1 的 `Command` / `Patch` / `Document.byKind` / `uuidv7`，以及 `commands/opening.ts` 里 `requireOpening` 的读取断言口径（本任务的 `requireColumn` / `requireSlab` 照它的形状抄）。
+- Produces（`@dajia/core` 的新出口，T8 的属性面板与 `planDelete` 逐条要接）：
+
+```ts
+// model/command.ts —— 11 → 16
+export type CommandType =
+  | 'storey.create'
+  | 'storey.setElevation'
+  | 'storey.delete'          // （T7 加）
+  | 'wall.create'
+  | 'wall.moveEndpoint'
+  | 'wall.setThickness'
+  | 'wall.setMaterial'       // （T7 加）
+  | 'wall.setLoadBearing'    // （T7 加）
+  | 'wall.delete'
+  | 'opening.create'
+  | 'opening.move'
+  | 'opening.delete'
+  | 'column.create'
+  | 'column.delete'          // （T7 加）
+  | 'slab.create'
+  | 'slab.delete';           // （T7 加）
+
+// geom/outline.ts
+/** 命令层的派生复核：候选补丁贴到草稿上跑一次整层派生，派生抛则命令抛。 */
+export function assertDerivesAfterApply(doc: Document, patch: Patch, storeyId: EntityId): void;
+
+// geom/topology.ts
+/** 除 exceptIds 之外还有谁引用这枚点：墙（两端）、柱（落点）、板（边界）。孤儿判定的唯一产地。 */
+export function pointStillReferenced(
+  doc: Document,
+  pointId: EntityId,
+  exceptIds: ReadonlySet<EntityId>,
+): boolean;
+
+// commands/wall.ts
+/** 非空、不带首尾空白、不超 32 字符；label 只改文案，规则一处。 */
+export function assertMaterial(material: string, label?: string): string;
+export function wallSetMaterial(input: { wallId: EntityId; material: string }): Command;
+export function wallSetLoadBearing(input: { wallId: EntityId; loadBearing: boolean }): Command;
+
+// commands/storey.ts / column.ts / slab.ts
+export function storeyDelete(input: { storeyId: EntityId }): Command;
+export function columnDelete(input: { columnId: EntityId }): Command;
+export function slabDelete(input: { slabId: EntityId }): Command;
+
+// wallCreate 从此多一道构造期守卫：input.material 传了就过 assertMaterial(…, '墙材料')
+// wallCreate / wallMoveEndpoint / wallSetThickness 的 build 会抛派生的四类 RangeError：
+//   /star/、/同向重叠/、/厚度不同/、/翻面/
+```
+
+---
+
+- [ ] **Step 1: 类型面 —— `CommandType` 11 → 16**
+
+`packages/core/src/model/command.ts` 里那个判别式 union 是**唯一**需要动的类型文件（`Command` 接口本身不动，`type` 只是标签，`TransactionLog` 靠 `build`/`invert` 工作）。整段替换：
+
+```ts
+export type CommandType =
+  | 'storey.create'
+  | 'storey.setElevation'
+  | 'storey.delete'
+  | 'wall.create'
+  | 'wall.moveEndpoint'
+  | 'wall.setThickness'
+  | 'wall.setMaterial'
+  | 'wall.setLoadBearing'
+  | 'wall.delete'
+  | 'opening.create'
+  | 'opening.move'
+  | 'opening.delete'
+  | 'column.create'
+  | 'column.delete'
+  | 'slab.create'
+  | 'slab.delete';
+```
+
+Run: `npx tsc --noEmit -p packages/core/tsconfig.json`（或 `pnpm typecheck`）
+Expected: exit=0。这一改**不可能红**：加 union 成员是放宽。它单独提交也不改变任何行为 —— 放在第一步是因为后面四步都要往命令对象上写 `type: 'storey.delete'` 这类字面量，晚改一步就编译不过一步。
+
+---
+
+- [ ] **Step 2: 写失败测试 —— 三个新文件全文 + `joint.test.ts` 的五处改写**
+
+顺序纪律照 T5/T6：**先把测试整份落地跑到红，再写实现**。三个文件一次给全，逐字抄进去。
+
+**2a. `packages/core/test/derive-guard.test.ts`（9 条）**
+
+这一份钉的是 A1 的正面与反面：三条改几何的命令各有一组"改得出画不出的几何 ⇒ `build` 就抛、文档与撤销栈都不动"，外加"复核只挂这三条"那一组（坏数据删得掉、材料命令照过）。开头那段注释解释了它和 `joint.test.ts` 的分工，别删。
+
+```ts
+// 派生复核（`assertDerivesAfterApply`）：改得出"画不出来的几何"的那一发，命令层就抛，
+// 且不留痕迹。计划 3 Task 7 的 A1。
+//
+// joint.test.ts 里那四条守卫用例（同向重叠 / 翻面 / 直通异厚 / star）从 Task 7 起改成
+// **手工造文档**（`handBuild`），因为命令层已经不让它们走到派生层了。这个文件钉的是正面：
+// 正常建房子的路走不到那四种文档，而坏数据仍然删得掉。
+import { describe, expect, it } from 'vitest';
+import {
+  Document,
+  TransactionLog,
+  applyPatch,
+  deriveStoreyGeometry,
+  storeyCreate,
+  uuidv7,
+  wallCreate,
+  wallDelete,
+  wallMoveEndpoint,
+  wallSetMaterial,
+  wallSetThickness,
+  type Entity,
+  type EntityId,
+  type PointRef,
+  type WallEntity,
+} from '@dajia/core';
+
+const projectId = uuidv7();
+
+/** 一层楼、空文档。每个用例自己往上盖墙，互不干扰。 */
+function newLog(): TransactionLog {
+  const log = new TransactionLog(Document.create(projectId));
+  log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+  return log;
+}
+
+function storeyOf(log: TransactionLog, index = 0): EntityId {
+  const storey = log.document.byKind('storey').find((s) => s.index === index);
+  if (!storey) throw new Error(`没有序号为 ${index} 的楼层`);
+  return storey.id;
+}
+
+/**
+ * 走命令层盖一面墙，返回新墙。
+ * 取返回值而不是 `byKind('wall')[n]`：uuidv7 同毫秒内不保证单调，byKind 按 id 升序，
+ * **创建顺序在实体数组里根本没有位置可言** —— 下标选墙迟早漂。
+ */
+function addWall(
+  log: TransactionLog,
+  start: PointRef,
+  end: PointRef,
+  thicknessMm = 240,
+): WallEntity {
+  log.dispatch(
+    wallCreate({ storeyId: storeyOf(log), start, end, thicknessMm, heightMm: 3000 }),
+  );
+  for (const id of log.affected) {
+    const entity = log.document.get(id);
+    if (entity?.kind === 'wall') return entity;
+  }
+  throw new Error('dispatch 之后没找到新墙');
+}
+
+/**
+ * 手工贴墙与点（绕开命令层）：坐标相同的两端复用同一枚点 id，与命令层的共享端点语义一致。
+ * Task 7 之后"合法命令造得出画不出的文档"这条路被复核堵死，要造坏文档只剩这一条路。
+ */
+function handEntities(storeyId: EntityId, specs: Array<[number, number, number, number]>) {
+  const entities: Entity[] = [];
+  const pointIds = new Map<string, EntityId>();
+  const pointOf = (x: number, y: number): EntityId => {
+    const key = `${x},${y}`;
+    const hit = pointIds.get(key);
+    if (hit) return hit;
+    const id = uuidv7();
+    pointIds.set(key, id);
+    entities.push({ kind: 'point', id, storeyId, x, y });
+    return id;
+  };
+  for (const [x0, y0, x1, y1] of specs) {
+    entities.push({
+      kind: 'wall',
+      id: uuidv7(),
+      storeyId,
+      startId: pointOf(x0, y0),
+      endId: pointOf(x1, y1),
+      thicknessMm: 240,
+      heightMm: 3000,
+      elevationOffsetMm: 0,
+      loadBearing: true,
+      material: 'brick',
+    });
+  }
+  return entities;
+}
+
+/** 把现有实体原样保留，再贴进 extras。 */
+function withExtras(doc: Document, extras: readonly Entity[]): Document {
+  const merged = new Map<EntityId, Entity>();
+  for (const entity of doc.byKind('point')) merged.set(entity.id, entity);
+  for (const entity of doc.byKind('wall')) merged.set(entity.id, entity);
+  for (const entity of doc.byKind('storey')) merged.set(entity.id, entity);
+  for (const entity of extras) merged.set(entity.id, entity);
+  return Document.replaceEntities(doc, merged);
+}
+
+/** 三面墙、三个方向过 (5000, 5000)：S1 画不出来的那一颗。坐标离命令建的那面墙远远的。 */
+const STAR_SPECS: Array<[number, number, number, number]> = [
+  [5000, 5000, 6000, 5000],
+  [5000, 5000, 5000, 6000],
+  [5000, 5000, 5900, 6000],
+];
+
+describe('wallCreate 的派生复核', () => {
+  it('三面墙过同一点、三个方向 → 命令层就抛 /star/，文档与撤销栈都不动', () => {
+    const log = newLog();
+    const hub = addWall(log, { x: 0, y: 0 }, { x: 1000, y: 0 }).endId;
+    addWall(log, { pointId: hub }, { x: 1000, y: 900 });
+    const before = log.document.canonical();
+    const depth = log.depth;
+    // 第三臂走斜方向 → 三条方向线过同一点 = star。加复核之前这一发**建得出来**，
+    // 建完之后整层再也派生不了（屏幕侧就是重绘时抛 RangeError）。
+    expect(() => addWall(log, { pointId: hub }, { x: 2000, y: 900 })).toThrow(/star/);
+    expect(log.document.canonical()).toBe(before);
+    expect(log.depth).toBe(depth);
+  });
+
+  it('同一点同向两笔 → 抛 /同向重叠/（重叠墙带进不了真源）', () => {
+    const log = newLog();
+    const spine = addWall(log, { x: 1000, y: 0 }, { x: 2000, y: 0 });
+    expect(() => addWall(log, { pointId: spine.startId }, { x: 3000, y: 0 })).toThrow(
+      /同向重叠/,
+    );
+    expect(log.document.byKind('wall')).toHaveLength(1);
+  });
+
+  it('合法的两臂直角照常建得出来；复核只读草稿，不动原档', () => {
+    const log = newLog();
+    const hub = addWall(log, { x: 0, y: 0 }, { x: 1000, y: 0 }).endId;
+    const before = log.document.canonical();
+    const cmd = wallCreate({
+      storeyId: storeyOf(log),
+      start: { pointId: hub },
+      end: { x: 1000, y: 900 },
+      thicknessMm: 240,
+      heightMm: 3000,
+    });
+    const patch = cmd.build(log.document);
+    // 复核是把补丁贴到草稿上再派生一遍，原文档一个字节都不动（applyPatch 本就不可变）
+    expect(log.document.canonical()).toBe(before);
+    // 起点复用 hub：复核看的就是"共享端点"这一语义，不是新建了一枚同坐标的点
+    const wall = patch.upsert.find((e) => e.kind === 'wall');
+    expect(wall?.kind === 'wall' && wall.startId === hub).toBe(true);
+    expect(() => log.dispatch(cmd)).not.toThrow();
+    expect(() => deriveStoreyGeometry(log.document, storeyOf(log))).not.toThrow();
+  });
+
+  it('复核吃的是**整份文档**：别层藏一颗星，本层也写不进墙', () => {
+    const log = newLog();
+    const storeyOne = storeyOf(log);
+    log.dispatch(storeyCreate({ projectId, index: 1, elevationMm: 3000, heightMm: 3000 }));
+    const storeyTwo = storeyOf(log, 1);
+    const doc = withExtras(log.document, handEntities(storeyTwo, STAR_SPECS));
+    // deriveJoints 是全局的（斜切量是全局性质），所以二层的坏文档会让一层的每发墙命令
+    // 都替它抛错。这条行为要留档：计划 4 的读盘若读到坏层，本层是**冻结写入**的。
+    expect(() =>
+      wallCreate({
+        storeyId: storeyOne,
+        start: { x: 5000, y: 5000 },
+        end: { x: 6000, y: 5000 },
+        thicknessMm: 240,
+        heightMm: 3000,
+      }).build(doc),
+    ).toThrow(/star/);
+  });
+});
+
+describe('wallMoveEndpoint 的派生复核', () => {
+  /** 一条直梁 + 一枚竖臂组成的合法 T 接：返回直通里"端点是 hub"的那面墙与 hub。 */
+  function tee(): { log: TransactionLog; spine: WallEntity; hub: EntityId } {
+    const log = newLog();
+    const through = addWall(log, { x: 0, y: 0 }, { x: 1000, y: 0 });
+    const hub = through.endId;
+    addWall(log, { pointId: hub }, { x: 2000, y: 0 });
+    addWall(log, { pointId: hub }, { x: 1000, y: 900 });
+    // spine = 以 hub 为 end 的那面（拖它的 end 才是在搬 hub 本身）
+    const spine = log.document.byKind('wall').find((w) => w.endId === hub)!;
+    return { log, spine, hub };
+  }
+
+  it('把 T 接的公共点拖离直通线 → 三个方向过同一点，抛 /star/，文档不动', () => {
+    const { log, spine } = tee();
+    const storeyId = storeyOf(log);
+    expect(() => deriveStoreyGeometry(log.document, storeyId)).not.toThrow();
+    const before = log.document.canonical();
+    const depth = log.depth;
+    // hub 是三端共用的那枚点：拖 spine 的 end 就是把 hub 搬走，三臂方向同时变。
+    // 命令层的轴长、零长、邻墙守卫一条都不会叫（三条边都还很长），
+    // 接头分类只有派生层会算 —— 这正是 T5/T6 记的"legalDrop 只跑 build"的差额。
+    expect(() =>
+      wallMoveEndpoint({ wallId: spine.id, end: 'end', x: 1000, y: 300 }).build(log.document),
+    ).toThrow(/star/);
+    expect(log.document.canonical()).toBe(before);
+    expect(log.depth).toBe(depth);
+  });
+
+  it('沿直通线拖同一个点 → 仍是 T 接，合法：红的是这一发的几何，不是"拖共点一律抛"', () => {
+    const { log, spine, hub } = tee();
+    log.dispatch(wallMoveEndpoint({ wallId: spine.id, end: 'end', x: 1200, y: 0 }));
+    // 三端仍共 hub：拖点不拆连接，也不另造一枚同坐标的新点
+    expect(
+      log.document.byKind('wall').filter((w) => w.startId === hub || w.endId === hub),
+    ).toHaveLength(3);
+    expect(() => deriveStoreyGeometry(log.document, storeyOf(log))).not.toThrow();
+  });
+});
+
+describe('wallSetThickness 的派生复核', () => {
+  it('5° 斜角的两面墙：厚 120 合法，加厚到 240 会翻面 → 抛 /翻面/', () => {
+    const log = newLog();
+    const storeyId = storeyOf(log);
+    const horizontal = addWall(log, { x: -2000, y: 0 }, { x: 0, y: 0 }, 120);
+    const angled = addWall(log, { pointId: horizontal.endId }, { x: -2000, y: 175 }, 120);
+    expect(() => deriveStoreyGeometry(log.document, storeyId)).not.toThrow();
+    expect(() =>
+      wallSetThickness({ wallId: angled.id, thicknessMm: 240 }).build(log.document),
+    ).toThrow(/翻面/);
+    // 加厚到 121 仍然合法：证明红的是这一发的几何，不是"这条命令一律抛"
+    expect(() =>
+      wallSetThickness({ wallId: angled.id, thicknessMm: 121 }).build(log.document),
+    ).not.toThrow();
+  });
+});
+
+describe('复核只挂在改几何的三条命令上', () => {
+  /** 一份带星的文档：一面命令建的合法墙 + 三条手工星臂（三端共点、三个方向线）。 */
+  function starDoc(): { doc: Document; storeyId: EntityId; legal: WallEntity; arms: EntityId[] } {
+    const log = newLog();
+    const storeyId = storeyOf(log);
+    const legal = addWall(log, { x: 0, y: 0 }, { x: 1000, y: 0 });
+    const doc = withExtras(log.document, handEntities(storeyId, STAR_SPECS));
+    const arms = doc
+      .byKind('wall')
+      .filter((w) => w.id !== legal.id)
+      .map((w) => w.id);
+    return { doc, storeyId, legal, arms };
+  }
+
+  it('坏数据必须还能删：逐面删掉星臂之后，这一层重新派生得动', () => {
+    const { doc, storeyId, arms } = starDoc();
+    expect(() => deriveStoreyGeometry(doc, storeyId)).toThrow(/star/);
+    expect(arms).toHaveLength(3);
+    let cursor = doc;
+    // 第一发的 build 打在**仍然带星**的文档上，后两发打在删了一半的坏文档上：
+    // 删除路径不跑复核，否则守卫挡住删除等于把这份文档锁死，用户只能重开。
+    for (const wallId of arms) {
+      cursor = applyPatch(cursor, wallDelete({ wallId }).build(cursor)).doc;
+    }
+    expect(() => deriveStoreyGeometry(cursor, storeyId)).not.toThrow();
+    expect(cursor.byKind('wall')).toHaveLength(1);
+  });
+
+  it('材料不进派生：同一份坏文档，wallSetMaterial 照常通过', () => {
+    const { doc, storeyId, legal } = starDoc();
+    expect(() => deriveStoreyGeometry(doc, storeyId)).toThrow(/star/);
+    expect(() =>
+      wallSetMaterial({ wallId: legal.id, material: 'concrete' }).build(doc),
+    ).not.toThrow();
+  });
+});
+```
+
+三处形状要留意，它们是这一步最容易"顺手改平"的地方：
+
+① `addWall` 从 `log.affected` 里挑新墙，**不写 `doc.byKind('wall')[i]`**：`byKind` 按 id 升序，而 `uuidv7` 在同一毫秒内不单调（全局约束那条），"第 n 面墙"迟早漂到别的墙上。`commands-attributes.test.ts` 与 `commands-delete.test.ts` 里的 `addWall` 同一形状。
+
+② 「复核吃的是**整份文档**」那条用例故意把星藏在**另一层**，然后断言本层的 `wallCreate.build` 替它抛 `/star/`。这条不是设计缺陷的告解，是把 `deriveJoints` 的全局性质钉成预期行为 —— 计划 4 的读盘读到坏层时，本层冻结写入是**已知后果**，注释里写了。
+
+③ 「三面墙过同一点、三个方向」那条用 `log.document.canonical()` 的引用相等 + `log.depth` 不变做"不留痕迹"的凭据。`canonical()` 返回的是缓存的字符串，`toBe(before)` 判的是"文档对象压根没换"，比逐字段对账强：`applyPatch` 一旦跑过，即便结果一模一样，引用也会变。
+
+**2b. `packages/core/test/commands-attributes.test.ts`（12 条）**
+
+```ts
+// 属性命令（wall.setMaterial / wall.setLoadBearing）与那一条材料写法（assertMaterial）。
+// 计划 3 Task 7 的 A4：不做 noop 检查、不进派生复核。两条都是**付了代价**的选择 ——
+// 代价（反复点同一个选项会各留一条撤销记录）写在最后一条用例里，别让人以为是没想过。
+import { describe, expect, it } from 'vitest';
+import {
+  Document,
+  TransactionLog,
+  assertMaterial,
+  storeyCreate,
+  uuidv7,
+  wallCreate,
+  wallSetLoadBearing,
+  wallSetMaterial,
+  type EntityId,
+  type WallEntity,
+} from '@dajia/core';
+
+const projectId = uuidv7();
+
+/** 一层楼 + 一面 4000×240 的墙。只有一面墙，所以 byKind 下标没有歧义。 */
+function oneWall(): { log: TransactionLog; wall: WallEntity; storeyId: EntityId } {
+  const log = new TransactionLog(Document.create(projectId));
+  log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+  const storeyId = log.document.byKind('storey')[0]!.id;
+  log.dispatch(
+    wallCreate({
+      storeyId,
+      start: { x: 0, y: 0 },
+      end: { x: 4000, y: 0 },
+      thicknessMm: 240,
+      heightMm: 3000,
+    }),
+  );
+  return { log, wall: log.document.byKind('wall')[0]!, storeyId };
+}
+
+describe('assertMaterial：材料名的写法纪律', () => {
+  it('非空、不带首尾空白、不超 32 字符，三种毛病各有自己的文案', () => {
+    expect(() => assertMaterial('')).toThrow(/材料不能为空/);
+    expect(() => assertMaterial(' 混凝土 ')).toThrow(/不能带首尾空白/);
+    expect(() => assertMaterial('a'.repeat(33))).toThrow(/不能超过 32 字符，收到 33 个/);
+  });
+
+  it('合法的那一侧：32 字符正好、中文与句中空格都放行（图纸标注要写"240 砖砌"这种话）', () => {
+    expect(assertMaterial('a'.repeat(32))).toHaveLength(32);
+    expect(assertMaterial('240 砖砌', '墙材料')).toBe('240 砖砌');
+  });
+
+  it('label 只改文案不改规则：wallCreate 那份报错说的是"墙材料"', () => {
+    expect(() => assertMaterial('', '墙材料')).toThrow(/墙材料不能为空/);
+    expect(() =>
+      wallCreate({
+        storeyId: uuidv7(),
+        start: { x: 0, y: 0 },
+        end: { x: 1000, y: 0 },
+        thicknessMm: 240,
+        heightMm: 3000,
+        material: '',
+      }),
+    ).toThrow(/墙材料不能为空/);
+  });
+});
+
+describe('wallSetMaterial', () => {
+  it('补丁只有一个 upsert、只有 material 变了，其余字段逐字不动', () => {
+    const { log, wall } = oneWall();
+    const patch = wallSetMaterial({ wallId: wall.id, material: 'concrete' }).build(log.document);
+    expect(patch.remove).toEqual([]);
+    expect(patch.upsert).toHaveLength(1);
+    expect(patch.upsert[0]).toEqual({ ...wall, material: 'concrete' });
+  });
+
+  it('省略 material 时默认 brick；改完之后真源里就是新值', () => {
+    const { log, wall } = oneWall();
+    expect(wall.material).toBe('brick');
+    log.dispatch(wallSetMaterial({ wallId: wall.id, material: '混凝土' }));
+    expect(log.document.byKind('wall')[0]!.material).toBe('混凝土');
+  });
+
+  it('墙不存在 → TypeError，文案点名是"墙"（读取断言只有一个产地）', () => {
+    const { log } = oneWall();
+    const missing = uuidv7();
+    let caught: unknown;
+    try {
+      wallSetMaterial({ wallId: missing, material: 'brick' }).build(log.document);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(TypeError);
+    expect((caught as Error).message).toBe(`墙 不存在：${missing}`);
+  });
+
+  it('拿楼层 id 当墙用 → 类型不符也抛（mustExist 之后还要过 kind 这一道）', () => {
+    const { log, storeyId } = oneWall();
+    expect(() =>
+      wallSetMaterial({ wallId: storeyId, material: 'brick' }).build(log.document),
+    ).toThrow(/不是墙，是 storey/);
+  });
+
+  it('材料不进派生：写法合法就只管写，值一样也照写不误（noop 不检查，见最后一条用例的代价）', () => {
+    const { log, wall } = oneWall();
+    expect(() => wallSetMaterial({ wallId: wall.id, material: 'brick' }).build(log.document)).not.toThrow();
+  });
+});
+
+describe('wallSetLoadBearing', () => {
+  it('默认承重为 true，改成 false 只动那一个字段', () => {
+    const { log, wall } = oneWall();
+    expect(wall.loadBearing).toBe(true);
+    const patch = wallSetLoadBearing({ wallId: wall.id, loadBearing: false }).build(log.document);
+    expect(patch.upsert).toEqual([{ ...wall, loadBearing: false }]);
+  });
+
+  it('撤销/重做把属性原样还回来，也原样再放回去', () => {
+    const { log, wall } = oneWall();
+    log.dispatch(wallSetMaterial({ wallId: wall.id, material: '混凝土' }));
+    log.dispatch(wallSetLoadBearing({ wallId: wall.id, loadBearing: false }));
+    expect(log.depth).toBe(4); // 楼层 + 墙 + 两条属性
+    log.undo();
+    log.undo();
+    expect(log.document.get(wall.id)).toEqual(wall);
+    // redo 逆着 undo 的顺序回来：先材料，后承重
+    log.redo();
+    expect(log.document.byKind('wall')[0]!.material).toBe('混凝土');
+    log.redo();
+    expect(log.document.byKind('wall')[0]!.loadBearing).toBe(false);
+  });
+
+  it('反复点同一个选项各留一条撤销记录：A4 选的代价，不是遗漏', () => {
+    const { log, wall } = oneWall();
+    const before = log.depth;
+    // 值没变也照样出一发补丁 —— 哪天有人"顺手"加一句 noop 短路，这一发就断在补丁上，
+    // 而不是断在撤销栈深度上（空补丁同样压栈，光看 depth 是看不出来的）。
+    expect(wallSetMaterial({ wallId: wall.id, material: 'brick' }).build(log.document).upsert)
+      .toEqual([wall]);
+    log.dispatch(wallSetMaterial({ wallId: wall.id, material: 'brick' }));
+    log.dispatch(wallSetMaterial({ wallId: wall.id, material: 'brick' }));
+    expect(log.depth).toBe(before + 2);
+    // 文档内容没变，所以这两发在 canonical() 上不可见 —— 撤销栈里却实实在在有两层
+    expect(log.document.byKind('wall')[0]!.material).toBe('brick');
+    log.undo();
+    expect(log.document.byKind('wall')[0]!.material).toBe('brick');
+  });
+
+  it('属性命令不碰别的实体：applyPatch 之后未触及的墙保持同一个对象', () => {
+    const { log, wall } = oneWall();
+    log.dispatch(
+      wallCreate({
+        storeyId: log.document.byKind('storey')[0]!.id,
+        start: { x: 0, y: 2000 },
+        end: { x: 4000, y: 2000 },
+        thicknessMm: 240,
+        heightMm: 3000,
+      }),
+    );
+    const untouched = log.document.byKind('wall').find((w) => w.id !== wall.id)!;
+    const next = log.document;
+    log.dispatch(wallSetMaterial({ wallId: wall.id, material: 'concrete' }));
+    // 不可变文档的同一性保证：屏幕侧靠对象引用做增量重建，被误替换的实体会白白重算
+    expect(log.document.byKind('wall').find((w) => w.id === untouched.id)).toBe(untouched);
+    expect(next.byKind('wall').find((w) => w.id === wall.id)).toBe(wall);
+  });
+});
+```
+
+三处判据的形状：
+
+① `assertMaterial` 的三种毛病**各有各的文案**（`不能为空` / `不能带首尾空白，收到 …` / `不能超过 32 字符，收到 N 个`），所以用例逐条点名正则，不写"抛个错就行"。32 个字符**正好**放行、中文放行 —— 计划 5 的图纸标注要写"240 砖砌"这种话。`label` 参数只改文案不改规则，所以断言里连"墙材料"和"材料"两种前缀都各问一遍。
+
+② "反复点同一个选项各留一条撤销记录"那条是 A4 的代价清单，判据是**两段**：`build(doc).upsert` 逐字等于 `[wall]`（补丁不是空的），并且 `depth` 每次 +2。只写后一段会被 M7 那种"加个 noop 短路"的改坏骗过去 —— 实测第一次就是这么漏的（改坏表 M7 行有红文）。
+
+③ `wallSetMaterial` 的 `TypeError` 那条要连**消息**一起对（`墙 不存在：${missing}` / `不是墙，是 storey`），因为 `mustExist` 与 kind 断言是两条不同的守卫，只断 `.toThrow(TypeError)` 分不出走的是哪一条。
+
+**2c. `packages/core/test/commands-delete.test.ts`（12 条）**
+
+```ts
+// 删除侧的三条补口命令（storey.delete / column.delete / slab.delete）与那一份孤儿判据
+// （pointStillReferenced）。计划 3 Task 7 的 A2 与 A3。
+//
+// 两条口径贯穿整个文件：① 级联与孤儿判定各只有一个产地（问 dependentsOf 与
+// pointStillReferenced，不在命令里再数一遍）；② 删除路径一律不跑派生复核 ——
+// 坏数据必须还能删，守卫挡住删除等于把文档锁死（正面用例在 derive-guard.test.ts）。
+import { describe, expect, it } from 'vitest';
+import {
+  Document,
+  TransactionLog,
+  applyPatch,
+  columnCreate,
+  columnDelete,
+  deriveStoreyGeometry,
+  openingCreate,
+  pointStillReferenced,
+  slabCreate,
+  slabDelete,
+  storeyCreate,
+  storeyDelete,
+  uuidv7,
+  wallCreate,
+  wallDelete,
+  type Entity,
+  type EntityId,
+  type WallEntity,
+} from '@dajia/core';
+
+const projectId = uuidv7();
+
+/** 往文档里贴/换一条实体，其余原样。手搓坏文档只走这条路。 */
+function withEntity(doc: Document, entity: Entity): Document {
+  const merged = new Map<EntityId, Entity>();
+  for (const kind of ['storey', 'point', 'wall', 'opening', 'column', 'slab'] as const) {
+    for (const e of doc.byKind(kind)) merged.set(e.id, e);
+  }
+  merged.set(entity.id, entity);
+  return Document.replaceEntities(doc, merged);
+}
+
+function newLog(): TransactionLog {
+  return new TransactionLog(Document.create(projectId));
+}
+
+function addStorey(log: TransactionLog, index: number): EntityId {
+  log.dispatch(storeyCreate({ projectId, index, elevationMm: index * 3000, heightMm: 3000 }));
+  const storey = log.document.byKind('storey').find((s) => s.index === index);
+  if (!storey) throw new Error(`建不出序号 ${index} 的楼层`);
+  return storey.id;
+}
+
+function addWall(
+  log: TransactionLog,
+  storeyId: EntityId,
+  start: { x: number; y: number } | { pointId: EntityId },
+  end: { x: number; y: number } | { pointId: EntityId },
+): WallEntity {
+  log.dispatch(
+    wallCreate({ storeyId, start, end, thicknessMm: 240, heightMm: 3000, material: 'brick' }),
+  );
+  for (const id of log.affected) {
+    const entity = log.document.get(id);
+    if (entity?.kind === 'wall') return entity;
+  }
+  throw new Error('dispatch 之后没找到新墙');
+}
+
+/**
+ * 一层里塞满四类下游：墙（墙上挂樘门）、柱、板，加上各自的点。
+ * 坐标彼此离远，除了墙自己，别给删除添接头上的麻烦。
+ */
+function fullStorey(log: TransactionLog, storeyId: EntityId) {
+  const wall = addWall(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+  log.dispatch(
+    openingCreate({
+      hostWallId: wall.id,
+      distanceMm: 1000,
+      widthMm: 900,
+      heightMm: 2100,
+      category: 'door',
+    }),
+  );
+  const openingId = log.document.byKind('opening')[0]!.id;
+  log.dispatch(columnCreate({ storeyId, at: { x: 9000, y: 9000 }, widthMm: 400, depthMm: 400 }));
+  const columnId = log.document.byKind('column')[0]!.id;
+  log.dispatch(
+    slabCreate({
+      storeyId,
+      boundary: [
+        { x: 20000, y: 20000 },
+        { x: 26000, y: 20000 },
+        { x: 26000, y: 24000 },
+      ],
+      thicknessMm: 120,
+    }),
+  );
+  return { wallId: wall.id, openingId, columnId, slabId: log.document.byKind('slab')[0]!.id };
+}
+
+describe('storeyDelete 的级联', () => {
+  it('楼层的下游全在删除集里：墙、洞口、柱、板、点一个不漏，upsert 恒空', () => {
+    const log = newLog();
+    const storeyId = addStorey(log, 0);
+    // 空着的第二层只为满足"最后一层不许删"而存在（见下面那条用例），不参与删除集
+    addStorey(log, 1);
+    const { wallId, openingId, columnId, slabId } = fullStorey(log, storeyId);
+    const patch = storeyDelete({ storeyId }).build(log.document);
+    expect(patch.upsert).toEqual([]);
+    const remove = new Set(patch.remove);
+    expect(remove.has(storeyId)).toBe(true);
+    for (const id of [wallId, openingId, columnId, slabId]) expect(remove.has(id)).toBe(true);
+    // 点也一起走：这层的点数 = 墙 2 + 柱 1 + 板 3
+    const points = log.document.byKind('point').filter((p) => p.storeyId === storeyId);
+    expect(points).toHaveLength(6);
+    for (const point of points) expect(remove.has(point.id)).toBe(true);
+    expect(remove.size).toBe(11);
+  });
+
+  it('只动本层：另一层的墙与点不在删除集里', () => {
+    const log = newLog();
+    const one = addStorey(log, 0);
+    const two = addStorey(log, 1);
+    fullStorey(log, one);
+    const other = addWall(log, two, { x: 0, y: 0 }, { x: 3000, y: 0 });
+    const patch = storeyDelete({ storeyId: one }).build(log.document);
+    const remove = new Set(patch.remove);
+    expect(remove.has(other.id)).toBe(false);
+    for (const point of log.document.byKind('point').filter((p) => p.storeyId === two)) {
+      expect(remove.has(point.id)).toBe(false);
+    }
+    expect(remove.has(two)).toBe(false);
+    // 反面对照：本层那面墙确实在删除集里，别是"什么都删不到"蒙对了第一条
+    expect(remove.has(log.document.byKind('wall').find((w) => w.storeyId === one)!.id)).toBe(true);
+  });
+
+  it('删除补丁逐字可重放：同一文档 build 两次，remove 数组连顺序都相同', () => {
+    const log = newLog();
+    const storeyId = addStorey(log, 0);
+    addStorey(log, 1);
+    fullStorey(log, storeyId);
+    const cmd = storeyDelete({ storeyId });
+    // 顺序 = dependentsOf 的书写顺序（墙→洞口→柱→板）再接点（byKind 的 id 升序）。
+    // 写死的不是这一串 id（它们是 uuid），写死的是"两次调用给出同一个数组"。
+    expect(cmd.build(log.document).remove).toEqual(cmd.build(log.document).remove);
+  });
+
+  it('删完这一层，另一层照常派生得动；undo 把整层原样还回来，redo 再带走', () => {
+    const log = newLog();
+    const one = addStorey(log, 0);
+    const two = addStorey(log, 1);
+    fullStorey(log, one);
+    addWall(log, two, { x: 0, y: 0 }, { x: 3000, y: 0 });
+    const before = log.document.canonical();
+    log.dispatch(storeyDelete({ storeyId: one }));
+    expect(log.document.byKind('storey')).toHaveLength(1);
+    expect(log.document.byKind('wall')).toHaveLength(1);
+    expect(() => deriveStoreyGeometry(log.document, two)).not.toThrow();
+    expect(log.undo()).toBe(true);
+    expect(log.document.canonical()).toBe(before);
+    expect(log.redo()).toBe(true);
+    expect(log.document.byKind('wall')).toHaveLength(1);
+  });
+
+  it('空层也删得掉：删除集就只有楼层自己', () => {
+    const log = newLog();
+    addStorey(log, 0);
+    const two = addStorey(log, 1);
+    expect(storeyDelete({ storeyId: two }).build(log.document)).toEqual({
+      upsert: [],
+      remove: [two],
+    });
+  });
+
+  it('最后一层不许删：S1 不产零层项目（fitStorey 对空点集是抛的）', () => {
+    const log = newLog();
+    const one = addStorey(log, 0);
+    expect(() => storeyDelete({ storeyId: one }).build(log.document)).toThrow(/最后一层/);
+    // 有了第二层就删得动：判据是"同项目还有别的楼层"，不是"文档里还有别的实体"
+    const two = addStorey(log, 1);
+    expect(() => storeyDelete({ storeyId: one }).build(log.document)).not.toThrow();
+    expect(() => storeyDelete({ storeyId: two }).build(log.document)).not.toThrow();
+  });
+
+  it('闭合性检查兜住跨层悬空：别层的墙指着本层的点 → 抛，不留下断链', () => {
+    const log = newLog();
+    const one = addStorey(log, 0);
+    const two = addStorey(log, 1);
+    const victim = addWall(log, one, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    const own = addWall(log, two, { x: 8000, y: 0 }, { x: 9000, y: 0 });
+    // 手工把二层再加一面墙：一端指一层的点。命令层走不出这种文档
+    // （resolvePointRef 限同层），但读盘与手搓能 —— 真源不校验引用完整性，
+    // 所以删除侧必须自己数闭合。
+    const doc = withEntity(log.document, {
+      kind: 'wall',
+      id: uuidv7(),
+      storeyId: two,
+      startId: victim.startId,
+      endId: own.startId,
+      thicknessMm: 240,
+      heightMm: 3000,
+      elevationOffsetMm: 0,
+      loadBearing: true,
+      material: 'brick',
+    });
+    expect(() => storeyDelete({ storeyId: one }).build(doc)).toThrow(/会留下悬空引用/);
+    // 二层自己删得动：那面越界的墙在二层的删除集里，被它引用的点不属于二层、也不被删
+    expect(() => storeyDelete({ storeyId: two }).build(doc)).not.toThrow();
+  });
+});
+
+describe('columnDelete 与 slabDelete 的孤儿点', () => {
+  it('柱的落点没人共用 → 点跟着删；落在墙端点上 → 只删柱，点留着', () => {
+    const log = newLog();
+    const storeyId = addStorey(log, 0);
+    const wall = addWall(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    log.dispatch(columnCreate({ storeyId, at: { x: 9000, y: 9000 }, widthMm: 400, depthMm: 400 }));
+    const own = log.document.byKind('column')[0]!;
+    log.dispatch(
+      columnCreate({ storeyId, at: { pointId: wall.startId }, widthMm: 400, depthMm: 400 }),
+    );
+    const shared = log.document.byKind('column').find((c) => c.pointId === wall.startId)!;
+
+    expect(columnDelete({ columnId: own.id }).build(log.document).remove).toEqual([
+      own.id,
+      own.pointId,
+    ]);
+    expect(columnDelete({ columnId: shared.id }).build(log.document).remove).toEqual([shared.id]);
+    // 那一发真的删不掉点：applyPatch 之后墙端点还在，墙于是还是那面墙
+    const next = applyPatch(log.document, columnDelete({ columnId: own.id }).build(log.document))
+      .doc;
+    expect(next.get(wall.startId)).toBeDefined();
+    expect(next.get(own.pointId)).toBeUndefined();
+  });
+
+  it('板的角点：独占的删、与墙共用的留', () => {
+    const log = newLog();
+    const storeyId = addStorey(log, 0);
+    const a = addWall(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    addWall(log, storeyId, { pointId: a.endId }, { x: 4000, y: 3000 });
+    // 板的第 1、2 个角复用两枚墙端点，第 3 个角是板自己新建的
+    log.dispatch(
+      slabCreate({
+        storeyId,
+        boundary: [{ pointId: a.startId }, { pointId: a.endId }, { x: 8000, y: 8000 }],
+        thicknessMm: 120,
+      }),
+    );
+    const slab = log.document.byKind('slab')[0]!;
+    const ownCorner = slab.boundaryPointIds[2]!;
+    expect(slab.boundaryPointIds.slice(0, 2)).toEqual([a.startId, a.endId]);
+    expect(slabDelete({ slabId: slab.id }).build(log.document).remove).toEqual([
+      slab.id,
+      ownCorner,
+    ]);
+    const next = applyPatch(log.document, slabDelete({ slabId: slab.id }).build(log.document)).doc;
+    expect(next.get(a.startId)).toBeDefined();
+    expect(next.get(ownCorner)).toBeUndefined();
+  });
+
+  it('角点早就悬空的板仍删得掉：remove 里不许有文档里不存在的 id', () => {
+    const log = newLog();
+    const storeyId = addStorey(log, 0);
+    log.dispatch(
+      slabCreate({
+        storeyId,
+        boundary: [{ x: 0, y: 0 }, { x: 4000, y: 0 }, { x: 4000, y: 3000 }],
+        thicknessMm: 120,
+      }),
+    );
+    const slab = log.document.byKind('slab')[0]!;
+    const ghost = uuidv7();
+    // 手工把一角换成不存在的 id：`applyPatch` 对不存在的 remove id 是**抛**的，
+    // 少这一句跳过，一块缺角的板就把整份文档锁死。
+    const doc = withEntity(log.document, {
+      ...slab,
+      boundaryPointIds: [ghost, ...slab.boundaryPointIds.slice(1)],
+    });
+    const patch = slabDelete({ slabId: slab.id }).build(doc);
+    expect(patch.remove).not.toContain(ghost);
+    expect(() => applyPatch(doc, patch)).not.toThrow();
+    expect(applyPatch(doc, patch).doc.byKind('slab')).toHaveLength(0);
+  });
+});
+
+describe('pointStillReferenced：孤儿判据只有一个产地', () => {
+  /** 一枚点被墙引用、另一枚被柱引用、第三枚被板引用 —— 三种引用各验一次。 */
+  function refs(log: TransactionLog, storeyId: EntityId) {
+    const wall = addWall(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    log.dispatch(
+      columnCreate({ storeyId, at: { pointId: wall.startId }, widthMm: 400, depthMm: 400 }),
+    );
+    const column = log.document.byKind('column')[0]!;
+    log.dispatch(
+      slabCreate({
+        storeyId,
+        boundary: [{ pointId: wall.endId }, { x: 1000, y: 5000 }, { x: 2000, y: 5000 }],
+        thicknessMm: 120,
+      }),
+    );
+    const slab = log.document.byKind('slab')[0]!;
+    return { wall, column, slab };
+  }
+
+  it('墙、柱、板三种引用都认；exceptIds 排除掉引用者自己之后才算孤儿', () => {
+    const log = newLog();
+    const storeyId = addStorey(log, 0);
+    const { wall, column, slab } = refs(log, storeyId);
+    const ownCorner = slab.boundaryPointIds[1]!;
+    const none = new Set<EntityId>();
+    expect(pointStillReferenced(log.document, wall.startId, none)).toBe(true);
+    expect(pointStillReferenced(log.document, wall.endId, none)).toBe(true);
+    expect(pointStillReferenced(log.document, ownCorner, none)).toBe(true);
+    // 排除柱自己：那点仍被墙端引用 → 不是孤儿
+    expect(pointStillReferenced(log.document, column.pointId, new Set([column.id]))).toBe(true);
+    // 排除墙自己：那点仍被柱引用 → 不是孤儿
+    expect(pointStillReferenced(log.document, wall.startId, new Set([wall.id]))).toBe(true);
+    // 排除板自己：它独占的那个角点于是成为孤儿
+    expect(pointStillReferenced(log.document, ownCorner, new Set([slab.id]))).toBe(false);
+  });
+
+  it('wallDelete 用的就是这一份判据：删墙不动被柱、板共用的两枚端点', () => {
+    const log = newLog();
+    const storeyId = addStorey(log, 0);
+    const { wall, column, slab } = refs(log, storeyId);
+    expect(wallDelete({ wallId: wall.id }).build(log.document).remove).toEqual([wall.id]);
+    log.dispatch(wallDelete({ wallId: wall.id }));
+    expect(log.document.get(column.pointId)).toBeDefined();
+    expect(log.document.get(slab.boundaryPointIds[0]!)).toBeDefined();
+    // 对照：一根没人引用的墙（同层再建一面独立的）删下去会把两个端点一起带走
+    const lone = addWall(log, storeyId, { x: 30000, y: 30000 }, { x: 34000, y: 30000 });
+    expect(wallDelete({ wallId: lone.id }).build(log.document).remove).toEqual([
+      lone.id,
+      lone.startId,
+      lone.endId,
+    ]);
+  });
+});
+```
+
+四处判据的形状：
+
+① 级联那条的凭据是**数出来的**：`fullStorey` 那间房（一面墙 + 一个洞口 + 一根柱 + 一块板）一层正好 **6 枚点**，删除集 **11 个 id**（层 1 + 墙 1 + 洞口 1 + 柱 1 + 板 1 + 点 6），`upsert` 恒空。数不上的话"全在删除集里"就是空话，所以先 `expect(remove).toHaveLength(11)` 再对内容。
+
+② 前两条级联用例必须**另有一层空楼层**，否则会被"最后一层不许删"的守卫挡住。注释里写清了那层存在**只**为了喂这条规则，不是几何素材 —— 少了这句，下一个人会把它当冗余删掉，然后红在另一条上。
+
+③ 「闭合性检查兜住跨层悬空」用 `withExtras` 手工贴一面**指着本层点、自己属于别层**的墙（`handEntities`），断言 `/会留下悬空引用/`。真源不校验引用完整性（`Document.replaceEntities` 只查整数毫米与 id 形状），所以这种文档读盘读得进来 —— 这条用例是那个入口的哨兵。
+
+④ `slabDelete` 的"角点早就悬空的板仍删得掉"判的是 `remove` 里**不许有文档里不存在的 id**：`applyPatch` 对不存在的 remove id 是**抛**的，一块坏板删不掉就等于把整份文档锁死。那一发靠的是 `if (!doc.get(pointId)) continue;`（改坏 M13 摘掉它，红在这一条）。
+
+**2d. `packages/core/test/joint.test.ts`：五处改 `handBuild`（条数 18 不变）**
+
+这一步**先于实现落地也照样绿**（`handBuild` 造出来的文档，`deriveJoints` 在复核前后都抛同样的四类错），所以它跟 2a/2b/2c 一起提交，红只红在三个新文件上。
+
+顶部 import 加一行 `type Entity`：
+
+```ts
+import {
+  // …既有那些保持不动
+  wallAxisById,
+  wallCreate,
+  vec,
+  type Entity,          // （T7 加：handBuild 要贴 Entity[]）
+  type Joint,
+  type WallCreateInput,
+  type WallEntity,
+} from '@dajia/core';
+```
+
+`appendWall` 之后插入这个助手（`Document` 与 `uuidv7` 那个文件已经 import 过）：
+
+```ts
+/**
+ * **不经命令层**，把手工实体直接贴进文档：坐标相同的两端复用同一枚点 id（与命令层的
+ * 共享端点语义一致），差别只在于绕开 `wallCreate` 那道门。
+ *
+ * 为什么需要它：Task 7 给 `wallCreate` / `wallMoveEndpoint` / `wallSetThickness` 加了派生
+ * 复核（`assertDerivesAfterApply`），"合法命令造得出画不出的文档"这条路于是被堵死。那正是
+ * 复核要的效果，但派生层这四道守卫（同向重叠 / 轮廓翻面 / 直通异厚 / star）必须**仍然可测** ——
+ * 它们是读盘与协作写入（计划 4、计划 6）唯一的哨兵，不能因为命令层提前挡就把哨兵本身
+ * 失去凭据。所以这些用例改成手工造文档；"命令层也挡得住"另由 `derive-guard.test.ts` 从正面钉。
+ */
+function handBuild(
+  specs: Array<{
+    start: { x: number; y: number };
+    end: { x: number; y: number };
+    thicknessMm: number;
+  }>,
+): Document {
+  const storeyId = uuidv7();
+  const entities: Entity[] = [
+    { kind: 'storey', id: storeyId, projectId, index: 0, elevationMm: 0, heightMm: 3000 },
+  ];
+  const pointIds = new Map<string, string>();
+  const pointOf = (at: { x: number; y: number }): string => {
+    const key = `${at.x},${at.y}`;
+    const hit = pointIds.get(key);
+    if (hit) return hit;
+    const id = uuidv7();
+    pointIds.set(key, id);
+    entities.push({ kind: 'point', id, storeyId, x: at.x, y: at.y });
+    return id;
+  };
+  for (const spec of specs) {
+    entities.push({
+      kind: 'wall',
+      id: uuidv7(),
+      storeyId,
+      startId: pointOf(spec.start),
+      endId: pointOf(spec.end),
+      thicknessMm: spec.thicknessMm,
+      heightMm: 3000,
+      elevationOffsetMm: 0,
+      loadBearing: true,
+      material: 'brick',
+    });
+  }
+  return Document.replaceEntities(
+    Document.create(projectId),
+    new Map(entities.map((entity) => [entity.id, entity])),
+  );
+}
+```
+
+五处替换（每处都是"删掉 `build(...)` + `appendWall`/`log.dispatch` 那几行，换成一次 `handBuild([...])`，并把 `deriveJoints(x.document)` 改成 `deriveJoints(doc)`"）：
+
+1. `分组只认拓扑` 里的 `sameRay`：原来 `build` 一面 `1000→2000` 再 `appendWall(startId, {x:3000})`；换成
+   ```ts
+   const sameRay = handBuild([
+     { start: { x: 1000, y: 0 }, end: { x: 2000, y: 0 }, thicknessMm: 240 },
+     { start: { x: 1000, y: 0 }, end: { x: 3000, y: 0 }, thicknessMm: 240 },
+   ]);
+   expect(() => deriveJoints(sameRay)).toThrow(/同向重叠/);
+   ```
+   注释里那句"合法命令就造得出它：`wallCreate` 只查零长与墙厚不小于轴长…"换成"Task 7 起命令层就会先挡住这一发（`derive-guard.test.ts` 钉的是 `/同向重叠/` 从 `wallCreate.build` 抛出），所以这里手工造文档，只考派生层那道哨兵"。
+2. 同一条用例里的 `threeOnOneLine`：三面墙（`0→1000`、`1000→2000`、`1000→3000`，全 240）一次 `handBuild`。
+3. 同一条用例里的 `insideTee`：`1000,0→2000,0`（240）、`1000,0→3000,0`（240）、`1000,0→1000,800`（120）。
+4. `corner：斜角与异厚` 里的「夹角小到轮廓翻面」：`{-2000,0→0,0}` 与 `{0,0→-2000,35}`，两面 500。
+5. `tee` 里的「直通两墙厚度不同」：`0→1000`（240）、`1000→2000`（370）、`1000→(1000,800)`（120）；`cross 与 star` 里的「Y 形三臂」：`0→1000,0`、`1000→2000,900`、`1000→1000,900`（那条用例里"三条臂必须在三个方向上"的注释**保留**，它解释的正是为什么第二臂不是 `(2000,0)`）。
+
+Run: `npx vitest run packages/core/test`
+Expected: `joint.test.ts` 18 条**全绿**（它不依赖实现）；三个新文件红在**函数不存在**上，形状是 `TypeError: … is not a function`（`export *` 的链接期不抛，见本任务开头那段），`derive-guard.test.ts` 里"复核只挂这三条"那组的 `storeyDelete`/`wallDelete` 用例也一起红。**不许**红在断言值上：红在 `expected true to be false` 之类，说明测试自己造错了素材，先回头核对再进 Step 3。
+
+---
+
+- [ ] **Step 3: 两个产地 —— `assertDerivesAfterApply` 与 `pointStillReferenced`**
+
+`packages/core/src/geom/outline.ts`：顶部加一行 import（`applyPatch` 与 `Patch` 是这个文件之前没引过的，`mustExist` 已在），文件末尾追加：
+
+```ts
+import { applyPatch, type Patch } from '../model/patch';
+```
+
+```ts
+/**
+ * 命令层的**派生复核**：把候选补丁贴到草稿文档上跑一次整层派生，派生抛则命令抛。
+ *
+ * 为什么在写入侧而不是 UI 侧：`deriveStoreyGeometry` 的四道守卫（star 接头、同向重叠、
+ * 近平行求不出接缝点、轮廓翻面）只有这一个产地。屏幕若自己再算一遍接头分类去预言"这一发
+ * 画不画得出来"，就是第二份规则 —— 复述的规则一定漂，而漂掉的那一遍永远没人看
+ * （`commands/opening.ts` 顶部那句"命令层绝不复述区间规则"同一条理由）。
+ * `applyPatch` 是纯函数、不动传进来的 doc，所以这张草稿是免费的（`assertFitsAfterInsert` 同一条手法）。
+ *
+ * 只给**改几何**的命令用（wall.create / wall.moveEndpoint / wall.setThickness）。删除路径
+ * 一律不复核：坏数据必须还能删，守卫挡住删除就等于把文档锁死（`openingMove` 把正数那条
+ * 守卫放在 move 而不是 requireOpening 里，是同一条纪律）。柱与板不在这张派生表里
+ * （`deriveStoreyGeometry` 只读墙），所以 column/slab 命令也不必复核。
+ */
+export function assertDerivesAfterApply(doc: Document, patch: Patch, storeyId: EntityId): void {
+  const next = applyPatch(doc, patch).doc;
+  deriveStoreyGeometry(next, storeyId);
+}
+```
+
+`packages/core/src/geom/topology.ts`：`incidentWallEnds` 之后追加（`Document` / `EntityId` / `requirePoint` 都已在，不新增依赖）：
+
+```ts
+/**
+ * 除 `exceptIds` 里那些实体之外，还有谁引用这枚点：墙（两端）、柱（落点）、板（边界）。
+ * 三类都查 —— 少查一类就会把别人还在用的点删掉，真源留下悬空引用。
+ *
+ * 这里是 `wallDelete` 原来那份文件私有 `stillReferenced` 的**唯一产地**（计划 1 Task 9 落地时
+ * 只有墙要删点，所以它长在 wall.ts 里）。计划 3 Task 7 的 `columnDelete` / `slabDelete`
+ * 是第二个和第三个调用者，同一条孤儿判定不许有三份。
+ * `exceptIds` 取集合而不是单个 id：调用方给的是"本次补丁正要带走的那批实体"，
+ * 而删一面挂板的墙时，那枚点可能同时被这块板引用（板也在本次删除集里时它不该算数）。
+ */
+export function pointStillReferenced(
+  doc: Document,
+  pointId: EntityId,
+  exceptIds: ReadonlySet<EntityId>,
+): boolean {
+  for (const wall of doc.byKind('wall')) {
+    if (exceptIds.has(wall.id)) continue;
+    if (wall.startId === pointId || wall.endId === pointId) return true;
+  }
+  for (const column of doc.byKind('column')) {
+    if (exceptIds.has(column.id)) continue;
+    if (column.pointId === pointId) return true;
+  }
+  for (const slab of doc.byKind('slab')) {
+    if (exceptIds.has(slab.id)) continue;
+    if (slab.boundaryPointIds.includes(pointId)) return true;
+  }
+  return false;
+}
+```
+
+> **为什么 `assertDerivesAfterApply` 落在 `outline.ts` 而不是新开一个 `geom/guard.ts`**：它唯一的读者是命令层，唯一的数据来源是 `deriveStoreyGeometry`，而 `outline.ts` 就是那个函数的家。新开文件会把"派生"拆成两个地方说话，而 A1 的全部理由就是它只能有一个产地。`lint:deps` 也不受影响：`outline.ts` 本来就只依赖 `model/`，现在多引的 `model/patch` 是同向的（core → 自己的 model），`scripts/check-deps.mjs` 管的是包与包之间。
+
+---
+
+- [ ] **Step 4: `commands/wall.ts` —— 三条命令挂复核，两条属性命令，`wallDelete` 换产地**
+
+顶部 import 三处变化（`Patch` 与 `assertDerivesAfterApply` 是新依赖，方向仍合法：`commands → geom` 早就有）：
+
+```ts
+import {
+  incidentWallEnds,
+  isExistingPoint,
+  pointStillReferenced,      // （T7 加）
+  resolvePointRef,
+  type PointRef,
+} from '../geom/topology';
+import { assertSpansFit, spansOfOpenings } from '../geom/opening';
+import { assertDerivesAfterApply } from '../geom/outline';   // （T7 加）
+import type { Command } from '../model/command';
+import type { Document } from '../model/document';
+import type { Patch } from '../model/patch';                // （T7 加）
+```
+
+**4a. 材料纪律**（放在 `WallCreateInput` 之前，导出是为了让 renderer 的属性面板能复用同一条规则）：
+
+```ts
+/**
+ * 材料名的写法纪律：非空、不带首尾空白、不超 32 字符。
+ * 真源里它是自由字符串（计划 5 的图纸标注要能写"240 砖砌"这种话），所以核心只挡"存进去就
+ * 没法看"的那几种；下拉框的候选集在 UI 侧（scene-2d / renderer），那是产品选项不是数据约束。
+ * 一个产地两处用：`wallCreate` 的可选入参与 `wallSetMaterial` —— 两份校验一定会漂。
+ */
+export function assertMaterial(material: string, label = '材料'): string {
+  if (material.length === 0) throw new RangeError(`${label}不能为空`);
+  if (material !== material.trim()) {
+    throw new RangeError(`${label}不能带首尾空白，收到 ${JSON.stringify(material)}`);
+  }
+  if (material.length > 32) {
+    throw new RangeError(`${label}不能超过 32 字符，收到 ${material.length} 个`);
+  }
+  return material;
+}
+```
+
+`wallCreate` 的构造期（紧挨 `elevationOffsetMm` 那行之后）加**一行**，注意是"传了才查"：
+
+```ts
+  const material =
+    input.material === undefined ? undefined : assertMaterial(input.material, '墙材料');
+```
+
+它的 `build` 末尾，`return { upsert, remove: [] }` 换成：
+
+```ts
+      const patch: Patch = { upsert, remove: [] };
+      // 派生复核：新墙可能把一枚既有端点拖成星形接头（三个方向过同一点），
+      // 那种文档建得出来、画不出来。守卫只有一个产地，就在这道门上（见 outline.ts 的注释）。
+      assertDerivesAfterApply(doc, patch, input.storeyId);
+      return patch;
+```
+
+同时 `material: input.material ?? 'brick'` 改成 `material: material ?? 'brick'`（复用构造期那份已校验的值，别在 build 里再读一次入参）。
+
+**4b. `wallSetThickness`**：`return { upsert: [{ ...wall, thicknessMm }], remove: [] }` 换成
+
+```ts
+      const patch: Patch = { upsert: [{ ...wall, thicknessMm }], remove: [] };
+      // 厚度改的是轮廓的宽，接头斜切量跟着变 —— 加厚能把一个合法 T 接画成翻面（自相交），
+      // 所以这一发也要过派生复核。M1.2 的出口判据"把外墙厚改到 240"就压在这条上。
+      assertDerivesAfterApply(doc, patch, wall.storeyId);
+      return patch;
+```
+
+`wall.storeyId` 而不是入参：这发命令的入参里根本没有楼层，而**复核必须在写补丁之后**（`assertDerivesAfterApply` 吃的是补丁，`doc` 是原档，`wall` 是从原档读出来的）。
+
+**4c. 两条属性命令**（紧跟 `wallSetThickness` 之后；`wallSetMaterial` 的 `assertMaterial` 在**构造期**，与 `wallCreate` 同一时机 —— 属性面板不该等到派发那一步才知道材料名写错了）：
+
+```ts
+/**
+ * 改材料。与 `wallSetThickness` 同一形状：只 upsert 一个字段、不查"值有没有变"
+ * （属性面板反复点同一个选项会各留一条撤销记录，这是可接受的代价 —— 见计划 3 Task 7 的 A4）。
+ * 材料不进派生表，所以不跑 `assertDerivesAfterApply`。
+ */
+export function wallSetMaterial(input: { wallId: EntityId; material: string }): Command {
+  const material = assertMaterial(input.material, '墙材料');
+  return {
+    type: 'wall.setMaterial',
+    build(doc: Document) {
+      const wall = requireWall(doc, input.wallId);
+      return { upsert: [{ ...wall, material }], remove: [] };
+    },
+  };
+}
+
+/** 改承重。同上：一个布尔字段，不进派生。 */
+export function wallSetLoadBearing(input: {
+  wallId: EntityId;
+  loadBearing: boolean;
+}): Command {
+  return {
+    type: 'wall.setLoadBearing',
+    build(doc: Document) {
+      const wall = requireWall(doc, input.wallId);
+      return { upsert: [{ ...wall, loadBearing: input.loadBearing }], remove: [] };
+    },
+  };
+}
+```
+
+**4d. `wallMoveEndpoint`**：它那个 `build` 的最后（`clampOpeningsToWall` 那个 `for` 之后）换成
+
+```ts
+      const patch: Patch = { upsert, remove: [] };
+      // 派生复核：这一发动的是**所有**共享这枚点的墙。上面逐面查过轴长与零长，
+      // 但接头分类（star / 同向重叠 / 翻面）只有派生层会算 —— 把一枚 T 接拖成
+      // 三方向过同一点，命令层那几条守卫一条都不会叫，而画不出来。
+      // 计划 3 的 T5/T6 把这条记成"legalDrop 只跑 build 的差额"，在这里收口。
+      assertDerivesAfterApply(doc, patch, wall.storeyId);
+      return patch;
+```
+
+**4e. `wallDelete`**：孤儿点那一段换成问拓扑，**并且不加复核**：
+
+```ts
+      // 孤儿判定用 topology 的那一份产地（Task 7 起 columnDelete / slabDelete 共用）。
+      // 删除路径**不跑**派生复核：坏数据必须还能删，守卫挡住删除等于把文档锁死。
+      const except = new Set<EntityId>([wall.id]);
+      for (const pointId of [wall.startId, wall.endId]) {
+        if (!pointStillReferenced(doc, pointId, except)) remove.push(pointId);
+      }
+      return { upsert: [], remove };
+```
+
+文件末尾那份私有 `stillReferenced`（墙/柱/板三个 `for` 循环）**整段删除** —— 它是 `pointStillReferenced` 的旧产地，留着就是两份规则各漂各的。
+
+Run: `npx vitest run packages/core/test/derive-guard.test.ts packages/core/test/joint.test.ts`
+Expected: `joint.test.ts` **18 绿**、`derive-guard.test.ts` **9 绿**。这一步之后这两个文件不该有红：9 条读到的东西本一步就齐了 —— 三条改几何命令的复核、「材料不进派生」要 `wallSetMaterial`、「坏数据必须还能删」要 `wallDelete`（真源本来就有，本步只是把它的孤儿判定搬到 `topology`），而它**不需要** `storeyDelete` / `columnDelete` / `slabDelete`（那三条的用例全在 `commands-delete.test.ts`）。同一条命令再跑 `commands-attributes.test.ts` 与 `commands-delete.test.ts`：它们仍红，红在 `storeyDelete` / `columnDelete` / `slabDelete` 是 `undefined`（`TypeError: … is not a function`，见本任务开头的链接期说明）—— 那是 Step 5 的账。**中间态只核对到"红在哪个函数"，不核对数字**：临时工程里 Step 4 与 Step 5 是一次落地、一次全量跑的（24 files / 309 tests，重复三遍逐字相同），所以本步没有单独的实测绿数。
+
+---
+
+- [ ] **Step 5: `storeyDelete` / `columnDelete` / `slabDelete`**
+
+**5a. `commands/storey.ts`** —— import 加 `dependentsOf`（`../geom/topology`），文件末尾追加：
+
+```ts
+/**
+ * 删一层 = 连它的全部构件一起带走。三条口径：
+ *
+ * ① **级联不自己数，问 `dependentsOf`。** 楼层的下游（墙 / 洞口 / 柱 / 板）已经在
+ *    `geom/topology.ts` 里有一份，且那份的返回顺序写进了注释。这里再数一遍就是第二个产地，
+ *    将来多一类构件（计划 4 的家具？）漂掉的必然是本函数这一遍。点不在这张表里
+ *    （`dependentsOf` 的 storey 分支只列构件），所以点按 `storeyId` 单独收 —— 那也不是
+ *    复述引用规则，点是**属于**这层的，不是被这层引用的。
+ * ② **删完不许留悬空引用，靠闭合性检查而不是靠"上面那条规则肯定全了"。**
+ *    真源不校验引用完整性（`Document` 只管整数毫米与 id 形状），所以"别层的墙指着本层的点"
+ *    这种文档是可能被读盘或手搓造出来的。逐条问 `dependentsOf`：被删的每个 id，它的下游
+ *    必须也在删除集里，否则抛。这条检查顺带是 ① 那份表写错时的哨兵。
+ * ③ **最后一层不许删。** 零层项目在数据上没有毛病，但 `fitStorey` / `buildDrawList` 走的
+ *    `aabbOfPoints([])` 是**抛**的（计划 2 立的口径），于是"删掉最后一层"会让屏幕进入一个
+ *    画不出任何东西、且每次重绘都抛的状态。与其让 UI 兜，不如让真源不产这种状态。
+ *    代价：删错了不能靠"删空再重建"回到起点，得先 `storeyCreate` 一层再删旧的。
+ *
+ * 撤销：`invertPatch` 按前像逐条重插，所以一次 Ctrl+Z 把整层（含构件与点）原样还回来 ——
+ * 不需要"批事务"，因为这一条命令的补丁本来就是一整块。
+ */
+export function storeyDelete(input: { storeyId: EntityId }): Command {
+  return {
+    type: 'storey.delete',
+    build(doc: Document) {
+      const storey = requireStorey(doc, input.storeyId);
+      const hasSibling = doc
+        .byKind('storey')
+        .some((s) => s.projectId === storey.projectId && s.id !== storey.id);
+      if (!hasSibling) {
+        throw new RangeError(
+          `楼层 ${storey.id} 是项目 ${storey.projectId} 的最后一层：S1 不许出现零层项目`,
+        );
+      }
+      const remove: EntityId[] = [storey.id];
+      const removal = new Set<EntityId>([storey.id]);
+      for (const id of dependentsOf(doc, storey.id)) {
+        removal.add(id);
+        remove.push(id);
+      }
+      for (const point of doc.byKind('point')) {
+        if (point.storeyId !== storey.id) continue;
+        removal.add(point.id);
+        remove.push(point.id);
+      }
+      for (const id of remove) {
+        for (const dependentId of dependentsOf(doc, id)) {
+          if (removal.has(dependentId)) continue;
+          const dependent = doc.get(dependentId);
+          throw new RangeError(
+            `删除楼层 ${storey.id} 会留下悬空引用：${dependentId}` +
+              `（${dependent?.kind ?? '未知'}）引用着本层的东西，但它不在本层，删不掉`,
+          );
+        }
+      }
+      return { upsert: [], remove };
+    },
+  };
+}
+```
+
+三处不要"顺手改平"：`hasSibling` 判的是**同项目**（`s.projectId === storey.projectId`）而不是全文档 —— 一份文档理论上能装两个项目，全局"还剩一层就不许删"会替别人的项目管闲事。`remove` 用数组不用 `Set`（补丁的 `remove` 是有序列表，`affected` 的迭代序跟着它，测试里的 `toHaveLength(11)` 才对得上）。闭合性检查的循环跑在 `remove` 的**每个** id 上而不是楼层 id 上 —— 洞口/柱/板各也有自己的下游吗？今天没有，但这句话写在这里，`dependentsOf` 长出第二层的那天这条检查照样兜得住。
+
+**5b. `commands/column.ts`** —— import 补 `mustExist`（`../model/read`）与 `pointStillReferenced`（`../geom/topology`），加文件私有的读取断言与新命令：
+
+```ts
+/** 与 `commands/opening.ts` 里那份 `requireOpening` 同一口径：读取断言长在用的那个文件里。 */
+function requireColumn(doc: Document, id: EntityId): ColumnEntity {
+  const entity = mustExist(doc, id, '柱');
+  if (entity.kind !== 'column') throw new TypeError(`${id} 不是柱，是 ${entity.kind}`);
+  return entity;
+}
+```
+
+```ts
+/**
+ * 删一根柱，并把它**独占**的那枚落点一起带走（孤儿判定问 `pointStillReferenced`，
+ * 与 `wallDelete` 同一份产地：柱落点常常就是墙端点，不查就是删柱拆墙）。
+ * 不跑派生复核：柱不在 `deriveStoreyGeometry` 的表里（那张表只读墙），而且删除路径
+ * 一律不许被守卫挡住（见 `storeyDelete` 的 ② 与 `commands/opening.ts` 顶部那句）。
+ */
+export function columnDelete(input: { columnId: EntityId }): Command {
+  return {
+    type: 'column.delete',
+    build(doc: Document) {
+      const column = requireColumn(doc, input.columnId);
+      const remove: EntityId[] = [column.id];
+      const except = new Set<EntityId>([column.id]);
+      if (!pointStillReferenced(doc, column.pointId, except)) remove.push(column.pointId);
+      return { upsert: [], remove };
+    },
+  };
+}
+```
+
+**5c. `commands/slab.ts`** —— 同一形状，`requireSlab` 用 `mustExist(doc, id, '板')`；命令：
+
+```ts
+/**
+ * 删一块板，并把它**独占**的边界点一起带走。孤儿判定问 `pointStillReferenced`
+ * （与 `wallDelete` / `columnDelete` 同一份产地）：板的角点常常就是墙端点。
+ * 被删点的顺序跟着 `boundaryPointIds` 的环序走 —— 那是真源里已有的顺序，
+ * 不必再按 id 重排（重排是第二套口径，且 `remove` 的顺序只影响 `affected` 的迭代序）。
+ */
+export function slabDelete(input: { slabId: EntityId }): Command {
+  return {
+    type: 'slab.delete',
+    build(doc: Document) {
+      const slab = requireSlab(doc, input.slabId);
+      const remove: EntityId[] = [slab.id];
+      const except = new Set<EntityId>([slab.id]);
+      for (const pointId of slab.boundaryPointIds) {
+        if (pointStillReferenced(doc, pointId, except)) continue;
+        // 引用早就悬空（点不在文档里）时跳过：`applyPatch` 对不存在的 remove id 是**抛**的，
+        // 而"坏数据必须还能删"—— 一块角点已经丢了的板，绝不能因为删不掉而把文档锁死。
+        if (!doc.get(pointId)) continue;
+        remove.push(pointId);
+      }
+      return { upsert: [], remove };
+    },
+  };
+}
+```
+
+Run: `npx vitest run packages/core/test && npx tsc --noEmit -p packages/core/tsconfig.json`
+Expected: **`Test Files 24 passed (24) / Tests 309 passed (309)`**，tsc exit=0。2026-09-28 在临时工程里这条跑重复三遍，逐字相同（含 `properties.test.ts` 9 条与 `geometry-properties.test.ts` 14 条那两轮随机生成 —— 复核落地后它们仍然全绿，说明**属性测试那两套随机造图没有一发撞上新守卫**，因为它们的造图器本来就走合法命令）。
+
+---
+
+- [ ] **Step 6: scene-2d 侧的订正（一条用例换边 + `editing.ts` 三段注释跟上真源；代码不动）**
+
+`packages/scene-2d/test/editing.test.ts` 里那条「⑥ 的前提：同一发候选命令层放行、派生层抛（星形接头）」在复核落地之后**必红**（`legalWallCreate` 给 false，而它下面 `trial.dispatch(command)` 直接抛）。它判的命题已经换边，所以改名并重写断言，**条数仍是 30**：
+
+```ts
+  it('命令层与派生层同判：T7 之后星形候选在 build 就抛，筛 ⑥ 退成第二道保险', () => {
+    // 角点 (0,0) 已经过着两条线（x 轴与 y 轴）。第三发 45° 斜线过同一点 ⇒ 星形接头，S1 不支持。
+    // Task 6 写这条用例时它"过了 ①~⑤ 也过了命令层"，只在派生层炸；Task 7 给 wallCreate 加了
+    // assertDerivesAfterApply 之后，同一发在 `legalWallCreate` 就给出 false —— 两层从此同判。
+    // 这条用例判的东西也随之换边：现在它钉的是"命令层的预言与真源不会漂"，
+    // 而 2026-09-28 的实测说清了为什么 ⑥ 还留着：80 发候选里被拒的那 48 发，
+    // 复核在 build 与摘掉复核后在派生层挡的是**同一批**（新增 0、少了 0）。
+    const { log, storeyId } = synthStorey();
+    const east = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    wallAt(log, storeyId, { pointId: east.startId }, { x: 0, y: 4000 });
+    const fd = snapFieldOf(log.document, storeyId);
+    const startMm: MoveTarget = { x: 0, y: 0 };
+    const startOps = buildDrawList(log.document, storeyId, sv, EMPTY_SELECTION);
+    const endPx = pxOf({ x: 2000, y: 2000 }, sv);
+    const start = draftAtPress(sv, pxOf(startMm, sv), fd);
+    const end = dropTargetOf(sv, endPx, startMm, fd, { excludeMm: startMm });
+    const draft: DraftWall = { storeyId, start, cursorPx: endPx, end, legal: true };
+    // ①③④⑤ 逐条自证（与 Task 6 一字不动）：这一发确实"前五条全过"
+    expect(start.snap?.kind).toBe('endpoint');
+    expect(end.snap?.pointId ?? null).toBeNull();
+    expect(end.mm).toEqual({ x: 2000, y: 2000 });
+    expect(pickAt(startOps, endPx)).toEqual([]);
+    expect(endPx.x).toBeGreaterThanOrEqual(2);
+    expect(endPx.y).toBeGreaterThanOrEqual(2);
+    expect(endPx.x).toBeLessThan(sv.widthPx - 2);
+    expect(endPx.y).toBeLessThan(sv.heightPx - 2);
+    expect(Math.hypot(end.mm.x - startMm.x, end.mm.y - startMm.y)).toBeGreaterThan(MIN_WALL_LENGTH_MM);
+    // 换边的那两句：命令层现在自己就拒，且拒的理由是派生层那句原文
+    expect(legalWallCreate(log.document, draft)).toBe(false);
+    const command = draftCommand(draft, newWallDefaults(log.document, storeyId));
+    if (command === null) throw new TypeError('legal 为真却拿不到命令');
+    expect(() => command.build(log.document)).toThrow(/S1 不支持/);
+    // ⑥ 在这发上不承重（它已经在 `legalWallCreate` 里被挡掉了），但代码留着：
+    // 它是"画得出"而不是"建得出"的唯一读者，将来 buildDrawList 长出派生之外的失败时说话。
+    const probe = wallProbe(log.document, storeyId, startOps, sv);
+    if (probe === null) throw new TypeError('这个夹具上探针该给得出别发候选（四条轴向外侧）');
+    const t2 = new TransactionLog(log.document);
+    t2.dispatch(
+      wallCreate({
+        storeyId,
+        start: { pointId: probe.startPointId },
+        end: { x: probe.endMm.x, y: probe.endMm.y },
+        thicknessMm: probe.defaults.thicknessMm,
+        heightMm: probe.defaults.heightMm,
+      }),
+    );
+    expect(() => buildDrawList(t2.document, storeyId, sv)).not.toThrow();
+  });
+```
+
+`packages/scene-2d/src/editing.ts` 的注释：第 4 条列的三处 + 第 7 条那一句，**一个文件里一次改完**（第 4 条 ③ 与第 7 条是同一段）。三处的落地文本：
+
+**① `wallProbe` 头部六道筛清单里的第 ⑥ 句** —— 原两行「⑥ **建得出还要画得出**（`derivesCleanly`）：命令层的 `build` 不含接头分类，斜向候选会把共享点 / 凑成星形接头（S1 不支持星形接头），而那一发会…**」整行换成：
+
+```ts
+ * ⑥ **建得出还要画得出**（`derivesCleanly`）：T7 起 `wallCreate` 的 `build` 末尾就复核了派生，
+ *    所以这一筛在样例房上与 `legalWallCreate` **判得一样**（实测同一批候选）。留着它是因为
+ *    "画得出"这句话在屏幕上只有这一个读者 —— 见 `derivesCleanly` 的注释，别顺手删。
+```
+
+**② `wallProbe` 循环里那走行内注释** —— 整行替换：
+
+```ts
+      // 筛 ⑥：建得成还要画得出。T7 之后 `legalWallCreate` 里的 `build` 已经复核过派生，
+      // 这一筛与它判得一样（实测同一批候选）；留着它是"画得出"这句话的唯一读者。
+```
+
+**③ + 第 7 条：`derivesCleanly` 的 doc 注释** —— 首段那句「`legalWallCreate` 只跑命令的 `build`，那一道里没有接头分类」改成「`legalWallCreate` 跑命令的 `build`，而 T7 起 `build` 的最后一行就是派生复核」；末段「它只护住探针 —— 用户手拉的那一发斜墙仍然只过 `legalWallCreate`，星形接头在屏幕上的缺口原样登记给 T7（…）」整段替换为：
+
+```ts
+ * **T7 之后它不再是唯一防线**：`wallCreate` 的 `build` 已经复核过派生（`assertDerivesAfterApply`），
+ * 2026-09-28 实测 80 发候选里被挡的那 48 发在两侧是同一批。留着它是因为它是**画得出**而不是
+ * **建得出**的唯一读者：`buildDrawList` 将来长出派生之外的失败（渲染期的算术、新的抛点）时，
+ * 探针依然只给得出真窗口里点得中、画得出的一发。摘掉它的改坏行是 E28，登记在执行日的重测里。
+```
+
+`handles.ts` 的 `legalDrop` 注释**不动**（核对过：它只讲"试跑真命令、不抄轴长比较"，没有"不跑派生层"这类措辞 —— 那句差额记在计划文本的注记里，不在源码里）。
+
+Run: `npx vitest run packages/scene-2d/test packages/core/test`
+Expected: scene-2d **95 条**（四个文件：snapping 28 + editing 30 + pick 18 + handles 19，一条不增不减 —— `editing.test.ts` 那 30 条里改写的用例仍算一条）、core **309 条**，全绿。95 是**按本文件各任务自己记的条数加出来的**（临时工程只装了 core，scene-2d 那四个文件本任务没跑过）；它要在执行日与真账对齐，对不上时先核对 T6 的四个数有没有漂，再怀疑 T7。
+
+---
+
+- [ ] **Step 7: 全量验证 + 改坏表**
+
+Run: `pnpm verify`（= `typecheck && lint:deps && test`）
+Expected: **`Tests 438 passed (438)`**，typecheck exit=0，lint:deps 不报新边（`commands → geom` 与 `geom → model` 都是既有方向）。
+
+**这个 438 是加出来的，不是跑出来的**，两段的来源不同，别混着当实测引用：
+- core 那 33 条净增（276 → 309）与本任务的 `Test Files 24 passed (24)` 是**临时工程实测**（Step 5 那条跑，重复三遍逐字相同）；
+- 405 是计划 3 的 Task 6 执行回填里记的全仓数（本任务没重跑全量）。
+
+所以执行日 `pnpm verify` 的真账要对三样：全仓 Tests、全仓 Test Files（**本任务未测**，跑出来后写进这里的「执行回填」）、以及 core 是否仍是 24/309。对不上时先怀疑 405 那一段有没有在 T6 之后漂了（其它包的既有绿数不该被本任务改动），再怀疑本任务。
+
+**改坏表**（15 条，每条改一次、跑 `npx vitest run packages/core/test`、跑完立刻改回。2026-09-28 在临时工程里逐条实测，括号里是当时的 `Test Files / Tests / tsc`）：
+
+1. **M1** `wallCreate` 不复核（`assertDerivesAfterApply(doc, patch, input.storeyId)` → `/*M*/;`）→ `1 failed | 23 passed`，**3 条红**，全在 `derive-guard.test.ts` 的 `wallCreate 的派生复核` 组（星形那条、同向重叠那条、"复核吃的是整份文档"那条），`first-error: AssertionError: expected [Function] to throw an error`。
+2. **M2** `wallSetThickness` 不复核 → 1 条红：「5° 斜角的两面墙：厚 120 合法，加厚到 240 会翻面 → 抛 /翻面/」。
+3. **M3** `wallMoveEndpoint` 不复核（同一行文本的第二处出现） → 1 条红：「把 T 接的公共点拖离直通线 → 三个方向过同一点，抛 /star/，文档不动」。**这一条就是 T5/T6 记的那条差额**，它从此有了 core 侧的凭据。
+4. **M4** 给 `wallDelete` 也挂复核 → 1 条红：「坏数据必须还能删：逐面删掉星臂之后，这一层重新派生得动」，红法是 `RangeError: 接头 … 有 3 个墙端、3 个方向在同一点相交（star）…` —— **删除被守卫锁死的样子**，A1 那条"删除路径永不复核"的唯一反面教材。
+5. **M5** `assertMaterial` 的长度上限改成 64 → 1 条红（`commands-attributes.test.ts` 的三种文案那条）。
+6. **M6** trim 检查写成 `false` → 同一条红。
+7. **M7** 给 `wallSetLoadBearing` 加"值没变就返回空补丁"的 noop 短路 → **第一次跑是绿的**（原判据只问 `depth`，短路之后 `dispatch` 同样不加深度，断言分不出"发了空补丁"与"根本没发"）；把那条用例加固成"`build(doc).upsert` 逐字等于 `[wall]`"之后重跑：1 条红，`AssertionError: expected [] to deeply equal [ { kind: 'wall', …(9) } ]`。**这一行是本任务最贵的一条**：它记下的是"断言必须分得开故障"这条纪律在 T7 自己身上的失守与补法。
+8. **M8** 去掉"最后一层不许删"的 `hasSibling` 检查 → 1 条红（「最后一层不许删：S1 不产零层项目…」），且 `tsc errors=1`（`hasSibling` 变成未使用变量，`noUnusedLocals` 抓到）。
+9. **M9** 闭合性检查整段失效（内层 `throw` 换成 `continue`）→ 1 条红（「闭合性检查兜住跨层悬空…」）。
+10. **M10** 收点的条件写反（`if (point.storeyId === storey.id) continue;`）→ **4 条红**（级联数数、只动本层、undo/redo 还原、闭合性），`first-error: AssertionError: expected false to be true`。
+11. **M11** `columnDelete` 总带走落点（`if (!pointStillReferenced(…))` 改成无条件 `push`）→ 1 条红（「柱的落点没人共用 → 点跟着删；落在墙端点上 → 只删柱，点留着」），`tsc errors=2`（`pointStillReferenced` 与 `except` 在 column.ts 里变成未使用）。
+12. **M12** `columnDelete` 从不带走落点 → 同一条红，`first-error` 方向相反（`expected [ Array(1) ] to deeply equal [ …(2) ]`）。**两条各红一次**才证明那条用例判的是"两个方向"，不是"数对上一个数"。
+13. **M13** `slabDelete` 去掉 `if (!doc.get(pointId)) continue;` → 1 条红（「角点早就悬空的板仍删得掉：remove 里不许有文档里不存在的 id」，`expected [ …(4) ] to not include '<id>'`）。
+14. **M14** 孤儿判据不看板（`slab` 那个循环删掉）→ **2 个文件 3 条红**：`commands-delete.test.ts` 的「墙、柱、板三种引用都认…」，**外加既有 `commands.test.ts` 里那条"端点仍被柱或板引用时不回收"** —— 这条计划 1 就有的用例从此有了对 `slab` 的牙（A2 把判据搬上来的收益：它不再只服务 `wallDelete`）。
+15. **M15** 孤儿判据不看柱 → 同样 3 条红（同一批见证）。
+
+> 三条同时红在 `tsc`（M8/M11/M12）不是巧合，是 `noUnusedLocals` 在替这条纪律背书：**摘掉一处判据会留下没人读的变量**，所以类型检查先红。剩下十二条只红在测试上，`tsc errors=0`。15 条全红的基线是 `24 files / 309 tests` 原样绿（重复三遍逐字相同）。
+
+---
+
+- [ ] **Step 8: 真窗口重测与提交**
+
+复核改的是**每一条改几何命令的返回值**，所以两个真窗口闸门在 T7 之后各跑一遍。**判据形状一字不改**，只允许更新其中写死的毫米/像素字面量：
+
+```bash
+node scripts/desktop-draw.mjs --draw-shot    # 27 条判据
+node scripts/desktop-edit.mjs --edit-shot    # 21 条判据
+```
+
+Expected: 两个闸门**都绿**。若 `--draw-shot` 红在"新建的墙与既有墙共享一枚点"或毫米逐字对账那两句上，按本任务「T6 交接四条的处置」第 ④ 条处理：先在 Node 侧跑一遍 `wallProbe`，读它这一轮给的 `startMm / endMm / midPx`，把闸门里写死的那几个数换成新值，**并重跑三遍确认稳定**；不许把"那一发"改成"任一发候选都行"来迁就 —— 那是把 D4 的凭据换成 vacuous truth。
+
+若 `--edit-shot` 红在落点对账：`dragProbe` 的候选集合在 T7 之后少了 84/160 发（全是会拖出星形的那几发，实测见第 ④ 条），每一把把手仍剩 ≥3 发 ⇒ 靶子可能换。同样只改字面量，不改判据。
+
+```bash
+git status --porcelain    # 只应有 packages/core/{src,test} 与 packages/scene-2d/{src,test} 下的文件
+git add packages/core/src packages/core/test packages/scene-2d/src packages/scene-2d/test
+git commit -m "feat(core): 派生复核进改几何的三条命令，补属性与删除命令"
+```
+
+提交信息按仓库口径再补一段正文：五条新命令（`storey.delete` / `wall.setMaterial` / `wall.setLoadBearing` / `column.delete` / `slab.delete`）、`assertDerivesAfterApply` 与 `pointStillReferenced` 两个产地、core 测试 276 → 309、以及 `joint.test.ts` 那五条哨兵改手工造文档的理由。
+
+---
+
+## 尚未展开的任务边界（Task 8、Task 9；补齐后才进执行）
 
 Task 6 已展开（正文见上文 Task 6：八条裁决 + 八步 + 二十七行真窗口判据）。它把 T5 留下的两个接缝就地判掉了：① 吸附的插入点 = `moveTargetOf` 之后、`dispatch` 之前那一行（S4 的三条纪律：按下不吸、探针与 renderer 同一个出口、预览线恒画裸光标）；② "撤销掉正被选中的构件"拆成两半收掉 —— 删除之后用 `pruneSelection` + `selectionStore.retain` 剪掉已不存在的 id（S5），新建那一路用 `lastCreatedWall` 里的 `doc.get(id)` 复核挡住"选中指向不存在的构件"（S6：`log.affected` 在撤销后**仍然**列着那枚 id）。**没收掉的那一半**写在这里防丢：`Ctrl+Z` 撤销一次删除之后选中集不回（D7 的口径是"撤销的是文档，不是视图"），T7 若要"撤销后恢复选中"，得回来改这条裁决。
-- **Task 7 楼层切换 + 属性面板**：需要内核补口 —— 现在**没有** `wallSetMaterial` / `wallSetLoadBearing` / `storeyDelete` / `columnDelete` / `slabDelete`（M1.2 的"构件属性面板（厚度 / 承重 / 材料）"里只有厚度有命令）。补口放 Task 7 的第一步，且必须连带补 core 的测试与计划 2 的口径。
+
+Task 7 已展开（正文见上文 Task 7：四条裁决 + 八步 + 十五条改坏）。它收掉了 T6 交接四条里的 ③（`legalDrop` / `legalWallCreate` 与真源同判，差额在 core 侧补齐）与 ④（探针候选集合的实测差额：拉墙 80 发拒 48、拖把手 160 发拒 84，且"第一发可建"在 5/8 枚端点与 9/12 个把手位置上往后挪了 1～3 发）；**① 与 ② 原样交接给 Task 8**。T7 没动屏幕上的任何一行代码 —— 它只改 scene-2d 的两处注释与一条既有用例（见 T7 的"本任务会改到的既有写法"第 4、6、7 条）。
+
+**为什么原来那一节"Task 7"拆成了 T7 + T8**：本节此处原先写的是"Task 7 楼层切换 + 属性面板：需要内核补口……补口放 Task 7 的第一步"。展开时把补口独立成一个任务，因为它改的是**每一条改几何命令的返回值**，`--draw-shot` 与 `--edit-shot` 两个闸门里写死的毫米/像素字面量必须跟着重测；和属性面板混在一节里重测，红了分不清是命令层还是面板。代价是本计划的既有编号整体后移一位 —— 已按新口径订正的地方：本节上一段、`snapping.ts` 里"柱/板的顶点不在表里"那句注释（原写 Task 8，现写 Task 9）、以及"本计划展开了 Task 1–7"那句状态行。
+
+- **Task 8 楼层切换 + 属性面板 + 删除接屏**：接住 T7 产的五条新命令，全部落在 `apps/desktop` 的 renderer 与 scene-2d 的判据上，core 应当**一字不改**（若发现还要改 core，说明 T7 的口子没收干净，回到 T7 而不是就地补）。边界：① 楼层切换（多层文档只渲染当前层；`editorStore` 已有"当前层"一格，缺切换入口与切层后的视口复位）；② 属性面板（厚度 / 承重 / 材料三格 → `wallSetThickness` / `wallSetLoadBearing` / `wallSetMaterial`，材料下拉框的候选集在 UI 侧、写法纪律问 core 的 `assertMaterial`）；③ 数值输入 ⇒ **T6 交接 ①**：`MIN_WALL_LENGTH_MM` 与"输入框允许打的数"第一次分家，面板不能拿屏幕常量当真源上限；④ 删除键接 `planDelete` 的 `unsupported` 分支 ⇒ 接上 `columnDelete` / `slabDelete` / `storeyDelete`（T6 第 4782 行那句"唯一要接的口子"），四色出口的判据从"三种能删一种不能"变成"四种全能删"，`--draw-shot` 里那几条相应改写；⑤ **T6 交接 ②**：筛 ⑤/⑥ 的确定性夹具（复核之后 ⑥ 已无单独可挡之物，那条夹具要配的命题换成"命令层与派生层判得一样"，见 T7 Step 6）；⑥ 新增一次性闸门 `--prop-shot`，判据形状照 `--edit-shot`（每步读数分别留档 + 逐字对账），并把 `--draw-shot` / `--edit-shot` 一起重跑。
+- **Task 9 吸附补档**：spec §6 列的是六档（端点 / 中点 / 垂足 / **轴网交点** / 15° / 正交），T6 只落了五档 —— 缺的正是"轴网交点"（S1 没有轴网实体，那一档在 2D 里只能是**墙轴线的两两交点**，`snapFieldOf` 已经把 `axes` 交出来了，缺的是求交与优先级插入）。同一步顺手把 `snapFieldOf` 里"柱/板的顶点、洞口中心不在表里"那句注释兑现成代码。注意 T7 的副作用：新档给 `wallProbe` 与 `dragProbe` 多出候选，探针的"恒等 / 改写"计数与两个真窗口的字面量会再变一轮 —— 判据照旧不许多。
 
 ## 已核实的现状事实（2026-09-27 逐条读过源码，写给执行者省得再翻）
 
@@ -10117,6 +11663,13 @@ Task 6 已展开（正文见上文 Task 6：八条裁决 + 八步 + 二十七行
 - （T6 加）探针选中的**起点会跨进程漂**：同一份 `demoHouse()` 连开十个进程，9 次挑中 `(4000,3000)`、1 次挑中 `(800,3000)`（`snapFieldOf` 的端点表顺序来自 `doc.byKind('wall')`，按 uuidv7 的 id 升序，而同毫秒不单调）。⇒ `--draw-shot` 只许把第 0 步算出的那份 `probeJson` 存下来、在第 15 步与**它自己**对账，**不许**把档位名、起点毫米或任何一次实测值写死进判据；单元侧凡是"必须换下一个候选"的判据都自带合成夹具（Task 6 Step 4 开头第 ③ 条）。
 - （T6 加）`log.affected` 在 `undo()` 之后**仍然列着**被撤销实体的 id（`undo()` 把 `lastAffected` 设成**前向补丁**的 id 集），而那时 `doc.get(id)` 已经是 `undefined` ⇒ "新建即选中"若不复核文档就会指向一个不存在的构件。这条既是 S6 那句"读完立刻 `doc.get` 复核"的来源，也是 `editing.test.ts` 里「派发后拿得到；撤销后 affected 仍列着那枚 id，但答案必须是 null」那条用例的判据（2026-09-28 在临时工程跑过）。
 - （T6 加）T5 那句 `expect(moveTargetOf(view, p.toPx)).toEqual(p.targetMm)` 在吸附接上之后**会红**，不是"照样绿"：样例房 16 把把手 × 10 发候选 = 160 发里有 **14 发**被 15° 档改写（最大偏差 6.97px），十个进程红 2 个。所以 Task 6 Step 5 把它换成同一函数的自比对（恒等式），落点内容的凭据交给新增的两条"吸上了什么/合法性判在哪一侧"用例（改坏 HD6 实测：`legalDrop` 换成自算 `hypot` 红两条）。
+- （T7 加）`deriveJoints` 是**全局**的：`deriveStoreyGeometry(doc, storeyId)` 虽然按层返回，接头分类却扫全文档的墙。⇒ 复核（`assertDerivesAfterApply`）吃的是**整份文档**，任何一层藏着一颗坏接头，**别层**的每一条改几何命令都替它抛。`derive-guard.test.ts` 有一条用例专门把这个形状钉成预期行为（「复核吃的是整份文档：别层藏一颗星，本层也写不进墙」），计划 4 的读盘读到坏层时"本层冻结写入"是**已知后果**而不是 bug。
+- （T7 加）派生复核**不改变**探针挑出的候选集合，只改变**拒绝发生在哪一层**。2026-09-28 在临时工程里逐字复刻 `demoHouse()` 一层（8 墙 + 4 洞口 + 那两次改几何编辑），各问两遍（复核在 / 复核摘掉）：拉新墙 80 发 ⇒ 复核在 `build` 拒 48（star 24、同向重叠 24）、可建 32；摘掉复核 `build` 全放行、派生层拒的**同一批** 48（新增拒绝 0、少拒绝 0）。拖把手 160 发 ⇒ 摘掉复核全过 `legalDrop`，复核在则拒 84（全 star）、可拖 76，同样是同一批；16 把把手**每一把仍剩 ≥3 发**。⇒ 筛 ⑥ 从此不再单独挡任何一发（`editing.ts` 里那句"命令层的 `build` 不含接头分类"要在 T7 Step 6 改写，见"本任务会改到的既有写法"第 4 条）；而"落点吸成恒等"那 160 问的计数（恒等 72 / 改写 14）**不受影响**，`handles.test.ts` 里那条 sweep 用例（只要求恒等 ≥ 8、改写 ≥ 1、改写只许来自 `angle15`）在 T7 之后照样绿。
+- （T7 加）但**第一发可建/可拖的偏移会变**：复核把"第 0 发就合法"往后挪 —— 拉新墙在 8 枚端点里的 **5 枚**上挪了 1～3 发，拖把手在 12 个把手位置里的 **9 个**上挪了 1～3 发（例：起点 `(4000,3000)` 从第 0 发 `(2000,0)` 挪到第 1 发 `(0,2000)`）。样例房那一发本来就被筛 ④ 挡着，所以最终靶子**未必**换 —— 这件事只能在 T6 与 T7 都进真仓库之后实测，故 T7 Step 8 要求 `--draw-shot` / `--edit-shot` 各重跑一遍取新字面量，判据形状一字不改。
+- （T7 加）一次带复核的 `build` 实测成本（2026-09-28，`bench/perf.test.ts`，整层派生本身在括号里）：13 墙 0.055ms（0.033）、31 墙 0.069ms（0.056）、61 墙 0.161ms（0.135）。⇒ `pointermove` 每帧问几次 `legalDrop` 仍然便宜，"复核太贵所以只留 UI 侧预判"这条反对意见在 S1 的规模上买不到东西。
+- （T7 加）`packages/core/src/index.ts` 对 `commands/*` 与 `geom/*` 全是 `export *`（2026-09-28 核对）⇒ 新命令**不需要**改索引文件，也没有链接期错误可看：测试里 `import { storeyDelete } from '@dajia/core'` 在实现落地前拿到的是 `undefined`，要到调用那一行才 `TypeError: … is not a function`。写"红在哪"的核对清单时按这个形状预期，别等 `SyntaxError`。
+- （T7 加）`applyPatch` 对**不在文档里的 remove id 是抛的**（计划 1 立的口径）⇒ `slabDelete` 必须先 `doc.get(pointId)` 再决定是否收进 `remove`：一块角点早就悬空的板，若把那个不存在的 id 写进补丁，命令在 `dispatch` 里抛，文档就**锁死**了（删不掉、改不动）。`commands-delete.test.ts` 的「角点早就悬空的板仍删得掉」钉的就是这个（改坏 M13 摘掉守卫即红）。
+- （T7 加）core 基线 2026-09-28 重测：**21 文件 / 276 条**（不是抄计划 2 的旧数）；T7 之后 **24 / 309**（+9 +12 +12，`joint.test.ts` 的 18 条一条不增不减，且那 18 条改用 `handBuild` 之后**不依赖实现** —— 先落地也照样绿）。全仓 405 → 438 是**两段相加**（core 实测净增 33 + T6 回填的 405），全仓 `Test Files` 数本任务未测，执行日回填。
 
 ## 执行日志
 
