@@ -1,6 +1,16 @@
 import { useEffect, useRef } from 'react';
-import { buildDrawList, fitStorey, type DrawOp, type Pen } from '@dajia/scene-2d';
+import {
+  SELECTED,
+  buildDrawList,
+  fitStorey,
+  pickOne,
+  probeTarget,
+  type DrawOp,
+  type Pen,
+  type PickProbe,
+} from '@dajia/scene-2d';
 import { useEditor } from './stores/editorStore';
+import { useSelection } from './stores/selectionStore';
 
 export interface DebugReport {
   ops: number;
@@ -8,6 +18,10 @@ export interface DebugReport {
   nonBlankPx: number;
   wPx: number;
   hPx: number;
+  selectedIds: string[];
+  selectedPx: number;
+  pick: PickProbe | null;
+  selectedAfterBlank: number;
 }
 
 declare global {
@@ -23,6 +37,18 @@ const DASH: Record<Pen['lineType'], number[]> = {
 };
 
 const BG = '#ffffff';
+const CHANNEL_TOL = 40;
+
+/** 选中色从 scene-2d 的常量解析，不在这里重抄一遍 hex —— 改了常量这里跟着变，判据不漂。 */
+function rgbOf(hex: string): readonly [number, number, number] {
+  return [
+    Number.parseInt(hex.slice(1, 3), 16),
+    Number.parseInt(hex.slice(3, 5), 16),
+    Number.parseInt(hex.slice(5, 7), 16),
+  ];
+}
+
+const [SEL_R, SEL_G, SEL_B] = rgbOf(SELECTED);
 
 function paint(ctx: CanvasRenderingContext2D, ops: readonly DrawOp[]): void {
   ctx.fillStyle = BG;
@@ -61,12 +87,51 @@ function paint(ctx: CanvasRenderingContext2D, ops: readonly DrawOp[]): void {
   ctx.setLineDash([]);
 }
 
+/** 抗锯齿让选中线边缘是渐变而不是纯色，所以按通道 ±40 数，不比 RGB 全等。 */
+function countPixels(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+): { nonBlankPx: number; selectedPx: number } {
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  let nonBlankPx = 0;
+  let selectedPx = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i]!;
+    const g = data[i + 1]!;
+    const b = data[i + 2]!;
+    if (r < 250 || g < 250 || b < 250) nonBlankPx += 1;
+    if (
+      Math.abs(r - SEL_R) <= CHANNEL_TOL &&
+      Math.abs(g - SEL_G) <= CHANNEL_TOL &&
+      Math.abs(b - SEL_B) <= CHANNEL_TOL
+    ) {
+      selectedPx += 1;
+    }
+  }
+  return { nonBlankPx, selectedPx };
+}
+
 export function PlanCanvas(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // 指针事件的靶子必须是**刷上屏的那一份**指令表，不是现算的副本：副本与屏幕一旦漂开，
+  // "点得中的就是画出来的"这条就只剩注释还在守着。
+  const opsRef = useRef<readonly DrawOp[]>([]);
   const log = useEditor((s) => s.log);
   const storeyId = useEditor((s) => s.storeyId);
   const viewport = useEditor((s) => s.viewport);
   const setViewport = useEditor((s) => s.setViewport);
+  const ids = useSelection((s) => s.ids);
+  const select = useSelection((s) => s.select);
+  const toggle = useSelection((s) => s.toggle);
+  const clear = useSelection((s) => s.clear);
+
+  // 页面归位（真窗口实测后补的一行）：sendInputEvent 的 x/y 是页面坐标，而探针给的
+  // clickPx/blankPx 是画布坐标 —— 默认 body margin 8px 把两套坐标错开 8px，点击落在
+  // 探针量点之外，8px 容差直接被吃光：同一判据在真窗口里间歇性"点了没反应"（实测 12 跑
+  // 5 红，红全卡在第一处 waitUntil）。把画布贴回页面原点，"点得中的就是画出来的"才成立。
+  useEffect(() => {
+    document.body.style.margin = '0';
+  }, []);
 
   // 尺寸 → 视口。刻意不用 getBoundingClientRect：没有 CSS 参与，视口尺寸就是窗口
   // 内容区，shot 的期望像素数才不会随布局漂。（拖拽/缩放交互在 T5 才接管这条线。）
@@ -93,8 +158,26 @@ export function PlanCanvas(): React.JSX.Element {
     if (canvas === null || viewport === null) return;
     const ctx = canvas.getContext('2d');
     if (ctx === null) return;
-    paint(ctx, buildDrawList(log.document, storeyId, viewport));
-  }, [log, storeyId, viewport]);
+    const ops = buildDrawList(log.document, storeyId, viewport, { ids });
+    opsRef.current = ops;
+    paint(ctx, ops);
+  }, [log, storeyId, viewport, ids]);
+
+  const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>): void => {
+    // offsetX/offsetY 就是画布像素：canvas.width === style.width（上面那两行），
+    // 没有 CSS 缩放掺进来，所以屏幕坐标与 DrawOp 的坐标同一单位。
+    // DPR≠1 时图会糊，但点不偏 —— sendInputEvent 的 x/y 是 DIP，等于这里的 CSS 像素。
+    const hit = pickOne(opsRef.current, {
+      x: event.nativeEvent.offsetX,
+      y: event.nativeEvent.offsetY,
+    });
+    if (hit === null) {
+      clear();
+      return;
+    }
+    if (event.shiftKey) toggle(hit.ownerId);
+    else select(hit.ownerId);
+  };
 
   // 钩子必须在"这一帧已经刷完"之后存在：effect 顺序 = 声明顺序，paint 在前、这条在后。
   useEffect(() => {
@@ -102,23 +185,30 @@ export function PlanCanvas(): React.JSX.Element {
     if (canvas === null || viewport === null) return;
     const previous = window.__dajiaDebug;
     window.__dajiaDebug = (): DebugReport => {
-      const ops = buildDrawList(log.document, storeyId, viewport);
+      // 读 opsRef（屏幕上那张图）而不是重算一份：重算的那份不知道选中集，
+      // T3 这么写没问题（那时选中不上屏），T4 之后再重算就是在测另一张图。
+      const ops = opsRef.current;
       const layers: Record<string, number> = {};
       for (const o of ops) layers[o.pen.layer] = (layers[o.pen.layer] ?? 0) + 1;
-      let nonBlankPx = 0;
       const ctx = canvas.getContext('2d');
-      if (ctx !== null) {
-        const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        for (let i = 0; i < data.length; i += 4) {
-          if (data[i]! < 250 || data[i + 1]! < 250 || data[i + 2]! < 250) nonBlankPx += 1;
-        }
-      }
-      return { ops: ops.length, layers, nonBlankPx, wPx: canvas.width, hPx: canvas.height };
+      const counted =
+        ctx === null ? { nonBlankPx: 0, selectedPx: 0 } : countPixels(ctx, canvas);
+      return {
+        ops: ops.length,
+        layers,
+        nonBlankPx: counted.nonBlankPx,
+        wPx: canvas.width,
+        hPx: canvas.height,
+        selectedIds: [...ids],
+        selectedPx: counted.selectedPx,
+        pick: probeTarget(ops, viewport),
+        selectedAfterBlank: ids.size,
+      };
     };
     return () => {
       window.__dajiaDebug = previous;
     };
-  }, [log, storeyId, viewport]);
+  }, [viewport, ids]);
 
-  return <canvas ref={canvasRef} style={{ display: 'block' }} />;
+  return <canvas ref={canvasRef} onPointerDown={onPointerDown} style={{ display: 'block' }} />;
 }

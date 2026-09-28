@@ -12,6 +12,7 @@
     "lint:deps": "node scripts/check-package-deps.mjs",
     "test": "vitest run",
     "shot": "node scripts/desktop-shot.mjs",
+    "pick-shot": "node scripts/desktop-shot.mjs --pick",
     "verify": "pnpm typecheck && pnpm lint:deps && pnpm test"
   },
   "devDependencies": {

@@ -35,20 +35,39 @@ function runElectron(args, timeoutMs) {
 
 const dir = mkdtempSync(join(tmpdir(), 'dajia-shot-'));
 const out = join(dir, 'report.json');
+const wantPick = process.argv.includes('--pick');
+const electronArgs = [
+  '.',
+  ...(wantPick ? ['--pick-shot'] : []),
+  '--shot',
+  out,
+];
 try {
   runPnpm('pnpm --filter @dajia/desktop build');
-  runElectron(['.', '--shot', out], 180_000);
+  runElectron(electronArgs, 180_000);
   const report = JSON.parse(readFileSync(out, 'utf8'));
   const layers = report.layers ?? {};
-  // 这四个数与 drawlist.test.ts 同源：改样例房必须两处一起改，别只调这里。
+  // 前六条与 drawlist.test.ts 同源；后四条与 pick.test.ts 同源。
+  // 改样例房必须几处一起改，别只调这里。
   const checks = [
     ['指令表 31 条（8 轮廓 + 12 轴线 + 10 洞口线 + 1 标签）', report.ops === 31],
     ['structure 层 20 条', layers.structure === 20],
     ['opening 层 10 条', layers.opening === 10],
     ['annotation 层 1 条', layers.annotation === 1],
-    ['画布尺寸 = 窗口内容区', report.wPx > 800 && report.hPx > 500],
+    // Task 3 挂下来的 m5：这条只断下界，从没和内容区对过账 —— 名字改老实，别冒领等式。
+    ['画布尺寸过下界（wPx>800 且 hPx>500，非等式比对）', report.wPx > 800 && report.hPx > 500],
     ['非背景像素 > 5000（白屏恒为 0）', report.nonBlankPx > 5000],
   ];
+  if (wantPick) {
+    checks.push(
+      ['探针给出可点的构件', typeof report.pick?.ownerId === 'string'],
+      ['点中墙后屏幕上真的有红色像素', report.pickedSelectedPx > 100],
+      ['选中的就是探针指的那面墙', report.clickedOwner === report.pick?.ownerId],
+      // 两半都要：store 空了 **且** 红色像素没了 —— 只查前者的话，paint effect 漏掉 ids
+      // 依赖（屏幕还红着）会一路绿灯。
+      ['点空白后 store 与屏幕一起清空', report.selectedAfterBlank === 0 && report.selectedPx === 0],
+    );
+  }
   let bad = 0;
   for (const [name, ok] of checks) {
     if (!ok) bad += 1;
