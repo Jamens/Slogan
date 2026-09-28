@@ -13,6 +13,7 @@ import {
   wallAxisById,
   wallCreate,
   vec,
+  type Entity, // （Task 7 加：handBuild 要贴 Entity[]）
   type Joint,
   type WallCreateInput,
   type WallEntity,
@@ -59,6 +60,57 @@ function appendWall(
     wallCreate({ storeyId, start: { pointId: startId }, end, thicknessMm, heightMm: 3000 }),
   );
   return lastWall(log);
+}
+
+/**
+ * **不经命令层**，把手工实体直接贴进文档：坐标相同的两端复用同一枚点 id（与命令层的
+ * 共享端点语义一致），差别只在于绕开 `wallCreate` 那道门。
+ *
+ * 为什么需要它：Task 7 给 `wallCreate` / `wallMoveEndpoint` / `wallSetThickness` 加了派生
+ * 复核（`assertDerivesAfterApply`），"合法命令造得出画不出的文档"这条路于是被堵死。那正是
+ * 复核要的效果，但派生层这四道守卫（同向重叠 / 轮廓翻面 / 直通异厚 / star）必须**仍然可测** ——
+ * 它们是读盘与协作写入（计划 4、计划 6）唯一的哨兵，不能因为命令层提前挡就把哨兵本身
+ * 失去凭据。所以这些用例改成手工造文档；"命令层也挡得住"另由 `derive-guard.test.ts` 从正面钉。
+ */
+function handBuild(
+  specs: Array<{
+    start: { x: number; y: number };
+    end: { x: number; y: number };
+    thicknessMm: number;
+  }>,
+): Document {
+  const storeyId = uuidv7();
+  const entities: Entity[] = [
+    { kind: 'storey', id: storeyId, projectId, index: 0, elevationMm: 0, heightMm: 3000 },
+  ];
+  const pointIds = new Map<string, string>();
+  const pointOf = (at: { x: number; y: number }): string => {
+    const key = `${at.x},${at.y}`;
+    const hit = pointIds.get(key);
+    if (hit) return hit;
+    const id = uuidv7();
+    pointIds.set(key, id);
+    entities.push({ kind: 'point', id, storeyId, x: at.x, y: at.y });
+    return id;
+  };
+  for (const spec of specs) {
+    entities.push({
+      kind: 'wall',
+      id: uuidv7(),
+      storeyId,
+      startId: pointOf(spec.start),
+      endId: pointOf(spec.end),
+      thicknessMm: spec.thicknessMm,
+      heightMm: 3000,
+      elevationOffsetMm: 0,
+      loadBearing: true,
+      material: 'brick',
+    });
+  }
+  return Document.replaceEntities(
+    Document.create(projectId),
+    new Map(entities.map((entity) => [entity.id, entity])),
+  );
 }
 
 /** 直角 L：A (0,0)→P(1000,0)，B P→(1000,800)，同厚 240。 */
@@ -122,33 +174,30 @@ describe('分组只认拓扑', () => {
     // 不变式 3 还要钉住同向那一例 —— 同一个点上两个墙端朝同一方向离开，那是两条完全
     // 重叠的墙带（用户在同一个点上朝同一方向画了两笔）。lineGroups 只按无向方向折桶，
     // 所以这种输入本身就会落到 collinear（trim 全 0）、什么也不报，必须由 assertNoSameRay
-    // 在分类之前抛。合法命令就造得出它：wallCreate 只查零长与"墙厚不小于轴长"，
-    // wallMoveEndpoint 也不查射线唯一性，resolvePointRef 只看楼层归属。
-    const sameRay = build([
+    // 在分类之前抛。Task 7 起命令层就会先挡住这一发（`derive-guard.test.ts` 钉的是
+    // `/同向重叠/` 从 `wallCreate.build` 抛出），所以这里手工造文档，只考派生层那道哨兵。
+    const sameRay = handBuild([
       { start: { x: 1000, y: 0 }, end: { x: 2000, y: 0 }, thicknessMm: 240 },
+      { start: { x: 1000, y: 0 }, end: { x: 3000, y: 0 }, thicknessMm: 240 },
     ]);
-    const sameRayA = sameRay.document.byKind('wall')[0]!;
-    appendWall(sameRay, sameRayA.startId, { x: 3000, y: 0 }, 240);
-    expect(() => deriveJoints(sameRay.document)).toThrow(/同向重叠/);
+    expect(() => deriveJoints(sameRay)).toThrow(/同向重叠/);
 
     // 鸽笼：同一条线上三个墙端（一反向两同向）不需要专门分支，逐对检查自然命中
-    const threeOnOneLine = build([
+    const threeOnOneLine = handBuild([
       { start: { x: 0, y: 0 }, end: { x: 1000, y: 0 }, thicknessMm: 240 },
+      { start: { x: 1000, y: 0 }, end: { x: 2000, y: 0 }, thicknessMm: 240 },
+      { start: { x: 1000, y: 0 }, end: { x: 3000, y: 0 }, thicknessMm: 240 },
     ]);
-    const threeA = threeOnOneLine.document.byKind('wall')[0]!;
-    appendWall(threeOnOneLine, threeA.endId, { x: 2000, y: 0 }, 240);
-    appendWall(threeOnOneLine, threeA.endId, { x: 3000, y: 0 }, 240);
-    expect(() => deriveJoints(threeOnOneLine.document)).toThrow(/同向重叠/);
+    expect(() => deriveJoints(threeOnOneLine)).toThrow(/同向重叠/);
 
     // 同向那一对还能藏在 tee 形状里（x 族两个同向成员 + 一根支墙）。少了守卫，
     // 它们会被当成 tee 的"直通两墙"，requireEqualThrough 反而夸这两面墙同厚合规
-    const insideTee = build([
+    const insideTee = handBuild([
       { start: { x: 1000, y: 0 }, end: { x: 2000, y: 0 }, thicknessMm: 240 },
+      { start: { x: 1000, y: 0 }, end: { x: 3000, y: 0 }, thicknessMm: 240 },
+      { start: { x: 1000, y: 0 }, end: { x: 1000, y: 800 }, thicknessMm: 120 },
     ]);
-    const insideTeeHub = insideTee.document.byKind('wall')[0]!.startId;
-    appendWall(insideTee, insideTeeHub, { x: 3000, y: 0 }, 240);
-    appendWall(insideTee, insideTeeHub, { x: 1000, y: 800 }, 120);
-    expect(() => deriveJoints(insideTee.document)).toThrow(/同向重叠/);
+    expect(() => deriveJoints(insideTee)).toThrow(/同向重叠/);
   });
 });
 
@@ -312,20 +361,13 @@ describe('corner：斜角与异厚', () => {
   });
 
   it('夹角小到轮廓翻面 → 抛，不画出自相交四边形', () => {
-    const log = build([{ start: { x: -2000, y: 0 }, end: { x: 0, y: 0 }, thicknessMm: 500 }]);
-    const storeyId = log.document.byKind('storey')[0]!.id;
-    const a = log.document.byKind('wall')[0]!;
-    log.dispatch(
-      wallCreate({
-        storeyId,
-        start: { pointId: a.endId },
-        // 与 -x 只夹约 1°：cot(0.5°) ≈ 114，斜切量远超 2000 的轴长
-        end: { x: -2000, y: 35 },
-        thicknessMm: 500,
-        heightMm: 3000,
-      }),
-    );
-    expect(() => deriveJoints(log.document)).toThrow(/翻面/);
+    // 与 -x 只夹约 1°：cot(0.5°) ≈ 114，斜切量远超 2000 的轴长。
+    // Task 7 起 wallCreate 的复核会先挡住这一发，所以手工造文档，只考派生层那道哨兵。
+    const doc = handBuild([
+      { start: { x: -2000, y: 0 }, end: { x: 0, y: 0 }, thicknessMm: 500 },
+      { start: { x: 0, y: 0 }, end: { x: -2000, y: 35 }, thicknessMm: 500 },
+    ]);
+    expect(() => deriveJoints(doc)).toThrow(/翻面/);
   });
 });
 
@@ -387,28 +429,13 @@ describe('tee', () => {
   });
 
   it('直通两墙厚度不同 → 抛（S1 的 T 接不允许带台阶的直通）', () => {
-    const log = build([{ start: { x: 0, y: 0 }, end: { x: 1000, y: 0 }, thicknessMm: 240 }]);
-    const storeyId = log.document.byKind('storey')[0]!.id;
-    const w1 = log.document.byKind('wall')[0]!;
-    log.dispatch(
-      wallCreate({
-        storeyId,
-        start: { pointId: w1.endId },
-        end: { x: 2000, y: 0 },
-        thicknessMm: 370,
-        heightMm: 3000,
-      }),
-    );
-    log.dispatch(
-      wallCreate({
-        storeyId,
-        start: { pointId: w1.endId },
-        end: { x: 1000, y: 800 },
-        thicknessMm: 120,
-        heightMm: 3000,
-      }),
-    );
-    expect(() => deriveJoints(log.document)).toThrow(/厚度不同/);
+    // Task 7 起命令层不给建这种图纸，手工造它，只考派生层那道哨兵。
+    const doc = handBuild([
+      { start: { x: 0, y: 0 }, end: { x: 1000, y: 0 }, thicknessMm: 240 },
+      { start: { x: 1000, y: 0 }, end: { x: 2000, y: 0 }, thicknessMm: 370 },
+      { start: { x: 1000, y: 0 }, end: { x: 1000, y: 800 }, thicknessMm: 120 },
+    ]);
+    expect(() => deriveJoints(doc)).toThrow(/厚度不同/);
   });
 });
 
@@ -499,21 +526,16 @@ describe('cross 与 star', () => {
   });
 
   it('Y 形三臂（三个方向）→ 抛 star，并提示打断成 T 接', () => {
-    const log = build([{ start: { x: 0, y: 0 }, end: { x: 1000, y: 0 }, thicknessMm: 240 }]);
-    const storeyId = log.document.byKind('storey')[0]!.id;
-    const hub = log.document.byKind('wall')[0]!.endId;
     // 三条臂必须在三个**方向**上：计划文本原本第一臂走 (2000,0)，与 A 的轴线共线，
     // 于是该点只有两条方向线 —— 分类是 tee，永远到不了 star 分支（用例名要的就是三方向）。
-    for (const end of [
-      { x: 2000, y: 900 },
-      { x: 1000, y: 900 },
-    ] satisfies Array<{ x: number; y: number }>) {
-      log.dispatch(
-        wallCreate({ storeyId, start: { pointId: hub }, end, thicknessMm: 240, heightMm: 3000 }),
-      );
-    }
-    expect(() => deriveJoints(log.document)).toThrow(/star/);
-    expect(() => deriveJoints(log.document)).toThrow(/打断/);
+    // Task 7 起 wallCreate 的复核会先挡住这颗星，所以手工造文档，只考派生层那道哨兵。
+    const doc = handBuild([
+      { start: { x: 0, y: 0 }, end: { x: 1000, y: 0 }, thicknessMm: 240 },
+      { start: { x: 1000, y: 0 }, end: { x: 2000, y: 900 }, thicknessMm: 240 },
+      { start: { x: 1000, y: 0 }, end: { x: 1000, y: 900 }, thicknessMm: 240 },
+    ]);
+    expect(() => deriveJoints(doc)).toThrow(/star/);
+    expect(() => deriveJoints(doc)).toThrow(/打断/);
   });
 });
 
