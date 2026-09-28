@@ -11,6 +11,7 @@
     "build": "pnpm --filter @dajia/desktop build",
     "lint:deps": "node scripts/check-package-deps.mjs",
     "test": "vitest run",
+    "shot": "node scripts/desktop-shot.mjs",
     "verify": "pnpm typecheck && pnpm lint:deps && pnpm test"
   },
   "devDependencies": {

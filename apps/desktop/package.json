@@ -14,8 +14,10 @@
   "dependencies": {
     "@dajia/core": "workspace:*",
     "@dajia/protocol": "workspace:*",
+    "@dajia/scene-2d": "workspace:*",
     "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react-dom": "^19.3.0",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@types/react": "^19.3.0",

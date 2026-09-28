@@ -28,5 +28,13 @@ const workspaceDeps = {
 export default defineConfig({
   main: workspaceDeps,
   preload: workspaceDeps,
-  renderer: { plugins: [react()] },
+  renderer: {
+    plugins: [react()],
+    resolve: {
+      alias: {
+        '@dajia/core': src('../../packages/core/src/index.ts'),
+        '@dajia/scene-2d': src('../../packages/scene-2d/src/index.ts'),
+      },
+    },
+  },
 });
