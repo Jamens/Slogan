@@ -32,7 +32,11 @@ function createWindow(visible: boolean): BrowserWindow {
   ipcMain.removeHandler(IPC.ping);
   ipcMain.handle(IPC.ping, () => `pong:${CORE_SCHEMA_VERSION}`);
 
-  void win.once('ready-to-show', () => win.show());
+  // 只在可见模式补 show：--shot 从头到尾走 show:false 的隐藏绘制路径——canvas 画进 backing
+  // store，getImageData 不依赖合成器上屏（Step 4 注释的那条主张，此前被这行无条件 show 架空）。
+  if (visible) {
+    win.once('ready-to-show', () => win.show());
+  }
   if (process.env.ELECTRON_RENDERER_URL) {
     void win.loadURL(process.env.ELECTRON_RENDERER_URL);
   } else {
@@ -70,7 +74,16 @@ async function runShot(win: BrowserWindow, path: string): Promise<void> {
 }
 
 void app.whenReady().then(async () => {
-  const shotPath = shotPathFromArgv();
+  let shotPath: string | null;
+  try {
+    shotPath = shotPathFromArgv();
+  } catch (err) {
+    // 参数不合法就立刻非零退出。此前这个 throw 落在被丢弃的 promise rejection 里：没有窗口、
+    // 没有退出信号，window-all-closed 永不触发，只能等脚本侧 180 秒超时才收尾。
+    process.stderr.write(`--shot 参数无效：${String(err)}\n`);
+    app.exit(2);
+    return;
+  }
   const win = createWindow(shotPath === null);
   if (shotPath === null) {
     app.on('activate', () => {

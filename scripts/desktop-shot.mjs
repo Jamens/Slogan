@@ -1,23 +1,43 @@
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// Windows 上 pnpm 是 pnpm.cmd：不给 shell:true 会 ENOENT。
-const shell = process.platform === 'win32';
+// electron 包的入口在非 Electron 的 node 里 require 出来就是二进制绝对路径（Electron 官方定位法：
+// index.js 读 path.txt 拼 dist/）。直接按路径起它，回读路径就不必经 pnpm exec 与 shell 两层转手。
+const desktopDir = join(import.meta.dirname, '..', 'apps', 'desktop');
+const electronBin = createRequire(join(desktopDir, 'package.json'))('electron');
 
-function run(cmd, args, timeoutMs) {
-  const r = spawnSync(cmd, args, { encoding: 'utf8', shell, stdio: 'inherit', timeout: timeoutMs });
+function assertRan(r, label, timeoutMs) {
   if (r.error) throw r.error;
-  if (r.signal) throw new Error(`${cmd} 被信号 ${r.signal} 打死（窗口没关？超时 ${String(timeoutMs)}ms）`);
-  if (r.status !== 0) throw new Error(`${cmd} ${args.join(' ')} → exit ${String(r.status)}`);
+  if (r.signal) throw new Error(`${label} 被信号 ${String(r.signal)} 打死（窗口没关？超时 ${String(timeoutMs)}ms）`);
+  if (r.status !== 0) throw new Error(`${label} → exit ${String(r.status)}`);
+}
+
+// Windows 上 pnpm 是 pnpm.cmd，必须走 shell:true 才找得到。但 shell:true 配 args 数组会把参数
+// 不加引号拼成一条命令串——含空格的路径在空格处断开（TMPDIR 带空格即假失败），且每次运行报
+// DEP0190。所以这里只传拼好的整条命令串、不带 args 数组；本串里没有需要再加引号的分量。
+function runPnpm(commandLine, timeoutMs) {
+  assertRan(spawnSync(commandLine, { encoding: 'utf8', shell: true, stdio: 'inherit', timeout: timeoutMs }), commandLine, timeoutMs);
+}
+
+// Electron 直接起二进制、不经 shell：args 数组原样进 argv（Node 在 Windows 构造进程命令行时
+// 会给含空格的参数补引号），--shot 回读路径无论含不含空格都完整。
+// cwd 指到 desktop 包目录："." 即应用根，与原先 pnpm --filter … exec electron . 语义一致。
+function runElectron(args, timeoutMs) {
+  assertRan(
+    spawnSync(electronBin, args, { encoding: 'utf8', cwd: desktopDir, stdio: 'inherit', timeout: timeoutMs }),
+    `electron ${args.join(' ')}`,
+    timeoutMs,
+  );
 }
 
 const dir = mkdtempSync(join(tmpdir(), 'dajia-shot-'));
 const out = join(dir, 'report.json');
 try {
-  run('pnpm', ['--filter', '@dajia/desktop', 'build']);
-  run('pnpm', ['--filter', '@dajia/desktop', 'exec', 'electron', '.', '--shot', out], 180_000);
+  runPnpm('pnpm --filter @dajia/desktop build');
+  runElectron(['.', '--shot', out], 180_000);
   const report = JSON.parse(readFileSync(out, 'utf8'));
   const layers = report.layers ?? {};
   // 这四个数与 drawlist.test.ts 同源：改样例房必须两处一起改，别只调这里。
