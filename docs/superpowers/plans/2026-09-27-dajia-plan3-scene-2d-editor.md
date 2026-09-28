@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
-> **状态：本计划展开了 Task 1–7。** Task 8（楼层切换 + 属性面板 + 删除接屏）与 Task 9（吸附补档：轴网交点）的边界与验收口径列在末尾，正文尚未展开成可执行步骤 —— **补齐前不得进入执行**（Task 1 起就要改根 `typecheck` 与 `vitest.config.ts`，跑到 Task 5 才发现缺口的代价是把前四步的闸门重跑一遍）。Task 6 的 27 行 `--draw-shot` 判据、DR1–DR8 那张改坏表里标"按 throw 文案推"的每一行，都要在真窗口跑过之后把实测红字回填（编写期跑不了：`apps/desktop` 的 renderer 与 `scripts/desktop-shot.mjs` 要 Task 3 之后才存在）。同一条纪律适用于 Task 7 的 Step 7/8：全仓 `Tests 438` 是**两段实测相加**（core 24/309 实测 + T6 回填的 405），`Test Files` 全仓数与两个真窗口的字面量都要在执行日重测回填。
+> **状态：本计划展开了 Task 1–7。** Task 8（楼层切换 + 属性面板 + 删除接屏）与 Task 9（吸附补档：轴网交点）的边界与验收口径列在末尾，正文尚未展开成可执行步骤 —— **补齐前不得进入执行**（Task 1 起就要改根 `typecheck` 与 `vitest.config.ts`，跑到 Task 5 才发现缺口的代价是把前四步的闸门重跑一遍）。Task 6 的 27 行 `--draw-shot` 判据、DR1–DR8 那张改坏表里标"按 throw 文案推"的每一行，都要在真窗口跑过之后把实测红字回填（编写期跑不了：`apps/desktop` 的 renderer 与 `scripts/desktop-shot.mjs` 要 Task 3 之后才存在）。同一条纪律适用于 Task 7 的 Step 7/8：全仓 `Tests 438` = T6 回填的 405 + 本任务**实测**的 core 净增 33（临时工程 core 24/309 + scene-2d 6/114 = **30 文件 / 423 条**，2026-09-28 重复三遍逐字相同；同日真仓库 `npx vitest run` = **23 文件 / 284 条**），全仓 `Test Files` 数两段都没给过、两个真窗口的字面量也要在执行日重测回填。
 
 **Goal:** 把 `@dajia/scene-2d` 从一行 stub 推进到「在真窗口里看得见一层平面、点得中构件」：视口仿射、绘制指令表、命中与选中，全部保持 DOM-free 可单测；像素是否真上屏由一次性截图回读证明，不靠人眼。
 
@@ -8270,7 +8270,7 @@ function snapPx(p: Px): Px {
  * 正交 17、中点 1，那些落点本来就在自己那面墙的轴线上，吸附只是原样还回来；剩下 14 问被 15° 档
  * 挪走，最大位移 55.79mm = 6.97px（仍在 `SNAP_TOL_PX` 之内），且这 160 问的落点**在 Task 6 落地时**全部过得了 `legalDrop`。
  * （Task 7 把派生复核搬进 `wallMoveEndpoint.build` 之后这一句不再成立：160 发里 `build` 拒 84 发、全是 star，
- * 可拖 76 发，且"第一发可拖"在 12 个把手位置里的 9 个上往后挪了 1～3 发 —— 实测见 Task 7 的 T6 交接第 ④ 条。）
+ * 可拖 76 发，且"第一发可拖"从第 0 发挪到第 1 发的有 **16 把把手里的 12 把**（去重是 8 个位置，另外 4 把不动）—— 实测见 Task 7 的 T6 交接第 ④ 条。）
  * 所以"整数百米毫米"买到的是靶子可复现与恒等落点上的稳定，不是"探针不吃吸附"。
  *
  * `handles.test.ts` 的「拖拽路径真的在吃吸附」把这几个计数钉成判据（恒等 ≥ 8、改写 ≥ 1、
@@ -10111,7 +10111,7 @@ Task 8 的属性面板、删除键与 `planDelete` 的 `unsupported` 分支全�
 
 **`packages/core/src/index.ts` 一字不改**：那个文件对 `commands/storey` / `commands/wall` / `commands/column` / `commands/slab` / `geom/topology` / `geom/outline` 全是 `export *`（2026-09-28 核对），新出口自己就流出去了。代价是**红了不好看**：测试文件里 `import { storeyDelete } from '@dajia/core'` 在实现落地之前不会在链接期抛 `SyntaxError`，vitest 走 SSR 转译，那个名字是 `undefined`，要到**调用那一行**才炸成 `TypeError: storeyDelete is not a function`（Task 6 Step 4 已在临时工程里对十个新出口实测过这个形状）。Step 2 的"红在哪"按这个预期核对。
 
-**计数账**（2026-09-28 的 `.tscheck/t8` 临时工程**实跑**出来的，不是加出来的）：core 从 **21 个文件 / 276 条** 到 **24 个文件 / 309 条**（+9 +12 +12，`joint.test.ts` 的 18 条一条不增不减）；scene-2d **6 个文件 / 114 条** —— viewport 9 + drawlist 10 + pick 18 + snapping 28 + editing 30 + handles 19，本任务那七条用例改写全落在 `editing.test.ts` 与 `handles.test.ts` 两个文件里，**条数一条不增不减**。那一跑的真账：`Test Files 30 passed (30) / Tests 423 passed (423)`，`npx tsc --noEmit`（core/src + scene-2d 的 src 与 test）exit=0。临时工程不装的两段：`packages/core/test/commands-drag.test.ts` 的 **7 条**（T5）与 core / scene-2d 之外的 **8 条**（`packages/protocol/test/ipc.test.ts` + `scripts/test/deps-check.test.mjs`；2026-09-28 对真仓库跑 `npx vitest run` 得 `Tests 284 passed (284)`，正是 core 276 + 这 8）⇒ 全仓 **405 → 438**（284 + 114 + 7 + 33）。基线 276 是同一天在同一临时工程里对**真仓库**的 `packages/core` 重测过的（`Test Files 21 passed (21) / Tests 276 passed (276)`），不是抄计划 2 的旧数。
+**计数账**（2026-09-28 的 `.tscheck/t8` 临时工程**实跑**出来的，不是加出来的）：core 从 **21 个文件 / 276 条** 到 **24 个文件 / 309 条**（+9 +12 +12，`joint.test.ts` 的 18 条一条不增不减）；scene-2d **6 个文件 / 114 条** —— viewport 9 + drawlist 10 + pick 18 + snapping 28 + editing 30 + handles 19，本任务那七条用例改写全落在 `editing.test.ts` 与 `handles.test.ts` 两个文件里，**条数一条不增不减**。那一跑的真账：`Test Files 30 passed (30) / Tests 423 passed (423)`，`npx tsc --noEmit`（core/src + scene-2d 的 src 与 test）exit=0。临时工程不装的两段：`packages/core/test/commands-drag.test.ts` 的 **7 条**（T5）与 core / scene-2d 之外的 **8 条**（`packages/protocol/test/ipc.test.ts` + `scripts/test/deps-check.test.mjs`；2026-09-28 对真仓库跑 `npx vitest run` 得 `Test Files 23 passed (23) / Tests 284 passed (284)`，正是 core 276 + 这 8）⇒ 全仓 **405 → 438**（284 + 114 + 7 + 33）。基线 276 是同一天在同一临时工程里对**真仓库**的 `packages/core` 重测过的（`Test Files 21 passed (21) / Tests 276 passed (276)`），不是抄计划 2 的旧数。
 
 ---
 
@@ -11479,60 +11479,247 @@ Expected: **`Test Files 24 passed (24) / Tests 309 passed (309)`**，tsc exit=0�
 
 ---
 
-- [ ] **Step 6: scene-2d 侧的订正（一条用例换边 + `editing.ts` 三段注释跟上真源；代码不动）**
+- [ ] **Step 6: scene-2d 侧的订正（7 条既有用例改写 + 1 个助手删除 + `editing.ts` 三段注释跟上真源；scene-2d 的逻辑代码一字不动）**
 
-`packages/scene-2d/test/editing.test.ts` 里那条「⑥ 的前提：同一发候选命令层放行、派生层抛（星形接头）」在复核落地之后**必红**（`legalWallCreate` 给 false，而它下面 `trial.dispatch(command)` 直接抛）。它判的命题已经换边，所以改名并重写断言，**条数仍是 30**：
+复核挂到 `build` 的最后一行之后，Task 6 那批用例里有**七条**的**夹具前提**漂了：它们靠"命令层放行、派生层抛"或者"从原点沿 `+x` 拖必然合法"活着，而这两句在 T7 都不再成立。2026-09-28 在 `.tscheck/t8` 临时工程（core 与 scene-2d 全量副本）里逐条改绿：`Test Files 30 passed (30) / Tests 423 passed (423)`，`npx tsc --noEmit`（core/src + scene-2d 的 src 与 test）exit=0。下面每段都是**逐字替换**文本，「红法」是执行日拿来核对的凭据。**条数一条不增不减**（`editing.test.ts` 30、`handles.test.ts` 19）—— 改的全是既有用例的落点方向与造图方式，没有新增用例，也没有删用例。
+
+这七段代码块（`editing.test.ts` 4 段 + `handles.test.ts` 3 段）在写完之后**与那份临时工程的文件逐字反向比对过**：每一段都作为子串原样命中对应文件，不是转述。后面 `editing.ts` 的三处注释**不参与测试**，所以只能核对锚：那三段的"原行"引文摘自 Task 6 落地形态的源文件（`⑥ **建得出还要画得出**（\`derivesCleanly\`）：命令层的 \`build\` 不含接头分类…`），执行日若引文与实际源文件对不上，以源文件为锚做替换，别为了迁就引文改判据。
+
+顺带一句执行顺序：这七条**必须与 Step 3–5 的 core 改动同批落地**。只在 core 侧挂复核、不动这几条，`packages/scene-2d/test` 会红（2026-09-28 实测：`Test Files 3 failed | 27 passed (30) / Tests 8 failed | 415 passed (423)`）；反过来先改测试、core 还没挂复核，那这七条**一条都不红**（旧夹具在旧真源下本来就是绿的）。所以"红在哪几条"本身就能证明你改的是哪一侧。
+
+那 8 条红怎么分成七 + 一：**那三个红的文件是 `editing.test.ts`、`handles.test.ts`、`pick.test.ts`**（`Test Files 3 failed`），`snapping.test.ts` 一条没红 —— 复核不动吸附，正交/角度档的落点照旧。`editing.test.ts` 是 `30 tests | 4 failed`（正好 6.1、6.2、6.3、6.4 四条），`handles.test.ts` 于是是 3 条（8 − 4 − 1），留存日志片段里点得出名字的是其中两条：`handles.test.ts:482` 的 `expect(p).not.toBeNull()`（旧 6.6「四发正向候选全被真源挡下…」，探针被 star 筛光了）与 `handles.test.ts:549` 的 `expect(legalDrop(..., firstDrop.raw)).toBe(true)`（旧 6.7「裸对角合法、吸上去那一发被 240 厚墙挡下」，裸对角从此非法）。第三条的名字不在这两份片段里，只能由减法得到 —— 执行日如果只红 6 条或红 9 条，先按 6.1–6.7 的清单逐条点名，别拿这个减法当判据。
+
+**那第 8 条红是临时工程自己的装配事故，执行日不该复现它**：红的是 `pick.test.ts > pickPxOf 点名要墙：一层的每一面墙都拿得到只命中它自己那一发的像素`，红法是 `ReferenceError: wallAxisById is not defined`（`pick.test.ts:244`）—— 与派生复核毫无关系，是那一轮临时工程里那份 `pick.test.ts` 副本少了 `import { vec, wallAxisById } from '@dajia/core'` 里的第二个名字。核对过：现在这份 harness 文件与计划 Task 4 Step 1 的文本**逐字相同**，带上那行 import 之后 `pick.test.ts` 18 条全绿（`final_green` 那一跑就是 30 文件 / 423 条）。执行日若真在 `pick.test.ts` 上看到红，先查是不是夹具的墙变了，别把它记成本任务的凭据。
+
+**6.1 `editing.test.ts`「按下与移动 > 拖到水平方向：终点吸成逐字整数、临时线仍画到裸光标、原草稿不动」**
+
+漂在哪：锚点是原点，素材那面墙是 `(0,0)→(4000,0)`，沿 `+x` 拖出来的草稿与它**同向重叠** —— T7 之前重叠只在派生层抛、`legalWallCreate` 看不见，所以这一发的 `legal` 只由正交档说话；复核挂上之后它变成 false，而这条要求 true。改往**反向延长线**拖：`-x` 那侧只在锚点处接出一个两臂贯通点，合法。`(-2000, 60)` 离轴 1.72°，仍在 `ANGLE_TOL_DEG`（实测 = 3）之内，正交档照样把终点吸成逐字整数。把开头这四行与注释换成：
 
 ```ts
-  it('命令层与派生层同判：T7 之后星形候选在 build 就抛，筛 ⑥ 退成第二道保险', () => {
-    // 角点 (0,0) 已经过着两条线（x 轴与 y 轴）。第三发 45° 斜线过同一点 ⇒ 星形接头，S1 不支持。
-    // Task 6 写这条用例时它"过了 ①~⑤ 也过了命令层"，只在派生层炸；Task 7 给 wallCreate 加了
-    // assertDerivesAfterApply 之后，同一发在 `legalWallCreate` 就给出 false —— 两层从此同判。
-    // 这条用例判的东西也随之换边：现在它钉的是"命令层的预言与真源不会漂"，
-    // 而 2026-09-28 的实测说清了为什么 ⑥ 还留着：80 发候选里被拒的那 48 发，
-    // 复核在 build 与摘掉复核后在派生层挡的是**同一批**（新增 0、少了 0）。
-    const { log, storeyId } = synthStorey();
-    const east = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
-    wallAt(log, storeyId, { pointId: east.startId }, { x: 0, y: 4000 });
-    const fd = snapFieldOf(log.document, storeyId);
-    const startMm: MoveTarget = { x: 0, y: 0 };
-    const startOps = buildDrawList(log.document, storeyId, sv, EMPTY_SELECTION);
-    const endPx = pxOf({ x: 2000, y: 2000 }, sv);
-    const start = draftAtPress(sv, pxOf(startMm, sv), fd);
-    const end = dropTargetOf(sv, endPx, startMm, fd, { excludeMm: startMm });
-    const draft: DraftWall = { storeyId, start, cursorPx: endPx, end, legal: true };
-    // ①③④⑤ 逐条自证（与 Task 6 一字不动）：这一发确实"前五条全过"
-    expect(start.snap?.kind).toBe('endpoint');
-    expect(end.snap?.pointId ?? null).toBeNull();
-    expect(end.mm).toEqual({ x: 2000, y: 2000 });
-    expect(pickAt(startOps, endPx)).toEqual([]);
-    expect(endPx.x).toBeGreaterThanOrEqual(2);
-    expect(endPx.y).toBeGreaterThanOrEqual(2);
-    expect(endPx.x).toBeLessThan(sv.widthPx - 2);
-    expect(endPx.y).toBeLessThan(sv.heightPx - 2);
-    expect(Math.hypot(end.mm.x - startMm.x, end.mm.y - startMm.y)).toBeGreaterThan(MIN_WALL_LENGTH_MM);
-    // 换边的那两句：命令层现在自己就拒，且拒的理由是派生层那句原文
+    const { log, storeyId, field: fd } = oneWall();
+    const base = pressAtOrigin(fd, storeyId);
+    // 往 **-x** 拖（穿过锚点那枚端点的反向延长线）：Task 7 把派生复核挂上 `wallCreate.build`
+    // 之后，从原点沿 +x 画会与素材那面 (0,0)→(4000,0) **同向重叠** ⇒ 同一发有了两个拒绝理由，
+    // `legal` 就不再只由正交档说话。反向延长线只在锚点处接出一个两臂贯通点，合法。
+    const cursor = pxOf({ x: -2000, y: 60 }, sv); // 离轴 1.72°，在 ANGLE_TOL_DEG(=3) 之内
+    const moved = moveDraft(log.document, base, sv, cursor, fd);
+    expect(moved.end.snap?.kind).toBe('ortho');
+    expect(moved.end.mm).toEqual({ x: -2000, y: 0 }); // 正交档保坐标 ⇒ 逐字整数
+    expect(moved.cursorPx).toEqual(cursor); // S4 第三条：预览线画到**裸光标**，不是吸附点
+    expect(moved.legal).toBe(true);
+```
+
+只换 `cursor` 那一发与它的注释，外加 `moved.end.mm` 的字面量；`moved.legal` 与 `cursorPx` 两句一字不动。**Task 6 登记在这条上的改坏凭据 E12 不受影响**：E12 判的是"`moveDraft` 不许原地改草稿"，靠的是这条后半段那两句引用比较（`expect(base.cursorPx).not.toEqual(cursor)` / `expect(base.legal).toBe(false)`），本步没碰。方向换了之后它**照样吃得住吸附判据**，2026-09-28 实测过一次改坏：把 `orthoOf` 的"保锚点坐标"退化成"整发取裸落点"（`mm: { x: raw.x, y: raw.y }`），红 4 条 —— 本条、`editing.test.ts`「起点在空白处按下：什么都不吸，也不吃角度档（锚点恒 null）」、`snapping.test.ts`「正交走"保坐标"语义：横向吸 y、纵向吸 x，落点是逐字整数」、「档位互斥：离 45° 2.9° 给 angle15，离轴 2.3° 给 ortho，90 的倍数不属于 15° 档」。改坏跑完即改回。
+
+**6.2 `editing.test.ts`「合法性预言与真命令 > 试跑不动真源：墙数、撤销栈深度、affected 三票全部原样」**
+
+只换一行，`dragToEnd(pressAtOrigin(fd, storeyId), { x: 1200, y: 0 }, log.document, fd, sv)` → `{ x: 0, y: 1200 }`。理由与 6.1 同一条雷（沿 `+x` 那一发在 T7 之后被 `build` 拒 ⇒ `legalWallCreate` 给 false，这条要求 true）。它判的是"试跑不许碰真源"，方向换成垂直完全不影响判据。
+
+**6.3 `editing.test.ts`「合法性预言与真命令 > 三种拒绝各一色：零长、墙厚不小于墙长、跨层复用点」**
+
+漂在哪：第 ② 发原本沿 `+x` 拖 200mm 与 400mm，T7 之后那两发**同时**撞"墙厚 ≥ 轴长"和"同向重叠"两个拒绝理由，用例名字里的"各一色"就不成立了（②与素材自证那发各有两个拒因，第一条用例分不出是谁在说话）。换成 `+y`（与素材那面墙垂直），只有墙厚那一条会说话。替换段（含注释，`// 素材自证` 那行也要跟着换）：
+
+```ts
+    // ② 墙厚不小于墙长：240 厚的墙拖 200mm。方向取 **+y**（与素材那面 (0,0)→(4000,0) 垂直）：
+    // Task 7 把派生复核挂上 `wallCreate.build` 之后，沿 +x 拖会先撞上「同向重叠」，
+    // 那一发就同时有两个拒绝理由，②不再"各一色"。垂直方向只有墙厚这一条会说话。
+    expect(dragToEnd(base, { x: 0, y: 200 }, log.document, fd, sv).legal).toBe(false);
+    // 素材自证：同一方向多拖一点就合法（否则"恒 false"的写法也过这一发）
+    expect(dragToEnd(base, { x: 0, y: 400 }, log.document, fd, sv).legal).toBe(true);
+```
+
+①（零长）与 ③（跨层复用点）两发一字不动。
+
+**6.4 `editing.test.ts`「新建回执与探针 > ⑥ 的前提：同一发候选命令层放行、派生层抛（星形接头）」→ 改名「⑥ 的前提：同一发候选在命令层与派生层一起拒（星形接头）」**
+
+命题换边：`legalWallCreate` 现在自己就 false，而它原来下面那句 `trial.dispatch(command)` 会在 dispatch 里抛。夹具（`synthStorey` + 两面 4000 的墙 + `(2000,2000)` 那一发）、`①③④⑤ 逐条自证`那六句、`legal: true` 那个草稿字面量、末尾"探针仍给得出别发候选 + `buildDrawList(t2…)` 不抛"那一段**全不动**。改的是标题、开头那段注释，和中间这四句：
+
+```ts
+    // 角点 (0,0) 已经过着两条线（x 轴与 y 轴）。第三发 45° 斜线过同一点 ⇒ core 的 `deriveJoints`
+    // 判它星形接头。Task 6 写这一条时它**过了 ①~⑤ 也过了命令层**，只在派生层炸；Task 7 把派生复核
+    // 挂上 `wallCreate.build` 之后，同一发在**两层一起拒** ⇒ 本条改判"两层同判、预言不漂"。
+    // ⑥ 真正的牙齿在上一条样例房用例里
+    // （摘掉 ⑥ 那次实测八个进程：「六道筛逐条自证」七次红、一次绿，红在建完再派生那一句 —— 本条不跟着红，
+    // 因为它判的是候选本身，不判探针挑了谁）。
+```
+
+```ts
     expect(legalWallCreate(log.document, draft)).toBe(false);
+    // Task 7 把派生复核挂上 `wallCreate.build` 之后，这一发不再是"命令层放行、派生层抛"，
+    // 而是**两层一起拒**：`legalWallCreate` 试跑的就是 `build`，所以它拿到的抛错就是 ⑥ 那句。
+    // 这一发从此不判"⑥ 为什么必须存在"，判的是"⑥ 从画图时炸提前到松手前拒"这条搬迁落地了。
     const command = draftCommand(draft, newWallDefaults(log.document, storeyId));
-    if (command === null) throw new TypeError('legal 为真却拿不到命令');
+    if (command === null) throw new TypeError('legal 为假却拿不到命令（`draftCommand` 看了 legal？）');
     expect(() => command.build(log.document)).toThrow(/S1 不支持/);
-    // ⑥ 在这发上不承重（它已经在 `legalWallCreate` 里被挡掉了），但代码留着：
-    // 它是"画得出"而不是"建得出"的唯一读者，将来 buildDrawList 长出派生之外的失败时说话。
-    const probe = wallProbe(log.document, storeyId, startOps, sv);
-    if (probe === null) throw new TypeError('这个夹具上探针该给得出别发候选（四条轴向外侧）');
-    const t2 = new TransactionLog(log.document);
-    t2.dispatch(
-      wallCreate({
-        storeyId,
-        start: { pointId: probe.startPointId },
-        end: { x: probe.endMm.x, y: probe.endMm.y },
-        thicknessMm: probe.defaults.thicknessMm,
-        heightMm: probe.defaults.heightMm,
-      }),
-    );
-    expect(() => buildDrawList(t2.document, storeyId, sv)).not.toThrow();
+```
+
+删掉的是原来那三行（`const trial = new TransactionLog(log.document);` / `trial.dispatch(command);` / `expect(() => buildDrawList(trial.document, storeyId, sv)).toThrow(/S1 不支持/);`）。**`legal: true` 那行不许跟着改成 false**：`draftCommand` 只认 `legal` 一色，这条要的就是"手工把 `legal` 写成 true 也照样在 `build` 抛" —— 改成 false 会让 `draftCommand` 返回 null，抛点从 `build` 挪到那句 `TypeError`，判据就空了。
+
+**6.5 `handles.test.ts`「合法落点与拖拽探针 > legalDrop 就是真源那道守卫的预言：合法 true、压扁给 false，而 false 那一发真的抛」**
+
+漂在哪：原本"合法那一发"是 `(4000, 1200)`（southEast 变 4326、southWest 变 4000、stem 变 1800，命令层六道守卫全过 ⇒ 当时为 true）；复核挂上 `wallMoveEndpoint.build` 之后那一发把三臂拧成 star ⇒ **改判 false**。合法的那一发从此只剩"仍然留在贯通线上"这一类，改成 `(corner.x + 1200, corner.y)`（southEast 变 2800、southWest 变 5200、stem 变 3671）。替换那一行注释 + 那一行断言，换成下面这一段（顺手把"false 那一发"钉成红字，别让 A1 悄悄改掉这条的靶子）：
+
+```ts
+    // 沿贯通线拖 (5200, 0)：southEast 变 2800、southWest 变 5200、stem 变 3671，三面都远大于各自墙厚。
+    // Task 7 之前这里用的是 (4000, 1200)（southEast 4326 / southWest 4000 / stem 1800，命令层六道守卫全过
+    // ⇒ 当时为 true）；派生复核挂上 `wallMoveEndpoint.build` 之后那一发把三臂拧成 star ⇒ 改判 false，
+    // 合法的那一发只剩"仍然留在贯通线上"这一类。下面第三句把它钉成红字，别让 A1 悄悄改掉这条的靶子。
+    expect(legalDrop(house.doc, junction.id, 'start', { x: corner.x + 1200, y: corner.y })).toBe(true);
+    expect(legalDrop(house.doc, junction.id, 'start', { x: corner.x, y: corner.y + 1200 })).toBe(false);
+    expect(() =>
+      wallMoveEndpoint({
+        wallId: junction.id,
+        end: 'start',
+        x: corner.x,
+        y: corner.y + 1200,
+      }).build(house.doc),
+    ).toThrow(/S1 不支持/);
+```
+
+后面 `farEnd`（`/零长墙/`）与 `stemFar`（`/变成零长/`）那两组一字不动 —— 它们本来就是"false 那一发真的抛"的凭据，只是理由各不相同。`wallMoveEndpoint` 在这条用例里 Task 6 就已经 import 了，不必动导入表。
+
+**6.6 `handles.test.ts`「拖拽吃吸附（Task 6） > 探针吃的是吸附后的毫米：四发正向候选全被真源挡下，第五发被一枚既有点接住」→ 改名「…前两发被真源挡下，第三发被一枚既有点接住」**
+
+漂在哪：原夹具的"四发正向候选全非法"里有两发（`(0,-800)` / `(-800,0)`）是靠**把另两面墙拖成零长**才非法的，复核把"拧成 star"也变成拒绝理由之后，`sharedBy` 与探针挑中的靶子都会换。新夹具只用共享 A 的两面 1040 墙（`+y` / `+x` 那两发各把其中一面拖成轴长 240 ⇒ 撞墙厚守卫）+ 一面**与 A 无关**的墙做陷阱口。整条替换（从 `it(` 到 `});`）：
+
+```ts
+  it('探针吃的是吸附后的毫米：前两发被真源挡下，第三发被一枚既有点接住', () => {
+    // 现场故意造到"前两发（+y / +x）候选全非法、第三发 (0,-800) 的裸落点离一面既成墙的起点 5.66px"，
+    // 于是吃场的探针报**那枚既有点的毫米 (40,-760)**，不吃场的探针报**裸的 (0,-800)** —— 两个答案不同。
+    // 2026-09-28 实测这条咬住的改坏：探针传 `EMPTY_SNAP_FIELD`（HB3）与换回 `moveTargetOf`（HB4），
+    // 两条各红这条 + 下面那条「合法性判的是吸附后的毫米」。锚点（HB1）与排除（HB2）不在这里判 ——
+    // 它们收在 `handleDropTarget` 出口里，改出口会让"拖拽路径真的在吃吸附"与"把手按在原地那一发"
+    // 逐进程红（实测 8/8），判在探针调用点上反而漏（那时探针与 renderer 一起改，行为没变）。
+    // 判裸落点还是判吸附后（HB5）由下面那条专门咬：这条夹具里裸 (0,-800) 与吸 (40,-760) **两侧都合法**，判不出。
+    const projectId = uuidv7();
+    const log = new TransactionLog(Document.create(projectId));
+    log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+    let storeyId = '';
+    for (const id of log.affected) {
+      if (log.document.get(id)?.kind === 'storey') storeyId = id;
+    }
+    if (storeyId === '') throw new TypeError('affected 里没有新建的楼层');
+    // 共享 A=(0,0) 的两面墙（+x 与 +y，直角共点 ⇒ 两臂接头，S1 造得成，`sharedBy` 恰为 2）。
+    // 两面都取 1040：+y / +x 那两发把其中一面拖成轴长 240，正好撞"墙厚 240 不小于轴长 240"那条守卫。
+    log.dispatch(wallCreate({ storeyId, start: { x: 0, y: 0 }, end: { x: 1040, y: 0 }, thicknessMm: 240, heightMm: 3000 }));
+    const east = createdWallOf(log);
+    log.dispatch(wallCreate({ storeyId, start: { pointId: east.startId }, end: { x: 0, y: 1040 }, thicknessMm: 240, heightMm: 3000 }));
+    // 第三发 (0,-800) 的陷阱：一面**与 A 无关**的墙，起点 (40,-760) 离裸落点 56.6mm ⇒
+    // 0.1px/mm 下 5.66px，容差 8px 之内，且它是端点档 ⇒ 比"没有候选"更优先，探针第一发就吸得上。
+    log.dispatch(wallCreate({ storeyId, start: { x: 40, y: -760 }, end: { x: 1040, y: -760 }, thicknessMm: 240, heightMm: 3000 }));
+    // 1px = 10mm ⇒ 整数像素与整数毫米逐字往返，红的时候不必先排除舍入
+    const v = viewportOf(1000, 800, { pxPerMm: 0.1, center: vec(400, 100) });
+    const doc = log.document;
+    const p = dragProbe(doc, storeyId, buildDrawList(doc, storeyId, v, EMPTY_SELECTION), v);
+    expect(p).not.toBeNull();
+    expect(p!.sharedBy).toBe(2);
+    // 先自证现场：裸落点确实是第三发那一发，而探针给的是**吸上去之后**那枚既有点
+    expect(moveTargetOf(v, p!.toPx)).toEqual({ x: 0, y: -800 });
+    expect(p!.targetMm).toEqual({ x: 40, y: -760 });
+    expect(p!.targetMm).not.toEqual(moveTargetOf(v, p!.toPx));
+    // 而合法性判的也是吸附后的毫米：原地那枚既有点把墙拖成的形状必须真的过得了真源那道守卫
+    expect(legalDrop(doc, p!.wallId, p!.end, p!.targetMm)).toBe(true);
+    expect(legalDrop(doc, p!.wallId, p!.end, { x: 0, y: -800 })).toBe(true); // 两个都合法 ⇒ 上面那句不是巧合
+    // 前两发候选全非法是这套夹具的前提，不是假设：逐发当场验一遍（各把一面 1040 的墙拖成轴长 240），
+    // 前提漂了这里先红，不会让上面那两句变成猜。
+    for (const off of [
+      { x: 0, y: 800 },
+      { x: 800, y: 0 },
+    ]) {
+      expect(legalDrop(doc, p!.wallId, p!.end, off)).toBe(false);
+    }
   });
 ```
+
+两个执行日要核对的点：`sharedBy` 从原来的 `>= 2` 收成**恰为 2**（这条夹具造的是直角两臂点，写 `>= 2` 等于允许第四面墙悄悄混进夹具）；这条**只证"探针在吃吸附"**，裸与吸两侧都合法，判不出"合法性判在吸附之后"（那是 6.7 的活，注释最后一行写的就是这件事）。
+
+视野中心从 Task 6 的 `vec(300, 300)` 挪到 `vec(400, 100)`，**这只是把 (-760,-760) 那条陷阱墙挪到画面里更靠中的地方，不是判据**：`pxPerMm: 0.1` 下 1000×800px 的视野跨 10000×8000mm，两个中心都把夹具里那三面墙完整框住，所以换不换中心都轮不到裁剪来改候选集。2026-09-28 在临时工程里各跑三遍实测：`vec(300, 300)` 与 `vec(400, 100)` 都是 handles **19/19 绿**。执行日**不要**把它当成"必须挪中心才绿"的条件 —— 对不上时先查夹具的墙，别查视野。
+
+**6.7 `handles.test.ts`「拖拽吃吸附（Task 6） > 合法性判的是吸附后的毫米：裸对角合法、吸上去那一发被 240 厚墙挡下」→ 改名「合法性判的是吸附后的毫米：裸对角被 star 挡下、吸回贯通线那一发过得了守卫」**
+
+为什么整条重写：T7 之前这条靠"240 厚墙把**吸上去**那一发挡在轴长守卫外、裸对角反而合法"造分歧；复核挂上之后多了一条干净得多的分裂 —— **同一发整数像素，裸落点拧成 star（非法）、吸回贯通线（合法）**。而 6.6 的新夹具里裸与吸两侧都合法，两条夹具的判据不能再互相借。尺子换成 `pxPerMm: 0.01`（1px = 100mm）：容差 8px 在这把尺子上是 800mm，所以第五发对角 `(600,600)` 虽然离贯通线还有 600mm，仍吸得回来（垂足档，6.00px）。整条替换：
+
+```ts
+  it('合法性判的是吸附后的毫米：裸对角被 star 挡下、吸回贯通线那一发过得了守卫', () => {
+    // Task 7 把派生复核挂上 `wallMoveEndpoint.build`（裁决 A1）之后，star 在松手前就拒，
+    // 于是这里能造出"同一发整数像素，裸落点非法、吸上去那一发合法"的分歧 —— 上一条例用里裸与吸
+    // 两侧都合法，判不出这件事，所以它只能证"探针在吃吸附"，证不了"合法性判在吸附之后"。
+    // 夹具：一个 T 接 —— 贯通线 x=0（A→(0,1000) 与 A→(0,-1000) 共点 A）+ 一根 45° 斜撑 A→(700,-700)，
+    // A 是三臂点。尺子取 1px = 100mm（`pxPerMm: 0.01`）：容差 8px 在这把尺子上就是 800mm，
+    // 所以第五发对角 (600,600) 的裸落点虽然离贯通线还有 600mm，仍然吸得回来（垂足档，6.00px）。
+    // 裸的那一发把三臂拧成 star ⇒ S1 不支持；吸回线上 (0,600) 的那一发仍是"一条线 + 一根撑" ⇒ 过守卫。
+    // 于是判 `drop.raw` 的实现（改坏 HB5）会把十发全筛光 ⇒ 报 null（2026-09-28 实测：本夹具上
+    // 判 raw 的探针给 null，判 mm 的给 to=(506,394)、mm=(0,600)），两条探针用例一起红。
+    const projectId = uuidv7();
+    const log = new TransactionLog(Document.create(projectId));
+    log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+    let storeyId = '';
+    for (const id of log.affected) {
+      if (log.document.get(id)?.kind === 'storey') storeyId = id;
+    }
+    if (storeyId === '') throw new TypeError('affected 里没有新建的楼层');
+    log.dispatch(wallCreate({ storeyId, start: { x: 0, y: 0 }, end: { x: 0, y: 1000 }, thicknessMm: 240, heightMm: 3000 }));
+    const up = createdWallOf(log);
+    log.dispatch(wallCreate({ storeyId, start: { pointId: up.startId }, end: { x: 0, y: -1000 }, thicknessMm: 240, heightMm: 3000 }));
+    log.dispatch(wallCreate({ storeyId, start: { pointId: up.startId }, end: { x: 700, y: -700 }, thicknessMm: 240, heightMm: 3000 }));
+    const v = viewportOf(1000, 800, { pxPerMm: 0.01, center: vec(0, 0) });
+    const doc = log.document;
+    const ops = buildDrawList(doc, storeyId, v, EMPTY_SELECTION);
+    const p = dragProbe(doc, storeyId, ops, v);
+    expect(p).not.toBeNull();
+    expect(p!.sharedBy).toBe(3); // 三臂点：star 这条判据要的就是"搬起来会拧成三方向"
+    // 现场自证分歧真的存在：同一发整数像素，裸落点过不了守卫，吸上去那一发过得了。
+    expect(moveTargetOf(v, p!.toPx)).toEqual({ x: 600, y: 600 });
+    expect(p!.targetMm).toEqual({ x: 0, y: 600 });
+    expect(legalDrop(doc, p!.wallId, p!.end, { x: 600, y: 600 })).toBe(false);
+    expect(() =>
+      wallMoveEndpoint({ wallId: p!.wallId, end: p!.end, x: 600, y: 600 }).build(doc),
+    ).toThrow(/S1 不支持/);
+    expect(legalDrop(doc, p!.wallId, p!.end, p!.targetMm)).toBe(true);
+    // 前提不许是假设：探针**赢的那把把手**上，前四发（+y / +x / -y / -x）吸附后的落点逐发非法，
+    // 第五发才第一次合法 —— 前提漂了这里先红，上面那五句不会变成猜。
+    const field = snapFieldOf(doc, storeyId);
+    const handle = dragHandlesOf(
+      doc,
+      storeyId,
+      { ids: new Set(doc.byKind('wall').filter((w) => w.storeyId === storeyId).map((w) => w.id)) },
+      v,
+    ).find((h) => h.wallId === p!.wallId && h.end === p!.end)!;
+    const firstFour = [
+      { x: 0, y: 800 },
+      { x: 800, y: 0 },
+      { x: 0, y: -800 },
+      { x: -800, y: 0 },
+    ];
+    const pxOf = (mm: MoveTarget): { x: number; y: number } => {
+      const at = mmToPx(v, mm);
+      return { x: Math.round(at.x), y: Math.round(at.y) };
+    };
+    for (const off of firstFour) {
+      const px = pxOf(off);
+      expect(legalDrop(doc, handle.wallId, handle.end, handleDropTarget(v, px, handle, field).mm)).toBe(false);
+    }
+    const fifth = handleDropTarget(v, pxOf({ x: 600, y: 600 }), handle, field);
+    expect(fifth.raw).toEqual({ x: 600, y: 600 });
+    expect(fifth.mm).toEqual({ x: 0, y: 600 });
+    expect(fifth.snap?.kind).toBe('foot'); // 吸的是贯通线上那枚垂足，不是既有点
+  });
+```
+
+两处口径要盯住，别在执行时"顺手放宽"：`sharedBy` 从 `>= 2` 收成 **恰为 3**（star 这条判据要的就是三臂），以及"前四发逐发非法"那个循环判的是**吸附后的 `.mm`**、不是裸落点 —— 它正是 HB5 的靶子。改坏 HB5（`dragProbe` 里把 `legalDrop(..., targetMm)` 换成判 `drop.raw`）实测红**恰好这两条**（`Tests 2 failed | 47 passed (49)`，红的就是 6.6 与 6.7，其余 47 条一条不动），跑完立刻改回。
+
+**6.8 `handles.test.ts`：删掉助手 `wallsFromOrigin(foreign: boolean)`**
+
+Task 6 文本里那段（自带 `projectId` / 楼层 / 两面共点墙 / 可选第四面外来墙，连同它上面的 doc 注释，约第 89–123 行）**整段删除** —— 6.6 与 6.7 各自内联造图之后它没有读者了。**这不是可选的清理**：`noUnusedLocals` 会先红，`tsc` 报 `TS6133: 'wallsFromOrigin' is declared but its value is never read`，`pnpm verify` 的 typecheck 段直接 exit≠0。同文件里的 `createdWallOf` **留着**（6.6 与 6.7 都在用它取新建那面墙）。
+
+**牙口复测记录**（2026-09-28，每条改完立刻跑、跑完立刻改回；这两条是七条改写的"分得开故障"凭据，不是新事实）：
+
+| 改坏 | 动的那一处 | 红在哪几条 |
+| ---- | ---------- | ---------- |
+| **HB5** | `handles.ts` 的 `dragProbe`：`const { mm: targetMm } = handleDropTarget(...)` → 取 `drop.raw` 判合法性 | 恰好 2 条：6.6「探针吃的是吸附后的毫米…」+ 6.7「合法性判的是吸附后的毫米…」（`Tests 2 failed \| 47 passed (49)`，只跑 editing 与 handles 两个文件） |
+| **正交档退化** | `snapping.ts` 的 `orthoOf`：`mm: best.q % 180 === 0 ? { x: raw.x, y: anchor.y } : { x: anchor.x, y: raw.y }` → `{ x: raw.x, y: raw.y }` | 恰好 4 条：6.1「拖到水平方向…」、`editing.test.ts`「起点在空白处按下…」、`snapping.test.ts`「正交走"保坐标"语义…」「档位互斥…」 |
+
+这两行也回答"换了落点方向之后 6.1 还是不是吸附判据"：是 —— 正交档退化它先红。而 Task 6 登在这条上的 **E12**（`moveDraft` 原地改草稿）不受本步影响，判据在它的后半段，一字未动。
 
 `packages/scene-2d/src/editing.ts` 的注释：第 4 条列的三处 + 第 7 条那一句，**一个文件里一次改完**（第 4 条 ③ 与第 7 条是同一段）。三处的落地文本：
 
@@ -11563,7 +11750,7 @@ Expected: **`Test Files 24 passed (24) / Tests 309 passed (309)`**，tsc exit=0�
 `handles.ts` 的 `legalDrop` 注释**不动**（核对过：它只讲"试跑真命令、不抄轴长比较"，没有"不跑派生层"这类措辞 —— 那句差额记在计划文本的注记里，不在源码里）。
 
 Run: `npx vitest run packages/scene-2d/test packages/core/test`
-Expected: scene-2d **95 条**（四个文件：snapping 28 + editing 30 + pick 18 + handles 19，一条不增不减 —— `editing.test.ts` 那 30 条里改写的用例仍算一条）、core **309 条**，全绿。95 是**按本文件各任务自己记的条数加出来的**（临时工程只装了 core，scene-2d 那四个文件本任务没跑过）；它要在执行日与真账对齐，对不上时先核对 T6 的四个数有没有漂，再怀疑 T7。
+Expected: scene-2d **114 条**（六个文件：viewport 9 + drawlist 10 + pick 18 + snapping 28 + editing 30 + handles 19，七条改写全在 `editing.test.ts` 与 `handles.test.ts` 里，**条数一条不增不减**）、core **309 条**，合起来 **`Test Files 30 passed (30) / Tests 423 passed (423)`**。这组数不是加出来的：2026-09-28 在 `.tscheck/t8` 临时工程（core 与 scene-2d 的全量副本）逐字跑过，重复三遍逐字相同，`npx tsc --noEmit`（core/src + scene-2d 的 src 与 test）exit=0。口径要看清：**这个 423 只覆盖 core 与 scene-2d 两个包**，不等于下面 Step 7 的全仓数 —— 临时工程不装 `packages/protocol/test/ipc.test.ts` 与 `scripts/test/deps-check.test.mjs` 那 8 条，也不装 Task 5 的 `commands-drag.test.ts` 那 7 条。
 
 ---
 
@@ -11572,11 +11759,12 @@ Expected: scene-2d **95 条**（四个文件：snapping 28 + editing 30 + pick 1
 Run: `pnpm verify`（= `typecheck && lint:deps && test`）
 Expected: **`Tests 438 passed (438)`**，typecheck exit=0，lint:deps 不报新边（`commands → geom` 与 `geom → model` 都是既有方向）。
 
-**这个 438 是加出来的，不是跑出来的**，两段的来源不同，别混着当实测引用：
-- core 那 33 条净增（276 → 309）与本任务的 `Test Files 24 passed (24)` 是**临时工程实测**（Step 5 那条跑，重复三遍逐字相同）；
-- 405 是计划 3 的 Task 6 执行回填里记的全仓数（本任务没重跑全量）。
+**这个 438 是"两段实测 + 一段既有回填"拼出来的，三段来源不同，别混着当实测引用**：
+- **实测段 A**：`.tscheck/t8` 临时工程 `Test Files 30 passed (30) / Tests 423 passed (423)` = core **24 文件 / 309 条** + scene-2d **6 文件 / 114 条**（2026-09-28 重复三遍逐字相同；本任务的 33 条净增 9 + 12 + 12 就在这里，所以它是**量出来的**，不是推算的）。
+- **实测段 B**：同日对**真仓库**跑 `npx vitest run` 得 `Test Files 23 passed (23) / Tests 284 passed (284)` = core 21 文件 / 276 条 + 临时工程不装的那 **8** 条（`packages/protocol/test/ipc.test.ts` 与 `scripts/test/deps-check.test.mjs`）。A 与 B 相减正好差那 8 条 + Task 5 的 `commands-drag.test.ts` **7** 条 —— 这两段就是 438 与 423 之间那道口子，执行日对不上账时先从这里找。
+- **既有回填段**：405 是计划 3 的 Task 6 执行回填里记的全仓数（= 284 + 114 + 7），本任务没重跑全量。
 
-所以执行日 `pnpm verify` 的真账要对三样：全仓 Tests、全仓 Test Files（**本任务未测**，跑出来后写进这里的「执行回填」）、以及 core 是否仍是 24/309。对不上时先怀疑 405 那一段有没有在 T6 之后漂了（其它包的既有绿数不该被本任务改动），再怀疑本任务。
+⇒ 全仓 **405 → 438** = 405 + 33，加的那 33 是实测段 A 里 core 的净增。执行日 `pnpm verify` 的真账要对三样：全仓 `Tests`（判 438）、全仓 `Test Files`（**A、B 两段都没给过这个数** —— A 是 30 但只含两个包，B 是 23 但还没有 scene-2d；跑出来写进这里的「执行回填」）、以及 core 是否仍是 **24 / 309**。对不上时先怀疑 T5/T6 那两段有没有漂（其它包的既有绿数不该被本任务改动），再怀疑本任务。
 
 **改坏表**（15 条，每条改一次、跑 `npx vitest run packages/core/test`、跑完立刻改回。2026-09-28 在临时工程里逐条实测，括号里是当时的 `Test Files / Tests / tsc`）：
 
@@ -11627,7 +11815,7 @@ git commit -m "feat(core): 派生复核进改几何的三条命令，补属性�
 
 Task 6 已展开（正文见上文 Task 6：八条裁决 + 八步 + 二十七行真窗口判据）。它把 T5 留下的两个接缝就地判掉了：① 吸附的插入点 = `moveTargetOf` 之后、`dispatch` 之前那一行（S4 的三条纪律：按下不吸、探针与 renderer 同一个出口、预览线恒画裸光标）；② "撤销掉正被选中的构件"拆成两半收掉 —— 删除之后用 `pruneSelection` + `selectionStore.retain` 剪掉已不存在的 id（S5），新建那一路用 `lastCreatedWall` 里的 `doc.get(id)` 复核挡住"选中指向不存在的构件"（S6：`log.affected` 在撤销后**仍然**列着那枚 id）。**没收掉的那一半**写在这里防丢：`Ctrl+Z` 撤销一次删除之后选中集不回（D7 的口径是"撤销的是文档，不是视图"），T7 若要"撤销后恢复选中"，得回来改这条裁决。
 
-Task 7 已展开（正文见上文 Task 7：四条裁决 + 八步 + 十五条改坏）。它收掉了 T6 交接四条里的 ③（`legalDrop` / `legalWallCreate` 与真源同判，差额在 core 侧补齐）与 ④（探针候选集合的实测差额：拉墙 80 发拒 48、拖把手 160 发拒 84，且"第一发可建"在 5/8 枚端点与 9/12 个把手位置上往后挪了 1～3 发）；**① 与 ② 原样交接给 Task 8**。T7 没动屏幕上的任何一行代码 —— 它只改 scene-2d 的两处注释与一条既有用例（见 T7 的"本任务会改到的既有写法"第 4、6、7 条）。
+Task 7 已展开（正文见上文 Task 7：四条裁决 + 八步 + 十五条改坏）。它收掉了 T6 交接四条里的 ③（`legalDrop` / `legalWallCreate` 与真源同判，差额在 core 侧补齐）与 ④（探针候选集合的实测差额：拉墙 80 发拒 48、拖把手 160 发拒 84，"第一发过 `build`"在 8 枚端点里挪了 **5** 枚、16 把把手里挪了 **12** 把，而"第一发 `build` 与派生都过"那张表两侧逐字相同）；**① 与 ② 原样交接给 Task 8**。T7 没动屏幕上的任何一行逻辑代码 —— scene-2d 侧只改 `editing.ts` 的三处注释、改写七条既有用例、删掉一个没人读的助手（见 T7 的"本任务会改到的既有写法"第 4、6、7 条与 Step 6）。
 
 **为什么原来那一节"Task 7"拆成了 T7 + T8**：本节此处原先写的是"Task 7 楼层切换 + 属性面板：需要内核补口……补口放 Task 7 的第一步"。展开时把补口独立成一个任务，因为它改的是**每一条改几何命令的返回值**，`--draw-shot` 与 `--edit-shot` 两个闸门里写死的毫米/像素字面量必须跟着重测；和属性面板混在一节里重测，红了分不清是命令层还是面板。代价是本计划的既有编号整体后移一位 —— 已按新口径订正的地方：本节上一段、`snapping.ts` 里"柱/板的顶点不在表里"那句注释（原写 Task 8，现写 Task 9）、以及"本计划展开了 Task 1–7"那句状态行。
 
@@ -11668,11 +11856,11 @@ Task 7 已展开（正文见上文 Task 7：四条裁决 + 八步 + 十五条改
 - （T6 加）T5 那句 `expect(moveTargetOf(view, p.toPx)).toEqual(p.targetMm)` 在吸附接上之后**会红**，不是"照样绿"：样例房 16 把把手 × 10 发候选 = 160 发里有 **14 发**被 15° 档改写（最大偏差 6.97px），十个进程红 2 个。所以 Task 6 Step 5 把它换成同一函数的自比对（恒等式），落点内容的凭据交给新增的两条"吸上了什么/合法性判在哪一侧"用例（改坏 HD6 实测：`legalDrop` 换成自算 `hypot` 红两条）。
 - （T7 加）`deriveJoints` 是**全局**的：`deriveStoreyGeometry(doc, storeyId)` 虽然按层返回，接头分类却扫全文档的墙。⇒ 复核（`assertDerivesAfterApply`）吃的是**整份文档**，任何一层藏着一颗坏接头，**别层**的每一条改几何命令都替它抛。`derive-guard.test.ts` 有一条用例专门把这个形状钉成预期行为（「复核吃的是整份文档：别层藏一颗星，本层也写不进墙」），计划 4 的读盘读到坏层时"本层冻结写入"是**已知后果**而不是 bug。
 - （T7 加）派生复核**不改变**探针挑出的候选集合，只改变**拒绝发生在哪一层**。2026-09-28 在临时工程里逐字复刻 `demoHouse()` 一层（8 墙 + 4 洞口 + 那两次改几何编辑），各问两遍（复核在 / 复核摘掉）：拉新墙 80 发 ⇒ 复核在 `build` 拒 48（star 24、同向重叠 24）、可建 32；摘掉复核 `build` 全放行、派生层拒的**同一批** 48（新增拒绝 0、少拒绝 0）。拖把手 160 发 ⇒ 摘掉复核全过 `legalDrop`，复核在则拒 84（全 star）、可拖 76，同样是同一批；16 把把手**每一把仍剩 ≥3 发**。⇒ 筛 ⑥ 从此不再单独挡任何一发（`editing.ts` 里那句"命令层的 `build` 不含接头分类"要在 T7 Step 6 改写，见"本任务会改到的既有写法"第 4 条）；而"落点吸成恒等"那 160 问的计数（恒等 72 / 改写 14）**不受影响**，`handles.test.ts` 里那条 sweep 用例（只要求恒等 ≥ 8、改写 ≥ 1、改写只许来自 `angle15`）在 T7 之后照样绿。
-- （T7 加）但**第一发可建/可拖的偏移会变**：复核把"第 0 发就合法"往后挪 —— 拉新墙在 8 枚端点里的 **5 枚**上挪了 1～3 发，拖把手在 12 个把手位置里的 **9 个**上挪了 1～3 发（例：起点 `(4000,3000)` 从第 0 发 `(2000,0)` 挪到第 1 发 `(0,2000)`）。样例房那一发本来就被筛 ④ 挡着，所以最终靶子**未必**换 —— 这件事只能在 T6 与 T7 都进真仓库之后实测，故 T7 Step 8 要求 `--draw-shot` / `--edit-shot` 各重跑一遍取新字面量，判据形状一字不改。
+- （T7 加）但**第一发过 `build` 的那一发偏移会变**：复核把"第 0 发就合法"往后挪 —— 拉新墙在 8 枚端点里挪了 **5 枚**（`(0,0)`→第 2 发、`(4000,0)`→第 3 发、`(0,6000)` / `(800,3000)` / `(4000,3000)`→第 1 发），拖把手在 16 把里挪了 **12 把**（都是第 0 发→第 1 发，去重后是 8 个位置里的 6 个；另外 4 把/4 个位置两侧都不动）。摘掉复核时这两张表**全是第 0 发** ⇒ 位移是复核造成的，不是采样噪声。而**"第一发 `build` 与派生都过"那张表在两侧逐字相同**（8 枚端点还是 2/3/0/0/1/1/1/0）⇒ 样例房的最终靶子不换，理由不是运气，是筛 ⑥ 早就把第 0 发挡在外面。编写期写的"12 个把手位置里的 9 个"两个数都不对（把手 16 把、去重位置 8 个、挪动 12 把），已在 T7 的 T6 交接第 ④ 条与 Task 6 那句 `handles.ts` 注释里改过来。`--draw-shot` / `--edit-shot` 的字面量仍要在 T7 落地后各重跑一遍取值（Step 8），判据形状一字不改 —— 因为**探针最终挑哪一枚端点仍跨进程漂**（2026-09-28 实测：带复核两次独立跑出 `5/3` 与 `7/1`，摘掉复核跑出 `7/1`，编写期"`wallProbe` 的答案不变"那句已被推翻）。
 - （T7 加）一次带复核的 `build` 实测成本（2026-09-28，`bench/perf.test.ts`，整层派生本身在括号里）：13 墙 0.055ms（0.033）、31 墙 0.069ms（0.056）、61 墙 0.161ms（0.135）。⇒ `pointermove` 每帧问几次 `legalDrop` 仍然便宜，"复核太贵所以只留 UI 侧预判"这条反对意见在 S1 的规模上买不到东西。
 - （T7 加）`packages/core/src/index.ts` 对 `commands/*` 与 `geom/*` 全是 `export *`（2026-09-28 核对）⇒ 新命令**不需要**改索引文件，也没有链接期错误可看：测试里 `import { storeyDelete } from '@dajia/core'` 在实现落地前拿到的是 `undefined`，要到调用那一行才 `TypeError: … is not a function`。写"红在哪"的核对清单时按这个形状预期，别等 `SyntaxError`。
 - （T7 加）`applyPatch` 对**不在文档里的 remove id 是抛的**（计划 1 立的口径）⇒ `slabDelete` 必须先 `doc.get(pointId)` 再决定是否收进 `remove`：一块角点早就悬空的板，若把那个不存在的 id 写进补丁，命令在 `dispatch` 里抛，文档就**锁死**了（删不掉、改不动）。`commands-delete.test.ts` 的「角点早就悬空的板仍删得掉」钉的就是这个（改坏 M13 摘掉守卫即红）。
-- （T7 加）core 基线 2026-09-28 重测：**21 文件 / 276 条**（不是抄计划 2 的旧数）；T7 之后 **24 / 309**（+9 +12 +12，`joint.test.ts` 的 18 条一条不增不减，且那 18 条改用 `handBuild` 之后**不依赖实现** —— 先落地也照样绿）。全仓 405 → 438 是**两段相加**（core 实测净增 33 + T6 回填的 405），全仓 `Test Files` 数本任务未测，执行日回填。
+- （T7 加）core 基线 2026-09-28 重测：**21 文件 / 276 条**（不是抄计划 2 的旧数）；T7 之后 **24 / 309**（+9 +12 +12，`joint.test.ts` 的 18 条一条不增不减，且那 18 条改用 `handBuild` 之后**不依赖实现** —— 先落地也照样绿）。同日两个真账都跑过：临时工程（core + scene-2d）**30 文件 / 423 条**，真仓库（还没有 scene-2d 测试）**23 文件 / 284 条**。全仓 405 → 438 = T6 回填的 405 加本任务实测的 core 净增 33；**全仓 `Test Files` 数两段都没给过**（30 只含两个包、23 还没有 scene-2d 的 6 个文件），执行日 `pnpm verify` 跑出来再回填。
 
 ## 执行日志
 
