@@ -18,10 +18,12 @@ import {
   demoHouse,
   dragHandlesOf,
   dragProbe,
+  dropTargetOf,
   EMPTY_SELECTION,
   fitStorey,
   HANDLE_COLOR,
   HANDLE_RADIUS_PX,
+  handleDropTarget,
   legalDrop,
   mmToPx,
   moveTargetOf,
@@ -33,8 +35,12 @@ import {
   pxToMm,
   PICK_TOL_PX,
   SELECTED,
+  snapFieldOf,
+  SNAP_COLOR,
+  SNAP_TOL_PX,
   viewportOf,
   type DragHandle,
+  type MoveTarget,
   type Selection,
 } from '@dajia/scene-2d';
 
@@ -43,6 +49,24 @@ const view = fitStorey(house.doc, house.lowerStoreyId, 1200, 900, 60);
 const ops = buildDrawList(house.doc, house.lowerStoreyId, view, EMPTY_SELECTION);
 
 const sel = (...ids: string[]): Selection => ({ ids: new Set(ids) });
+
+/**
+ * `handles.ts` 里 `PROBE_OFFSETS` 那十发的**副本**（那是文件私有常量，出口里没有它）。
+ * 复制而不是导入是故意的：探针扫的就是这十个偏移，测试要拿同一套偏移去覆盖它，
+ * 二者必须逐字相同 —— 而"改了那边忘了这边"的红法由最后一条覆盖判据负责（那一句会红）。
+ */
+const SWEEP_OFFSETS: readonly MoveTarget[] = [
+  { x: 0, y: 800 },
+  { x: 800, y: 0 },
+  { x: 0, y: -800 },
+  { x: -800, y: 0 },
+  { x: 600, y: 600 },
+  { x: -600, y: 600 },
+  { x: 600, y: -600 },
+  { x: -600, y: -600 },
+  { x: 0, y: 2400 },
+  { x: 2400, y: 0 },
+];
 
 /**
  * 样例房一层拐角 (4000, 0) 上的两面墙：southEast 向东、stem 向北，两者的 startId
@@ -62,6 +86,54 @@ function wallsAtJunction(): { junction: WallEntity; other: WallEntity } {
     throw new Error(`样例房一层找不到 (${ax}, ${ay})→(${bx}, ${by}) 这面墙`);
   };
   return { junction: byXY(4000, 0, 8000, 0), other: byXY(4000, 0, 4000, 3000) };
+}
+
+/**
+ * 合成一层：四面墙都从原点 A 出发（上 1040 / 右 1040 / 下 800 / 左 800），可选再在 (640,640)
+ * 挂一面对角外的墙。三套探针夹具共用它 —— 四面墙把 `PROBE_OFFSETS` 前四发（上/右/下/左）全堵死
+ * （(0,800)/(800,0) 撞墙厚，(0,-800)/(-800,0) 把另两面墙拖成零长），第五发对角才走得通。
+ *
+ * `foreign` 那一面给对角那发一个"吸得上的既有点"：带上它，探针报 (640,640)；不带，报裸 (600,600)。
+ * A 的 id 只认第一次 `wallCreate` 的 affected（`createdWall`），**不许** `byKind('point')[0]`：
+ * uuidv7 同毫秒不单调，那样写会把 A 拿成 (0,1040) 那枚点，四面墙两两同向重叠、core 当场抛。
+ */
+function wallsFromOrigin(foreign: boolean): { log: TransactionLog; storeyId: string } {
+  const projectId = uuidv7();
+  const log = new TransactionLog(Document.create(projectId));
+  log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+  let storeyId = '';
+  for (const id of log.affected) {
+    if (log.document.get(id)?.kind === 'storey') storeyId = id;
+  }
+  if (storeyId === '') throw new TypeError('affected 里没有新建的楼层');
+  log.dispatch(wallCreate({ storeyId, start: { x: 0, y: 0 }, end: { x: 0, y: 1040 }, thicknessMm: 240, heightMm: 3000 }));
+  const a = createdWallOf(log).startId;
+  const ENDINGS: readonly [number, number][] = [
+    [1040, 0],
+    [0, -800],
+    [-800, 0],
+  ];
+  for (const [bx, by] of ENDINGS) {
+    log.dispatch(wallCreate({ storeyId, start: { pointId: a }, end: { x: bx, y: by }, thicknessMm: 240, heightMm: 3000 }));
+  }
+  // 既有点 (640,640)：离裸对角落点 (600,600) 56.6mm。0.1px/mm 下是 5.66px（容差 8px 之内），
+  // 1px = 7mm 下是 8.08px（容差之外）—— 所以只有带 `foreign` 那发探针才吸得到它。
+  if (foreign) {
+    log.dispatch(wallCreate({ storeyId, start: { x: 640, y: 640 }, end: { x: 640, y: 1640 }, thicknessMm: 240, heightMm: 3000 }));
+  }
+  return { log, storeyId };
+}
+
+/**
+ * 最近一次 dispatch 的 affected 里那面墙。**不许** `byKind('wall').at(-1)`：uuidv7 同毫秒
+ * 不单调，`byKind` 又是 id 升序，"最后一面"跟"最后建的"不是一回事。
+ */
+function createdWallOf(log: TransactionLog): WallEntity {
+  for (const id of log.affected) {
+    const entity = log.document.get(id);
+    if (entity?.kind === 'wall') return entity;
+  }
+  throw new TypeError('affected 里没有新建的墙');
 }
 
 describe('拖拽把手', () => {
@@ -150,6 +222,7 @@ describe('落点与命中', () => {
       pointId: `${id}-point`,
       atMm: { x: px, y: py },
       atPx: { x: px, y: py },
+      anchorMm: { x: 0, y: 0 },
       anchorPx: { x: 0, y: 0 },
     });
     const handles = [handleAt(100, 40, 'a'), handleAt(300, 40, 'b')];
@@ -252,13 +325,24 @@ describe('合法落点与拖拽探针', () => {
     expect([p.targetMm.x, p.targetMm.y]).not.toEqual([point.x, point.y]); // 真的移动，不是原地空放
     expect(legalDrop(house.doc, p.wallId, p.end, p.targetMm)).toBe(true);
     expect(legalDrop(house.doc, p.wallId, p.end, moveTargetOf(view, p.anchorPx))).toBe(false);
-    // 探针报的毫米必须是**它那对像素的不动点**（`moveTargetOf(view, toPx) === targetMm`）。
-    // 上面那句 `legalDrop` 判的就是这一对毫米，所以三句话连起来才成立：
-    // 探针说合法 → renderer 松手算出同一对毫米 → 命令必然成功 → `--edit-shot` 才许拿"逐字相等"当判据。
-    expect(moveTargetOf(view, p.toPx)).toEqual(p.targetMm);
+    // 探针报的毫米必须是**renderer 松手那一发算出来的毫米**（T6 之前这里是
+    // `expect(moveTargetOf(view, p.toPx)).toEqual(p.targetMm)`，本行是它换掉的写法）。
+    // 为什么必须换：拖拽路径 T6 起吃吸附，样例房 16 把把手 × 10 发候选里有 14 发的落点
+    // **不等于**裸落点（15° 档把它们改写了，见下面"拖拽路径真的在吃吸附"那条），而"哪面墙先被扫到"
+    // 由 uuidv7 决定 ⇒ 老写法实测 10 个进程红 2 个。换掉之后这一句恒等：两边是同一个纯函数、
+    // 同一对入参。上面那句 `legalDrop` 判的就是这一对毫米，三句话连起来才成立：
+    // 探针说合法 → renderer 算出同一对毫米 → 命令必然成功 → `--edit-shot` 才许拿"逐字相等"当判据。
+    const probeField = snapFieldOf(house.doc, house.lowerStoreyId);
+    const probeHandle = dragHandlesOf(house.doc, house.lowerStoreyId, sel(p.wallId), view).find(
+      (x) => x.end === p.end,
+    )!;
+    expect(
+      handleDropTarget(view, p.toPx, probeHandle, probeField).mm,
+    ).toEqual(p.targetMm);
     // 三枚像素必须全是整数：`sendInputEvent` 只收整数 DIP，主进程一发 `Math.round` 就把落点
     // 挪到另一对毫米上（fitStorey 的 0.13 px/mm 下差 1~4mm），上面那句"不动点"立刻变成随机红。
-    // 摘掉 `snapPx` 这里必须红 —— 这条断言是 `--edit-shot` 第 0 步与第 3 步的地基。
+    // 但**这一条不是咬 snapPx 的那颗牙**：样例房 0.125px/mm 配百米毫米的坐标，取整前后本来就是
+    // 同一个数，摘掉 `snapPx`（HC2）实测 8 个进程在这条上零红 —— 咬它的是下面那份 1200×901 的尺子。
     for (const spot of [p.fromPx, p.toPx, p.anchorPx]) {
       expect(Number.isInteger(spot.x) && Number.isInteger(spot.y)).toBe(true);
     }
@@ -316,6 +400,233 @@ describe('合法落点与拖拽探针', () => {
   });
 });
 
+describe('拖拽吃吸附（Task 6）', () => {
+  it('anchorMm 是另一端那对整数毫米：与 atMm 分居两端、与 anchorPx 同产地', () => {
+    const { junction } = wallsAtJunction();
+    const handles = dragHandlesOf(house.doc, house.lowerStoreyId, sel(junction.id), view);
+    const s = handles.find((h) => h.end === 'start')!;
+    const e = handles.find((h) => h.end === 'end')!;
+    const corner = requirePoint(house.doc, junction.startId, '拐角');
+    const far = requirePoint(house.doc, junction.endId, '另一端');
+    expect(s.atMm).toEqual({ x: corner.x, y: corner.y });
+    expect(s.anchorMm).toEqual({ x: far.x, y: far.y });
+    expect(e.anchorMm).toEqual({ x: corner.x, y: corner.y });
+    // 两把把手的"另一端"恰是彼此的落点：配错端（把 anchorMm 写成 atMm、或两端写反）在这里红，
+    // 而它在屏幕上的后果是角度档拿错锚 —— 拖出来的方向对着空气对齐，毫米账却全对。
+    expect(s.anchorMm).toEqual(e.atMm);
+    expect(e.anchorMm).toEqual(s.atMm);
+    expect(s.anchorMm).not.toEqual(s.atMm);
+    // 与 anchorPx 同产地：同一端换算两次必须逐字相同，不许一把取轴、一把取点
+    expect(s.anchorPx).toEqual(mmToPx(view, vec(s.anchorMm.x, s.anchorMm.y)));
+    expect(e.anchorPx).toEqual(mmToPx(view, vec(e.anchorMm.x, e.anchorMm.y)));
+    expect(Number.isInteger(s.anchorMm.x) && Number.isInteger(s.anchorMm.y)).toBe(true);
+  });
+
+  it('anchorMm 就是压扁拖那一发：每把把手按它拖都必然不合法，按 atMm 原地不动必然合法', () => {
+    const { junction, other } = wallsAtJunction();
+    const handles = dragHandlesOf(house.doc, house.lowerStoreyId, sel(junction.id, other.id), view);
+    expect(handles).toHaveLength(4); // 空样本防线：循环一次都不进的话，下面六句全是 vacuous truth
+    for (const h of handles) {
+      expect(legalDrop(house.doc, h.wallId, h.end, h.anchorMm)).toBe(false);
+      expect(() =>
+        wallMoveEndpoint({
+          wallId: h.wallId,
+          end: h.end,
+          x: h.anchorMm.x,
+          y: h.anchorMm.y,
+        }).build(house.doc),
+      ).toThrow(/零长/);
+      // 对照组：这一句让上一条循环不能靠"怎么拖都不合法"蒙过去
+      expect(legalDrop(house.doc, h.wallId, h.end, h.atMm)).toBe(true);
+    }
+  });
+
+  it('拖拽路径真的在吃吸附：160 发候选里 72 发吸成恒等、14 发被 15° 档改写，改写全来自 angle15', () => {
+    // 这条是上一批用例里那句 `moveTargetOf(view, toPx) === targetMm` 换掉的**理由**：
+    // 拖拽落点从 T6 起走 `dropTargetOf`，而样例房里绝大多数候选确实吸上了东西 ——
+    // 垂足（54 发）与正交（17 发）吸的是恒等（点本来就在自己那面墙的轴线上），中点 1 发；
+    // 真正把落点挪走的是 15° 档那 14 发（最大位移 6.97px，仍在 `SNAP_TOL_PX` 之内）。
+    // 计数跑在**全部把手 × 全部偏移**上，所以它与"uuidv7 决定探针挑哪面墙"无关：
+    // 16 把把手、160 发、恒等 72、改写 14，这几个数在十个进程里逐字相同（2026-09-28 实测）。
+    const fd = snapFieldOf(house.doc, house.lowerStoreyId);
+    const walls = house.doc.byKind('wall').filter((w) => w.storeyId === house.lowerStoreyId);
+    const handles = dragHandlesOf(house.doc, house.lowerStoreyId, sel(...walls.map((w) => w.id)), view);
+    expect(handles).toHaveLength(16); // 空样本防线：一把把手都没有的话下面两个计数就是 vacuous truth
+    let identity = 0;
+    let rewritten = 0;
+    for (const h of handles) {
+      for (const off of SWEEP_OFFSETS) {
+        const rawPx = mmToPx(view, vec(h.atMm.x + off.x, h.atMm.y + off.y));
+        const toPx = { x: Math.round(rawPx.x), y: Math.round(rawPx.y) }; // 与探针同一发整数像素
+        const ask = handleDropTarget(view, toPx, h, fd);
+        expect(Number.isInteger(ask.mm.x) && Number.isInteger(ask.mm.y)).toBe(true);
+        if (ask.snap === null) continue;
+        expect(ask.snap.distPx).toBeLessThanOrEqual(SNAP_TOL_PX); // 吸附不许把落点甩到容差外
+        if (ask.mm.x === ask.raw.x && ask.mm.y === ask.raw.y) identity++;
+        else {
+          rewritten++;
+          // 被挪走的只可能是 15° 档：轴对齐的候选落在轴对齐墙的轴线上，垂足与正交只能给恒等。
+          // 这一句是整条用例里唯一带"不许"的判据 —— 哪天垂足开始把对角候选拉回轴线，
+          // 它先红在这里，而不是红在 `--edit-shot` 的逐字对账上。
+          expect(ask.snap.kind).toBe('angle15');
+        }
+      }
+    }
+    expect(identity).toBeGreaterThanOrEqual(8); // 实测 72：判据只要求"吸了但没挪走"确实存在
+    expect(rewritten).toBeGreaterThanOrEqual(1); // 实测 14：判据只要求"吸了且挪走了"确实存在
+    // 扫的必须**盖住**探针真会走的那十发，否则上面两个数只是别人的账：
+    // 从探针返回的像素反算偏移，必须能在 `SWEEP_OFFSETS` 里找到同一发（±8mm 容得下取整像素的 0.5px）。
+    const p = dragProbe(house.doc, house.lowerStoreyId, ops, view)!;
+    const h = dragHandlesOf(house.doc, house.lowerStoreyId, sel(p.wallId), view).find(
+      (x) => x.end === p.end,
+    )!;
+    const atCursorMm = pxToMm(view, p.toPx);
+    const delta = { x: Math.round(atCursorMm.x - h.atMm.x), y: Math.round(atCursorMm.y - h.atMm.y) };
+    expect(
+      SWEEP_OFFSETS.some((o) => Math.abs(o.x - delta.x) <= 8 && Math.abs(o.y - delta.y) <= 8),
+    ).toBe(true);
+  });
+
+  it('把手按在原地那一发：排掉自己就谁也不吸，不排就吸回自己（dragProbe 传的就是前者）', () => {
+    // 判的是 `dragProbe` 与 renderer 都传给 `dropTargetOf` 的那对参数：光标停在把手自己的像素上。
+    // 这一发最容易写错成"按 pointId 排除"，而原地同时是①它自己那枚端点、②它所在轴线的 t=0 垂足、
+    // ③与它同坐标的邻墙候选 —— 三个候选同一个坐标，只排 id 会漏掉后两个，表现就是"一松手墙没动"。
+    // 实测样例房 16 把把手全部：传排除 ⇒ `snap === null` 且落点就是原地；不传 ⇒ 吸回自己那枚点。
+    const fd = snapFieldOf(house.doc, house.lowerStoreyId);
+    const walls = house.doc.byKind('wall').filter((w) => w.storeyId === house.lowerStoreyId);
+    const handles = dragHandlesOf(house.doc, house.lowerStoreyId, sel(...walls.map((w) => w.id)), view);
+    expect(handles.length).toBeGreaterThanOrEqual(4);
+    for (const h of handles) {
+      const at = { x: Math.round(h.atPx.x), y: Math.round(h.atPx.y) }; // 回读脚本发得出的那一发
+      const excluded = handleDropTarget(view, at, h, fd);
+      const kept = dropTargetOf(view, at, h.anchorMm, fd);
+      expect(excluded.snap).toBeNull();
+      expect(excluded.mm).toEqual(h.atMm); // 排掉自己之后原地那一发谁也不吸，落点就是它自己
+      expect(kept.snap?.pointId).toBe(h.pointId); // 不排就吸回自己：这道筛确实有东西要挡
+      expect(kept.mm).toEqual(h.atMm);
+    }
+  });
+
+  it('探针吃的是吸附后的毫米：四发正向候选全被真源挡下，第五发被一枚既有点接住', () => {
+    // 现场故意造到"前四发候选全非法、第五发对角候选的裸落点离一枚既有点 5.66px"，
+    // 于是吃场的探针报**那枚点的毫米**，不吃场的探针报**对角那发的裸毫米** —— 两个答案不同。
+    // 2026-09-28 实测这条咬住的改坏：探针传 `EMPTY_SNAP_FIELD`（HB3）与换回 `moveTargetOf`（HB4），
+    // 两条各红这条 + 下面那条「合法性判的是吸附后的毫米」。锚点（HB1）与排除（HB2）不在这里判 ——
+    // 它们收在 `handleDropTarget` 出口里，改出口会让"拖拽路径真的在吃吸附"与"把手按在原地那一发"
+    // 逐进程红（实测 8/8），判在探针调用点上反而漏（那时探针与 renderer 一起改，行为没变）。
+    // 判裸落点还是判吸附后（HB5）由下面那条专门咬，这条夹具里裸与吸两侧都合法，判不出。
+    const { log, storeyId } = wallsFromOrigin(true);
+    // 1px = 10mm ⇒ 整数像素与整数毫米逐字往返，红的时候不必先排除舍入
+    const v = viewportOf(1000, 800, { pxPerMm: 0.1, center: vec(300, 300) });
+    const doc = log.document;
+    const p = dragProbe(doc, storeyId, buildDrawList(doc, storeyId, v, EMPTY_SELECTION), v);
+    expect(p).not.toBeNull();
+    expect(p!.sharedBy).toBeGreaterThanOrEqual(2);
+    // 先自证现场：裸落点确实是对角那一发，而探针给的是**吸上去之后**那枚既有点
+    expect(moveTargetOf(v, p!.toPx)).toEqual({ x: 600, y: 600 });
+    expect(p!.targetMm).toEqual({ x: 640, y: 640 });
+    expect(p!.targetMm).not.toEqual(moveTargetOf(v, p!.toPx));
+    // 而合法性判的也是吸附后的毫米：原地那枚既有点把墙拖成的形状必须真的过得了真源那道守卫
+    expect(legalDrop(doc, p!.wallId, p!.end, p!.targetMm)).toBe(true);
+    expect(legalDrop(doc, p!.wallId, p!.end, { x: 600, y: 600 })).toBe(true); // 两个都合法 ⇒ 上面那句不是巧合
+    // 前四发候选全非法是这套夹具的前提，不是假设：逐发当场验一遍（(0,800)/(800,0) 撞墙厚，
+    // (0,-800)/(-800,0) 把另两面墙拖成零长），前提漂了这里先红，不会让上面那两句变成猜。
+    for (const off of [
+      { x: 0, y: 800 },
+      { x: 800, y: 0 },
+      { x: 0, y: -800 },
+      { x: -800, y: 0 },
+    ]) {
+      expect(legalDrop(doc, p!.wallId, p!.end, { x: off.x, y: off.y })).toBe(false);
+    }
+  });
+
+  it('合法性判的是吸附后的毫米：裸对角合法、吸上去那一发被 240 厚墙挡下', () => {
+    // 上一条例用里裸落点与吸附落点**都**合法（那句 `legalDrop(... {600,600}) === true` 就是把它钉住），
+    // 所以"合法性判在吸附之前还是之后"在那里只有一种答案 —— 实测把 `legalDrop` 改判 `drop.raw`
+    // 在那套夹具上八个进程零红。这一条另造一层：`P→(0,530)` 那面 240 厚的墙把**吸上去**那一发
+    // (40,760) 挡在"墙厚 ≥ 轴长"外（233 < 240），而裸的 (0,800) 离 (0,530) 有 270 ⇒ 合法。
+    // 判裸落点的探针会把第一发就收下并报 (40,760) —— 一个松手必然被真源拒绝的落点；判吸附后的
+    // 探针跳过第一发、报第二发的 (800,0)。于是这条同时钉住三件事：报出来的毫米合法、报出来的
+    // 不是那个非法的吸点、报出来的像素不是第一发那一个。
+    const projectId = uuidv7();
+    const log = new TransactionLog(Document.create(projectId));
+    log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+    let storeyId = '';
+    for (const id of log.affected) {
+      if (log.document.get(id)?.kind === 'storey') storeyId = id;
+    }
+    if (storeyId === '') throw new TypeError('affected 里没有新建的楼层');
+    // 共享 P 的两面墙（同一条竖线、方向相反 ⇒ 接头只有一个线组，S1 造得成）：`sharedBy >= 2` 成立。
+    // 530 那面同时是陷阱口：`wallCreate` 的最小轴长 500 与墙厚 240 都过得去，建得成。
+    log.dispatch(wallCreate({ storeyId, start: { x: 0, y: 0 }, end: { x: 0, y: 530 }, thicknessMm: 240, heightMm: 3000 }));
+    const north = createdWallOf(log);
+    log.dispatch(wallCreate({ storeyId, start: { pointId: north.startId }, end: { x: 0, y: -800 }, thicknessMm: 240, heightMm: 3000 }));
+    // (40,760) 这一枚既有点离第一发的裸落点 (0,800) 56.6mm ⇒ 0.1px/mm 下 5.66px，容差 8px 之内
+    // ⇒ 探针第一发必然吸到它（实测两把共享把手都是 `endpoint@5.66`）。
+    log.dispatch(wallCreate({ storeyId, start: { x: 40, y: 760 }, end: { x: 1040, y: 760 }, thicknessMm: 240, heightMm: 3000 }));
+    const v = viewportOf(1000, 800, { pxPerMm: 0.1, center: vec(200, 300) });
+    const doc = log.document;
+    const ops = buildDrawList(doc, storeyId, v, EMPTY_SELECTION);
+    const p = dragProbe(doc, storeyId, ops, v);
+    expect(p).not.toBeNull();
+    expect(p!.sharedBy).toBeGreaterThanOrEqual(2);
+    // 现场自证分歧真的存在，且就在**赢的那把把手**身上：同一发整数像素，裸落点过得了守卫、
+    // 吸上去那一发过不了。这一句不判探针，只判"这条红不是靠运气挑到靶子"。
+    const field = snapFieldOf(doc, storeyId);
+    const handle = dragHandlesOf(
+      doc,
+      storeyId,
+      { ids: new Set(doc.byKind('wall').filter((w) => w.storeyId === storeyId).map((w) => w.id)) },
+      v,
+    ).find((h) => h.wallId === p!.wallId && h.end === p!.end)!;
+    const firstPx = {
+      x: Math.round(mmToPx(v, { x: handle.atMm.x, y: handle.atMm.y + 800 }).x),
+      y: Math.round(mmToPx(v, { x: handle.atMm.x, y: handle.atMm.y + 800 }).y),
+    };
+    const firstDrop = handleDropTarget(v, firstPx, handle, field);
+    expect(firstDrop.raw).toEqual({ x: 0, y: 800 });
+    expect(firstDrop.mm).toEqual({ x: 40, y: 760 }); // 吸上了那枚既有点
+    expect(legalDrop(doc, handle.wallId, handle.end, firstDrop.raw)).toBe(true);
+    expect(legalDrop(doc, handle.wallId, handle.end, firstDrop.mm)).toBe(false);
+    // ⇒ 探针报出来的必须是**别的一发**：不是那个非法的吸点，且它真能落
+    expect(p!.targetMm).not.toEqual({ x: 40, y: 760 });
+    expect(p!.toPx).not.toEqual(firstPx);
+    expect(legalDrop(doc, p!.wallId, p!.end, p!.targetMm)).toBe(true);
+  });
+
+  it('探针的三枚像素在分数尺子下才见取整的牙齿：取整前是浮点，报出来全为整数', () => {
+    // T5 那条「三枚像素全为整数」在样例房那份 `fitStorey(…, 1200, 900, 60)` 上是**假绿**：
+    // 0.125px/mm 配百米毫米的坐标，取整前后本来就是同一个数（2026-09-28 实测：摘掉 `snapPx`
+    // 八个进程零红）。这一份 1200×901 把尺子换成 781/6240 px/mm，把手与候选的像素全是浮点，
+    // 于是那三句"整数"判的才真是取整这一步 —— 而它是 `--edit-shot`「落点逐字相等」的地基：
+    // 主进程 `sendInputEvent` 只收整数 DIP，探针给浮点就是拿浮点跟主进程对赌。
+    const frac = fitStorey(house.doc, house.lowerStoreyId, 1200, 901, 60);
+    const p = dragProbe(
+      house.doc,
+      house.lowerStoreyId,
+      buildDrawList(house.doc, house.lowerStoreyId, frac, EMPTY_SELECTION),
+      frac,
+    )!;
+    const h = dragHandlesOf(house.doc, house.lowerStoreyId, sel(p.wallId), frac).find(
+      (x) => x.end === p.end,
+    )!;
+    // 现场自证：这把把手的原生像素就是浮点 ⇒ 下面三句不是"本来就整数"蒙过去的
+    expect(Number.isInteger(h.atPx.x) && Number.isInteger(h.atPx.y)).toBe(false);
+    expect(Number.isInteger(p.fromPx.x) && Number.isInteger(p.fromPx.y)).toBe(true);
+    expect(Number.isInteger(p.toPx.x) && Number.isInteger(p.toPx.y)).toBe(true);
+    expect(Number.isInteger(p.anchorPx.x) && Number.isInteger(p.anchorPx.y)).toBe(true);
+    // 报出来的像素 = 原生像素四舍五入，不是"另算一遍"：`fromPx` 与把手必须同源
+    expect(p.fromPx).toEqual({ x: Math.round(h.atPx.x), y: Math.round(h.atPx.y) });
+    // 取整那一发反算的毫米与真源现值不同 ⇒ 这一发真的被搬到了整数像素上
+    expect(p.targetMm).not.toEqual(h.atMm);
+    // 与 renderer 同一个调用：同一发整数像素再问一次，答案逐字相同（浮点尺子下这条更要紧）
+    expect(
+      handleDropTarget(frac, p.toPx, h, snapFieldOf(house.doc, house.lowerStoreyId)).mm,
+    ).toEqual(p.targetMm);
+  });
+});
+
 describe('回读用的投影与配色', () => {
   it('pointSnapshot 的键集合恰是本层墙端点的去重集（多一个少一个都红）', () => {
     const snap = pointSnapshot(house.doc, house.lowerStoreyId);
@@ -337,7 +648,7 @@ describe('回读用的投影与配色', () => {
     }
   });
 
-  it('三种颜色两两之间最大通道差 > 2×PIXEL_CHANNEL_TOL ⇒ 像素计数不会串道', () => {
+  it('四种颜色两两之间最大通道差 > 2×PIXEL_CHANNEL_TOL ⇒ 像素计数不会串道', () => {
     const rgb = (hex: string): [number, number, number] => [
       Number.parseInt(hex.slice(1, 3), 16),
       Number.parseInt(hex.slice(3, 5), 16),
@@ -349,10 +660,14 @@ describe('回读用的投影与配色', () => {
       return Math.max(...ca.map((c, k) => Math.abs(c - cb[k]!)));
     };
     // 每一侧的认色窗口宽 2×TOL（±TOL），两窗口不重叠 ⇔ 最大通道差 > 2×TOL。
-    // 三对分开写而不是套循环：红了直接知道是哪一对颜色串道，不必再反推 i/j。
+    // 分开写而不是套循环：红了直接知道是哪一对颜色串道，不必再反推 i/j。
+    // T6 加第四色（吸附标记）：判据一字不改，只是每对都多一列要过同一把尺。
     const min = PIXEL_CHANNEL_TOL * 2;
     expect(spread(SELECTED, HANDLE_COLOR)).toBeGreaterThan(min);
     expect(spread(SELECTED, PREVIEW_COLOR)).toBeGreaterThan(min);
+    expect(spread(SELECTED, SNAP_COLOR)).toBeGreaterThan(min);
     expect(spread(HANDLE_COLOR, PREVIEW_COLOR)).toBeGreaterThan(min);
+    expect(spread(HANDLE_COLOR, SNAP_COLOR)).toBeGreaterThan(min);
+    expect(spread(PREVIEW_COLOR, SNAP_COLOR)).toBeGreaterThan(min);
   });
 });
