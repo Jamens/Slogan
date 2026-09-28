@@ -128,7 +128,9 @@ try {
     );
   }
   if (wantDraw) {
-    // 前六条与 drawlist.test.ts 同源（序列把文档送回基线，所以 `ops === 31` 在这里仍是回归判据）；
+    // 前六条与 drawlist.test.ts 同源（读的是第 15 步重做回到基线之后那份快照 `fin`，所以 `ops === 31`
+    //   在这里仍是回归判据；第 16 步**故意把三面星形墙留在文档里**，它的判据只吃自己那一发的前后差，
+    //   不冒充基线 —— 于是"基线那六条"与"星形那几条"读的是两个时刻，这是设计而非漏改）；
     // 这二十二条与 editing.test.ts + snapping.test.ts 同源，但只测它们管不到的那一层：
     // 真窗口里"发的像素 → 吸附的落点 → 真源的账 → 撤销栈"（最后一条是 addendum A3 的星形接头那一发，
     // 测的是绘制层那张兜网，unit 侧没有对应文件 —— 命令发得出去、派生抛错，只有真窗口走得到那一步）。
@@ -161,7 +163,8 @@ try {
       ['D18 点新墙中点：唯一命中就是刚建那面，把手也画出来了（筛 ④ 的像素下限在真窗口里成立）', Array.isArray(report.clickedSelectedIds) && report.clickedSelectedIds.length === 1 && report.clickedSelectedIds[0] === report.builtWallId && report.clickedHandlePx > 20],
       ['D19 Backspace 只删那一面墙，unsupported 空，选中集剪空', report.deleteOutcomeAfterBackspace === 'ok' && report.deletedCount === 1 && report.unsupportedCount === 0 && Array.isArray(report.selectionAfterDelete) && report.selectionAfterDelete.length === 0],
       ['D20 撤销把墙连同它的孤儿点一起带回来，选中不跟着回来（D7 那半句）', report.pointsAfterUndo === report.basePoints + 1 && report.selectedAfterUndo === 0 && report.comboAfterUndo === 'Ctrl+Z'],
-      // 倒数第二条是总账：②③ 两条纪律的凭据都在它身上 —— 序列没留痕，前六条才还读得到基线。
+      // 倒数第二条是总账：②③ 两条纪律的凭据都在它身上 —— 第 15 步为止序列没留痕，前六条读的就是这份基线
+      //   （第 16 步的三面星形墙落在它之后，只吃自己的前后差，不冒充基线）。
       ['D21 重做回到基线，终态探针与 points 快照逐字回到第 0 步', report.pointsAfterRedo === report.basePoints && report.probeMatchesStart === true && report.pointsMatchStart === true && report.comboAfterRedo === 'Ctrl+Shift+Z'],
       // 最后一条 = addendum A3 的正式判据（十六步之外那一发）：主进程在画布空白角**现造**一枚角点
       // （横、竖两发预备墙把它凑成二臂直角），再按在**同一发像素**上补一发 45° 斜臂 ⇒ 三臂三方向
