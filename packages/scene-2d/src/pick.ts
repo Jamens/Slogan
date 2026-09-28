@@ -157,6 +157,51 @@ function blankPoint(ops: readonly DrawOp[], v: Viewport): Px | null {
 }
 
 /**
+ * 候选点边长下限（= `PICK_TOL_PX * 8` = 64px）：太短的边，其中点四周挤着一堆相邻指令，
+ * 唯一命中几乎不可能成立。
+ *
+ * 出口是必需的而不是顺手：`editing.ts` 的 `wallProbe` 要在**建墙之前**预言"这面墙建出来点得中吗"，
+ * 而那个"点得中"就是这一条尺 —— 不在这里给出去，探针只能抄一份 64，抄的那一份最先漂。
+ */
+export const MIN_PICK_EDGE_PX = PICK_TOL_PX * 8;
+
+/**
+ * `ownerId` 的唯一命中候选点：按绘制序扫该 owner 的多边形指令，取第一条够长的边的中点，
+ * 且要求 `pickAt` 在这一点恰好返回 1 条。找不到 ⇒ null。
+ *
+ * 抽成文件内私有只有一条理由：`probeTarget`（随便挑一个能用的靶子）与 `pickPxOf`（点名要某一个
+ * 实体的靶子）必须吃同一把尺 —— 边长下限、唯一命中两条判据抄成两遍，漏抄的那一遍永远不红。
+ */
+function uniqueHitOf(ops: readonly DrawOp[], ownerId: string, minEdgePx: number): Px | null {
+  for (const op of ops) {
+    if (op.kind !== 'polygon' || op.ownerId !== ownerId) continue;
+    const n = op.pts.length;
+    if (n < 2) continue;
+    for (let i = 0; i < n; i++) {
+      const a = op.pts[i]!;
+      const b = op.pts[(i + 1) % n]!;
+      if (dist(a, b) < minEdgePx) continue;
+      const mid: Px = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      // 多命中 = 这个点上"谁在上面"说不清，换下一条边，不猜。
+      // hits.length === 1 时那条必然是本条指令自己（中点在它上面，距离 0），
+      // 所以这里不再重复断言 ownerId —— 写了也没人能走到另一支，测试里由 probe 那两条钉。
+      if (pickAt(ops, mid).length !== 1) continue;
+      return mid;
+    }
+  }
+  return null;
+}
+
+/**
+ * 点名要某一个实体的可点像素 —— `probeTarget` 只能给"随便一面墙"，而 `--draw-shot` 的删除
+ * 那一步要的是**刚新建的那一面**（撤销栈顶上恰好只有它时，删错墙也能绿，那是假绿）。
+ * 边太短 / 每条边都被别的指令压住 / 该实体只有线和字（洞口、楼层注记）⇒ null，调用方当失败处理。
+ */
+export function pickPxOf(ops: readonly DrawOp[], ownerId: string): Px | null {
+  return uniqueHitOf(ops, ownerId, MIN_PICK_EDGE_PX);
+}
+
+/**
  * 一次性回读用的靶子。两条规则都是为了让"点了没反应"这种失败藏不住：
  * ① 只接受 `pickAt` 恰好返回 1 条的候选点 —— 相邻墙共享斜切顶点，那附近的"选中谁"
  *    是 ownerId 升序给的巧合，不是判据；
@@ -167,24 +212,18 @@ function blankPoint(ops: readonly DrawOp[], v: Viewport): Px | null {
 export function probeTarget(ops: readonly DrawOp[], v: Viewport): PickProbe | null {
   const blank = blankPoint(ops, v);
   if (blank === null) return null;
-  // 边长下限：太短的边中点四周挤着一堆相邻指令，唯一命中几乎不可能成立
-  const minEdgePx = PICK_TOL_PX * 8;
+  const minEdgePx = MIN_PICK_EDGE_PX;
+  // owner 按**首次出现**的绘制序试，`tried` 让一面墙的轮廓与它的轴线只进一次。
+  // 换抽之前这里是"逐条指令扫"；`buildDrawList` 按实体成组产出指令（一个 owner 的轮廓紧挨着
+  // 它的轴线），所以两种写法给出的第一个靶子逐字相同。诚实说一句：`tried` 因此**不是判据**，
+  // 只是省一遍重复扫描 —— 实测摘掉它（PK6）18 条全绿，别为它写用例，也别把它读成"排重规则"。
+  const tried = new Set<string>();
   for (const op of ops) {
-    if (op.kind !== 'polygon' || op.ownerId === null) continue;
-    const n = op.pts.length;
-    if (n < 2) continue;
-    for (let i = 0; i < n; i++) {
-      const a = op.pts[i]!;
-      const b = op.pts[(i + 1) % n]!;
-      if (dist(a, b) < minEdgePx) continue;
-      const mid: Px = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      const hits = pickAt(ops, mid);
-      // 多命中 = 这个点上"谁在上面"说不清，换下一条边，不猜。
-      // hits.length === 1 时那条必然是本条指令自己（中点在它上面，距离 0），
-      // 所以这里不再重复断言 ownerId —— 写了也没人能走到另一支，测试里由 probe 那条钉。
-      if (hits.length !== 1) continue;
-      return { ownerId: op.ownerId, clickPx: mid, blankPx: blank };
-    }
+    const ownerId = op.ownerId;
+    if (ownerId === null || op.kind !== 'polygon' || tried.has(ownerId)) continue;
+    tried.add(ownerId);
+    const clickPx = uniqueHitOf(ops, ownerId, minEdgePx);
+    if (clickPx !== null) return { ownerId, clickPx, blankPx: blank };
   }
   return null;
 }
