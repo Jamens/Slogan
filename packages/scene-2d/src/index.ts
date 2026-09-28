@@ -4,3 +4,4 @@ export * from './viewport';
 export * from './drawlist';
 export * from './pick';
 export * from './demo';
+export * from './handles';

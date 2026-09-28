@@ -13,6 +13,7 @@
     "test": "vitest run",
     "shot": "node scripts/desktop-shot.mjs",
     "pick-shot": "node scripts/desktop-shot.mjs --pick",
+    "edit-shot": "node scripts/desktop-shot.mjs --edit",
     "verify": "pnpm typecheck && pnpm lint:deps && pnpm test"
   },
   "devDependencies": {

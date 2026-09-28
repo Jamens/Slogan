@@ -36,17 +36,21 @@ function runElectron(args, timeoutMs) {
 const dir = mkdtempSync(join(tmpdir(), 'dajia-shot-'));
 const out = join(dir, 'report.json');
 const wantPick = process.argv.includes('--pick');
-const electronArgs = [
-  '.',
-  ...(wantPick ? ['--pick-shot'] : []),
-  '--shot',
-  out,
-];
+const wantEdit = process.argv.includes('--edit');
+// `--shot out` 不是"再写一份报告"：主进程用 `argPath('--shot') !== null` 判定进不进 shot 模式
+// （隐藏窗口、跑完 exit）。少了它，`--edit-shot` / `--pick-shot` 那份路径根本没人读。
+// 一次运行只有 `runEditShot` 或 `runPickShot` 或 `runShot` 会写盘 ⇒ 三个开关共用 `out` 这一个路径。
+// 开关与路径成对（`--pick-shot out` / `--edit-shot out`）：主进程的 `argPath(flag)` 现在读各自
+// 开关后面的路径，`--pick-shot` 不再当裸开关 —— 这也收掉了 T4 那个"裸开关被当成缺路径"的隐患。
+const electronArgs = wantEdit
+  ? ['.', '--edit-shot', out, '--shot', out]
+  : ['.', ...(wantPick ? ['--pick-shot', out] : []), '--shot', out];
 try {
   runPnpm('pnpm --filter @dajia/desktop build');
   runElectron(electronArgs, 180_000);
   const report = JSON.parse(readFileSync(out, 'utf8'));
   const layers = report.layers ?? {};
+  const edit = report.edit ?? {};
   // 前六条与 drawlist.test.ts 同源；--pick 下追加的五条：一条实测原点前提 + 四条与
   // pick.test.ts 同源的判据。改样例房必须几处一起改，别只调这里。
   const checks = [
@@ -72,6 +76,33 @@ try {
       // 两半都要：store 空了 **且** 红色像素没了 —— 只查前者的话，paint effect 漏掉 ids
       // 依赖（屏幕还红着）会一路绿灯。
       ['点空白后 store 与屏幕一起清空', report.selectedAfterBlank === 0 && report.selectedPx === 0],
+    );
+  }
+  if (wantEdit) {
+    // 前六条与 drawlist.test.ts 同源（拖动改的是坐标不是指令数，所以 `ops === 31` 在 edit 模式下
+    // 仍是回归判据）；这十四条与 handles.test.ts + commands-drag.test.ts 同源，
+    // 但只测它们管不到的那一层：真窗口里"发的像素 → 真源的毫米 → 撤销栈"。
+    checks.push(
+      ['探针给出可拖的共享端点（孤端点证不出邻墙）', typeof edit.wallId === 'string' && edit.sharedBy >= 2],
+      ['按在把手上即选中那面墙（D5）', report.selectedAfterPress === edit.wallId && report.selectedPxAfterPress > 100],
+      ['把手上屏（只有选中的墙才画把手）', report.handlePxAfterPress > 20],
+      ['拖拽中不写真源：depth、revision、坐标三者都不动', report.depthDuringDrag === report.depthAtStart && report.revisionDuringDrag === report.revisionAtStart && report.xDuringDrag === report.xAtStart && report.yDuringDrag === report.yAtStart],
+      ['拖拽中临时线上屏（白屏与"只画了图"都过不了）', report.previewPxDuringDrag > 20],
+      // 上一行只证明"有那根线"，这一行证明"那根线在光标那儿"：把 paintPreview 的终点写死成
+      // 按下点，上一行照样绿 —— 位置取自 store 的活光标，颜色取自屏幕的实像素，缺一半就是假绿。
+      ['拖拽中临时线跟着光标（钉在按下点就红）', report.previewNearMidPx > 0],
+      ['松手落点逐字等于探针给的毫米', report.xAfterDrop === edit.targetMm?.x && report.yAfterDrop === edit.targetMm?.y],
+      ['一步拖 = depth +1 且 revision +1（撤销栈知道发生了什么）', report.depthAfterDrop === report.depthAtStart + 1 && report.revisionAfterDrop === report.revisionAtStart + 1],
+      ['松手后临时线不残留、把手仍在', report.previewPxAfterDrop === 0 && report.handlePxAfterDrop > 20],
+      ['压扁到锚点被真源拒绝（中文报错，不是没反应）', /轴长|零长/.test(report.lastErrorAfterCrush ?? '') && report.dropOutcomeAfterCrush === 'failed'],
+      // 计划 2 转下游 #11 的落地凭据：抛错那发不留任何痕迹 —— 这一条只在真窗口里测得到，
+      // 因为 renderer 的 dispatch 是唯一读者。
+      ['失败的拖拽不改 depth、不改 revision、不改坐标', report.depthAfterCrush === report.depthAfterDrop && report.revisionAfterCrush === report.revisionAfterDrop && report.xAfterCrush === report.xAfterDrop && report.yAfterCrush === report.yAfterDrop],
+      ['Ctrl+Z 回到拖动前且选中集不动', report.xAfterUndo === report.xAtStart && report.yAfterUndo === report.yAtStart && report.depthAfterUndo === report.depthAtStart && report.selectedAfterUndo === edit.wallId],
+      ['Ctrl+Shift+Z 回到拖动后并把错误抹掉', report.xAfterRedo === edit.targetMm?.x && report.lastErrorAfterRedo === null && report.comboAfterRedo === 'Ctrl+Shift+Z'],
+      // 后两条各管一头：noop 证"零移动不入栈"（D4），空栈反馈证"没发生的事要说出来"（D7）。
+      ['原地松手 = noop，撤销栈一步都不许多', report.dropOutcomeAfterNoop === 'noop' && report.depthAfterNoop === report.depthAfterRedo],
+      ['重做栈空时再按 Ctrl+Shift+Z 给中文反馈且不动真源', report.lastErrorAfterEmptyRedo === '没有可重做的操作' && report.comboAfterEmptyRedo === 'Ctrl+Shift+Z' && report.depthAfterEmptyRedo === report.depthAfterRedo],
     );
   }
   let bad = 0;

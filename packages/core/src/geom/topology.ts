@@ -129,3 +129,31 @@ export function dependentsOf(doc: Document, id: EntityId): EntityId[] {
   }
   return [...out];
 }
+
+/**
+ * 同层同坐标不许立两根柱。判据取**坐标 + 同层**，不取 pointId —— 同一个 (x, y) 给两次
+ * 字面坐标会新建出第二个点实体，"id 相等"那条对这种重影全然是瞎的。候选坐标一律是真源里
+ * 那对整数毫米（由调用方保证），所以这里是精确相等比较，不引入 epsilon。
+ *
+ * `exceptPointId` 给"整个点带着它的柱一起搬家"的调用方用（`wallMoveEndpoint`）：骑手柱自己
+ * 不算对手。同一点上本来就只准一根柱（建柱时本函数就禁止），所以这句至多排除掉一根。
+ * 悬空引用（柱指着不存在的点）是内部不变式被破坏，`requirePoint` 直接抛，不 continue。
+ */
+export function assertNoGhostColumn(
+  doc: Document,
+  storeyId: EntityId,
+  at: { readonly x: number; readonly y: number },
+  exceptPointId?: EntityId,
+): void {
+  for (const column of doc.byKind('column')) {
+    if (column.storeyId !== storeyId) continue;
+    if (column.pointId === exceptPointId) continue;
+    const owner = requirePoint(doc, column.pointId, '柱落点');
+    if (owner.x === at.x && owner.y === at.y) {
+      throw new RangeError(
+        `该坐标已有柱 ${column.id}（点 ${column.pointId}，落在 (${owner.x}, ${owner.y})）：` +
+          `同一层的同一个坐标上不能立两根柱`,
+      );
+    }
+  }
+}

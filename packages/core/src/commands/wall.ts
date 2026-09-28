@@ -4,6 +4,7 @@ import { requirePoint, requireStorey, requireWall } from '../model/read';
 import { endPointId, otherEnd, wallAxis, type WallEnd } from '../geom/axis';
 import { length, sub, vec } from '../geom/vec';
 import {
+  assertNoGhostColumn,
   incidentWallEnds,
   isExistingPoint,
   resolvePointRef,
@@ -232,6 +233,11 @@ export function wallMoveEndpoint(input: {
         }
         resized.push({ wall: neighbour, lengthMm });
       }
+      // 挂在这个点上的柱会跟着点一起走（D1）。建柱时那条"同层同坐标只准一根柱"的判据必须在
+      // 拖动之后再判一次：不然把柱搬到另一根柱的头上，真源里留下一对重影 —— 而
+      // deriveStoreyGeometry 不派生柱、SpatialIndex 只装墙与洞口，视图与索引都看不见它。
+      // 取 moving.storeyId 而不是 wall.storeyId：被撞的是"这个点所属的层"里的柱。
+      assertNoGhostColumn(doc, moving.storeyId, { x, y }, moving.id);
       const upsert: Entity[] = [{ ...moving, x, y }];
       // resized 的顺序确定（本墙在前，邻墙按 byKind 的 id 升序），所以补丁逐字节可重放。
       // 各墙的洞口互不相干，顺序不影响文档：canonical() 按 id 排实体、按键名排序，
