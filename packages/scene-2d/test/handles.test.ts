@@ -89,15 +89,22 @@ function wallsAtJunction(): { junction: WallEntity; other: WallEntity } {
 }
 
 /**
- * 合成一层：四面墙都从原点 A 出发（上 1040 / 右 1040 / 下 800 / 左 800），可选再在 (640,640)
- * 挂一面对角外的墙。三套探针夹具共用它 —— 四面墙把 `PROBE_OFFSETS` 前四发（上/右/下/左）全堵死
- * （(0,800)/(800,0) 撞墙厚，(0,-800)/(-800,0) 把另两面墙拖成零长），第五发对角才走得通。
+ * 合成一层：被拖的那枚接头 A 是**两面墙**（北墙 0→(0,1040)、东墙 0→(1040,0)，同厚 240）共用的
+ * **角（corner，2 向）**，另挂一面对手墙把第三发候选的裸落点吸走。它只服务下面这一条用例
+ * （三套探针夹具里唯一用到它的一套），所以判据口径按这条用例的意图重新设计。
  *
- * `foreign` 那一面给对角那发一个"吸得上的既有点"：带上它，探针报 (640,640)；不带，报裸 (600,600)。
- * A 的 id 只认第一次 `wallCreate` 的 affected（`createdWall`），**不许** `byKind('point')[0]`：
- * uuidv7 同毫秒不单调，那样写会把 A 拿成 (0,1040) 那枚点，四面墙两两同向重叠、core 当场抛。
+ * 为什么不能像旧夹具那样把四面墙钉在同一个 A 上：那样 A 恒为 **star（4 向）**，而
+ * `deriveStoreyGeometry` 对 star 抛 `RangeError` —— `dragProbe` 里的 `derivesAfterMove` 正是拿它
+ * 当谓词，于是 A 的任何非原地落点全被筛掉，探针恒 `null`（这是 2026-09-29 那条恒红的真凶）。
+ * 更深一层：把一枚接头**吸到既有点 `pointId`** 上，`wallMoveEndpoint` 复用那枚点就造出 3 向接头
+ * = star，在 `derivesAfterMove` 之下这一档对探针**结构性不可达**。所以这里的吸附靶子是一枚
+ * **坐标重合、拓扑上不共用点**的垂足（对手墙 x=40 那条竖轴的垂足）：它 `SnapKind='foot'`、
+ * `pointId=null`，把 A 挪到 (40,-800) 后 A 仍是那两面墙的角 ⇒ 派生得出、探针给得出非 null。
+ *
+ * A 的 id 只认第一次 `wallCreate` 的 affected（`createdWallOf`），**不许** `byKind('point')[0]`：
+ * uuidv7 同毫秒不单调，那样写会把 A 拿成 (0,1040) 那枚点，两面墙端点错配、core 当场抛。
  */
-function wallsFromOrigin(foreign: boolean): { log: TransactionLog; storeyId: string } {
+function wallsForProbeSnap(): { log: TransactionLog; storeyId: string } {
   const projectId = uuidv7();
   const log = new TransactionLog(Document.create(projectId));
   log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
@@ -108,19 +115,11 @@ function wallsFromOrigin(foreign: boolean): { log: TransactionLog; storeyId: str
   if (storeyId === '') throw new TypeError('affected 里没有新建的楼层');
   log.dispatch(wallCreate({ storeyId, start: { x: 0, y: 0 }, end: { x: 0, y: 1040 }, thicknessMm: 240, heightMm: 3000 }));
   const a = createdWallOf(log).startId;
-  const ENDINGS: readonly [number, number][] = [
-    [1040, 0],
-    [0, -800],
-    [-800, 0],
-  ];
-  for (const [bx, by] of ENDINGS) {
-    log.dispatch(wallCreate({ storeyId, start: { pointId: a }, end: { x: bx, y: by }, thicknessMm: 240, heightMm: 3000 }));
-  }
-  // 既有点 (640,640)：离裸对角落点 (600,600) 56.6mm。0.1px/mm 下是 5.66px（容差 8px 之内），
-  // 1px = 7mm 下是 8.08px（容差之外）—— 所以只有带 `foreign` 那发探针才吸得到它。
-  if (foreign) {
-    log.dispatch(wallCreate({ storeyId, start: { x: 640, y: 640 }, end: { x: 640, y: 1640 }, thicknessMm: 240, heightMm: 3000 }));
-  }
+  log.dispatch(wallCreate({ storeyId, start: { pointId: a }, end: { x: 1040, y: 0 }, thicknessMm: 240, heightMm: 3000 }));
+  // 对手墙：竖轴 x=40（y 从 -1200 到 -400）。第三发候选 (0,-800) 的裸落点到这条轴的垂足是
+  // (40,-800) —— 离裸落点 40mm，0.1px/mm 下 4px（容差 8px 之内）⇒ 探针必吸它。它是 free 端点
+  // 的墙、不碰 A，所以 A 吸过去仍是角。
+  log.dispatch(wallCreate({ storeyId, start: { x: 40, y: -1200 }, end: { x: 40, y: -400 }, thicknessMm: 240, heightMm: 3000 }));
   return { log, storeyId };
 }
 
@@ -507,35 +506,38 @@ describe('拖拽吃吸附（Task 6）', () => {
     }
   });
 
-  it('探针吃的是吸附后的毫米：四发正向候选全被真源挡下，第五发被一枚既有点接住', () => {
-    // 现场故意造到"前四发候选全非法、第五发对角候选的裸落点离一枚既有点 5.66px"，
-    // 于是吃场的探针报**那枚点的毫米**，不吃场的探针报**对角那发的裸毫米** —— 两个答案不同。
-    // 2026-09-28 实测这条咬住的改坏：探针传 `EMPTY_SNAP_FIELD`（HB3）与换回 `moveTargetOf`（HB4），
-    // 两条各红这条 + 下面那条「合法性判的是吸附后的毫米」。锚点（HB1）与排除（HB2）不在这里判 ——
-    // 它们收在 `handleDropTarget` 出口里，改出口会让"拖拽路径真的在吃吸附"与"把手按在原地那一发"
-    // 逐进程红（实测 8/8），判在探针调用点上反而漏（那时探针与 renderer 一起改，行为没变）。
-    // 判裸落点还是判吸附后（HB5）由下面那条专门咬，这条夹具里裸与吸两侧都合法，判不出。
-    const { log, storeyId } = wallsFromOrigin(true);
+  it('探针吃的是吸附后的毫米：两发正向候选被真源挡下，第三发被一枚垂足接住', () => {
+    // 现场故意造到"A 是那两面墙的角、前发正向候选把某面墙拖到墙厚（非法）、第三发的裸落点离一
+    // 枚垂足 4px"，于是吃场的探针报**吸到垂足之后**的毫米 (40,-800)，不吃场的探针报**裸**毫米
+    // (0,-800) —— 两个答案不同。靶子换成垂足而不是旧夹具那枚既有点，是因为既有点会造 star、
+    // 在 derivesAfterMove 下恒被筛掉（见 `wallsForProbeSnap` 的注释）。2026-09-28 实测这条咬住的
+    // 改坏：探针传 `EMPTY_SNAP_FIELD`（HB3：垂足档被清空 ⇒ 报裸 (0,-800) ⇒ 定值那句红）与换回
+    // `moveTargetOf`（HB4：报裸 ⇒ `not.toEqual` 那句红），两条各红这条 + 下面那条「合法性判的是
+    // 吸附后的毫米」。锚点（HB1）与排除（HB2）不在这里判 —— 它们收在 `handleDropTarget` 出口里，
+    // 改出口会让"拖拽路径真的在吃吸附"与"把手按在原地那一发"逐进程红（实测 8/8），判在探针调用点
+    // 上反而漏（那时探针与 renderer 一起改，行为没变）。判裸落点还是判吸附后（HB5）由下面那条专门
+    // 咬，这条夹具里裸与吸两侧都合法，判不出。
+    const { log, storeyId } = wallsForProbeSnap();
     // 1px = 10mm ⇒ 整数像素与整数毫米逐字往返，红的时候不必先排除舍入
     const v = viewportOf(1000, 800, { pxPerMm: 0.1, center: vec(300, 300) });
     const doc = log.document;
     const p = dragProbe(doc, storeyId, buildDrawList(doc, storeyId, v, EMPTY_SELECTION), v);
     expect(p).not.toBeNull();
     expect(p!.sharedBy).toBeGreaterThanOrEqual(2);
-    // 先自证现场：裸落点确实是对角那一发，而探针给的是**吸上去之后**那枚既有点
-    expect(moveTargetOf(v, p!.toPx)).toEqual({ x: 600, y: 600 });
-    expect(p!.targetMm).toEqual({ x: 640, y: 640 });
+    // 先自证现场：裸落点确实是第三发那一发，而探针给的是**吸到垂足之后**那对毫米
+    expect(moveTargetOf(v, p!.toPx)).toEqual({ x: 0, y: -800 });
+    expect(p!.targetMm).toEqual({ x: 40, y: -800 });
     expect(p!.targetMm).not.toEqual(moveTargetOf(v, p!.toPx));
-    // 而合法性判的也是吸附后的毫米：原地那枚既有点把墙拖成的形状必须真的过得了真源那道守卫
+    // 而合法性判的也是吸附后的毫米：原地那枚垂足把墙拖成的形状必须真的过得了真源那道守卫
     expect(legalDrop(doc, p!.wallId, p!.end, p!.targetMm)).toBe(true);
-    expect(legalDrop(doc, p!.wallId, p!.end, { x: 600, y: 600 })).toBe(true); // 两个都合法 ⇒ 上面那句不是巧合
-    // 前四发候选全非法是这套夹具的前提，不是假设：逐发当场验一遍（(0,800)/(800,0) 撞墙厚，
-    // (0,-800)/(-800,0) 把另两面墙拖成零长），前提漂了这里先红，不会让上面那两句变成猜。
+    expect(legalDrop(doc, p!.wallId, p!.end, { x: 0, y: -800 })).toBe(true); // 两个都合法 ⇒ 上面那句不是巧合
+    // 前面被跳过的候选是真源挡下的，不是假设：逐发当场验一遍。这套角夹具把朝两根臂方向的
+    // (0,800)/(800,0) 各把一面墙拖到墙厚 240（≤ 轴长即非法），于是探针跳过去才轮到第三发；
+    // 另两发 (0,-800)/(-800,0) 是把两臂拖**长**（合法），但 (0,-800) 是赢的那发（裸合法 + 吸到垂足，
+    // 见上），(-800,0) 在它之后、探针已返回不再评估。前提漂了这里先红，不会让上面那两句变成猜。
     for (const off of [
       { x: 0, y: 800 },
       { x: 800, y: 0 },
-      { x: 0, y: -800 },
-      { x: -800, y: 0 },
     ]) {
       expect(legalDrop(doc, p!.wallId, p!.end, { x: off.x, y: off.y })).toBe(false);
     }
