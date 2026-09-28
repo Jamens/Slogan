@@ -153,7 +153,11 @@ export interface DebugReport {
   /** 第四色像素总数。**只证"那一刻吸附了"，不证吸到哪**（S8）：位置的对账走毫米。 */
   snapMarkPx: number;
   lastCreate: CreateReport | null;
-  /** 最后一次删除计划真的发出命令的 id（与 `commands` 同序）。 */
+  /**
+   * 最后一次删除里**文档真的不再含有**的 id（按 `candidateIds` 的顺序筛）。
+   * 记的是真源账不是计划账：`dispatchBatch` 第一条抛错就 break，后面几条根本没执行，
+   * 那些构件还在文档里 ⇒ 不许出现在这一本账上（D2 的 `--draw-shot` 与 Task 8 拿它对账）。
+   */
   deletedIds: string[];
   /** 最后一次删除计划留给 Task 8 的 id。样例房里恒空 —— 那儿没有柱板可删，字段是接线凭据不是分支凭据。 */
   unsupportedIds: string[];
@@ -773,7 +777,15 @@ export function PlanCanvas(): React.JSX.Element {
         outcome = plan.outcome;
         if (plan.commands.length > 0) {
           s.dispatchBatch(plan.commands);
-          deleteRef.current.deletedIds = [...plan.candidateIds];
+          // `deletedIds` 记的是**真源真的不再含有**的那些 id，不是"计划要发"的那些：
+          // `dispatchBatch`（editorStore 的批处理循环）**第一条抛错就 break** ⇒ 一批 N>1 里
+          // 后面的 id 会被报成"已删"而其实还在文档里，D2 的 `--draw-shot` 与 Task 8 拿它对账就错。
+          // 复核走 S6 已经在用的同一口径：拿派发之后的新文档逐条问 `doc.get(id)`。
+          // 剪枝在派发之后、读的是活 store（`wallDelete` 级联掉了谁只有真源知道）。
+          const afterBatch = useEditor.getState();
+          deleteRef.current.deletedIds = plan.candidateIds.filter(
+            (id) => afterBatch.log.document.get(id) === undefined,
+          );
         } else {
           // 四条出口里只有 'ok' 发命令。'empty' / 'ignored-in-wall-mode' / 'unsupported' 一律
           // 留一本空账 —— 判据据此分"上次删了东西"与"上次什么都没删"，而不是读一句中文。
