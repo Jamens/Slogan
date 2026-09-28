@@ -8,6 +8,11 @@ export default defineConfig({
       '@dajia/protocol': fileURLToPath(
         new URL('./packages/protocol/src/index.ts', import.meta.url),
       ),
+      '@dajia/drawing': fileURLToPath(new URL('./packages/drawing/src/index.ts', import.meta.url)),
+      '@dajia/scene-2d': fileURLToPath(
+        new URL('./packages/scene-2d/src/index.ts', import.meta.url),
+      ),
+      '@dajia/scene-3d': fileURLToPath(new URL('./packages/scene-3d/src/index.ts', import.meta.url)),
     },
   },
   test: {
