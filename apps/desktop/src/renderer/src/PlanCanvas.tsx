@@ -2,30 +2,46 @@ import { useEffect, useRef } from 'react';
 import { requirePoint, wallMoveEndpoint } from '@dajia/core';
 import {
   buildDrawList,
+  draftAtPress,
+  draftCommand,
   dragHandlesOf,
   dragProbe,
+  dropTargetOf,
+  EMPTY_SNAP_FIELD,
   fitStorey,
   HANDLE_COLOR,
   HANDLE_RADIUS_PX,
   handleDropTarget,
+  lastCreatedWall,
+  legalWallCreate,
+  mmToPx,
+  moveDraft,
   moveTargetOf,
+  newWallDefaults,
   pickHandle,
   pickOne,
   PIXEL_CHANNEL_TOL,
+  planDelete,
   pointSnapshot,
   PREVIEW_COLOR,
   probeTarget,
-  SELECTED,
-  EMPTY_SNAP_FIELD,
+  pruneSelection,
+  SNAP_COLOR,
+  SNAP_MARK_HALF_PX,
   snapFieldOf,
+  SELECTED,
+  wallProbe,
+  type DeleteOutcome,
   type DragHandle,
   type DragProbe,
   type DrawOp,
-  type MoveTarget,
+  type DraftWall,
   type Pen,
   type PickProbe,
   type Px,
   type SnapField,
+  type Tool,
+  type WallProbe,
 } from '@dajia/scene-2d';
 import { useEditor } from './stores/editorStore';
 import { useSelection } from './stores/selectionStore';
@@ -53,6 +69,44 @@ export interface KeyEventReport {
   canUndo: boolean;
   canRedo: boolean;
   lastError: string | null;
+}
+
+/** 松手那一发拉出来的墙。`'rejected'` = 草稿 `legal === false`，**一条命令都没发**；`'failed'` = 发了但真源抛。 */
+export interface CreateReport {
+  outcome: 'ok' | 'rejected' | 'failed';
+  wallId: string | null;
+  /** 派发成功后从真源读的两端点 id（S6 的三票之一：`affected` 给 id，`doc.get` 复核存在）。 */
+  startId: string | null;
+  endId: string | null;
+  /** 松手前草稿的终点毫米。命令入参可能是一支 `{ pointId }`（没有毫米），所以账要记在落点上。 */
+  endMm: { x: number; y: number } | null;
+  /** 本层点数的前后两次读数：新建一面全新终点的墙 ⇒ +1，删回去 ⇒ 回到原值。 */
+  pointCountBefore: number;
+  pointCountAfter: number;
+}
+
+/**
+ * `w` / `Escape` / `Delete` / `Backspace` 的回声，与 `KeyEventReport` 同一套 `seq` 机理
+ * （T5 D8 那条理由在这里原样成立：`combo` 只证"回声的是哪一发"，等它变大抓不到"到过 renderer"）。
+ * 单独一份而不是塞进 `KeyEventReport`：撤销/重做那一发不碰工具态，这里每一发都碰。
+ */
+export interface HotkeyReport {
+  seq: number;
+  combo: string;
+  /** 这一发处理完之后的工具态：`w` 与 `Escape` 的凭据就在它身上。 */
+  tool: Tool;
+  /** 这一发处理完还有没有草稿（Escape 取消、松手、被拒都该让它变 false）。 */
+  draftActive: boolean;
+  /** 只有 `Delete` / `Backspace` 那一发给值；其余快捷键给 null。四色判"沉默是哪一种沉默"（S5）。 */
+  deleteOutcome: DeleteOutcome | null;
+  depth: number;
+  revision: number;
+  lastError: string | null;
+}
+
+/** 本层的点数。`points` 快照的键集合就是它，所以这里不再数第二遍（两个真值来源必漂）。 */
+function pointCountOf(points: Record<string, { x: number; y: number }>): number {
+  return Object.keys(points).length;
 }
 
 export interface DebugReport {
@@ -86,12 +140,28 @@ export interface DebugReport {
   edit: DragProbe | null;
   /** 拖拽进行中 store 里那一发 `targetMm`：没在拖就是 null。松手前 main 用它确认
    *  最后一发 `pointermove` 真的进了 store —— 早一步 release 用的是**旧光标**。 */
-  dragTargetMm: MoveTarget | null;
+  dragTargetMm: { x: number; y: number } | null;
   /** 拖拽进行中 store 里那一发**已处理**的光标像素。主进程拿它对照"我到底发了哪个像素"：
    *  `previewNearCursorPx` 量的就是 store 自报的光标，自洽 ⇒ 光标落后一帧它也照样绿。 */
   dragCursorPx: Px | null;
   lastDrop: DropReport | null;
   lastKeyEvent: KeyEventReport | null;
+  // ↓ T6 的 9 个
+  tool: Tool;
+  /** 进行中的草稿（含两端落点、吸附结论、合法性）。null = 没在拉墙。 */
+  draft: DraftWall | null;
+  /** 第四色像素总数。**只证"那一刻吸附了"，不证吸到哪**（S8）：位置的对账走毫米。 */
+  snapMarkPx: number;
+  lastCreate: CreateReport | null;
+  /** 最后一次删除计划真的发出命令的 id（与 `commands` 同序）。 */
+  deletedIds: string[];
+  /** 最后一次删除计划留给 Task 8 的 id。样例房里恒空 —— 那儿没有柱板可删，字段是接线凭据不是分支凭据。 */
+  unsupportedIds: string[];
+  /** 删除剪枝**之后**的选中集（`pruneSelection` 的答案直接落在这儿，不经过 store 二次推导）。 */
+  selectionAfterDelete: string[];
+  lastHotkey: HotkeyReport | null;
+  /** 拉墙的靶子：与 `edit` 同一条纪律 —— 主进程只读它，不猜坐标（`pxPerMm` 住在 renderer）。 */
+  draw: WallProbe | null;
 }
 
 declare global {
@@ -122,11 +192,12 @@ function rgbOf(hex: string): readonly [number, number, number] {
 const SEL_RGB = rgbOf(SELECTED);
 const HANDLE_RGB = rgbOf(HANDLE_COLOR);
 const PREVIEW_RGB = rgbOf(PREVIEW_COLOR);
+const SNAP_RGB = rgbOf(SNAP_COLOR);
 
 /**
  * 抗锯齿让线边缘是渐变而不是纯色，所以按通道 ±TOL 数，不比 RGB 全等（T4 的口径）。
  * 容差取自 `handles.ts` 的 `PIXEL_CHANNEL_TOL`：判据与画家不许各拿一个数 ——
- * `handles.test.ts` 最后那条"三种颜色互相分得开"用的也是它。
+ * `handles.test.ts` 最后那条"四种颜色互相分得开"用的也是它。
  */
 function nearChannel(px: number, target: number): boolean {
   return Math.abs(px - target) <= PIXEL_CHANNEL_TOL;
@@ -139,6 +210,7 @@ const NO_PIXELS: Buckets = {
   handlePx: 0,
   previewPx: 0,
   previewNearCursorPx: 0,
+  snapMarkPx: 0,
 };
 
 function paint(ctx: CanvasRenderingContext2D, ops: readonly DrawOp[]): void {
@@ -209,16 +281,37 @@ function paintPreview(
   ctx.fill();
 }
 
+/**
+ * 吸附标记：一枚 5×5 的实心方块，画在**吸附后的落点**上（不是光标上 —— 光标那儿已经有
+ * `paintPreview` 的绿点）。它是第四色，所以它唯一能证的事是"这一发光标确实被吸走了"；
+ * 吸到哪一律走毫米（`draft.end.mm` / `lastCreate.endMm`），像素不参与对账。
+ *
+ * `left/top` 先取整再画：`mmToPx` 给浮点，浮点原点的 `fillRect` 会把 5×5 摊成 6×6 的
+ * 半透明边，而 `nearChannel` 的 ±40 容差吃不下与白底混过色的高通道（`#ff8a00` 的 G=138，
+ * 五成混白就是 196 > 178）—— 于是同一个标记在两种视图下数出来是 25 与 0。
+ * 取整之后恒 25 个纯色像素（`SNAP_MARK_HALF_PX * 2` 见 `snapping.ts`）。
+ */
+function paintSnapMarker(ctx: CanvasRenderingContext2D, atPx: Px): void {
+  ctx.fillStyle = SNAP_COLOR;
+  ctx.fillRect(
+    Math.round(atPx.x - SNAP_MARK_HALF_PX),
+    Math.round(atPx.y - SNAP_MARK_HALF_PX),
+    SNAP_MARK_HALF_PX * 2,
+    SNAP_MARK_HALF_PX * 2,
+  );
+}
+
 interface Buckets {
   nonBlankPx: number;
   selectedPx: number;
   handlePx: number;
   previewPx: number;
   previewNearCursorPx: number;
+  snapMarkPx: number;
 }
 
 /**
- * 五个桶一次扫完。分开扫要五次 `getImageData`（每次都是跨进程边界的拷贝），一次扫是同一件事的几倍便宜。
+ * 六个桶一次扫完。分开扫要六次 `getImageData`（每次都是跨进程边界的拷贝），一次扫是同一件事的几倍便宜。
  * 桶与桶**可以重叠**（一根线正好压在把手上），所以这里数的是"有多少像素像这个颜色"，
  * 不是像素分配 —— 判据全是 `> 0` / `=== 0`，不拿它们做加减。
  *
@@ -240,6 +333,7 @@ function countPixels(
     handlePx: 0,
     previewPx: 0,
     previewNearCursorPx: 0,
+    snapMarkPx: 0,
   };
   for (let i = 0; i < data.length; i += 4) {
     const r = data[i]!;
@@ -261,6 +355,11 @@ function countPixels(
           out.previewNearCursorPx += 1;
         }
       }
+    }
+    // 第六桶**不开位置窗口**：标记就画在吸附后的落点上，而落点在哪儿正是判据要问的东西 ——
+    // 拿"落点像素"当窗口去数自己的像素，等于用结论证结论。所以这一桶只数颜色，位置对账一律走毫米。
+    if (nearChannel(r, SNAP_RGB[0]) && nearChannel(g, SNAP_RGB[1]) && nearChannel(b, SNAP_RGB[2])) {
+      out.snapMarkPx += 1;
     }
   }
   return out;
@@ -301,14 +400,31 @@ export function PlanCanvas(): React.JSX.Element {
   // 放在 `pointermove` 里就是每发一次整层遍历）。它必须是**刷上屏那一份**：场与屏幕不同步，
   // 判据就会说"吸上了一个屏幕上根本不存在的东西"。
   const fieldRef = useRef<SnapField>(EMPTY_SNAP_FIELD);
+  /** 最后一次删除计划的三本账（发出的 / 留给 Task 8 的 / 剪完之后剩下的），给 `__dajiaDebug` 读。 */
+  const deleteRef = useRef<{
+    deletedIds: string[];
+    unsupportedIds: string[];
+    selectionAfterDelete: string[];
+  }>({ deletedIds: [], unsupportedIds: [], selectionAfterDelete: [] });
+  /** 最后一次拉墙的回执（`CreateReport`）。同 `dropRef`：诊断值，不进 paint 依赖。 */
+  const createRef = useRef<CreateReport | null>(null);
+  const hotRef = useRef<HotkeyReport | null>(null);
+  /** 只数 `w`/`Escape`/`Delete`/`Backspace` 这一路，与 `keySeqRef` 各数各的（见 `HotkeyReport`）。 */
+  const hotSeqRef = useRef<number>(0);
 
   const log = useEditor((s) => s.log);
   const storeyId = useEditor((s) => s.storeyId);
   const viewport = useEditor((s) => s.viewport);
   const revision = useEditor((s) => s.revision);
   const drag = useEditor((s) => s.drag);
+  const tool = useEditor((s) => s.tool);
+  const draft = useEditor((s) => s.draft);
   const setViewport = useEditor((s) => s.setViewport);
   const setDrag = useEditor((s) => s.setDrag);
+  // `setTool` / `dispatchBatch` 不在这里取：只有快捷键那一路用它们，而那一路全部走
+  // `useEditor.getState()`（闭包不捕获会变的东西 ⇒ 依赖表留空才是诚实的）。
+  // `setDraft` 要取：按下/移动/松手三步都在指针路径里写草稿，它进那条 useEffect 的依赖表。
+  const setDraft = useEditor((s) => s.setDraft);
   const dispatch = useEditor((s) => s.dispatch);
   const undo = useEditor((s) => s.undo);
   const redo = useEditor((s) => s.redo);
@@ -357,23 +473,36 @@ export function PlanCanvas(): React.JSX.Element {
     return () => window.removeEventListener('resize', fit);
   }, [storeyId, setViewport]);
 
-  // 一条绘制通路：指令表 → 把手 → 临时线，同一个 effect、同一次 ctx 获取。
+  // 一条绘制通路：指令表 → 把手 → 临时线/标记，同一个 effect、同一次 ctx 获取。
   // `revision` 进了依赖却没被读：它是扳机不是数据（见 editorStore 的 D6 注释）。
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null || viewport === null) return;
     const ctx = canvas.getContext('2d');
     if (ctx === null) return;
-    const ops = buildDrawList(log.document, storeyId, viewport, { ids });
+    const doc = log.document;
+    const ops = buildDrawList(doc, storeyId, viewport, { ids });
     opsRef.current = ops;
     paint(ctx, ops);
     // 场与指令表在同一趟里取：指针事件的靶子、吸附的候选，全都来自刚刷上屏那一份几何。
-    fieldRef.current = snapFieldOf(log.document, storeyId);
-    const handles = dragHandlesOf(log.document, storeyId, { ids }, viewport);
+    fieldRef.current = snapFieldOf(doc, storeyId);
+    // S2：拉墙时屏幕上不许有把手。不画还不算完 —— `handlesRef` 也要清空，否则
+    // `pickHandle` 会在墙模式下继续吃上一趟留下的把手（按下就该起草稿，不该拖老墙）。
+    const handles = tool === 'wall' ? [] : dragHandlesOf(doc, storeyId, { ids }, viewport);
     handlesRef.current = handles;
     paintHandles(ctx, handles);
-    if (drag !== null) paintPreview(ctx, drag.fromPx, drag.cursorPx);
-  }, [log, storeyId, viewport, revision, ids, drag]);
+    if (drag !== null) {
+      paintPreview(ctx, drag.fromPx, drag.cursorPx);
+      const dragSnap = drag.drop?.snap ?? null;
+      if (dragSnap !== null) paintSnapMarker(ctx, mmToPx(viewport, dragSnap.mm));
+    }
+    if (draft !== null) {
+      // 临时线**恒**画到裸光标（`draft.cursorPx`），不画到吸附点：吸附点由橙色方块说。
+      paintPreview(ctx, draft.start.px, draft.cursorPx);
+      if (draft.start.snap !== null) paintSnapMarker(ctx, mmToPx(viewport, draft.start.snap.mm));
+      if (draft.end.snap !== null) paintSnapMarker(ctx, mmToPx(viewport, draft.end.snap.mm));
+    }
+  }, [log, storeyId, viewport, revision, ids, drag, draft, tool]);
 
   // 按下：先问把手，再问指令表（D2 说的"把手命中排在 pickOne 之前"就是这一行的顺序）。
   const onPointerDown = (event: React.PointerEvent<HTMLCanvasElement>): void => {
@@ -404,6 +533,26 @@ export function PlanCanvas(): React.JSX.Element {
       });
       return;
     }
+    if (tool === 'wall') {
+      // S2：拉墙时点选完全不生效 —— 既不 `pickOne` 也不 `clear()`。不清选中集是因为退出墙模式后
+      // 用户期望看见的仍是刚才红着的那批构件；在这里清掉等于让"按一次 w"有隐蔽副作用。
+      const field = fieldRef.current;
+      // 两次调用喂同一对入参 ⇒ `start.mm` 与 `end.mm` 必然相同（`draftAtPress` 的定义就是
+      // `dropTargetOf(v, px, null, field)`）。宁可多跑一次吸附，也不在 renderer 里手拼
+      // `DropTarget`：那是第二条 px→mm 通路，D4 禁的东西。
+      const start = draftAtPress(viewport, px, field);
+      const seed: DraftWall = {
+        storeyId,
+        start,
+        cursorPx: px,
+        end: dropTargetOf(viewport, px, null, field),
+        legal: false,
+      };
+      activeRef.current = true;
+      // 按下即试跑：零长草稿的 `legal` 恒 false，屏幕上的临时线从第一发起就是"不许松手"的颜色语义。
+      setDraft({ ...seed, legal: legalWallCreate(log.document, seed) });
+      return;
+    }
     const opHit = pickOne(opsRef.current, px);
     if (opHit === null) {
       clear();
@@ -422,17 +571,64 @@ export function PlanCanvas(): React.JSX.Element {
       if (px === null) return;
       const s = useEditor.getState();
       const current = s.drag;
-      if (current === null) return;
-      // S4 ②：中途走 `handleDropTarget` —— 锚点与被排除的原地都从**按下那一把**把手身上取，
-      // 与 `dragProbe` 里那一发是同一个函数、同一对入参，于是"探针给的毫米"与
-      // "屏幕上真会落下的毫米"仍然是同一个纯函数的同一个输出。
-      const drop = handleDropTarget(viewport, px, current.handle, fieldRef.current);
-      setDrag({ ...current, cursorPx: px, targetMm: drop.mm, drop });
+      if (current !== null) {
+        // S4 ②：中途走 `handleDropTarget` —— 锚点与被排除的原地都从**按下那一把**把手身上取，
+        // 与 `dragProbe` 里那一发是同一个函数、同一对入参，于是"探针给的毫米"与
+        // "屏幕上真会落下的毫米"仍然是同一个纯函数的同一个输出。
+        const drop = handleDropTarget(viewport, px, current.handle, fieldRef.current);
+        setDrag({ ...current, cursorPx: px, targetMm: drop.mm, drop });
+        return;
+      }
+      const currentDraft = s.draft;
+      if (currentDraft !== null) {
+        // 终点以起点为锚（正交/15° 只有相对起点才成立），并排掉起点坐标（否则吸自己、拖不开）。
+        setDraft(moveDraft(s.log.document, currentDraft, viewport, px, fieldRef.current));
+      }
     };
     const onUp = (): void => {
       if (!activeRef.current) return;
       activeRef.current = false;
       const s = useEditor.getState();
+      const currentDraft = s.draft;
+      if (currentDraft !== null) {
+        setDraft(null);
+        const before = pointCountOf(pointSnapshot(s.log.document, s.storeyId));
+        const cmd = draftCommand(currentDraft, newWallDefaults(s.log.document, s.storeyId));
+        if (cmd === null) {
+          // 预言说不合法 ⇒ 一条命令都不发。这一支是 `--draw-shot` 里"拒绝就不留痕迹"那一步的凭据。
+          createRef.current = {
+            outcome: 'rejected',
+            wallId: null,
+            startId: null,
+            endId: null,
+            endMm: currentDraft.end.mm,
+            pointCountBefore: before,
+            pointCountAfter: before,
+          };
+          return;
+        }
+        dispatch(cmd);
+        const after = useEditor.getState();
+        const doc = after.log.document;
+        // `lastCreatedWall` 的三条纪律之一：只在成功分支里**同步**读 `affected`，读完拿文档复核。
+        const created =
+          after.lastError === null ? lastCreatedWall(doc, after.log.affected, after.storeyId) : null;
+        createRef.current = {
+          // `failed` 而不是 `rejected`：命令已经发出去了，是真源抛的。`dispatch` 的 `legalDrop`
+          // 缺位（D3/D6）在这里同样成立 —— 预言说行、真源说不行，那就是两边漂了，必须留一条能红的路。
+          outcome: after.lastError === null && created !== null ? 'ok' : 'failed',
+          wallId: created?.wallId ?? null,
+          startId: created?.startId ?? null,
+          endId: created?.endId ?? null,
+          endMm: currentDraft.end.mm,
+          pointCountBefore: before,
+          pointCountAfter: pointCountOf(pointSnapshot(doc, after.storeyId)),
+        };
+        // 建完就选中它（D5 的入口唯一）：下一步"拖刚建的墙""删刚建的墙"都要它在选中集里，
+        // 而把手只从选中集生成 —— 不选中的话屏幕上会出现一面没有把手的新墙。
+        if (created !== null) select(created.wallId);
+        return;
+      }
       const current = s.drag;
       setDrag(null);
       if (current === null || viewport === null) return;
@@ -468,7 +664,7 @@ export function PlanCanvas(): React.JSX.Element {
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [viewport, dispatch, setDrag]);
+  }, [viewport, dispatch, setDrag, setDraft, select]);
 
   // D7：Ctrl+Z / Ctrl+Shift+Z（mac 上 meta 同义）。挂在 window 而不是 canvas：
   // 快捷键不该要求"鼠标正好停在图上"。
@@ -497,6 +693,76 @@ export function PlanCanvas(): React.JSX.Element {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [undo, redo]);
 
+  // T6 的四发快捷键。与上面那发 `z` **分家成两个监听器**：那一路逐字不动（T5 的 R1–R7 与
+  // `--edit-shot` 的 21 判据全压在它身上），而这一路每一发都碰工具态。两路各数各的 `seq`
+  // （`keySeqRef` / `hotSeqRef`）：判据等的是"我这一路到过"，混在一个计数器上就分不清是哪一发。
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const key = event.key;
+      const isWall = key === 'w' || key === 'W';
+      const isEscape = key === 'Escape';
+      const isDelete = key === 'Delete' || key === 'Backspace';
+      if (!isWall && !isEscape && !isDelete) return;
+      event.preventDefault();
+      // 全部状态从 `getState()` 现取，闭包不捕获任何会变的东西 ⇒ 依赖表留空是诚实的。
+      const s = useEditor.getState();
+      const sel = useSelection.getState();
+      let combo: string;
+      let outcome: DeleteOutcome | null = null;
+      if (isWall) {
+        combo = 'W';
+        // 已经在墙模式就是空操作（`setTool` 给同一个值，zustand 照样换 state 对象，
+        // 但 `tool` 引用不变 ⇒ 订阅者比的是 `s.tool` ⇒ 不重渲）。不清草稿：连按 w 不该吞手势。
+        s.setTool('wall');
+      } else if (isEscape) {
+        combo = 'Escape';
+        // `s` 是**这一发之前**的快照（`set()` 换的是 store 里的新对象），下面四个分支都读它：
+        // 判的是"这一发该不该取消点什么"，不是"取消完了以后还剩什么"。
+        if (s.draft !== null) s.setDraft(null);
+        // 取消草稿后**留在**墙模式：Escape 的第一含义是"这一下不拉了"，不是"我要退出工具"。
+        else if (s.tool === 'wall') s.setTool('select');
+        // 不在墙模式也没有草稿：退回"什么都不选"，与点空白同一条语义。
+        else sel.clear();
+        // 按着指针时按 Escape ⇒ 手势当场作废：`activeRef` 不清的话，下一次 `onUp` 会拿
+        // 一个已经作废的 `drag`/`draft` 再发一条命令（松手那一下本来不该有落点了）。
+        if (s.drag !== null) s.setDrag(null);
+        if (s.drag !== null || s.draft !== null) activeRef.current = false;
+      } else {
+        combo = key === 'Delete' ? 'Delete' : 'Backspace';
+        const plan = planDelete(s.log.document, s.storeyId, s.tool, sel.ids);
+        outcome = plan.outcome;
+        if (plan.commands.length > 0) {
+          s.dispatchBatch(plan.commands);
+          deleteRef.current.deletedIds = [...plan.candidateIds];
+        } else {
+          // 四条出口里只有 'ok' 发命令。'empty' / 'ignored-in-wall-mode' / 'unsupported' 一律
+          // 留一本空账 —— 判据据此分"上次删了东西"与"上次什么都没删"，而不是读一句中文。
+          deleteRef.current.deletedIds = [];
+        }
+        deleteRef.current.unsupportedIds = [...plan.unsupported];
+        const after = useEditor.getState();
+        // 剪枝在**派发之后**、拿新文档问：`wallDelete` 级联掉的东西只有真源知道（口径见它注释）。
+        const kept = pruneSelection(after.log.document, after.storeyId, useSelection.getState().ids);
+        useSelection.getState().retain(kept);
+        deleteRef.current.selectionAfterDelete = kept;
+      }
+      const after = useEditor.getState();
+      hotSeqRef.current += 1;
+      hotRef.current = {
+        seq: hotSeqRef.current,
+        combo,
+        tool: after.tool,
+        draftActive: after.draft !== null,
+        deleteOutcome: outcome,
+        depth: after.log.depth,
+        revision: after.revision,
+        lastError: after.lastError,
+      };
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null || viewport === null) return;
@@ -509,8 +775,12 @@ export function PlanCanvas(): React.JSX.Element {
       // `s` 先取：第五个桶要拿**当下 store 里的光标**去量像素。这一句是整个判据的要害 ——
       // 位置取自 store（活的那一份），颜色取自屏幕（刷上屏的那一份），两者对不上就是"没跟手"。
       const s = useEditor.getState();
+      // 光标来源两支：拖把手时读 `drag.cursorPx`（T5 的第五桶判据一字不动），拉墙时读
+      // `draft.cursorPx`。两支都非空的那一帧不存在 —— 一个手势只会走一条路。
       const counted =
-        ctx === null ? NO_PIXELS : countPixels(ctx, canvas, s.drag?.cursorPx ?? null);
+        ctx === null
+          ? NO_PIXELS
+          : countPixels(ctx, canvas, s.drag?.cursorPx ?? s.draft?.cursorPx ?? null);
       // 实测画布原点（页面空间）：探针点/把手点在画布空间，main 拿这个值做换算与 PASS 断言。
       const rect = canvas.getBoundingClientRect();
       return {
@@ -534,13 +804,24 @@ export function PlanCanvas(): React.JSX.Element {
         previewNearCursorPx: counted.previewNearCursorPx,
         points: pointSnapshot(s.log.document, s.storeyId),
         edit: dragProbe(s.log.document, s.storeyId, ops, viewport),
-        // 拖拽目标由 renderer 自己算（`moveTargetOf(viewport, px)`）：这一行让主进程能在
-        // **松手之前**看见它，于是"那一发 pointermove 到底进没进 store"是可等的，而不是
-        // 只能从"落点不对"倒推。
+        // 拖拽目标由 renderer 自己算（`handleDropTarget(...).mm`，S4 ② 之后与探针同源）：
+        // 这一行让主进程能在**松手之前**看见它，于是"那一发 pointermove 到底进没进 store"
+        // 是可等的，而不是只能从"落点不对"倒推。
         dragTargetMm: s.drag?.targetMm ?? null,
         dragCursorPx: s.drag?.cursorPx ?? null,
         lastDrop: dropRef.current,
         lastKeyEvent: keyRef.current,
+        // ↓ T6 的 9 个。全部读 `s`（活的那一份）与 `ops`（刷上屏的那一份），不读闭包里的
+        // `tool`/`draft` —— 闭包可能是上一帧的，而判据要的是"按下这一发之后"。
+        tool: s.tool,
+        draft: s.draft,
+        snapMarkPx: counted.snapMarkPx,
+        lastCreate: createRef.current,
+        deletedIds: deleteRef.current.deletedIds,
+        unsupportedIds: deleteRef.current.unsupportedIds,
+        selectionAfterDelete: deleteRef.current.selectionAfterDelete,
+        lastHotkey: hotRef.current,
+        draw: wallProbe(s.log.document, s.storeyId, ops, viewport),
       };
     };
     return () => {
