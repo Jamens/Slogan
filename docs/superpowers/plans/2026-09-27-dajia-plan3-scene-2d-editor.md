@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
-> **状态：本计划展开了 Task 1–7。** Task 8（楼层切换 + 属性面板 + 删除接屏）与 Task 9（吸附补档：轴网交点）的边界与验收口径列在末尾，正文尚未展开成可执行步骤 —— **补齐前不得进入执行**（Task 1 起就要改根 `typecheck` 与 `vitest.config.ts`，跑到 Task 5 才发现缺口的代价是把前四步的闸门重跑一遍）。Task 6 的 27 行 `--draw-shot` 判据、DR1–DR8 那张改坏表里标"按 throw 文案推"的每一行，都要在真窗口跑过之后把实测红字回填（编写期跑不了：`apps/desktop` 的 renderer 与 `scripts/desktop-shot.mjs` 要 Task 3 之后才存在）。同一条纪律适用于 Task 7 的 Step 7/8：全仓 `Tests 438` = T6 回填的 405 + 本任务**实测**的 core 净增 33（临时工程 core 24/309 + scene-2d 6/114 = **30 文件 / 423 条**，2026-09-28 重复三遍逐字相同；同日真仓库 `npx vitest run` = **23 文件 / 284 条**），全仓 `Test Files` 数两段都没给过、两个真窗口的字面量也要在执行日重测回填。
+> **状态：本计划展开了 Task 1–8。** Task 9（吸附补档：轴网交点）的边界与验收口径列在末尾，正文尚未展开成可执行步骤 —— **补齐前不得进入执行**（Task 1 起就要改根 `typecheck` 与 `vitest.config.ts`，跑到 Task 5 才发现缺口的代价是把前四步的闸门重跑一遍）。**四个真窗口闸门（`--shot` / `--pick-shot` / `--edit-shot` / `--draw-shot`）与 Task 8 的 `--prop-shot` 里所有写死的像素/毫米/条数字面量，都要在真窗口跑过之后回填实测红字**（编写期跑不了：`apps/desktop` 的 renderer 到 2026-09-28 仍是 pong 占屏页，`scripts/desktop-shot.mjs` 要 Task 3 之后才存在）。node 侧的账是实测的：Task 8 落地时临时工程 `.tscheck/t9` = **31 文件 / 449 条**（core 24/309 一字未动 + scene-2d 7/140），相对 Task 7 的 423 净增 26（panel 21 + editing 5）⇒ 真仓库预计 **438 → 464**；改坏表九条（M1~M9）逐条红名见 Task 8 Step 6，其中两条是当场把编写期的错误预言改掉的（M6 第一次全绿、M7 的红形与推的不一样）。
 
 **Goal:** 把 `@dajia/scene-2d` 从一行 stub 推进到「在真窗口里看得见一层平面、点得中构件」：视口仿射、绘制指令表、命中与选中，全部保持 DOM-free 可单测；像素是否真上屏由一次性截图回读证明，不靠人眼。
 
@@ -11810,8 +11810,1261 @@ git commit -m "feat(core): 派生复核进改几何的三条命令，补属性�
 提交信息按仓库口径再补一段正文：五条新命令（`storey.delete` / `wall.setMaterial` / `wall.setLoadBearing` / `column.delete` / `slab.delete`）、`assertDerivesAfterApply` 与 `pointStillReferenced` 两个产地、core 测试 276 → 309、以及 `joint.test.ts` 那五条哨兵改手工造文档的理由。
 
 ---
+### Task 8: 楼层切换 + 属性面板 + 删除接屏（把 T7 补的那五道口用到屏幕上）
 
-## 尚未展开的任务边界（Task 8、Task 9；补齐后才进执行）
+> **本任务的 node 侧全部实测**（临时工程 `.tscheck/t9`，2026-09-28：31 文件 / 449 条、九条变异逐条红在哪、`npx tsc --noEmit` 一处真错）。**renderer 与 `--prop-shot` 是编写期-authored、执行日回填**：`apps/desktop` 的 renderer 此刻还是 pong 占屏页，真窗口跑不了 —— 与 Task 3~6 的 renderer 步骤同一口径，判据形状写死、字面量留空。
+
+**Files:**
+
+| 文件 | 动什么 | 实测 |
+| --- | --- | --- |
+| `packages/scene-2d/src/panel.ts` | **新建**：材料候选集、`selectedWallForPanel`、`wallPropsOf`、`trialCommand`、`storeyTabsOf` | 163 行 |
+| `packages/scene-2d/test/panel.test.ts` | **新建**：五组 21 条 | 21 条全绿 |
+| `packages/scene-2d/src/index.ts` | 追加 `export * from './panel';` 一行 | — |
+| `packages/scene-2d/src/editing.ts` | `planDelete` 从两条规则扩到四条（补柱 / 板）、`DeletePlan` 的 `unsupported` 语义改写、四处注释的 `T7` → `Task 8` 订正 | 逻辑改动集中在 219–288 行 |
+| `packages/scene-2d/test/editing.test.ts` | 30 → 35 条：改写「三种沉默」「别层构件」，新增「③④ 接上屏幕」「柱落在墙端点上」「删一根带独占落点的柱」，再加两枚确定性夹具（筛 ⑤、⑥） | +5 条 |
+| `apps/desktop/src/renderer/src/stores/editorStore.ts` | 加 `setStorey`：**换层与视口复位是同一次 `set`**（拆开发送给中间帧的机会） | 执行日 |
+| `apps/desktop/src/renderer/src/PlanCanvas.tsx` | 挂 `<StoreyTabs/>` 与 `<PropPanel/>`；`DebugReport` 补 `storeyTabs` / `panel` / `lastTrial` / `propsAfterEdit` / `deletePlan` | 执行日 |
+| `apps/desktop/src/main/index.ts` | 加 `--prop-shot` 的十六步合成输入 | 执行日 |
+| `scripts/desktop-shot.mjs` | 加 `--prop` 开关与判据数组 | 执行日 |
+| `package.json`（根） | `"prop-shot": "node scripts/desktop-shot.mjs --prop"` | 执行日 |
+
+**Interfaces:**
+
+- Consumes：T7 产的五条新命令（`wall.setLoadBearing` / `wall.setMaterial` / `storey.delete` / `column.delete` / `slab.delete`）与三条挂了复核的旧命令；`wallAxisById(doc, id).lengthMm`；`Document.byKind('storey')` 与 `StoreyEntity.projectId`；T6 产的 `planDelete` / `pruneSelection` / `wallProbe` / `fitStorey`。
+- Produces：`PANEL_MATERIAL_OPTIONS`、`selectedWallForPanel(doc, storeyId, ids): WallEntity | null`、`wallPropsOf(doc, wallId): WallProps | null`、`trialCommand(doc, makeCommand: () => Command): TrialResult`、`storeyTabsOf(doc, projectId): StoreyTab[]`；`planDelete` 的 `candidateIds` 从"洞口在前、墙在后"变成"洞口 → 柱 → 板 → 墙"；`useEditor().setStorey`；`--prop-shot`。
+
+#### 本任务的九条裁决
+
+| # | 问题 | 裁决 | 为什么，以及代价 |
+| --- | --- | --- | --- |
+| P1 | 输入框里那一发"能不能提交"谁说了算？ | **只问真命令的试跑**（`trialCommand` 把"造命令 + 跑 `build`"整段放进 `try`），屏幕侧一道守卫都不写。 | `wall.setThickness` 现在有六道门（整数、正、墙厚 < 轴长、墙存在、接头直通两墙同厚、整层派生复核）。抄其中前两道写进输入框的版本，在 T7 那天已经被实测漂过一次（七条用例改写）；抄第三遍等于把"漂移"变成默认行为。代价：`reason` 是真源那句长文案（带数字与下一步），面板得能容下一行半的字，不许截断。 |
+| P2 | `trialCommand` 吃 `Command` 对象还是吃工厂？ | **吃 `() => Command` 工厂**。 | 真源的守卫有两半：一半长在命令工厂的构造期（`assertMm` / `positiveMm` / `assertMaterial`），一半长在 `build` 里。传进来的是已造好的 Command，前者就在 `try` 外面 —— 用户在输入框打 `240.5` 是一条**未捕获异常**，屏幕上表现为整个面板崩掉。实测凭据：`panel.test.ts`「命令工厂里那半道门也在 try 内」（摘掉工厂那一半，M3 那一发翻成红）。代价：调用方每次问都要重新造一个命令对象；命令对象是纯数据，不心疼。 |
+| P3 | 多选时面板展示谁？ | **恰好一面本层墙才给答案，其余一律 null**（空集、两面墙、柱、洞口、楼层、已消失的 id、别层的墙）。 | 下拉框一改就发命令，"取第一面"取决于 `Set` 的插入序（撤销一次就漂），于是屏幕上会出现"改的是我没选的那面墙"。实测凭据：M2 把 `picked.length === 1` 摘成 `picked[0]` 之后，只有那一条红 —— 它红得正好。代价：多选时面板整块消失，用户想知道"这五面墙各多厚"办不到；S1 不假装能。 |
+| P4 | 材料下拉框的候选集放 core 还是放 UI？ | **值与中文标签放 UI（`PANEL_MATERIAL_OPTIONS`），写法纪律问 core 的 `assertMaterial`，测试逐条问一遍。** | 材料是**图纸上的标注文字**：S1 的真源只把它当字符串存，不进派生、不参与几何（T7 裁决 A4：`wall.setMaterial` 不跑 `assertDerivesAfterApply`）。放进 core 等于假装 core 认识"砖墙 / 加气混凝土"，而它不认识。代价：柱 / 板 / 门窗将来要各自再列一张表，不许互相借 —— 借来的是不相干的候选。 |
+| P5 | `MIN_WALL_LENGTH_MM = 500` 要不要搬到输入框？ | **不搬。** 面板的长度格只读 `axisLengthMm`（真源派生），厚度格不设 `min`／`max`。 | 它是 T6 为了"探针挑得出能施工的靶子"定的**屏幕常量**，不是真源规则：300×300 的墙在 core 里唯一撞的是「墙厚不小于墙长」那道几何下限（实测 `panel.test.ts`「屏幕常量不是输入框的上限」：300mm 的墙 `wallCreate` 收、`MIN_WALL_LENGTH_MM` 拒了它，而 240×240 真源自己就抛）。搬上去等于屏幕自己立一道真源没有的闸，还会把"墙厚合法但墙太短"这种真实施工问题伪装成输入框的 bug。代价：用户能画出一面 300mm 长的墙，而它进不了施工图 —— 那属计划 5 的图纸校核，不属这一屏。 |
+| P6 | 楼层 tab 的顺序与标高从哪儿来？ | **按真源 `index` 升序**（不是照抄 `byKind`）、标高读 `StoreyEntity.elevationMm`（不算 `index × heightMm`）、标签 `第 ${index + 1} 层`。 | `byKind` 按 id 升序返回，而 uuidv7 在同一毫秒内不单调 ⇒ 照抄它，两层项目的 tab 顺序会跨进程漂（实测：十轮打乱里"id 序 ≠ index 序"的轮数跑出 9、8、9、8、7、9）。样例房二层被 `storeySetElevation` 从 6000 改成 3000 ⇒ 算出来的 tab 上是假数字。代价：`index` 必须唯一（`storeyCreate` 已守卫），这个排序因此是全序，不必再排第二次。 |
+| P7 | Delete 键到底接几类构件？ | **接四类**：墙、独立洞口、柱、板。派发顺序定死成 **洞口 → 柱 → 板 → 墙**（各自按 id 升序）。`storeyDelete` **不接** Delete 键。 | 柱与板的删除命令 T7 已经补好（`column.delete` / `slab.delete`，各自收掉自己独占的落点），屏幕上只差把它接到 `planDelete` 的 `unsupported` 那一格里。顺序定死是为了撤销栈可读：栈顶恒是 `wall.delete`，一次 Ctrl+Z 把"墙 + 它自己级联掉的洞口"整组还回来。`storeyDelete` 的入口是楼层 tab 上那条显式动作而不是删除键 —— 删整层要连带删光该层所有构件，需要确认框，S1 没有确认框。代价：`unsupported` 从此只装两样屏幕上根本取不到的东西（裸点与楼层本身）+ 别层构件。 |
+| P8 | T 接两侧改不成同厚怎么办？ | **只显示真源文案，不试图绕过。** 不加"同时改两面墙"的隐藏命令，也不让面板偷偷多派一条。 | 复核是逐发问"这一发之后的世界"，两侧各发一条 ⇒ 每条都看见对面还是原厚 ⇒ 两条都拒（实测：`.tscheck/tmp/scratch2.txt` 的 A 组 —— 连发 (800,800) 两条全 `REJ-同厚`，摘掉中间那根 stem 再连发才成 800/800）。真给用户第二条路只有"改画成 L 角"，那是几何编辑，不属面板。代价：样例房一层八面墙里有四面被这道守卫锁死（B 组：`southWest` 与 `southEast` 四档全 `REJ-同厚`，`partEast` / `partWest` 只有同值那一档 OK），`--prop-shot` 必须挑**改得动**那四面之一当靶子。 |
+| P9 | 柱与板屏幕上点不到，怎么证明"删得掉"？ | **由合成夹具证明，不把柱画进指令表。** | `buildDrawList` 与 `pickAt` 都只认墙与洞口，所以 ③④ 两支的凭据只能是手工把柱 / 板的 id 塞进选中集（`editing.test.ts` 里的 `kindId` 助手就是这件事的形状）。为了"在屏幕上证明它"把柱掺进指令表 = 混进 Task 9 / 计划 4 的边界，且 `--draw-shot` 那 27 行像素判据要全数重测。代价：`--prop-shot` 里删柱那一步**不能**当验收凭据；这一支只有 node 侧红绿可看。 |
+
+- [ ] **Step 1: 建临时工程并取基线**
+
+沿用 Task 7 的做法：`cp -a .tscheck/t8 .tscheck/t9`（t8 是 T7 落地的逐字副本），`vitest.config.ts` 的 alias 把 `@dajia/core` 指向 `./core/src/index.ts`、`@dajia/scene-2d` 指向 `./packages/scene-2d/src/index.ts`，`tsconfig.scene2d.json` extends 根 `tsconfig.base.json`、include `core/src` + `packages/scene-2d/{src,test}`。
+
+Run: `npx vitest run --config .tscheck/t9/vitest.config.ts`
+Expected: **30 文件 / 423 条全绿**（core 24/309 + scene-2d 6/114），与 Task 7 Step 7 回填的那笔账逐字相同。这一步的红绿都不许带进 Step 2。
+
+- [ ] **Step 2: 写失败测试 —— `panel.test.ts` 全文，再落 `panel.ts`**
+
+先不写 `panel.ts`，只把测试全文写完、`index.ts` 也先不动，跑一遍取红。**预期的红形**（编写期只推得出形状，与 T7 Step 2 那句"别等 `SyntaxError`"同一理由：`export *` 的入口缺东西时拿到的是 `undefined`）：21 条一起红在 `selectedWallForPanel is not a function` 这类调用点上，而不是红在断言里。红完再落实现 —— 这一步不许反过来（先写实现再补测试，21 条里有 14 条会退化成"测实现写了什么"）。
+
+`packages/scene-2d/test/panel.test.ts`（21 条，逐字实测绿）：
+
+```ts
+import { describe, expect, it } from 'vitest';
+import {
+  Document,
+  TransactionLog,
+  assertMaterial,
+  columnCreate,
+  openingCreate,
+  storeyCreate,
+  uuidv7,
+  wallCreate,
+  wallDelete,
+  wallSetLoadBearing,
+  wallSetMaterial,
+  wallSetThickness,
+  type PointRef,
+  type WallEntity,
+} from '@dajia/core';
+import {
+  MIN_WALL_LENGTH_MM,
+  PANEL_MATERIAL_OPTIONS,
+  demoHouse,
+  selectedWallForPanel,
+  storeyTabsOf,
+  trialCommand,
+  wallPropsOf,
+} from '@dajia/scene-2d';
+
+const house = demoHouse();
+
+function synthStorey(heightMm = 3000): { log: TransactionLog; storeyId: string; projectId: string } {
+  const projectId = uuidv7();
+  const log = new TransactionLog(Document.create(projectId));
+  log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm }));
+  let storeyId = '';
+  for (const id of log.affected) {
+    if (log.document.get(id)?.kind === 'storey') storeyId = id;
+  }
+  if (storeyId === '') throw new TypeError('affected 里没有新建的楼层');
+  return { log, storeyId, projectId };
+}
+
+function wallAt(log: TransactionLog, storeyId: string, start: PointRef, end: PointRef): WallEntity {
+  log.dispatch(wallCreate({ storeyId, start, end, thicknessMm: 240, heightMm: 3000 }));
+  for (const id of log.affected) {
+    const entity = log.document.get(id);
+    if (entity?.kind === 'wall') return entity;
+  }
+  throw new TypeError('affected 里没有新建的墙');
+}
+
+/** 一面墙 + 一根柱 + 一樘洞口：面板取墙那几条要区分"点得到的"与"点不到的"。 */
+function wallWithNeighbours(): {
+  log: TransactionLog;
+  storeyId: string;
+  wall: WallEntity;
+  columnId: string;
+  openingId: string;
+} {
+  const { log, storeyId } = synthStorey();
+  const wall = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+  log.dispatch(columnCreate({ storeyId, at: { x: 500, y: 500 }, widthMm: 400, depthMm: 400 }));
+  const columnId = [...log.affected].find((id) => log.document.get(id)?.kind === 'column');
+  if (columnId === undefined) throw new TypeError('affected 里没有那根柱');
+  log.dispatch(
+    openingCreate({ hostWallId: wall.id, distanceMm: 1200, widthMm: 1000, heightMm: 2100, category: 'door' }),
+  );
+  const openingId = [...log.affected].find((id) => log.document.get(id)?.kind === 'opening');
+  if (openingId === undefined) throw new TypeError('affected 里没有那樘洞口');
+  return { log, storeyId, wall, columnId, openingId };
+}
+
+/**
+ * 一面墙的 T 接现场：贯通线 (0,0)→(4000,0)→(8000,0) 在 (4000,0) 上立一根 stem。
+ * `wall.setThickness` 的派生复核只在这一发上说话（命令层前三道门全过），所以整条
+ * 「输入预言」用例都建在它上面。2026-09-28 实测：stem 在时改贯通任一侧 ⇒
+ * 「接头 … 的直通两墙厚度不同（370 / 240）…」；摘掉 stem（T 变纯贯通两臂点）⇒ 同值改得动。
+ */
+function teeJoint(): {
+  log: TransactionLog;
+  storeyId: string;
+  west: WallEntity;
+  east: WallEntity;
+  stem: WallEntity;
+} {
+  const { log, storeyId } = synthStorey();
+  const west = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+  const east = wallAt(log, storeyId, { pointId: west.endId }, { x: 8000, y: 0 });
+  log.dispatch(
+    wallCreate({
+      storeyId,
+      start: { pointId: east.startId },
+      end: { x: 4000, y: 3000 },
+      thicknessMm: 120,
+      heightMm: 3000,
+    }),
+  );
+  for (const id of log.affected) {
+    const entity = log.document.get(id);
+    if (entity?.kind === 'wall' && entity.thicknessMm === 120) return { log, storeyId, west, east, stem: entity };
+  }
+  throw new TypeError('affected 里没有那根 stem');
+}
+
+describe('材料候选集', () => {
+  it('每一项都真发得出去：五项逐个试跑 `wall.setMaterial`，reason 逐字为 null', () => {
+    const { log, storeyId } = synthStorey();
+    const wall = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    for (const option of PANEL_MATERIAL_OPTIONS) {
+      const trial = trialCommand(log.document, () =>
+        wallSetMaterial({ wallId: wall.id, material: option.value }),
+      );
+      // 判 reason 逐字为 null 而不是"没抛"：候选集里漂进一个带空格的写法时，
+      // 真源的文案会进来，而 `ok` 那一路已经先红 —— 两句一起看才知道是谁在说话。
+      expect({ value: option.value, ok: trial.ok, reason: trial.reason }).toEqual({
+        value: option.value,
+        ok: true,
+        reason: null,
+      });
+    }
+  });
+
+  it('写法纪律问 core 的 `assertMaterial`：候选集全过，自造的三种写法全拒', () => {
+    const materialLegal = (material: string): boolean => {
+      try {
+        assertMaterial(material);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    for (const option of PANEL_MATERIAL_OPTIONS) {
+      expect(materialLegal(option.value)).toBe(true);
+    }
+    // 素材自证：这一条真的在问写法，不是恒真 —— 空串、首尾空白、超长各一。
+    expect(materialLegal('')).toBe(false);
+    expect(materialLegal(' brick')).toBe(false);
+    expect(materialLegal('砖'.repeat(33))).toBe(false);
+  });
+
+  it('标签非空、值不带空白，且首屏那面墙的当前材料在候选里找得到', () => {
+    for (const option of PANEL_MATERIAL_OPTIONS) {
+      expect(option.label.length).toBeGreaterThan(0);
+      expect(option.value).toBe(option.value.trim());
+    }
+    const { log, storeyId } = synthStorey();
+    const wall = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    const props = wallPropsOf(log.document, wall.id);
+    if (props === null) throw new TypeError('刚建好的墙读不出属性');
+    // 下拉框打开时当前值必须在候选里，否则面板显示空白而真源里那面墙有材料（两套口径）
+    expect(PANEL_MATERIAL_OPTIONS.some((o) => o.value === props.material)).toBe(true);
+    expect(props.material).toBe('brick'); // 真源默认（`wallCreate` 里那句 `?? 'brick'`）
+  });
+});
+
+describe('面板取哪一面墙', () => {
+  it('恰好一面本层墙 ⇒ 就是它（逐字同一引用，面板不复制实体）', () => {
+    const { log, storeyId, wall } = wallWithNeighbours();
+    expect(selectedWallForPanel(log.document, storeyId, [wall.id])).toBe(wall);
+  });
+
+  it('两面墙一起选中 ⇒ null：面板不许"取第一面"，那等于偷偷改用户的选中集', () => {
+    const { log, storeyId } = synthStorey();
+    const a = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    const b = wallAt(log, storeyId, { x: 0, y: 2000 }, { x: 4000, y: 2000 });
+    expect(selectedWallForPanel(log.document, storeyId, [a.id, b.id])).toBeNull();
+    // 素材自证：单发同一面墙仍是答案 ⇒ 上一发红在"两面"，不红在"这面墙读不出"
+    expect(selectedWallForPanel(log.document, storeyId, [b.id])).toBe(b);
+  });
+
+  it('柱、洞口、已消失的 id、别层的墙四种都拿 null', () => {
+    const { log, storeyId, columnId, openingId } = wallWithNeighbours();
+    expect(selectedWallForPanel(log.document, storeyId, [columnId])).toBeNull();
+    expect(selectedWallForPanel(log.document, storeyId, [openingId])).toBeNull();
+    expect(selectedWallForPanel(log.document, storeyId, ['gone'])).toBeNull();
+    const upper = house.doc.byKind('wall').find((w) => w.storeyId === house.upperStoreyId);
+    if (upper === undefined) throw new TypeError('样例房二层应当有墙');
+    expect(selectedWallForPanel(house.doc, house.lowerStoreyId, [upper.id])).toBeNull();
+    // 素材自证：同一枚别层墙问到它自己的层就给答案 ⇒ 上一发红在认层
+    expect(selectedWallForPanel(house.doc, house.upperStoreyId, [upper.id])).toBe(upper);
+  });
+
+  it('空集给 null 不抛；混选（墙 + 柱）仍是那面墙', () => {
+    const { log, storeyId, wall, columnId } = wallWithNeighbours();
+    expect(selectedWallForPanel(log.document, storeyId, [])).toBeNull();
+    // 混选给墙：面板照开。柱只是**改不了属性**（S1 没有柱面板），不是删不掉（Task 8 接了 columnDelete）
+    expect(selectedWallForPanel(log.document, storeyId, [columnId, wall.id])).toBe(wall);
+  });
+});
+
+describe('面板读值', () => {
+  it('三格逐字取自真源，第四格是这面墙的轴长', () => {
+    const { log, storeyId } = synthStorey(3600);
+    const wall = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    expect(wallPropsOf(log.document, wall.id)).toEqual({
+      wallId: wall.id,
+      thicknessMm: 240,
+      // 墙高读墙自己的字段，不读层高：3600 的层上画 3000 的墙是本夹具故意留的差别。
+      // 面板显示层高的话，用户在屏幕上看不见"这面墙够不到顶"。
+      heightMm: 3000,
+      material: 'brick',
+      loadBearing: true,
+      axisLengthMm: 4000,
+    });
+  });
+
+  it('撤销掉正被选中的那面墙：读值与取墙双双回到 null，面板清空而不抛', () => {
+    const { log, storeyId } = synthStorey();
+    const wall = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    expect(wallPropsOf(log.document, wall.id)).not.toBeNull();
+    expect(log.undo()).toBe(true);
+    expect(wallPropsOf(log.document, wall.id)).toBeNull();
+    expect(selectedWallForPanel(log.document, storeyId, [wall.id])).toBeNull();
+  });
+
+  it('楼层与柱的 id 不是墙：读值 null，不抛（挡住把 `wallAxisById` 接进面板）', () => {
+    const { log, storeyId } = wallWithNeighbours();
+    expect(wallPropsOf(log.document, storeyId)).toBeNull();
+    const column = log.document.byKind('column')[0];
+    if (column === undefined) throw new TypeError('夹具里没有柱');
+    expect(wallPropsOf(log.document, column.id)).toBeNull();
+  });
+});
+
+describe('输入框那一发的预言', () => {
+  it('命令工厂里那半道门也在 try 内：非整数毫米给文案，不给未捕获异常', () => {
+    const { log, storeyId } = synthStorey();
+    const wall = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    // `wallSetThickness(240.5)` 在**构造期**就抛（`assertMm`），所以 `trialCommand` 吃的是工厂函数。
+    // 改成吃 Command 对象的话这一行是"测试自己抛"，红在测试而不是红在预言 —— 那条红同样有效，
+    // 但它不告诉下一个人为什么签名是 `() => Command`。
+    const rough = trialCommand(log.document, () =>
+      wallSetThickness({ wallId: wall.id, thicknessMm: 240.5 }),
+    );
+    expect(rough.ok).toBe(false);
+    expect(rough.reason).toMatch(/必须是整数毫米/);
+  });
+
+  it('真源三道门各一句文案：非正、墙厚不小于轴长、墙不存在', () => {
+    const { log, storeyId } = synthStorey();
+    const wall = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    expect(trialCommand(log.document, () => wallSetThickness({ wallId: wall.id, thicknessMm: 370 }))).toEqual({
+      ok: true,
+      reason: null,
+    });
+    for (const mm of [0, -240]) {
+      const bad = trialCommand(log.document, () => wallSetThickness({ wallId: wall.id, thicknessMm: mm }));
+      expect(bad.ok).toBe(false);
+      expect(bad.reason).toMatch(/必须为正/);
+    }
+    const tooThick = trialCommand(log.document, () =>
+      wallSetThickness({ wallId: wall.id, thicknessMm: 4000 }),
+    );
+    expect(tooThick.reason).toMatch(/不小于墙长/); // 真源那句带数字，比屏幕自编的"太大"有用
+    const gone = trialCommand(log.document, () => wallSetThickness({ wallId: 'gone', thicknessMm: 240 }));
+    expect(gone.ok).toBe(false);
+    expect(gone.reason).toMatch(/不存在|不是墙/); // `mustExist` / `requireWall` 的文案，屏幕不复述
+  });
+
+  it('T 接改厚被派生复核挡下：命令层三道门全过，拒它的是「直通两墙厚度不同」', () => {
+    const tee = teeJoint();
+    const doc = tee.log.document;
+    // 先自证命令层看不见这件事：370 < 轴长 4000、是正整数、墙存在 ⇒ 前三道门全过
+    expect(tee.west.thicknessMm).toBe(240);
+    const trial = trialCommand(doc, () => wallSetThickness({ wallId: tee.west.id, thicknessMm: 370 }));
+    expect(trial.ok).toBe(false);
+    expect(trial.reason).toMatch(/直通两墙厚度不同/);
+    // 素材自证 ①：stem（垂直那臂）加厚不受这条纪律约束 ⇒ 上一发红在"贯通两墙"，不红在"加厚"
+    expect(trialCommand(doc, () => wallSetThickness({ wallId: tee.stem.id, thicknessMm: 370 })).ok).toBe(true);
+    // 素材自证 ②：同值重设合法 ⇒ 红在"两侧不同厚"，不红在"这面墙谁都改不动"
+    expect(trialCommand(doc, () => wallSetThickness({ wallId: tee.west.id, thicknessMm: 240 })).ok).toBe(true);
+  });
+
+  it('两侧逐条连发改不动 T 接：每条各自复核自己那一发之后的世界', () => {
+    // 这是属性面板的**能力边界**，写成判据而不是注释：屏幕上"把两侧都改成 800"只能是两次派发，
+    // 第一次派发时另一侧还是 240 ⇒ 被拒；第二次时两侧仍不同（第一次没落地）⇒ 再被拒。
+    // 拆掉 stem（T 变纯贯通两臂点）之后同两发改得动 —— 2026-09-28 实测：厚度 800/800、深度 7。
+    const tee = teeJoint();
+    const log = tee.log;
+    const first = trialCommand(log.document, () =>
+      wallSetThickness({ wallId: tee.west.id, thicknessMm: 800 }),
+    );
+    expect(first.ok).toBe(false);
+    const second = trialCommand(log.document, () =>
+      wallSetThickness({ wallId: tee.east.id, thicknessMm: 800 }),
+    );
+    expect(second.ok).toBe(false);
+    expect(log.depth).toBe(4); // 三层 + 一根 stem，一次派发都没发生
+    // 拆掉 stem ⇒ T 接不在这里了，两发连发就过（面板给出的下一步"改画成 L 角"真的走得通）
+    log.dispatch(wallDelete({ wallId: tee.stem.id }));
+    expect(trialCommand(log.document, () => wallSetThickness({ wallId: tee.west.id, thicknessMm: 800 })).ok).toBe(true);
+    log.dispatch(wallSetThickness({ wallId: tee.west.id, thicknessMm: 800 }));
+    expect(trialCommand(log.document, () => wallSetThickness({ wallId: tee.east.id, thicknessMm: 800 })).ok).toBe(true);
+  });
+
+  it('试跑不动真源：墙数、那面墙的厚度、撤销栈深度三票原样', () => {
+    const { log, storeyId } = synthStorey();
+    const wall = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    const depthBefore = log.depth;
+    expect(trialCommand(log.document, () => wallSetThickness({ wallId: wall.id, thicknessMm: 370 })).ok).toBe(true);
+    expect(log.depth).toBe(depthBefore);
+    expect(log.document.get(wall.id)).toEqual(wall); // 引用逐字相同：不可变文档没被试跑动过
+    const rejected = trialCommand(log.document, () =>
+      wallSetThickness({ wallId: wall.id, thicknessMm: 9999 }),
+    );
+    expect(rejected.ok).toBe(false); // 9999 > 轴长 4000：预言给 false，而真源一个字没动
+    expect(log.document.get(wall.id)).toEqual(wall);
+    expect(log.depth).toBe(depthBefore);
+    // 反证：真的派发一次，三票全变 ⇒ 上面那两句不是"恒不变"
+    log.dispatch(wallSetThickness({ wallId: wall.id, thicknessMm: 370 }));
+    expect(log.depth).toBe(depthBefore + 1);
+  });
+
+  it('承重与材料不进派生：同值反复点各留一条撤销记录（T7 裁决 A4 的代价在屏幕侧有读者）', () => {
+    const { log, storeyId } = synthStorey();
+    const wall = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    for (const material of ['brick', 'brick', 'brick']) {
+      expect(trialCommand(log.document, () => wallSetMaterial({ wallId: wall.id, material })).ok).toBe(true);
+    }
+    const depthBefore = log.depth;
+    log.dispatch(wallSetLoadBearing({ wallId: wall.id, loadBearing: true })); // 与现值相同的一发
+    expect(log.depth).toBe(depthBefore + 1);
+    expect(log.undo()).toBe(true);
+    expect(log.document.get(wall.id)).toEqual(wall); // 撤销回到原样 ⇒ 代价只是栈里多一条空改动
+  });
+
+  it('屏幕常量不是输入框的上限：300mm 的墙真源收，而 `MIN_WALL_LENGTH_MM` 是 500', () => {
+    // Task 6 交过来的那一条（E17 的凭据登记在这里）。三个事实摞在一起才叫"分家"：
+    // ① 真源对长度只有两道（零长、墙厚 < 轴长），一面 300mm 的墙建得出来 —— 短得没法施工，但合法；
+    // ② `MIN_WALL_LENGTH_MM` = 500 比真源严，而它只活在 `wallProbe` 挑靶子里；
+    // ③ 于是面板若拿 ② 当输入上限，就会拒掉真源已经收下的一发 ⇒ 屏幕上"这面墙存在"与"改不动它"同时发生。
+    const { log, storeyId } = synthStorey();
+    const short = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 300, y: 0 });
+    const props = wallPropsOf(log.document, short.id);
+    if (props === null) throw new TypeError('300mm 的墙读不出属性');
+    expect(props.axisLengthMm).toBe(300);
+    expect(300).toBeLessThan(MIN_WALL_LENGTH_MM);
+    expect(trialCommand(log.document, () => wallSetThickness({ wallId: short.id, thicknessMm: 299 })).ok).toBe(true);
+    // 真源那两道门仍然在说话：240 厚 240 长的墙连建都建不出来（屏幕常量换成真源口径也不放宽）
+    expect(() =>
+      wallCreate({
+        storeyId,
+        start: { x: 500, y: 500 },
+        end: { x: 740, y: 500 },
+        thicknessMm: 240,
+        heightMm: 3000,
+      }),
+    ).toThrow(/不小于墙长/);
+  });
+});
+
+describe('楼层 tab', () => {
+  it('样例房两层：按 index 升序、标签逐字、标高读真源（二层是被编辑过的那一份）', () => {
+    const lower = house.doc.get(house.lowerStoreyId);
+    if (lower?.kind !== 'storey') throw new TypeError('一层读出来不是楼层实体');
+    const projectId = lower.projectId;
+    expect(storeyTabsOf(house.doc, projectId)).toEqual([
+      // 二层被 `storeySetElevation` 从 6000 改成 3000（demo.ts 的第 4 次编辑）。
+      // tab 读真源而不是算 `index * heightMm`：改过标高之后两者不等，屏幕上写的是假数字。
+      { storeyId: house.lowerStoreyId, index: 0, elevationMm: 0, heightMm: 3000, label: '第 1 层' },
+      { storeyId: house.upperStoreyId, index: 1, elevationMm: 3000, heightMm: 3000, label: '第 2 层' },
+    ]);
+  });
+
+  it('外来项目的楼层不进本项目的 tab', () => {
+    const { log, storeyId, projectId } = synthStorey();
+    const foreign = uuidv7();
+    log.dispatch(storeyCreate({ projectId: foreign, index: 0, elevationMm: 0, heightMm: 3000 }));
+    const foreignStoreyId = [...log.affected].find(
+      (id) => log.document.get(id)?.kind === 'storey' && id !== storeyId,
+    );
+    if (foreignStoreyId === undefined) throw new TypeError('affected 里没有外来项目那层');
+    expect(storeyTabsOf(log.document, projectId).map((t) => t.storeyId)).toEqual([storeyId]);
+    expect(storeyTabsOf(log.document, foreign).map((t) => t.storeyId)).toEqual([foreignStoreyId]);
+    expect(log.document.byKind('storey').length).toBe(2); // 素材自证：过滤真的在筛，文档里确实两层
+  });
+
+  it('顺序按 index 而不是按 id：十轮打乱里至少五轮 id 序与 index 序不同（摘掉 sort 的凭据）', () => {
+    // `Document.byKind` 按 id 升序返回，而 uuidv7 在同一毫秒内不单调 ⇒ "照抄 byKind 的顺序"
+    // 是一个跨进程漂的写法。这一条把 sort 的凭据钉成**可数的量**：同一套夹具跑十轮，
+    // 数出"byKind 的 index 序列 ≠ tab 的 index 序列"的轮数。
+    // 2026-09-28 跑六次，十轮里的轮数依次为 9、8、9、8、7、9 ⇒ 下限取 5（每轮独立，
+    // 10 轮全序的概率约 (1/6)^10；写成 5 而不是实测最小值，是为了不把这条变成"今天 uuid 恰好这么排"）。
+    const permutations = [
+      [0, 1, 2],
+      [0, 2, 1],
+      [1, 0, 2],
+      [1, 2, 0],
+      [2, 0, 1],
+      [2, 1, 0],
+      [2, 1, 0],
+      [1, 2, 0],
+      [2, 0, 1],
+      [0, 2, 1],
+    ];
+    let disagrees = 0;
+    for (const permutation of permutations) {
+      const projectId = uuidv7();
+      const log = new TransactionLog(Document.create(projectId));
+      // 三层各 3000 高、贴邻不重叠（`storeyCreate` 判重叠，贴邻合法）；index 由这一轮给
+      for (const [level, index] of permutation.entries()) {
+        log.dispatch(storeyCreate({ projectId, index, elevationMm: level * 3000, heightMm: 3000 }));
+      }
+      const tabs = storeyTabsOf(log.document, projectId);
+      expect(tabs.map((t) => t.index)).toEqual([0, 1, 2]);
+      // tab 的 storeyId 必须与那一层真源的 index / 标高配套：只按 index 排序、
+      // 但字段抄自另一层（排序排错了对象）时这两句红，上面那句只看 index 不够。
+      for (const tab of tabs) {
+        const storey = log.document.get(tab.storeyId);
+        if (storey?.kind !== 'storey') throw new TypeError('tab 指着的实体不是楼层');
+        expect(storey.index).toBe(tab.index);
+        expect(storey.elevationMm).toBe(tab.elevationMm);
+        expect(storey.heightMm).toBe(tab.heightMm);
+      }
+      const byId = log.document
+        .byKind('storey')
+        .filter((s) => s.projectId === projectId)
+        .map((s) => s.index);
+      if (byId.join(',') !== tabs.map((t) => t.index).join(',')) disagrees += 1;
+    }
+    // 写成下限而不是等号：等号会让这条变成"今天 uuid 恰好这么排"的第二个跨进程判据。
+    console.log("DISAGREES=" + disagrees); expect(disagrees).toBeGreaterThanOrEqual(5);
+  });
+
+  it('只有一层时 tab 也有一条：不许"单层就不显示列表"把切换入口一起砍掉', () => {
+    const { log, storeyId, projectId } = synthStorey();
+    expect(storeyTabsOf(log.document, projectId)).toEqual([
+      { storeyId, index: 0, elevationMm: 0, heightMm: 3000, label: '第 1 层' },
+    ]);
+  });
+});
+
+```
+
+`packages/scene-2d/src/panel.ts`（163 行，逐字实测绿）：
+
+```ts
+import {
+  wallAxisById,
+  type Command,
+  type Document,
+  type EntityId,
+  type StoreyEntity,
+  type WallEntity,
+} from '@dajia/core';
+
+/**
+ * 屏幕右侧那一栏的**只读派生**（Task 8）：属性面板的三格读值、材料下拉框的候选集、
+ * 楼层 tab 的列表，以及"输入框里那一发真源收不收"的唯一预言。
+ *
+ * 为什么不塞进 `editing.ts`：`editing.ts` 管的是**改之前**的判断（要不要发、发给谁、删的时候发几条），
+ * 本文件管的是**读出来给人看**与**输入框里的数能不能进**。两者共用的那条纪律
+ * （合法性只问真命令试跑）在这里以 `trialCommand` 一个函数收掉，与 `legalWallCreate` / `legalDrop`
+ * 是同一形状的第三次出现 —— 出现三次而不抽公共层：三者的入参形状（草稿 / 把手落点 / 属性补丁）
+ * 本来就不一样，抽出来只剩一个 `try`。
+ */
+
+/** 材料下拉框的一格。`value` 写进真源，`label` 只给屏幕看。 */
+export interface MaterialOption {
+  readonly value: string;
+  readonly label: string;
+}
+
+/**
+ * 材料候选集。**值在 UI 侧，写法纪律在真源**（core 的 `assertMaterial` 判非空、无首尾空白、≤32 字符；
+ * 面板测试逐条问一遍，见 `panel.test.ts`「候选集里每一项都过真源那道写法纪律」）。
+ *
+ * 为什么候选集不放 core：材料是**图纸上的标注文字**，S1 的真源只把它当字符串存 ——
+ * 不进派生、不参与几何（`wall.setMaterial` 不跑 `assertDerivesAfterApply`）。
+ * 放进 core 等于假装 core 认识这些材料，而它不认识。
+ * 代价：柱 / 板 / 门窗将来要各自再列一张表，不许互相借 —— 借来的是不相干的候选。
+ */
+export const PANEL_MATERIAL_OPTIONS: readonly MaterialOption[] = [
+  { value: 'brick', label: '砖墙' },
+  { value: 'concrete', label: '混凝土' },
+  { value: 'aerated-concrete', label: '加气混凝土' },
+  { value: 'wood', label: '木' },
+  { value: 'steel', label: '钢' },
+];
+
+/**
+ * 面板三格的读值。字段名与真源逐字一致，面板不许自己攒一份状态：
+ * 攒了就是第二套口径，改了不写回时屏幕上是对的真源是错的。
+ */
+export interface WallProps {
+  readonly wallId: EntityId;
+  readonly thicknessMm: number;
+  readonly heightMm: number;
+  readonly material: string;
+  readonly loadBearing: boolean;
+  /**
+   * 轴长（毫米，浮点，来自 core 的 `wallAxisById`）。面板显示它只有一个理由：
+   * 真源那道守卫判的是 `thicknessMm >= 轴长`，输入框里的 240 合不合法**取决于这面墙有多长**。
+   */
+  readonly axisLengthMm: number;
+}
+
+/**
+ * 选中集 → 面板要展示的那面墙。**恰好一面**才给答案，两面以上给 null。
+ *
+ * 为什么"取第一面"不行：下拉框一改就发命令，"第一面"取决于 `Set` 的插入序（撤销一次就漂），
+ * 于是屏幕上会出现"改的是我没选的那面墙"。
+ * 别层的、已不存在的、柱 / 板 / 洞口 / 楼层同样给 null —— S1 的面板只认墙（屏幕上点得到的只有墙与洞口，
+ * 而洞口的位置由 `openingMove` 那条通路管，柱与板还没有属性面板）。
+ */
+export function selectedWallForPanel(
+  doc: Document,
+  storeyId: string,
+  ids: Iterable<EntityId>,
+): WallEntity | null {
+  const picked: WallEntity[] = [];
+  for (const id of ids) {
+    const entity = doc.get(id);
+    if (entity?.kind !== 'wall') continue;
+    if (entity.storeyId !== storeyId) continue;
+    picked.push(entity);
+  }
+  return picked.length === 1 ? picked[0]! : null;
+}
+
+/** 一面墙 → 面板读值。墙不在文档里给 null（撤销掉正被选中的那一发：面板跟着清空，不抛）。 */
+export function wallPropsOf(doc: Document, wallId: EntityId): WallProps | null {
+  const wall = doc.get(wallId);
+  if (wall?.kind !== 'wall') return null;
+  return {
+    wallId: wall.id,
+    thicknessMm: wall.thicknessMm,
+    heightMm: wall.heightMm,
+    material: wall.material,
+    loadBearing: wall.loadBearing,
+    axisLengthMm: wallAxisById(doc, wall.id).lengthMm,
+  };
+}
+
+/** `trialCommand` 的答案。`reason` 是**真源那句抛错文案**，不是屏幕编的。 */
+export interface TrialResult {
+  readonly ok: boolean;
+  readonly reason: string | null;
+}
+
+/**
+ * 输入框那一发的预言：把"造命令 + 跑 `build`"整段放进 try，拿真源的文案当答案。
+ *
+ * ① **吃的是工厂函数，不是 Command 对象**。真源的守卫有两半：一半在命令工厂里
+ *   （`assertMm` / `positiveMm` / `assertMaterial`，构造期就抛），一半在 `build` 里
+ *   （查实体、查墙厚不小于轴长、跑 T7 的派生复核）。传进来的是已造好的 Command，
+ *   前者就在 try 外面 —— 输入框打 `240.5` 是一条未捕获异常，屏幕上表现为整个面板崩掉。
+ * ② **不重写守卫**。`wall.setThickness` 现在有六道门（整数、正、墙厚 < 轴长、墙存在、
+ *   接头直通两墙同厚、整层派生复核）。屏幕侧照抄前两道的版本在 T7 那天已经漂过一次
+ *   （七条用例改写），不许再抄第三遍。
+ * ③ **试跑不碰真源**：`build(doc)` 只算补丁，`Document` 不可变，落地要经 `TransactionLog.dispatch`。
+ *   所以没有副本、没有深拷贝，也没有"试跑之后要撤销"的账。
+ *
+ * 为什么返回文案而不是布尔：面板要把"为什么进不去"给用户看。真源那句
+ * 「接头 … 的直通两墙厚度不同（370 / 240），S1 的 T 接与十字要求直通两墙同厚：请统一墙厚，或把它改画成 L 角」
+ * 带着数字与下一步，屏幕自编的「墙厚太大」两句都给不了。
+ *
+ * 面板每次 `revision` 变化重问一遍，不缓存：预言吃的是**当前文档**，用户在输入框改数期间
+ * 按了撤销，缓存的那一份就是谎话（`moveDraft` 每次重问 `legalWallCreate` 同一条理由）。
+ */
+export function trialCommand(doc: Document, makeCommand: () => Command): TrialResult {
+  try {
+    makeCommand().build(doc);
+    return { ok: true, reason: null };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** 楼层 tab 的一格。`label` 给按钮，`index` 是真源那个序号（顺序由它决定）。 */
+export interface StoreyTab {
+  readonly storeyId: EntityId;
+  readonly index: number;
+  readonly elevationMm: number;
+  readonly heightMm: number;
+  readonly label: string;
+}
+
+/**
+ * 楼层 tab 列表。**按真源的 `index` 升序，不是照抄 `byKind` 的顺序**：
+ * `Document.byKind` 按 id 升序返回，而 uuidv7 在同一毫秒内不单调 ⇒ 照抄它，两层项目的 tab
+ * 顺序会跨进程漂（`panel.test.ts` 把这件事钉成一个可数的量：十轮打乱、断言"至少五轮 id 序与 index
+ * 序不同"；实测六次独立进程跑出的轮数是 9、8、9、8、7、9，下限留 5 是留出实测的抖动余量）。
+ * `index` 在同项目内唯一（`storeyCreate` 的构造期守卫），所以这个排序是全序，不必再排第二次。
+ *
+ * 标高读真源而不是算 `index * heightMm`：样例房二层被 `storeySetElevation` 从 6000 改成 3000，
+ * 算出来的 tab 上写的是假数字。
+ */
+export function storeyTabsOf(doc: Document, projectId: EntityId): StoreyTab[] {
+  const storeys: StoreyEntity[] = doc
+    .byKind('storey')
+    .filter((s) => s.projectId === projectId)
+    .sort((a, b) => a.index - b.index);
+  return storeys.map((s) => ({
+    storeyId: s.id,
+    index: s.index,
+    elevationMm: s.elevationMm,
+    heightMm: s.heightMm,
+    label: `第 ${s.index + 1} 层`,
+  }));
+}
+
+```
+
+Run: `npx vitest run --config .tscheck/t9/vitest.config.ts packages/scene-2d/test/panel.test.ts`
+Expected: **21 passed**。这一步里唯一一次真错是 TS 报在测试身上（`Entity` 联合上 `projectId` 不是共有字段 ⇒ `TS2339`，必须先把实体收窄成 `kind === 'storey'` 才读得出 `projectId`；见上面 Step 2 代码第 352–354 行的形状）。**这句话对 renderer 有直接后果**：`storeyTabsOf` 要 `projectId`，而屏幕上唯一拿得到它的通路就是"当前层实体自己"，别指望从 `Document` 上问出"这个项目有哪几层"。
+
+`packages/scene-2d/src/index.ts` 末尾追加一行：
+
+```ts
+export * from './panel';
+```
+
+- [ ] **Step 3: `planDelete` 从两条规则扩到四条**
+
+`packages/scene-2d/src/editing.ts` 里改三处（`DeleteOutcome` 一字不动，四色还是那四色）：
+
+1. `DeletePlan.unsupported` 的注释换成新语义：**别层构件 + 屏幕上取不到的 `storey` / `point`**，并写清"样例房里恒空"这句为什么仍然成立（那儿没有别层的东西被选中）。
+2. 分派循环补 `column` / `slab` 两支，各自认层；文件顶部 import 补 `columnDelete`、`slabDelete`（`packages/core/src/index.ts` 对 `commands/*` 全是 `export *`，不需要改 core 的索引 —— T7 已核实）。
+3. 命令数组与 `candidateIds` 的构造换成 P7 定死的四段顺序。
+
+`packages/scene-2d/src/editing.ts`（改后的 `planDelete` 全文，逐字实测绿）：
+
+```ts
+/**
+ * 删除的计划。四条出口，各有各的判据，**不许合并成"成功 / 失败"两色**：
+ * 'empty' 与 'ignored-in-wall-mode' 都发 0 条命令，但前者该提示"没选中东西"、
+ * 后者该什么都不做（拉墙时误触 Delete 不该清空选中集）—— 合并了屏幕上就分不开。
+ */
+export type DeleteOutcome = 'ok' | 'empty' | 'ignored-in-wall-mode' | 'unsupported';
+
+export interface DeletePlan {
+  readonly outcome: DeleteOutcome;
+  /** 派发顺序 = 数组顺序：先洞口后墙（S5）。 */
+  readonly commands: readonly Command[];
+  /** `commands` 的 `type` 抄一份：探针与日志判"发了哪几条"用它，不用反射。 */
+  readonly commandTypes: readonly string[];
+  /** 真的发出命令的那些 id，与 `commands` 同序（洞口在前、墙在后，各自按 id 升序）。 */
+  readonly candidateIds: readonly EntityId[];
+  /**
+   * 本次不删的 id：**别层构件**，加上屏幕上取不到的 `storey` / `point`（后两者的删除入口不是
+   * Delete 键，理由写在 `planDelete` 最后那段注释里）。样例房里恒空 —— 那儿没有别层的东西被选中。
+   */
+  readonly unsupported: readonly EntityId[];
+}
+
+/**
+ * 选中集 → 删除命令。**四条规则，一条都不复述真源已经做的事**：
+ * ① 选中的墙 → `wall.delete`（它自己会级联收掉宿主是它的洞口、自己判端点还剩谁引用）；
+ * ② 选中的洞口且**宿主墙不在本次删除集里** → `opening.delete`；
+ * ③ 选中的柱 → `column.delete`（它自己收掉独占的落点，孤儿判定问 `pointStillReferenced`）；
+ * ④ 选中的板 → `slab.delete`（同上，逐枚边界点各问一次）。
+ *
+ * 为什么反过来（先给每个选中洞口发 `opening.delete`、再删墙）也不行：那是对真源已有级联的
+ * 复述，复述的规则一定会漂；而先删墙之后那些洞口已经不存在，第二条命令 `requireOpening`
+ * 直接抛，`dispatchBatch` 就在半途留下半套状态。
+ *
+ * 顺序排成"洞口 → 柱 → 板 → 墙"是为了撤销的可读性：栈顶是 `wall.delete`，一次 Ctrl+Z 把
+ * "墙 + 它自己级联掉的洞口"整组还原，而不是先还回一樘无主的洞口。柱与板排在墙**之前**：
+ * 它们与墙共享端点时，先删板/柱会让那些点变成孤儿候选，而 `wallDelete` 的孤儿判定是事后问的，
+ * 两个顺序都合法 —— 定死一个，撤销栈的形状才可预测（`--prop-shot` 里"删一根柱再撤销"那条判据读它）。
+ *
+ * **屏幕上今天还点不到柱与板**：`buildDrawList` 的指令表与 `pickAt` 的命中集都只认墙与洞口，
+ * 所以 ③④ 两支的凭据只能是合成夹具（手工把柱/板的 id 放进选中集）。不许为了在屏幕上"证明它"
+ * 就把柱画进指令表 —— 那是 Task 9 / 计划 4 的边界，混进来会让 `--draw-shot` 那 27 行像素判据全数重测。
+ */
+export function planDelete(
+  doc: Document,
+  storeyId: string,
+  tool: Tool,
+  ids: Iterable<EntityId>,
+): DeletePlan {
+  const all = [...ids];
+  if (tool === 'wall') {
+    return { outcome: 'ignored-in-wall-mode', commands: [], commandTypes: [], candidateIds: [], unsupported: [] };
+  }
+  const wallIds = new Set<EntityId>();
+  const openingIds = new Set<EntityId>();
+  const columnIds = new Set<EntityId>();
+  const slabIds = new Set<EntityId>();
+  const unsupported: EntityId[] = [];
+  for (const id of all) {
+    const entity = doc.get(id);
+    // 已经不在了：两次渲染之间被撤销掉、或被同伴级联删掉。**一律不发命令也不进 unsupported** ——
+    // 该管这件事的是 `pruneSelection`（屏幕上那一发本来就点不到它），在这里记账只会把
+    // "选中集没剪干净"和"删除能力不够"混成同一条红。
+    if (entity === undefined) continue;
+    if (entity.kind === 'wall') {
+      // 别层的墙不当"不支持"处理：它是"不该在这一层删的东西出现在了这一层的选中集"，
+      // 那是选中集的问题（pruneSelection 的活），不是删除能力的问题。
+      if (entity.storeyId !== storeyId) unsupported.push(id);
+      else wallIds.add(id);
+      continue;
+    }
+    if (entity.kind === 'opening') {
+      if (entity.storeyId !== storeyId) unsupported.push(id);
+      else openingIds.add(id);
+      continue;
+    }
+    if (entity.kind === 'column') {
+      if (entity.storeyId !== storeyId) unsupported.push(id);
+      else columnIds.add(id);
+      continue;
+    }
+    if (entity.kind === 'slab') {
+      if (entity.storeyId !== storeyId) unsupported.push(id);
+      else slabIds.add(id);
+      continue;
+    }
+    // 剩下只有 `storey` 与 `point` 两种，而它们**不进删除集**：
+    // 楼层实体没有 `storeyId`（它就是层本身），`pruneSelection` 一律剔掉，所以它进不到这里；
+    // `storeyDelete` 的入口因此不是 Delete 键，而是楼层 tab 上那条显式动作（删整层 = 连带删光该层
+    // 所有构件，需要确认框，S1 没有确认框）。点在屏幕上也不会命中楼层或裸点 —— 命中集只有墙与洞口。
+    unsupported.push(id);
+  }
+  // 宿主墙要一起删的洞口不发第二条：wallDelete 的级联已经收了它。
+  const solo = [...openingIds].filter((id) => {
+    const opening = doc.get(id);
+    if (opening?.kind !== 'opening') return false;
+    return !wallIds.has(opening.hostWallId);
+  });
+  const sortedSolo = solo.sort();
+  const sortedColumns = [...columnIds].sort();
+  const sortedSlabs = [...slabIds].sort();
+  const sortedWalls = [...wallIds].sort();
+  const commands: Command[] = [
+    ...sortedSolo.map((openingId) => openingDelete({ openingId })),
+    ...sortedColumns.map((columnId) => columnDelete({ columnId })),
+    ...sortedSlabs.map((slabId) => slabDelete({ slabId })),
+    ...sortedWalls.map((wallId) => wallDelete({ wallId })),
+  ];
+  const candidateIds = [...sortedSolo, ...sortedColumns, ...sortedSlabs, ...sortedWalls];
+  const outcome: DeleteOutcome =
+    commands.length > 0 ? 'ok' : unsupported.length > 0 ? 'unsupported' : 'empty';
+  return { outcome, commands, commandTypes: commands.map((c) => c.type), candidateIds, unsupported };
+}
+```
+
+跟着改的测试（`editing.test.ts`，30 → 35 条）。两条既有的**改写**（不是删除）：
+
+- 「三种沉默三种颜色」：原来 ② 那一格用"只剩一根柱"当 `unsupported` 的样例，现在柱删得掉了 ⇒ 样例换成**一枚裸点**（`wall.startId`，屏幕上根本不是一个命中目标），末尾加一发素材自证：同一根柱换到本层就发得出 `column.delete`，证上一发红在"它是点"，不红在"这层没东西可删"。
+- 「别层构件进 unsupported」：原来只带墙与洞口两样，现在带三样（墙、洞口、**二层的一根柱**），并加反向自证 —— 同一枚柱换到它自己的层就发得出命令。这一发的夹具必须用 `new TransactionLog(house.doc)` 派生出的那份 `doc`（`dispatch` 换的是 log 自己那份引用，`house.doc` 不动），否则 `planDelete(house.doc, …)` 读不到那根柱，它会走 `entity === undefined` 那一支被**静默跳过**而不是进 `unsupported`。
+
+三条**新增**：
+
+```ts
+  it('三种沉默三种颜色：拉墙模式 / 只剩裸点 / 空集', () => {
+    const { log, storeyId } = oneWall();
+    const wall = onlyWall(log);
+    // Task 8 把柱与板接进 `planDelete` 之后，"只剩一根柱"不再是 unsupported 的样例 —— 它发得出
+    // `column.delete`。这一格从此只装屏幕上根本取不到的两样东西：裸点与楼层本身。这里用裸点当靶子
+    // （`wall.startId` 在屏幕上不是一个命中目标：`pickAt` 的命中集只有墙与洞口）。
+    const bare = wall.startId;
+    expect(log.document.get(bare)?.kind).toBe('point');
+    // ① 拉墙时误触 Delete：什么都不发，但**不许**报"没选中东西"（选中集不该被清空）
+    expect(planDelete(log.document, storeyId, 'wall', [wall.id, bare])).toEqual({
+      outcome: 'ignored-in-wall-mode',
+      commands: [],
+      commandTypes: [],
+      candidateIds: [],
+      unsupported: [],
+    });
+    // ② 只选了一枚裸点：发不出命令，如实报 unsupported（Delete 键不是删点的入口）
+    const only = planDelete(log.document, storeyId, 'select', [bare]);
+    expect(only.outcome).toBe('unsupported');
+    expect(only.commands).toHaveLength(0);
+    expect(only.unsupported).toEqual([bare]);
+    // ③ 什么都没选：'empty'，与 ② 不同色
+    const none = planDelete(log.document, storeyId, 'select', []);
+    expect(none.outcome).toBe('empty');
+    expect(none.unsupported).toEqual([]);
+    // 三色的存在性：写成布尔（"发没发命令"）就把 ①②③ 糊成一格
+    expect(new Set(['ignored-in-wall-mode', only.outcome, none.outcome]).size).toBe(3);
+    // 混选：裸点 + 墙 ⇒ 墙照删，点进 unsupported（不是"整批不做"）
+    const mixed = planDelete(log.document, storeyId, 'select', [bare, wall.id]);
+    expect(mixed.outcome).toBe('ok');
+    expect(mixed.commandTypes).toEqual(['wall.delete']);
+    expect(mixed.unsupported).toEqual([bare]);
+    // 素材自证：同一根柱换到本层就发得出命令 ⇒ 上面那发红在"它是点"，不红在"这层没东西可删"
+    log.dispatch(columnCreate({ storeyId, at: { x: 500, y: 500 }, widthMm: 400, depthMm: 400 }));
+    const columnId = kindId(log, 'column');
+    expect(planDelete(log.document, storeyId, 'select', [columnId]).outcome).toBe('ok');
+  });
+
+  it('别层构件进 unsupported，不是"没选中"：本层没这个权力（墙、洞口、柱三样一起判）', () => {
+    const log = new TransactionLog(house.doc);
+    log.dispatch(
+      columnCreate({ storeyId: house.upperStoreyId, at: { x: 100, y: 100 }, widthMm: 400, depthMm: 400 }),
+    );
+    const doc = log.document;
+    const upper = upperWalls[0]!;
+    const upperOpening = doc.byKind('opening').find((o) => o.storeyId === house.upperStoreyId);
+    if (upperOpening === undefined) throw new TypeError('样例房二层应当有洞口');
+    const upperColumn = kindId(log, 'column');
+    const plan = planDelete(doc, house.lowerStoreyId, 'select', [upper.id, upperOpening.id, upperColumn]);
+    expect(plan.outcome).toBe('unsupported');
+    expect(plan.commands).toHaveLength(0); // 一发都不许发：删二层的构件不在本层的权力里
+    expect(plan.candidateIds).toEqual([]);
+    expect([...plan.unsupported].sort()).toEqual([upper.id, upperOpening.id, upperColumn].sort());
+    // 素材自证：同一枚柱换到它自己的层就发得出命令 ⇒ 上一发红在认层，不红在"柱删不掉"
+    const same = planDelete(doc, house.upperStoreyId, 'select', [upperColumn]);
+    expect(same.outcome).toBe('ok');
+    expect(same.commandTypes).toEqual(['column.delete']);
+  });
+
+  it('③④ 接上屏幕：四类混选发四条，顺序定死成 洞口 → 柱 → 板 → 墙', () => {
+    const { log, storeyId } = synthStorey();
+    const host = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    const other = wallAt(log, storeyId, { x: 0, y: 2000 }, { x: 4000, y: 2000 });
+    const openingId = openingAt(log, host.id, 1200); // 宿主是 host，而 host **不**进本次删除集 ⇒ 它得自己发一条
+    log.dispatch(columnCreate({ storeyId, at: { x: 500, y: 500 }, widthMm: 400, depthMm: 400 }));
+    const columnId = kindId(log, 'column');
+    log.dispatch(
+      slabCreate({
+        storeyId,
+        boundary: [
+          { x: 0, y: 4000 },
+          { x: 4000, y: 4000 },
+          { x: 4000, y: 6000 },
+          { x: 0, y: 6000 },
+        ],
+        thicknessMm: 120,
+      }),
+    );
+    const slabId = kindId(log, 'slab');
+    const other2 = wallAt(log, storeyId, { x: 0, y: 8000 }, { x: 4000, y: 8000 });
+    // 同类多枚时**输入故意降序**：只有一枚墙的夹具测不出 sort（实测摘掉四处 sort 全绿，
+    // 因为单元素数组排不排都一样）。降序进、升序出才是这道 sort 的牙齿。
+    const wallsDesc = [other.id, other2.id].sort().reverse();
+    // 传入顺序故意打乱：判的是"输出顺序由规则定死"，不是"跟着选中集走"
+    const plan = planDelete(log.document, storeyId, 'select', [slabId, ...wallsDesc, openingId, columnId]);
+    expect(plan.outcome).toBe('ok');
+    expect(plan.commandTypes).toEqual([
+      'opening.delete',
+      'column.delete',
+      'slab.delete',
+      'wall.delete',
+      'wall.delete',
+    ]);
+    expect(plan.candidateIds).toEqual([openingId, columnId, slabId, ...[other.id, other2.id].sort()]);
+    // 判据的牙齿：栈顶必须是 wall.delete。摘掉四处 sort（按集合插入序发）这一发就红，
+    // 于是撤销一次还回来的不是"墙 + 它级联掉的洞口"整组，而是一樘无主的洞口。
+    const tx = new TransactionLog(log.document);
+    for (const command of plan.commands) tx.dispatch(command);
+    expect(tx.depth).toBe(5);
+    expect(tx.document.get(host.id)?.kind).toBe('wall'); // host 没被选中，它和它的洞口都该还在
+    expect(tx.document.get(openingId)).toBeUndefined();
+    expect(tx.document.get(columnId)).toBeUndefined();
+    expect(tx.document.get(slabId)).toBeUndefined();
+    expect(tx.document.get(other.id)).toBeUndefined();
+    expect(tx.document.get(other2.id)).toBeUndefined();
+    // 撤销栈顶那一条：最后删的那面墙回来了，其余四条各占一格 ⇒ 一次 Ctrl+Z 只回来一面墙
+    const undone = wallsDesc[0]!;
+    tx.undo();
+    expect(tx.document.get(undone)?.kind).toBe('wall');
+    expect(tx.document.get(slabId)).toBeUndefined();
+  });
+
+  it('柱落在墙端点上：删柱只删柱，那枚点还被墙引用 ⇒ 不许跟着走（删柱拆墙）', () => {
+    const { log, storeyId } = oneWall();
+    const wall = onlyWall(log);
+    // 复用墙起点当柱心：这是 S1 里柱最常见的形态（柱在墙角）
+    log.dispatch(columnCreate({ storeyId, at: { pointId: wall.startId }, widthMm: 400, depthMm: 400 }));
+    const columnId = kindId(log, 'column');
+    const pointsBefore = log.document.byKind('point').length;
+    const plan = planDelete(log.document, storeyId, 'select', [columnId]);
+    for (const command of plan.commands) log.dispatch(command);
+    expect(log.document.get(columnId)).toBeUndefined();
+    expect(log.document.byKind('point').length).toBe(pointsBefore); // 一根点都不许少
+    expect(requirePoint(log.document, wall.startId, '墙起点').storeyId).toBe(storeyId);
+    // 反向自证：同一根柱换成独占落点，那枚点就跟着走 —— 区别只在"还有谁引用它"
+    const solo = new TransactionLog(log.document);
+    solo.dispatch(columnCreate({ storeyId, at: { x: 900, y: 900 }, widthMm: 400, depthMm: 400 }));
+    const soloId = kindId(solo, 'column');
+    const soloPoint = (solo.document.get(soloId) as { pointId: string }).pointId;
+    const before = solo.document.byKind('point').length;
+    for (const command of planDelete(solo.document, storeyId, 'select', [soloId]).commands) {
+      solo.dispatch(command);
+    }
+    expect(solo.document.byKind('point').length).toBe(before - 1);
+    expect(solo.document.get(soloPoint)).toBeUndefined();
+  });
+
+  it('删一根带独占落点的柱：pruneSelection 把柱与孤儿点一起剔掉', () => {
+    const { log, storeyId } = oneWall();
+    const wall = onlyWall(log);
+    log.dispatch(columnCreate({ storeyId, at: { x: 500, y: 500 }, widthMm: 400, depthMm: 400 }));
+    const columnId = kindId(log, 'column');
+    const columnPoint = (log.document.get(columnId) as { pointId: string }).pointId;
+    const selected = [columnId, columnPoint, wall.id];
+    const plan = planDelete(log.document, storeyId, 'select', [columnId]);
+    for (const command of plan.commands) log.dispatch(command);
+    expect(log.document.get(columnId)).toBeUndefined();
+    expect(log.document.get(columnPoint)).toBeUndefined(); // 级联收的，不是 UI 发的
+    // 柱与它的点都不在选中集里了，而墙还在 —— 这一发的凭据是"问真源"，不是 UI 自己抄一份孤儿判定
+    expect(pruneSelection(log.document, storeyId, selected)).toEqual([wall.id]);
+  });
+
+```
+
+Run: `npx vitest run --config .tscheck/t9/vitest.config.ts packages/scene-2d/test/editing.test.ts`
+Expected: **33 passed**（30 + 3）。这一步的测试夹具之外还要在文件里落一个助手 `kindId(log, 'column' | 'slab')`（从上一次派发的 `affected` 里挑该 kind 的 id）—— P9 那句"合成夹具"的具体形状就是它。
+
+- [ ] **Step 4: 两枚确定性夹具（T6 交接 ② 的落地）**
+
+T6 留下的问题是：`--draw-shot` 与「六道筛逐条自证」读的靶子会**跨进程漂**（`snapFieldOf` 的端点表来自 `doc.byKind('wall')` 的 id 升序，uuidv7 同毫秒不单调），所以既有的筛 ⑤ / ⑥ 用例只能说"给不给得出"，不能说"给的是哪一发"。这一步补两枚**不吃枚举顺序**的夹具。
+
+筛 ⑤ 那枚的构造是**算出来的**，不是试出来的：`pxPerMm = 0.2`、`640×800`、`center = (3500, 1000)` ⇒ 可见区 x `∈ [1900, 5100]`、y `∈ [-1000, 3000]`。墙 `(0,0)→(4000,0)` 的两个端点因此一内一外：外那个（A）的 `startPx` 越界，它十发候选**全部**被 ⑤ 拒（`insideCanvas` 连 `startPx` 一起判）；内那个（B）的十发里 `E=(6000,0)` 越右界、`S=(4000,-2000)` 越下界、`W=(2000,0)` 压在既有墙上（筛 ④），只剩 `N=(4000,2000)`。于是无论哪一端先被枚举，能交靶子的只有 B，答案恒为 `(4000,0)→(4000,2000)`。
+
+```ts
+  it('筛 ⑤ 的确定性夹具：两个端点绕不开同一发 —— 画布外那一发只由 ⑤ 拒', () => {
+    // 上一发判的是"越界会让探针没靶子"，但它读的是样例房，而样例房里**哪个端点先被枚举**随
+    // uuidv7 变，所以它只能说"给不给得出"，不能说"给的是哪一发"。Task 8 要把 ⑤ 钉成可复算的账，
+    // 于是这里换一份一面墙的合成现场：把画布摆到只有 (4000,0) 那端在界内（另一端 (0,0) 的
+    // startPx 就越界 ⇒ 它的十个候选全被 ⑤ 拒），于是无论枚举顺序如何，答案只能是同一发。
+    // 视口尺寸 / 中心是算出来的不是试出来的：pxPerMm=0.2、640×800 ⇒ x 可见 [1900, 5100]、
+    // y 可见 [-1000, 3000]。于是 (4000,0) 的候选里 E=(6000,0) 越右界、S=(4000,-2000) 越下界、
+    // W=(2000,0) 压在既有墙上（筛 ④），只剩 N=(4000,2000)。
+    const { log, storeyId } = synthStorey();
+    const wall = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    const v = viewportOf(640, 800, { pxPerMm: 0.2, center: vec(3500, 1000) });
+    const doc = log.document;
+    const vOps = buildDrawList(doc, storeyId, v, EMPTY_SELECTION);
+    // 素材自证（三发都在界外/界内的哪一侧，先钉死，才许说"答案唯一"）
+    expect(mmToPx(v, vec(0, 0)).x).toBeLessThan(2); // A 端整个在画布左外 ⇒ 它的候选全交不出靶子
+    expect(insidePx(v, intPxOf(mmToPx(v, vec(4000, 0))))).toBe(true); // B 端在界内
+    const eastOff = intPxOf(mmToPx(v, vec(6000, 0)));
+    expect(eastOff.x).toBeGreaterThanOrEqual(v.widthPx - 2); // E 候选越右界
+    expect(pickAt(vOps, eastOff)).toEqual([]); // ……而筛 ④ 放行它 ⇒ 拒它的只有 ⑤
+    expect(snapFieldOf(doc, storeyId).points.length).toBeGreaterThan(0);
+    const probe = wallProbe(doc, storeyId, vOps, v);
+    if (probe === null) throw new TypeError('这个夹具上探针该给得出靶子');
+    // 判据的牙齿（2026-09-28 实测）：摘掉 ⑤ 那一发不是"探针没靶子"，而是**换了一发挑不中 DIP 的**
+    // —— 答案改挑 (0,0) 那端（它的 startPx 在画布左外），四个独立进程都红在这里。
+    // 而"答案只能是 B 端那一发"这件事本身是确定性的：A 端十个候选全被 ⑤ 拒（startPx 越界与候选无关），
+    // 所以无论 uuidv7 让哪一端先被枚举，能交靶子的只有 B。
+    expect(probe.startMm).toEqual({ x: 4000, y: 0 });
+    expect(probe.startPointId).toBe(wall.endId);
+    expect(probe.endMm).toEqual({ x: 4000, y: 2000 });
+    expect(insidePx(v, probe.endPx)).toBe(true);
+    expect(insidePx(v, probe.midPx)).toBe(true);
+  });
+
+```
+
+⑥ 那枚不读探针，读**两层同判**：过 `(0,0)` 先架两条线（x 轴与 y 轴），再把周围八发候选逐发问一遍 `legalWallCreate` 与"真建一遍 + 整层派生"，要求八对逐字相同、四发斜线两层一起拒、且八发里确有放行的（否则"同判"可以靠"全拒"糊过去）。
+
+```ts
+  it('⑥ 的确定性夹具：八发候选在命令层与派生层判得一字一样', () => {
+    // 上一发只钉了 45° 那一发。Task 8 把属性面板接上屏之后，"屏幕上拒过一次"就不再是孤例，
+    // 于是这里把 (0,0) 这个三臂点周围的**八发**候选全问一遍，判的是两层**逐发同判**：
+    // 摘掉 core 的 `assertDerivesAfterApply` ⇒ 四发斜线在命令层翻成放行、派生层仍然抛 ⇒ 本条红。
+    // 这一条不读探针挑了谁，所以它不受 uuidv7 影响 —— 这就是"确定性夹具"四个字的含义。
+    const { log, storeyId } = synthStorey();
+    const east = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    wallAt(log, storeyId, { pointId: east.startId }, { x: 0, y: 4000 });
+    const doc = log.document;
+    const fd = snapFieldOf(doc, storeyId);
+    const defaults = newWallDefaults(doc, storeyId);
+    const startMm: MoveTarget = { x: 0, y: 0 };
+    const start = draftAtPress(sv, pxOf(startMm, sv), fd);
+    expect(start.snap?.kind).toBe('endpoint'); // 素材自证：起点真的压在三臂点上，否则八发都在别处
+    const rows = [
+      { x: 2000, y: 0 },
+      { x: 0, y: 2000 },
+      { x: -2000, y: 0 },
+      { x: 0, y: -2000 },
+      { x: 2000, y: 2000 },
+      { x: -2000, y: 2000 },
+      { x: 2000, y: -2000 },
+      { x: -2000, y: -2000 },
+    ].map((off) => {
+      const endPx = pxOf(off, sv);
+      const end = dropTargetOf(sv, endPx, startMm, fd, { excludeMm: startMm });
+      const draft: DraftWall = { storeyId, start, cursorPx: endPx, end, legal: true };
+      const command = legalWallCreate(doc, draft);
+      let derived: boolean;
+      try {
+        const commandBuilt = draftCommand(draft, defaults);
+        if (commandBuilt === null) throw new TypeError('legal 为真却拿不到命令');
+        const trial = new TransactionLog(doc);
+        trial.dispatch(commandBuilt);
+        buildDrawList(trial.document, storeyId, sv);
+        derived = true;
+      } catch {
+        derived = false;
+      }
+      return { mm: end.mm, command, derived };
+    });
+    for (const row of rows) expect(row.derived).toBe(row.command);
+    // 四发斜线（过同一枚点的第三个方向）两层一起拒：这就是星形接头搬迁后的形状
+    for (const row of rows.filter((r) => Math.abs(r.mm.x) === Math.abs(r.mm.y))) {
+      expect(row.command).toBe(false);
+    }
+    // 判据不空转：八发里确实有放行的（四条轴向外侧），否则"同判"可以靠"全拒"糊过去
+    expect(rows.filter((r) => r.command).length).toBeGreaterThan(0);
+  });
+
+```
+
+Run: 同上
+Expected: **35 passed**。
+
+- [ ] **Step 5: 四处注释订正 + 全量验证**
+
+`T7` 在 Task 6/7 编写期是"下一个任务"的代称，T7 落地之后它成了谎话，逐条改名（只动注释，不动逻辑）：
+
+| 位置 | 原文说 | 改成 |
+| --- | --- | --- |
+| `editing.ts` 的 `NEW_WALL_THICKNESS_MM` | "T7 的数值输入替换它" | "Task 8 的数值输入替换它"（**本任务没替换它**：面板改的是既有墙的厚度，新建墙那一路仍然吃常量，理由见 Step 7 的边界段） |
+| `editing.ts` 的 `MIN_WALL_LENGTH_MM` | "T7 的『数值输入 + 最小墙长』才把这条下限搬到交互路径上" | "Task 8 落地时也没有搬到输入框上 —— 它到今天仍只作用于探针"（P5 实测背书） |
+| `editing.ts` 的 `derivesCleanly` 那段"星形接头在屏幕上的缺口原样登记给 T7" | "登记给下一个任务" | 已兑现：`assertDerivesAfterApply` 在 `wallCreate.build` 末尾，`legalWallCreate` 试跑的就是 `build` ⇒ 用户手拉那一发现在也在**松手前**被拒 |
+| `editing.ts` / `panel.ts` 里剩下的 `T7` 与 `Task 7` | 混写 | 一律 `Task 7`，且只用于**已经发生**的事（"Task 7 把派生复核挂上 build 之后"），不再当"将来"用 |
+
+`panel.ts` 里"十轮打乱里有六轮 id 序与 index 序不同"那句注释按实测改成**至少五轮 + 实测分布 9、8、9、8、7、9**（编写期先写的"六轮"是猜的，实测六次独立进程没有一次正好是 6；下限留 5 是给抖动留余量）。
+
+Run: `npx vitest run --config .tscheck/t9/vitest.config.ts`，然后 `npx tsc --noEmit -p .tscheck/t9/tsconfig.scene2d.json`
+Expected: **31 文件 / 449 条全绿**（core 24/309 一字未动 + scene-2d 7/140：viewport 9、drawlist 10、pick 18、snapping 28、editing 35、handles 19、panel 21）；`tsc` 无输出。**这两个数是本任务 node 侧的终点账**，Step 6 的九条变异与 Step 8 的回填都从它出发。
+
+- [ ] **Step 6: 改坏验证（九条变异，逐条记下红的是哪几条）**
+
+每条 = 摘掉一处实现 → 跑全量 → 记红名 → 还原。命令形状（在临时工程根上跑，`<file>` 与模式见每条）：
+
+```bash
+cp packages/scene-2d/src/panel.ts /tmp/panel.bak
+perl -0pi -e 's/\.sort\(\(a, b\) => a\.index - b\.index\)/.slice()/' packages/scene-2d/src/panel.ts
+npx vitest run --config vitest.config.ts 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E "^ +Tests |× "
+cp /tmp/panel.bak packages/scene-2d/src/panel.ts
+```
+
+（那句 `sed 's/\x1b\[[0-9;]*m//g'` **不是装饰**：命令替换里 vitest 仍吐 ANSI 序列，第一次跑这张表时有八行被读成"无统计行"，差点记成"摘掉实现全绿"。剥色之后九条全部有红。）
+
+| # | 摘掉什么 | 实测红 | 红的是哪几条（逐字用例名） |
+| --- | --- | --- | --- |
+| M1 | `storeyTabsOf` 的 `.sort` 换成 `.slice()`（照抄 `byKind`） | 1 / 448 | 「顺序按 index 而不是按 id：十轮打乱里至少五轮 id 序与 index 序不同（摘掉 sort 的凭据）」 |
+| M2 | `selectedWallForPanel` 改"取第一面"（`picked.length === 1 ? … : null` → `picked[0] ?? null`） | 1 / 448 | 「两面墙一起选中 ⇒ null：面板不许"取第一面"，那等于偷偷改用户的选中集」 |
+| M3 | `trialCommand` 摘掉整段试跑（恒返回 `ok: true`） | 5 / 444 | 「命令工厂里那半道门也在 try 内：非整数毫米给文案，不给未捕获异常」「真源三道门各一句文案：非正、墙厚不小于轴长、墙不存在」「T 接改厚被派生复核挡下：命令层三道门全过，拒它的是『直通两墙厚度不同』」「两侧逐条连发改不动 T 接：每条各自复核自己那一发之后的世界」「试跑不动真源：墙数、那面墙的厚度、撤销栈深度三票原样」 |
+| M4 | `planDelete` 摘柱那一支（柱重新落进 `unsupported`） | 5 / 444 | 「③④ 接上屏幕：四类混选发四条，顺序定死成 洞口 → 柱 → 板 → 墙」「三种沉默三种颜色：拉墙模式 / 只剩裸点 / 空集」「删一根带独占落点的柱：pruneSelection 把柱与孤儿点一起剔掉」「别层构件进 unsupported，不是"没选中"：本层没这个权力（墙、洞口、柱三样一起判）」「柱落在墙端点上：删柱只删柱，那枚点还被墙引用 ⇒ 不许跟着走（删柱拆墙）」 |
+| M5 | `planDelete` 摘板那一支 | 1 / 448 | 「③④ 接上屏幕：四类混选发四条，顺序定死成 洞口 → 柱 → 板 → 墙」 |
+| M6 | `planDelete` 摘掉四处 `.sort()`（改回集合插入序） | 1 / 448 | 「③④ 接上屏幕：四类混选发四条，顺序定死成 洞口 → 柱 → 板 → 墙」 |
+| M7 | `wallProbe` 摘掉筛 ⑤（`insideCanvas` 那一行） | 5 / 444 | 「wallProbe 在样例房里给得出靶子，六道筛逐条自证，且两次问逐字相同」「筛 ② 有牙齿：画布夹住的靶场里，唯一活着的候选引的是别人的点」「筛 ④ 有牙齿：画布夹住的靶场里，唯一活着的候选中点压在横墙上」「筛 ⑤ 有牙齿：整层挪出画布后探针没靶子，回到拟合视图靶子就出现」「筛 ⑤ 的确定性夹具：两个端点绕不开同一发 —— 画布外那一发只由 ⑤ 拒」 |
+| M8 | core 的 `wallCreate.build` 末尾摘掉 `assertDerivesAfterApply`（只摘 `wallCreate` 那一处） | 5 / 444 | 「⑥ 的前提：同一发候选在命令层与派生层一起拒（星形接头）」「⑥ 的确定性夹具：八发候选在命令层与派生层判得一字一样」「三面墙过同一点、三个方向 → 命令层就抛 /star/，文档与撤销栈都不动」「同一点同向两笔 → 抛 /同向重叠/（重叠墙带进不了真源）」「复核吃的是**整份文档**：别层藏一颗星，本层也写不进墙」 |
+| M9 | `planDelete` 摘掉墙那一支的认层（`storeyId !== storeyId` 不再进 `unsupported`） | 1 / 448 | 「别层构件进 unsupported，不是"没选中"：本层没这个权力（墙、洞口、柱三样一起判）」 |
+
+**这张表本来差点写错两次**（都是当场实测揪出来的，记在这里防执行日再犯）：
+
+1. **M6 第一次跑是全绿**。四类混选那枚夹具每种 kind 只放了一枚构件，而 `sort` 只决定**同 kind 之内**的顺序 ⇒ 单元素数组排不排都一样，那句"摘掉排序这一发就红"是我凭空写的。修法不是放宽判据，而是给夹具补第二面墙、并把输入按 id **降序**喂进去（"降序进、升序出"才是这道 sort 的牙齿）—— 改完 M6 红 1 条。
+2. **M7 的红形与我预言的不同**。我写的是"摘掉 ⑤ ⇒ 答案换成 `(4000,0)→(6000,0)`"，实测四个独立进程给的都是 `(0,0)→(0,2000)` —— 摘掉 ⑤ 之后**外端 A 也能交靶子了**，而它排在前面。结论照实测写（见 Step 4 那段注释），别照预言写。
+
+- [ ] **Step 7: renderer 接线 —— 楼层 tab、属性面板、以及"屏幕只问真源"这条纪律落到 DOM 上**
+
+> **这一步以下全部是编写期-authored 的代码，编写期跑不了**：此刻 `apps/desktop/src/renderer/src/App.tsx` 还是"pong:1"占屏页，`apps/desktop/src/main/index.ts` 40 行里一句 shot 都没有（2026-09-28 核对）。所以本步与 Task 3~6 的 renderer 步骤同一口径：**判据形状写死，字面量执行日回填**。落地时若与本步给的形状冲突，以测到的为准，并把冲突记进"已核实的现状事实"，别把判据放宽。
+
+先补三条只有接上屏才会浮出来的裁决：
+
+| # | 问题 | 裁决 | 为什么 |
+| --- | --- | --- | --- |
+| P10 | 切层要不要顺手复位视口？分几次 `set`？ | **一次 `set` 同时换 `storeyId` 与 `viewport`**：`setStorey(storeyId: string, viewport: Viewport)`，视口由调用方（`PlanCanvas`，它才量得到画布尺寸）用 `fitStorey(doc, 新层, widthPx, heightPx, PAD)` 算好递进来。同一次调用里顺手 `setDraft(null)`、`setTool('select')`，并由调用方清选中集。 | 分两次 `set`（先换层、下一帧再复位视口）会留一个**中间帧**：新一层的图配旧一层的 `origin`，画在画布外，`--prop-shot` 的采样如果落在那一帧上，红形是"pxPerMm 对不上"这种谁也看不懂的话。代价：`storeyId` 的变更入口从"随便谁 `set`"收成一个函数，以后 Task 9 想加"滚轮切层"必须走同一个出口 —— 这正是想要的约束。 |
+| P11 | 厚度输入框是逐字符提交吗？ | **不是**。`onChange` 只更新本地态并现问一次 `trialCommand`（给红字），**提交只发生在 Enter 与 blur**。 | 打 `370` 这三个字符要经过 `3` 和 `37` —— 两个都是合法厚度，逐字符 dispatch 会往撤销栈上留三条记录，Ctrl+Z 要按三下才回得来，而且每一下都会跑整层派生复核。代价：粘贴完不回车直接点画布，靠 blur 兜住；若两条都没兜住（用户按 Esc 关掉面板），本地态丢掉、真源不动，这是**对的方向**（屏幕没说谎）。 |
+| P12 | 值没变要不要发命令？ | **不发**。面板比较"要写的值"与 `wallPropsOf` 刚读出来的值，相同就一行都不发。 | 真源**允许**同值重设并各留一条撤销记录（实测：`panel.test.ts`「承重与材料不进派生：同值反复点各留一条撤销记录」—— 承重连点两次拿到两条记录）。屏幕上不挡就等于把"改了什么"的账交给撤销栈去背，而 `--prop-shot` 的 depth 判据立刻分不清"改过"与"摸过"。代价：这与真源口径**故意不同**（屏幕比真源严），注释必须写清这条不是 bug —— 未来若 core 自己挡同值，这一支要跟着删，别留成第二道守卫。 |
+
+**`stores/editorStore.ts`**（在 T6 那份之上加一格一出口，其余一字不动）：
+
+```ts
+export interface EditorState {
+  // ……T3~T6 的字段原样：log / storeyId / viewport / revision / lastError / drag / tool / draft
+  /** P10：换层与视口复位必须是同一次 `set`。调用方负责清选中集（store 不碰 selectionStore）。 */
+  setStorey: (storeyId: string, viewport: Viewport) => void;
+}
+
+// create：
+  setStorey: (storeyId, viewport) =>
+    set({ storeyId, viewport, draft: null, tool: 'select', revision: get().revision + 1 }),
+```
+
+`revision` 在这里 +1 是**故意**的：面板与 tab 都读 `revision` 决定重算（`storeyTabsOf` 与 `wallPropsOf` 都吃文档，切层后文档没变但"当前层"变了，不扳一次就会留着上一层的三格读数）。这条与 T5 那句"`revision` 只在成功之后 +1"不冲突 —— 切层不是真源编辑，它是视图状态，而这一格扳的是"派生读数该重算了"。
+
+**`apps/desktop/src/renderer/src/panels.tsx`（新建，tab 条 + 属性面板都在这儿）**：
+
+```tsx
+import {
+  PANEL_MATERIAL_OPTIONS,
+  fitStorey,
+  selectedWallForPanel,
+  storeyTabsOf,
+  trialCommand,
+  wallPropsOf,
+  type StoreyTab,
+  type WallProps,
+} from '@dajia/scene-2d';
+import {
+  wallSetLoadBearing,
+  wallSetMaterial,
+  wallSetThickness,
+  type Document,
+  type EntityId,
+} from '@dajia/core';
+```
+
+（`fitStorey` 从 `@dajia/scene-2d` 拿而不是在这儿现算：全局约束那句"renderer 一行几何都不许算"。`panels.tsx` 是 T3 之后第一个新增的 renderer 组件文件，`check-package-deps.mjs` 的 `ALLOWED_DEPS` 早就放行了 `desktop → core, protocol, scene-2d`，不必再改守卫脚本。）
+
+面板组件的三条纪律：
+
+```tsx
+/**
+ * 当前层实体是唯一能读出 `projectId` 的把手（`Entity` 联合上它不是共有字段，
+ * 必须先收窄成 `kind === 'storey'` —— 2026-09-28 写 `panel.test.ts` 时踩过这条 TS2339）。
+ * 收窄不到就返回空 tab 列表：屏幕上"一层都没有"是文档坏了，不是面板该抛错的地方。
+ */
+function tabsFor(doc: Document, storeyId: string): StoreyTab[] {
+  const current = doc.get(storeyId);
+  if (current?.kind !== 'storey') return [];
+  return storeyTabsOf(doc, current.projectId);
+}
+```
+
+- **属性面板整体只读 `wallPropsOf`**，本地不留三份状态。唯一允许存在的本地态是"输入框里正在打的那串字"与它的 `TrialResult`（P11），而且它**必须**在提交成功、`revision` 变化、或选中集变化时被丢掉 —— 否则屏幕上是对的、真源是错的。
+- **`reason` 直接显示真源那句**，不翻译、不截断、不换成"输入无效"。T 接那一发的完整文案是「接头 … 的直通两墙厚度不同（370 / 240），S1 的 T 接与十字要求直通两墙同厚：请统一墙厚，或把它改画成 L 角」—— 后半句"改画成 L 角"是用户唯一能自己走通的路，翻译一次就丢了。
+- **提交走 `dispatch`（单条）不走 `dispatchBatch`**：面板一次只改一格的值。`dispatchBatch` 留给 Delete 那条多命令通路（T6）。
+
+**`PlanCanvas.tsx`** 补四件事：
+
+1. tab 条的点击出口：`const fitted = fitStorey(log.document, tab.storeyId, widthPx, heightPx, VIEW_PAD_PX); setStorey(tab.storeyId, fitted); useSelection.getState().clear();`
+2. 快捷键 `Delete` / `Backspace` 那一路**一行不改**（T6 已经接的是 `planDelete`，本任务改的是它内部）。要改的只有注释里那句"柱与板留给 Task 8"。
+3. `DebugReport` 补五个字段（与 T4/T5/T6 那三批同一形状，诊断值住 ref 不进 `paint` 依赖）：
+
+```ts
+interface DebugReport {
+  // ……T3~T6 的字段原样
+  /** 当前层的 tab 列表（顺序、标签、标高全部来自 `storeyTabsOf`，renderer 不自己排）。 */
+  storeyTabs: StoreyTab[];
+  /** `selectedWallForPanel` 的答案；null = 面板不渲染。 */
+  panelWallId: EntityId | null;
+  /** 面板三格读数 + 轴长；null 同上。 */
+  panelProps: WallProps | null;
+  /** 最近一次输入框预言：`{ kind, input, ok, reason }`。`--prop-shot` 的红字判据读它。 */
+  lastTrial: PanelTrialReport | null;
+  /** 最近一次成功提交后的**真源**读数（不是输入框的值）：证"面板读真源"。 */
+  propsAfterEdit: WallProps | null;
+}
+```
+
+4. **像素计数**：材料那一发提交前后各读一次 `ops` 与各层颜色桶计数，必须逐字相同 —— 这是 P4「材料不进派生」在屏幕上的唯一凭据（node 侧 `panel.test.ts` 只能证到 `wall.setMaterial` 不跑复核，证不到"画面上一个字都没变"）。
+
+**`main/index.ts` 的 `runPropShot`**：`argPath('--prop-shot')`、`whenLoaded` / `waitForDebug` / `focusForInput` / `pressPx` / `movePx` / `keyCombo` / `readReport` 六个助手沿用 T3~T6 那一份，一步都不许新写。十六步（坐标一个都不硬编码：tab 的中心由 `executeJavaScript` 问 DOM 的 `getBoundingClientRect()` 拿，墙与洞口的像素来自 `pickPxOf` 同一条探针通路）：
+
+| 步 | 动作 | 判据（红形必须指向的那件事） |
+| --- | --- | --- |
+| 0 | 起始读数 | `storeyTabs.length === 2`、当前层是 `index 0` 那格、`panelWallId === null`、`tool === 'select'`、`depth` / 点数留档当基线 |
+| 1 | 鼠标点二层 tab | `storeyId` 换、`pxPerMm` 与 `origin` **逐字等于**同一次调用里算出的 `fitStorey(二层)`、`selectedIds` 空、`panelWallId` null、`depth` 与基线相同（P10：切层不许动真源） |
+| 2 | 点回一层 | 视口两份值逐字回到第 0 步那一份（证 P6 的 tab 与 P10 的复位都可逆） |
+| 3 | 点一面**改得动**的墙 | `panelWallId` = 它、三格读数 = 真源、`axisLengthMm` = `wallAxisById` 的轴长（靶子从 P8 的 B 组表里选：`west` / `north` / `east` / `stem` 四面之一，**不许**选 `southWest` / `southEast` / `partWest` / `partEast`） |
+| 4 | 厚度框打 `240.5`，不回车 | `lastTrial.ok === false`、`reason` 含「必须是整数毫米」（P2 工厂那一半）、`depth` = 基线、真源厚度未变 |
+| 5 | 改成合法值（如 `300`）后 Enter | `lastTrial.ok === true`、`depth` = 基线 + 1、`propsAfterEdit.thicknessMm === 300`、`panelProps` 与真源逐字相同 |
+| 6 | 同值再 blur 一次（框里还是 `300`） | `depth` **不变**（P12） |
+| 7 | Ctrl+Z | `depth` 回基线、`panelProps.thicknessMm` 回原值（证面板读的是真源而不是本地态） |
+| 8 | 材料下拉选 `concrete` | `depth` +1、真源 `material === 'concrete'`、**像素计数与 ops 条数逐字等于第 3 步**（P4） |
+| 9 | 承重开关点一下 | `depth` +1、真源 `loadBearing` 翻转、`panelProps.loadBearing` 跟着翻 |
+| 10 | Ctrl+Z 三次 | 三格读数逐字回到第 3 步那一份（P11 的"一次编辑一条记录"在这里被数出来：恰好三下，不是四下也不是两下） |
+| 11 | 点墙 + Shift 点它身上的洞口（多选） | `panelWallId === null`（P3 在屏幕上的形状：面板整块消失，而不是显示"第一面"） |
+| 12 | Delete | `depth` +1（**只加一**：级联由真源做，复述就变成 +2）、`deletedIds` 只有那面墙、`selectionAfterDelete` 空、`unsupportedIds` 空 |
+| 13 | Ctrl+Z | 墙与洞口都回来；`selectedIds` **仍为空** —— 这是 T6 交接里那句"撤销的是文档，不是视图"（D7）第一次被真窗口钉成预期行为，判据照实写死"不回"，不许改成"应当回" |
+| 14 | 连点两次 tab 切换 | 两次的 `storeyTabs` 读数逐字相同（P6：顺序不随进程漂） |
+| 15 | 终态 | `depth` = 基线、点数 = 基线、`panelWallId === null`、`tool === 'select'`、`storeyId` = 一层 |
+
+第 12 步那句 `unsupportedIds` 为空**必须**同时读 `storeyTabs.length === 2` 当素材自证：样例房无柱无板（T5 已核实），所以这一发证明的是"屏幕上取不到柱板时 `unsupported` 就该空"，它**不能**被当成 P7 那两支的验收 —— 那两支只有 M4 / M5 的红绿可看（P9）。
+
+- [ ] **Step 8: 落回真仓库、四个闸门重跑、提交**
+
+```bash
+# 1) 把临时工程里实测过的 scene-2d 三个文件与两份测试逐字搬回真仓库
+#    （panel.ts / panel.test.ts 新建；editing.ts / editing.test.ts / index.ts 覆盖）
+npx tsc --noEmit -p packages/scene-2d/tsconfig.json   # 真仓库的 typecheck 脚本按 Task 1 改后的口径走
+pnpm verify
+```
+
+Expected: `pnpm verify` exit=0；`Tests` 从 Task 7 落地的 **438** 涨到 **464**（净增 26 = panel 21 + editing 5），`Test Files` 由执行日回填（本任务只新增一个测试文件 `panel.test.ts`）。core 的 `24 文件 / 309 条` **一字不动** —— 若这一步发现还要改 core，按边界段那条纪律：回 Task 7，不在这里补。
+
+```bash
+# 2) 临时工程那九条变异，在真仓库原样复跑一遍（同九条命令、同一份剥色管道）
+# 3) 四个闸门各跑一遍
+pnpm shot        # 6 条
+pnpm pick-shot   # 10 条
+pnpm edit-shot   # 21 条
+pnpm draw-shot   # 27 条
+pnpm prop-shot   # 本任务新增，判据条数执行日回填
+```
+
+Expected: 前三个闸门**逐字不变**（本任务没碰它们的通路：`planDelete` 的两条既有规则一字未动，`wallProbe` 的六道筛只被 Step 4 加了夹具、没加筛）。`--draw-shot` 若红，先按 Task 7 Step 8 那句处理（读新靶子、换字面量、重跑三遍确认稳定），再怀疑本任务 —— 本任务唯一可能影响它的地方是 `--draw-shot` 第 12/13 步那两条删除判据读的是 `planDelete` 的输出，而 `candidateIds` 的顺序定义从"洞口在前、墙在后"扩成四段；样例房无柱无板 ⇒ 两者对同一发给出逐字相同的数组，红了就是改错了。
+
+```bash
+git status --porcelain   # 只应看到 packages/scene-2d/{src,test} 与 apps/desktop 下的文件 + 根 package.json
+git add packages/scene-2d/src packages/scene-2d/test
+git commit -m "feat(scene-2d): 属性面板派生与四类删除，planDelete 接上柱与板"
+git add apps/desktop package.json
+git commit -m "feat(desktop): 楼层 tab 与属性面板上屏，--prop-shot 十六步合成输入"
+```
+
+第一条提交信息正文带上：`panel.ts` 五个出口、`planDelete` 的两条新规则与四段顺序、35 + 21 那两份用例数、九条变异的红名表。第二条带上 `--prop-shot` 的实测条数与前三个闸门的重跑结果（编写期这两笔都还没有）。
+
+---
+
+
+## 尚未展开的任务边界（Task 9；补齐后才进执行）
 
 Task 6 已展开（正文见上文 Task 6：八条裁决 + 八步 + 二十七行真窗口判据）。它把 T5 留下的两个接缝就地判掉了：① 吸附的插入点 = `moveTargetOf` 之后、`dispatch` 之前那一行（S4 的三条纪律：按下不吸、探针与 renderer 同一个出口、预览线恒画裸光标）；② "撤销掉正被选中的构件"拆成两半收掉 —— 删除之后用 `pruneSelection` + `selectionStore.retain` 剪掉已不存在的 id（S5），新建那一路用 `lastCreatedWall` 里的 `doc.get(id)` 复核挡住"选中指向不存在的构件"（S6：`log.affected` 在撤销后**仍然**列着那枚 id）。**没收掉的那一半**写在这里防丢：`Ctrl+Z` 撤销一次删除之后选中集不回（D7 的口径是"撤销的是文档，不是视图"）；Task 7 与 Task 8 都没接这一条，谁要做"撤销后恢复选中"，得回来改这条裁决。
 
@@ -11819,8 +13072,8 @@ Task 7 已展开（正文见上文 Task 7：四条裁决 + 八步 + 十五条改
 
 **为什么原来那一节"Task 7"拆成了 T7 + T8**：本节此处原先写的是"Task 7 楼层切换 + 属性面板：需要内核补口……补口放 Task 7 的第一步"。展开时把补口独立成一个任务，因为它改的是**每一条改几何命令的返回值**，`--draw-shot` 与 `--edit-shot` 两个闸门里写死的毫米/像素字面量必须跟着重测；和属性面板混在一节里重测，红了分不清是命令层还是面板。代价是本计划的既有编号整体后移一位 —— 已按新口径订正的地方：本节上一段、`snapping.ts` 里"柱/板的顶点不在表里"那句注释（原写 Task 8，现写 Task 9）、以及"本计划展开了 Task 1–7"那句状态行。
 
-- **Task 8 楼层切换 + 属性面板 + 删除接屏**：接住 T7 产的五条新命令，全部落在 `apps/desktop` 的 renderer 与 scene-2d 的判据上，core 应当**一字不改**（若发现还要改 core，说明 T7 的口子没收干净，回到 T7 而不是就地补）。边界：① 楼层切换（多层文档只渲染当前层；`editorStore` 已有"当前层"一格，缺切换入口与切层后的视口复位）；② 属性面板（厚度 / 承重 / 材料三格 → `wallSetThickness` / `wallSetLoadBearing` / `wallSetMaterial`，材料下拉框的候选集在 UI 侧、写法纪律问 core 的 `assertMaterial`）；③ 数值输入 ⇒ **T6 交接 ①**：`MIN_WALL_LENGTH_MM` 与"输入框允许打的数"第一次分家，面板不能拿屏幕常量当真源上限；④ 删除键接 `planDelete` 的 `unsupported` 分支 ⇒ 接上 `columnDelete` / `slabDelete` / `storeyDelete`（T6 第 4782 行那句"唯一要接的口子"），四色出口的判据从"三种能删一种不能"变成"四种全能删"，`--draw-shot` 里那几条相应改写；⑤ **T6 交接 ②**：筛 ⑤/⑥ 的确定性夹具（复核之后 ⑥ 已无单独可挡之物，那条夹具要配的命题换成"命令层与派生层判得一样"，见 T7 Step 6）；⑥ 新增一次性闸门 `--prop-shot`，判据形状照 `--edit-shot`（每步读数分别留档 + 逐字对账），并把 `--draw-shot` / `--edit-shot` 一起重跑。
-- **Task 9 吸附补档**：spec §6 列的是六档（端点 / 中点 / 垂足 / **轴网交点** / 15° / 正交），T6 只落了五档 —— 缺的正是"轴网交点"（S1 没有轴网实体，那一档在 2D 里只能是**墙轴线的两两交点**，`snapFieldOf` 已经把 `axes` 交出来了，缺的是求交与优先级插入）。同一步顺手把 `snapFieldOf` 里"柱/板的顶点、洞口中心不在表里"那句注释兑现成代码。注意 T7 的副作用：新档给 `wallProbe` 与 `dragProbe` 多出候选，探针的"恒等 / 改写"计数与两个真窗口的字面量会再变一轮 —— 判据照旧不许多。
+Task 8 已展开（正文见上文 Task 8：九条裁决 + 八步 + 九条变异逐条红名）。它接住了 T6 交接四条里的 **②**（筛 ⑤/⑥ 的两枚确定性夹具，Step 4）与 **①**（`MIN_WALL_LENGTH_MM` 与输入框第一次分家，裁决 P5 用 `panel.test.ts` 那条实测钉死）；T7 交接的 ①② 那两条（`planDelete` 的 `unsupported` 分支、面板的合法性预言）也一并收掉。**没收掉的仍然写在这里防丢**：`Ctrl+Z` 撤销一次删除之后**选中集不回**（D7 的口径"撤销的是文档，不是视图"，Task 8 的 `--prop-shot` 第 13 步第一次把它钉成预期行为而不是缺陷，但"撤销后恢复选中"仍没人做 —— 谁要做，得回来改 Task 6 那句裁决）；面板的**多选批量改厚**（P3 现在的形状是"多选就整块不显示"）；材料候选集的**按构件分表**（P4 的代价那条：柱 / 板 / 门窗将来各列一张，不许互借）。
+- **Task 9 吸附补档**：spec §6 列的是六档（端点 / 中点 / 垂足 / **轴网交点** / 15° / 正交），T6 只落了五档 —— 缺的正是"轴网交点"（S1 没有轴网实体，那一档在 2D 里只能是**墙轴线的两两交点**，`snapFieldOf` 已经把 `axes` 交出来了，缺的是求交与优先级插入）。同一步顺手把 `snapping.ts` 里"柱/板的顶点、洞口中心不在表里"那句注释兑现成代码。注意两个已实测的副作用：① 新档给 `wallProbe` 与 `dragProbe` 多出候选，探针的"恒等 / 改写"计数与 `--draw-shot` / `--edit-shot` 的字面量会再变一轮 —— 判据照旧不许多；② 柱与板的顶点一旦进 `snapFieldOf`，Task 8 那两枚确定性夹具的**端点枚举表**会跟着变（`field.points` 里多出不属于墙的落点），夹具的"唯一答案"是靠可见区算出来的，新档进来要重算那四个数（`pxPerMm` / 尺寸 / 中心 / 期望答案），不许只把断言放宽。
 
 ## 已核实的现状事实（2026-09-27 逐条读过源码，写给执行者省得再翻）
 
@@ -11861,6 +13114,15 @@ Task 7 已展开（正文见上文 Task 7：四条裁决 + 八步 + 十五条改
 - （T7 加）`packages/core/src/index.ts` 对 `commands/*` 与 `geom/*` 全是 `export *`（2026-09-28 核对）⇒ 新命令**不需要**改索引文件，也没有链接期错误可看：测试里 `import { storeyDelete } from '@dajia/core'` 在实现落地前拿到的是 `undefined`，要到调用那一行才 `TypeError: … is not a function`。写"红在哪"的核对清单时按这个形状预期，别等 `SyntaxError`。
 - （T7 加）`applyPatch` 对**不在文档里的 remove id 是抛的**（计划 1 立的口径）⇒ `slabDelete` 必须先 `doc.get(pointId)` 再决定是否收进 `remove`：一块角点早就悬空的板，若把那个不存在的 id 写进补丁，命令在 `dispatch` 里抛，文档就**锁死**了（删不掉、改不动）。`commands-delete.test.ts` 的「角点早就悬空的板仍删得掉」钉的就是这个（改坏 M13 摘掉守卫即红）。
 - （T7 加）core 基线 2026-09-28 重测：**21 文件 / 276 条**（不是抄计划 2 的旧数）；T7 之后 **24 / 309**（+9 +12 +12，`joint.test.ts` 的 18 条一条不增不减，且那 18 条改用 `handBuild` 之后**不依赖实现** —— 先落地也照样绿）。同日两个真账都跑过：临时工程（core + scene-2d）**30 文件 / 423 条**，真仓库（还没有 scene-2d 测试）**23 文件 / 284 条**。全仓 405 → 438 = T6 回填的 405 加本任务实测的 core 净增 33；**全仓 `Test Files` 数两段都没给过**（30 只含两个包、23 还没有 scene-2d 的 6 个文件），执行日 `pnpm verify` 跑出来再回填。
+
+- （T8 加）`Entity` 联合上 **`projectId` 不是共有字段**：`doc.get(storeyId)?.projectId` 直接 `TS2339`（`ColumnEntity` 没有它，2026-09-28 写 `panel.test.ts` 时真撞上去的）。⇒ renderer 想知道"这个项目有哪几层"，唯一通路是**先把当前层实体收窄成 `kind === 'storey'`** 再读它的 `projectId`；`Document` 上没有"按项目列层"的出口，别为这一格去 core 开。
+- （T8 加）**T 接同厚是能力边界，不是缺 bug**：`.tscheck/tmp/scratch2.txt` 的两组实测（2026-09-28）—— A 组：`stem` 在位时 `a→370` 单发被「直通两墙厚度不同」拒、`stem→370` 与 `a→240`（同值重设）放行、两侧**逐条连发** (800,800) 两条**全拒**（复核逐发只看"这一发之后的世界"，每条都看见对面还是原厚）、摘掉中间那根 `stem` 再连发才成 800/800（深度 7）。B 组：样例房一层八面墙各试 `120 / 370 / 500 / 3900` 四档 ⇒ **四面全档可改**（`west (0,0)→(0,6000)`、`north (8000,6000)→(0,6000)`、`east (8000,0)→(8000,6000)`、`stem (4000,0)→(4000,3000)`，stem 只在 3900 撞「墙厚不小于墙长」）、**四面全档锁死**（`southWest`、`southEast` 四档一律 `REJ-同厚`；`partEast` / `partWest` 只有同值那一档 OK，370 / 500 是 `REJ-同厚`、3900 是 `REJ-墙长`）。⇒ `--prop-shot` 第 3~10 步的靶子**必须**从前四面里挑；挑到后四面上，那六步会红成"面板拒了合法输入"的假象。屏幕上没有任何一条通路能把后四面改成同厚（真给用户的那条路是"改画成 L 角"，属几何编辑）。
+- （T8 加）**真源允许同值重设**：`wall.setThickness` / `wall.setLoadBearing` / `wall.setMaterial` 各把同一值连发两次 ⇒ 撤销栈上留**两条**记录（实测：`panel.test.ts`「承重与材料不进派生：同值反复点各留一条撤销记录」）。⇒ P12 那条"值没变就不发"是**屏幕侧故意比真源严**，不是复述真源；写进注释，将来 core 自己挡同值时这一支要跟着删。
+- （T8 加）**输入框逐字符提交会把撤销栈灌满**：打 `370` 三个字符要经过 `3` 和 `37`，两个都是合法厚度（真源只判整数、正、小于轴长）。⇒ P11 的 commit-on-blur/Enter 不是体验偏好，是 depth 判据能写成"恰好 +1"的前提；`--prop-shot` 第 10 步那句"Ctrl+Z 三次回基线"踩的就是这条。
+- （T8 加）**摘掉筛 ⑤ 的红形不是"探针没靶子"**：Step 4 那枚确定性夹具上，四个独立进程实测给的都是 `(0,0)→(0,2000)` —— 画布外那一端也交得出靶子了，而它排在枚举表前面。编写期我先写成"答案换成 `(4000,0)→(6000,0)`"（照枚举顺序推的），实测推翻。⇒ 记红形一律照测到的写。
+- （T8 加）**`planDelete` 里那四处 `.sort()` 只决定同一 kind 之内的顺序**：四类混选各放一枚构件时，摘掉 sort **全绿**（实测 M6 第一次跑）。牙齿是"同一 kind 多枚 + 输入降序" ⇒ Step 3 的夹具补第二面墙、按 id 降序喂进去。这张教训推广开：任何"排好序再输出"的判据，夹具里每种只放一枚就等于没测。
+- （T8 加）**命令替换里读 vitest 输出必须剥 ANSI**：`out=$(npx vitest run … 2>&1)` 之后 `grep -E "^ +Tests "` 一条都匹配不上（八行变异全被记成"无统计行"，差点写成"摘掉实现全绿"），而 `npx vitest … | grep` 直接管道又是好的。⇒ 变异表一律带 `sed 's/\x1b\[[0-9;]*m//g'`（Step 6 那条命令里已带上）。
+- （T8 加）账（2026-09-28，临时工程 `.tscheck/t9`）：**31 文件 / 449 条** = core 24/309（一字未动）+ scene-2d 7/140（viewport 9、drawlist 10、pick 18、snapping 28、editing **35**、handles 19、panel **21**）。相对 Task 7 的 423 净增 26 ⇒ 真仓库落地预计 **438 → 464**，`Test Files` 只多 `panel.test.ts` 一个文件（执行日回填）。`npx tsc --noEmit -p tsconfig.scene2d.json` 干净（那一条 `TS2339` 修完之后）。
 
 ## 执行日志
 
