@@ -13,3 +13,4 @@ export * from './snapping';
 // 棒 C 把它们从 `handles.ts` 删掉之后，下面两行连同本注释一起删除。
 export { moveTargetOf } from './snapping';
 export type { MoveTarget } from './snapping';
+export * from './editing';
