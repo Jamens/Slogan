@@ -15,7 +15,7 @@
 ## Global Constraints
 
 - **依赖方向不许破**：`scene-2d` 只许 import `core` 与 `protocol`；`desktop` 全可 import；`core` 谁都不许 import。改任何 import 后跑 `pnpm lint:deps`。
-- **scene-2d 不许碰 DOM**：源码里不许出现 `document` / `window` / `HTMLCanvasElement` / `OffscreenCanvas` / `requestAnimationFrame`。理由不是洁癖：`pnpm test` 跑在 node 环境（`vitest.config.ts` 的 include 只有 `packages/*/test/**/*.test.ts`），任何 DOM 引用都会让该模块在闸门里根本跑不到 —— 一个跑不到的模块等于没有测试。canvas 绘制只发生在 `apps/desktop`。
+- **scene-2d 不许碰 DOM**：源码里不许出现**浏览器全局** —— `document` 或 `window` 这两个词本身不是禁令（执行回填 T2/T3：`log.document` 是 core 的真 API，`'window'` 是洞口类别的字面量，两处都合法且必需；绑定的东西是"不许访问浏览器环境"），真正的黑名单是 `HTMLCanvasElement` / `OffscreenCanvas` / `requestAnimationFrame` / `localStorage` / React / `apps/desktop` —— 这几样在 `packages/scene-2d/**` 里 T1–T3 实测**零命中**。理由不是洁癖：`pnpm test` 跑在 node 环境（`vitest.config.ts:19` 的 include 是 `packages/*/test/**/*.test.ts` **与** `scripts/test/**/*.test.mjs` 两条，执行回填：本节此处原先只写了前一条），任何 DOM 引用都会让该模块在闸门里根本跑不到 —— 一个跑不到的模块等于没有测试。canvas 绘制只发生在 `apps/desktop`。
 - **浮点只许活在屏幕侧**：`Viewport`、`Px`、绘制指令里的坐标都是浮点像素或浮点毫米；**任何要写回命令的东西必须先过 `quantizeMm`**（`@dajia/core`）。拖拽中途的浮点坐标只进 renderer 的临时绘制，不进 `Document`。（Task 5 已裁决：临时绘制走 renderer 的专用画家，`DrawLayer` **不加** `interaction` 层，指令表里也不新增 `dot` —— 详见 T5 的 D2。）
 - **±0 纪律**：测试用 `Object.is` 语义比较。计算得出的 `Vec2` 一律经 `vec()` 构造；纯整数 fixture 与 `Aabb` 豁免。
 - **不许拿 `byKind(...).at(-1)` 当"刚创建的那个"**：`uuidv7` 同毫秒不单调。取新建实体只认 `log.affected` + `kind` 判别式。
@@ -1066,6 +1066,16 @@ git commit -m "feat: scene-2d 绘制指令表与样例两层房"
 
 ---
 
+#### 执行回填（Task 2，2026-09-28 实测；commit `2a6879d`）
+
+- **计数**：`pnpm verify` exit=0，Test Files **24 → 25**、Tests **293 → 303**（本任务新增 10 条，全在 `packages/scene-2d/test/drawlist.test.ts`）。RED 落在 `TypeError: demoHouse is not a function` —— 函数拿不到，不落断言值。
+- **改坏第 6 条按计划的位置挪会先撞 TDZ**：把楼层标签的 push 往后挪到 `penFor` 定义之前那一版，红成一串引用错误而不是预期的那条层序断言；挪到「① 之前」（紧跟 `pts`/`polys` 那段）才拿到干净单点红 `expected 0 to be greater than or equal to 2`（`layerRank` 单调性）。**这条判据仍然成立**，只是落点要挑在 `penFor` 之后。
+- **改坏第 7 条红的不是预言的那一句**：`fitStorey` 的 `padPx` 传 0，先倒的是**边界圈里那条**（`expected -43.26923… to be greater than or equal to 0`，越界的正好是标签），计划预言的张幅断言在它的下游。根因写进挂账：`fitStorey` 的边界圈把 `annotation` 那条 op 也算进去了，今天能过只是因为 pad=60 恰好大于标签外偏（≈37.5 px）。谁改 `LABEL_OFFSET_MM` 或样例房几何，这条必红。
+- 改坏第 9 条（去掉 `axisOf` 缓存）是**反向哨兵**，按要求必须还绿：实测全绿 exit=0、`Tests 10 passed (10)`。
+- 评审挂来四条不在本格修：property 用例那半自反的 `toHaveLength(expectedOps)`、上面那条边界圈、`fitStorey`/`buildDrawList` 各算一次 `deriveStoreyGeometry`（三条都转交第一个真消费者 Task 3），以及 `drawlist.ts:130-131` 与 `:137-138` 两次同谓词扫 `opening`（无下游消费者，按计划既有裁决转终审）。
+
+---
+
 ### Task 3: 真窗口里出像素（回读证明，不靠人眼）
 
 **Files:**
@@ -1466,6 +1476,21 @@ git add apps/desktop scripts/desktop-shot.mjs package.json pnpm-lock.yaml
 git commit -m "feat: desktop 平面图与像素回读自检；首屏 ping UI 由平面图接替"
 ```
 Expected: `verify` exit=0（**`pnpm shot` 不在其中**）；`Tests` 数与 Task 2 结尾一致 —— 本任务不新增 vitest 用例，`scripts/desktop-shot.mjs` 在 `scripts/` 而 include 只收 `scripts/test/**`，这是刻意的：它要真起窗口，不该在 `verify` 里跑。
+
+---
+
+#### 执行回填（Task 3，2026-09-28 实测；commits `b7c0455` + `6ddb090`）
+
+- **六个 PASS 全过，实测 JSON**（首轮，窗口可见那版）：`{"ops":31,"layers":{"structure":20,"opening":10,"annotation":1},"nonBlankPx":30633,"wPx":1427,"hPx":839}`；`20+10+1=31` 与判据表自洽。负测按要求跑过：把绘制表喂空 ⇒ `nonBlankPx=0` 且 exit=1（"绿着但什么都没画"这条路是关的），回改后重跑绿。`pnpm verify` 仍是 **25 / 303**，本任务零新增用例。
+- **屏幕尺寸不是常数**：同一份代码两次实测 `hPx` = **839** 与 **865**。凡本任务及后续 `--pick-shot` / `--edit-shot` / `--draw-shot` 里"写死绝对像素"的判据都必须写成不变量（区间、单调、非零、"选中会改变输出"），只有纯函数那一侧的 31/20/10/1 可以写死。**T4–T6 的判据表照此办理。**
+- **Step 4 那段 spawn 写法已被 `6ddb090` 换掉，别照抄本节正文**：正文那版 `spawnSync('pnpm', [...,'--shot', out], { shell: true })` 在 win32 上是坏的 —— `shell: true` 时 Node 把命令与参数拼成一条字符串、**不逐参数加引号**，于是临时目录一旦含空格（`C:\Users\Name With Space\…`）路径就在空格处断开，闸门在一点问题没有的机器上假失败；顺带每次跑都吐 `DeprecationWarning DEP0190`。现在的形态是：`createRequire(join(desktopDir,'package.json'))('electron')` 解析出 Electron 二进制，`runElectron` **不经 shell** 直起它，pnpm 构建那步走 `runPnpm`（单条预拼命令串、无参数数组）。**T4/T5/T6 复制这条闸门时复制新形态。**
+  - 这条是**计划缺陷**，不是实施者失误：实施者是把正文逐字落地的。RED/GREEN 都有实测 —— RED：含空格的 TEMP 路径 exit=1；GREEN：同命令 exit=0 六行 PASS。
+  - 失败点比本节预言晚一层：截断后的路径 `shotPathFromArgv` **是接受的**（它只拦 `undefined` 与 `--` 前缀），于是一发 shot "成功"、把 report 写到截断目录里，闸门死在下一行的 `readFileSync` ENOENT。预言里以为守卫会当场拒。
+  - `os.tmpdir()` 在本机**只认 `TEMP`，单独设 `TMP` 无效** —— 想复现空格路径得设 `TEMP`。
+- **`--shot` 现在不显示窗口**（`show: visible` + `ready-to-show` 只在可见分支里 `show()`），并且这条改完才第一次真正走到本节正文引用过的那句理由 ——「`show: false` 下 canvas 照样绘制」：隐藏窗口的回读实测 `nonBlankPx=31710`。在那之前代码一直显示着窗口，那句理由没人证明过。
+- **坏参数改成秒退**：`--shot` 后面缺路径/跟着一个 flag，原先 throw 在 `app.whenReady().then(async …)` 里、 rejection 被丢弃，于是既不 `app.exit` 也没窗口，`window-all-closed` 永不触发，只能等 `spawnSync` 那 180 秒超时；现在 try/catch + `app.exit(2)`，实测 **exit=2 / 267ms**。
+- 两条评审意见按既有裁决**不在本格修**：`desktop-shot.mjs` 里 31/20/10/1 重述了 `drawlist.test.ts` 从结构推出来的数（两个闸门刻意独立 —— node 侧与真窗口侧，合掉得等能分辨两半的测试，转终审）；那条名字写着「画布尺寸 = 窗口内容区」其实只断言了 `wPx>800 && hPx>500`（转 Task 4 —— 它本来要扩 `DebugReport`，改名或真去比 `innerWidth/innerHeight` 都由它定）。
+- **CI 零暴露**：`.github/workflows/ci.yml` 只跑 `verify` 与 desktop build，`pnpm shot` 不在其中（本任务 Step 5 的刻意设计），所以上面那条 spawn 改动不影响 CI。
 
 ---
 
@@ -13935,4 +13960,14 @@ Task 8 已展开（正文见上文 Task 8：九条裁决 + 八步 + 九条变异
 
 ## 执行日志
 
-（执行时回填：每个 Task 的提交链、闸门数字、改坏验证的红字、以及 T3 的六个实测数。）
+执行时逐格回填（2026-09-28 起，branch `plan3-scene-2d-editor`，代码 seat 提交、计划正文由控制位另提 `docs:`）。
+
+| Task | 提交 | `pnpm verify` 实测 | 关键实测红字 / 数字 | 评审结论 |
+|---|---|---|---|---|
+| T1 视口仿射与包接线 | `86f2a3c` | exit=0，**24 文件 / 293 条**（基线 23/284 ⇒ +1 文件 / +9 条，全在 `viewport.test.ts`） | RED = `TypeError: viewportOf is not a function`；评审员自跑 `tsc --listFilesOnly` 证明根 `typecheck` 真的把 scene-2d 的 src+test 收进去了 | Spec ✅ / Approved；0 Critical、0 Important；Minors m1–m6 全挂账（m3→T4、m4→T3/T5、m2 改判不并入 T2） |
+| T2 绘制指令表与样例两层房 | `2a6879d` | exit=0，**25 / 303**（+10 条） | 改坏 1–8 逐条红、9 必须绿（实测全绿）；第 6 条按正文位置挪会先撞 `penFor` TDZ，挪到 ① 之前才是单点红；第 7 条红在标签越界的边界断言（`expected -43.26923… >= 0`）而不是预言的张幅断言 | Spec ✅ / Approved；0 Critical、0 Important、5 Minor（三条转 T3 真消费者、两条转终审） |
+| T3 真窗口出像素（`--shot`） | `b7c0455` + `6ddb090` | exit=0，**25 / 303 不变**（本格零新增用例，刻意） | `pnpm shot` 六行 PASS + `{"ops":31,"layers":{"structure":20,"opening":10,"annotation":1},"nonBlankPx":30633,"wPx":1427,"hPx":839}`；`hPx` 两次实测 839 / **865** ⇒ 绝对像素不是常数；负测喂空 ⇒ `nonBlankPx=0` / exit=1；隐藏窗口回读 `nonBlankPx=31710`；坏参数 fail-fast exit=2 / 267ms | 首轮 Spec ✅ / **Needs fixes**（1 Important = 计划正文自带的 `shell:true` 拆路径缺陷）；fix round 1 修 I1+m2+m3+m4，**scoped re-review：四条全 addressed、0 回归、Ready to close** |
+
+- T3 的六个实测数（本节原先要的就是这个）：`ops=31`、`structure=20`、`opening=10`、`annotation=1`、`nonBlankPx=30633`（可见那版）/ `31710`（隐藏那版）、`wPx=1427`、`hPx=839`（另一次 865）。
+- 挂账中、当前没人踩的：T2 的三条（property 半自反、`fitStorey` 边界圈含 annotation、`fitStorey`+`buildDrawList` 双算派生）与 T1 的 m3/m4，都指向 **T4**（命中吃指针坐标）与 **T5**（拖拽把浮点喂回入口）。
+- **闸门不在 `verify` 里**（`pnpm shot` / `pick-shot` / `edit-shot` / `draw-shot` 全是本地手动），CI 只跑 `verify` + desktop build。不许为了让 CI 绿把断言写成"跑不起来就跳过"。
