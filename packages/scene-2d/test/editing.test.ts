@@ -197,10 +197,13 @@ describe('按下与移动', () => {
   it('拖到水平方向：终点吸成逐字整数、临时线仍画到裸光标、原草稿不动', () => {
     const { log, storeyId, field: fd } = oneWall();
     const base = pressAtOrigin(fd, storeyId);
-    const cursor = pxOf({ x: 5000, y: 60 }, sv); // 离轴 0.69°，在 ANGLE_TOL_DEG 之内
+    // 往 **-x** 拖（穿过锚点那枚端点的反向延长线）：Task 7 把派生复核挂上 `wallCreate.build`
+    // 之后，从原点沿 +x 画会与素材那面 (0,0)→(4000,0) **同向重叠** ⇒ 同一发有了两个拒绝理由，
+    // `legal` 就不再只由正交档说话。反向延长线只在锚点处接出一个两臂贯通点，合法。
+    const cursor = pxOf({ x: -2000, y: 60 }, sv); // 离轴 1.72°，在 ANGLE_TOL_DEG(=3) 之内
     const moved = moveDraft(log.document, base, sv, cursor, fd);
     expect(moved.end.snap?.kind).toBe('ortho');
-    expect(moved.end.mm).toEqual({ x: 5000, y: 0 }); // 正交档保坐标 ⇒ 逐字整数
+    expect(moved.end.mm).toEqual({ x: -2000, y: 0 }); // 正交档保坐标 ⇒ 逐字整数
     expect(moved.cursorPx).toEqual(cursor); // S4 第三条：预览线画到**裸光标**，不是吸附点
     expect(moved.legal).toBe(true);
     // 不可变：原草稿一格都没动（renderer 比引用决定要不要重绘，改原地等于让 React 看不见这一发）
@@ -251,7 +254,7 @@ describe('按下与移动', () => {
 describe('合法性预言与真命令', () => {
   it('试跑不动真源：墙数、撤销栈深度、affected 三票全部原样', () => {
     const { log, storeyId, field: fd } = oneWall();
-    const moved = dragToEnd(pressAtOrigin(fd, storeyId), { x: 1200, y: 0 }, log.document, fd, sv);
+    const moved = dragToEnd(pressAtOrigin(fd, storeyId), { x: 0, y: 1200 }, log.document, fd, sv);
     const walls = log.document.byKind('wall').length;
     const affectedBefore = [...log.affected].sort();
     expect(legalWallCreate(log.document, moved)).toBe(true);
@@ -268,10 +271,12 @@ describe('合法性预言与真命令', () => {
     const defaults = newWallDefaults(log.document, storeyId);
     // ① 零长：终点落回起点
     expect(moveDraft(log.document, base, sv, base.start.px, fd).legal).toBe(false);
-    // ② 墙厚不小于墙长：240 厚的墙拖 200mm
-    expect(dragToEnd(base, { x: 200, y: 0 }, log.document, fd, sv).legal).toBe(false);
+    // ② 墙厚不小于墙长：240 厚的墙拖 200mm。方向取 **+y**（与素材那面 (0,0)→(4000,0) 垂直）：
+    // Task 7 把派生复核挂上 `wallCreate.build` 之后，沿 +x 拖会先撞上「同向重叠」，
+    // 那一发就同时有两个拒绝理由，②不再"各一色"。垂直方向只有墙厚这一条会说话。
+    expect(dragToEnd(base, { x: 0, y: 200 }, log.document, fd, sv).legal).toBe(false);
     // 素材自证：同一方向多拖一点就合法（否则"恒 false"的写法也过这一发）
-    expect(dragToEnd(base, { x: 400, y: 0 }, log.document, fd, sv).legal).toBe(true);
+    expect(dragToEnd(base, { x: 0, y: 400 }, log.document, fd, sv).legal).toBe(true);
     // ③ 跨层复用点：把二层那枚起点当一层的起点，`resolvePointRef` 抛。
     // 终点保持"合法那一发"，所以这一发红只可能是起点造成的 —— 反过来（只换终点）证不到起点。
     const legalSoFar = dragToEnd(base, { x: 0, y: 1500 }, log.document, fd, sv);
@@ -707,10 +712,11 @@ describe('新建回执与探针', () => {
     expect(wallProbe(house.doc, house.lowerStoreyId, ops, view)).not.toBeNull();
   });
 
-  it('⑥ 的前提：同一发候选命令层放行、派生层抛（星形接头）', () => {
+  it('⑥ 的前提：同一发候选在命令层与派生层一起拒（星形接头）', () => {
     // 角点 (0,0) 已经过着两条线（x 轴与 y 轴）。第三发 45° 斜线过同一点 ⇒ core 的 `deriveJoints`
-    // 判它星形接头 ⇒ `buildDrawList` 抛「S1 不支持」。这一发**过了 ①~⑤ 也过了命令层**，
-    // 所以本条判的是"⑥ 为什么必须存在"；⑥ 真正的牙齿在上一条样例房用例里
+    // 判它星形接头。Task 6 写这一条时它**过了 ①~⑤ 也过了命令层**，只在派生层炸；Task 7 把派生复核
+    // 挂上 `wallCreate.build` 之后，同一发在**两层一起拒** ⇒ 本条改判"两层同判、预言不漂"。
+    // ⑥ 真正的牙齿在上一条样例房用例里
     // （摘掉 ⑥ 那次实测八个进程：「六道筛逐条自证」七次红、一次绿，红在建完再派生那一句 —— 本条不跟着红，
     // 因为它判的是候选本身，不判探针挑了谁）。
     const { log, storeyId } = synthStorey();
@@ -733,13 +739,13 @@ describe('新建回执与探针', () => {
     expect(endPx.x).toBeLessThan(sv.widthPx - 2);
     expect(endPx.y).toBeLessThan(sv.heightPx - 2);
     expect(Math.hypot(end.mm.x - startMm.x, end.mm.y - startMm.y)).toBeGreaterThan(MIN_WALL_LENGTH_MM);
-    expect(legalWallCreate(log.document, draft)).toBe(true);
-    // 派生层：同一发命令建进去，整层就画不出来了
+    expect(legalWallCreate(log.document, draft)).toBe(false);
+    // Task 7 把派生复核挂上 `wallCreate.build` 之后，这一发不再是"命令层放行、派生层抛"，
+    // 而是**两层一起拒**：`legalWallCreate` 试跑的就是 `build`，所以它拿到的抛错就是 ⑥ 那句。
+    // 这一发从此不判"⑥ 为什么必须存在"，判的是"⑥ 从画图时炸提前到松手前拒"这条搬迁落地了。
     const command = draftCommand(draft, newWallDefaults(log.document, storeyId));
-    if (command === null) throw new TypeError('legal 为真却拿不到命令');
-    const trial = new TransactionLog(log.document);
-    trial.dispatch(command);
-    expect(() => buildDrawList(trial.document, storeyId, sv)).toThrow(/S1 不支持/);
+    if (command === null) throw new TypeError('legal 为假却拿不到命令（`draftCommand` 看了 legal？）');
+    expect(() => command.build(log.document)).toThrow(/S1 不支持/);
     // ⑥ 在这一发夹具上**不承重**：摘掉它，探针换的还是别发轴向候选，本条不红（实测 E28 只红
     // 「六道筛逐条自证」那一条，且八进程里七次）。留着它是为了证"探针给的每一发都画得出"这句判据本身写得对。
     const probe = wallProbe(log.document, storeyId, startOps, sv);
@@ -777,14 +783,17 @@ describe('新建回执与探针', () => {
     const defaults = newWallDefaults(log.document, storeyId);
     const wallsBefore = log.document.byKind('wall').length;
     // 起点恒复用 (0,0) 那枚端点（`pressAtOrigin` 按在它上面），终点是草稿的 `end.mm`。
-    // 于是这一批候选上能生效的守卫只有真源那两条（手抄自 `commands/wall.ts` 的 `assertWallShape`）：
+    // 这张手抄表只记命令层那两条守卫（手抄自 `commands/wall.ts` 的 `assertWallShape`）：
     //   ① 两端点量化后重合 ⇒ 零长墙；② `thicknessMm >= lengthMm` ⇒ 轮廓自相交。
     // 其余四道（墙厚/墙高为正、楼层存在、跨层复用点）在这份夹具上**结构性不可能**触发：
     // 240 与 3000 是常量、`storeyId` 就是刚建的那层、`field` 只收本层的点。
-    // 期望值**必须**来自这张手写的表，不许再调一次 `wallCreate().build()` 现算 —— 那样
-    // `legalWallCreate`（它就是同一句的 try/catch 包装）与预言永远同生同灭，本条谁也抓不到：
-    // 摘掉 core 的 `assertWallShape`（真源不再拒零长墙）时，现算的 `ok` 与 `legal` 一起变成恒真，
-    // 这一行照样绿 —— 而"屏幕上的预言"与"真命令实际拦不拦"已经漂开了，正是本条标题点名的失效。
+    // Task 7 把派生复核挂上 `wallCreate.build` 末尾之后，「star / 同向重叠 / 翻面」的拒绝**在这张
+    // 表之外**（2026-09-29 裁决 D-1 实测：给表加第三项「同向重叠 = dy===0 && dx>0」后连跑 6 遍仍
+    // 5 红 1 绿，反例是一批轴长 ≈241～250 的短斜墙，被派生复核判翻面）⇒ 这张表不可能也不需要
+    // 覆盖派生层（覆盖它就得复述轮廓/miter 规则，正是计划一贯禁止的事）。于是**两个方向分开判**：
+    //   表判 false ⇒ `legal` 必须 false 且 `draftCommand` 给 null（单向钉子，只由这张表说话）；
+    //   表判 true ⇒ `legal` 与「真 `build` 会不会抛」逐字同色 —— 标题就是判据（A1 要的命题）。
+    // 派生层的自有真相由 core 的 `derive-guard.test.ts` 钉，不在这里复述。
     expect(defaults).toEqual({ thicknessMm: 240, heightMm: 3000 });
     // 240 是**手抄的字面量**（不是从 `defaults` 读回来的）：默认墙厚改了，屏幕上"最短拉得出"
     // 这条产品口径得跟着想清楚，红在这儿比漂在真源里便宜。上面那句 `toEqual` 是这一发的素材自证。
@@ -796,13 +805,29 @@ describe('新建回执与探针', () => {
     fc.assert(
       fc.property(mmInt, mmInt, (x, y) => {
         const draft = moveDraft(log.document, base, sv, pxOf({ x, y }, sv), fd);
-        expect(draft.legal).toBe(expectLegal(draft.end.mm));
-        const command = draftCommand(draft, defaults);
-        if (command === null) {
-          expect(draft.legal).toBe(false); // 只有 legal 为假才许给 null
+        if (!expectLegal(draft.end.mm)) {
+          // 单向钉子（这一段**不读 `build`**，保住原注释担心的那颗牙）：表判 false 的候选，
+          // `legal` 必须 false 且命令层不给命令。「摘掉 core 的 `assertWallShape` ⇒ 零长/厚度
+          // 一起变恒真」那种失效会让下面两句先红。
+          expect(draft.legal).toBe(false);
+          expect(draftCommand(draft, defaults)).toBeNull(); // 只有 legal 为假才许给 null
           return;
         }
-        expect(draft.legal).toBe(true);
+        // 反向（表判 true 的候选）：`legal` 与「真 `build` 会不会抛」逐字同口径。
+        // 手把 `legal` 置真取命令（`draftCommand` 只认 legal 一色），再问真 `build` ——
+        // 预言侧读 `draft.legal`，判决侧读真源，两个产地对账，不是自己抄自己。
+        const probe = draftCommand({ ...draft, legal: true }, defaults);
+        if (probe === null) throw new TypeError('legal 置真后拿不到命令（`draftCommand` 还看了别的？）');
+        let throws = false;
+        try {
+          probe.build(log.document);
+        } catch {
+          throws = true;
+        }
+        expect(draft.legal).toBe(!throws);
+        if (throws) return;
+        const command = draftCommand(draft, defaults);
+        if (command === null) throw new TypeError('legal 为真却拿不到命令');
         const fresh = new TransactionLog(log.document);
         expect(() => fresh.dispatch(command)).not.toThrow();
         expect(fresh.document.byKind('wall').length).toBe(wallsBefore + 1);

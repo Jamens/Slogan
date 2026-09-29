@@ -265,8 +265,20 @@ describe('合法落点与拖拽探针', () => {
     const { junction, other } = wallsAtJunction();
     const corner = requirePoint(house.doc, junction.startId, '拐角');
     const farEnd = requirePoint(house.doc, junction.endId, '另一端点');
-    // (4000, 1200)：southEast 变 4326、southWest 变 4000、stem 变 1800，三面都远大于各自墙厚
-    expect(legalDrop(house.doc, junction.id, 'start', { x: corner.x, y: corner.y + 1200 })).toBe(true);
+    // 沿贯通线拖 (5200, 0)：southEast 变 2800、southWest 变 5200、stem 变 3231，三面都远大于各自墙厚。
+    // Task 7 之前这里用的是 (4000, 1200)（southEast 4326 / southWest 4000 / stem 1800，命令层六道守卫全过
+    // ⇒ 当时为 true）；派生复核挂上 `wallMoveEndpoint.build` 之后那一发把三臂拧成 star ⇒ 改判 false，
+    // 合法的那一发只剩"仍然留在贯通线上"这一类。下面第三句把它钉成红字，别让 A1 悄悄改掉这条的靶子。
+    expect(legalDrop(house.doc, junction.id, 'start', { x: corner.x + 1200, y: corner.y })).toBe(true);
+    expect(legalDrop(house.doc, junction.id, 'start', { x: corner.x, y: corner.y + 1200 })).toBe(false);
+    expect(() =>
+      wallMoveEndpoint({
+        wallId: junction.id,
+        end: 'start',
+        x: corner.x,
+        y: corner.y + 1200,
+      }).build(house.doc),
+    ).toThrow(/S1 不支持/);
     // 拖到自己另一端上：判据不许 scene-2d 自己重算一遍轴长，它试跑的就是 core 的那道守卫
     expect(legalDrop(house.doc, junction.id, 'start', { x: farEnd.x, y: farEnd.y })).toBe(false);
     expect(() =>
@@ -543,14 +555,16 @@ describe('拖拽吃吸附（Task 6）', () => {
     }
   });
 
-  it('合法性判的是吸附后的毫米：裸对角合法、吸上去那一发被 240 厚墙挡下', () => {
-    // 上一条例用里裸落点与吸附落点**都**合法（那句 `legalDrop(... {600,600}) === true` 就是把它钉住），
-    // 所以"合法性判在吸附之前还是之后"在那里只有一种答案 —— 实测把 `legalDrop` 改判 `drop.raw`
-    // 在那套夹具上八个进程零红。这一条另造一层：`P→(0,530)` 那面 240 厚的墙把**吸上去**那一发
-    // (40,760) 挡在"墙厚 ≥ 轴长"外（233 < 240），而裸的 (0,800) 离 (0,530) 有 270 ⇒ 合法。
-    // 判裸落点的探针会把第一发就收下并报 (40,760) —— 一个松手必然被真源拒绝的落点；判吸附后的
-    // 探针跳过第一发、报第二发的 (800,0)。于是这条同时钉住三件事：报出来的毫米合法、报出来的
-    // 不是那个非法的吸点、报出来的像素不是第一发那一个。
+  it('合法性判的是吸附后的毫米：裸对角被 star 挡下、吸回贯通线那一发过得了守卫', () => {
+    // Task 7 把派生复核挂上 `wallMoveEndpoint.build`（裁决 A1）之后，star 在松手前就拒，
+    // 于是这里能造出"同一发整数像素，裸落点非法、吸上去那一发合法"的分歧 —— 上一条例用里裸与吸
+    // 两侧都合法，判不出这件事，所以它只能证"探针在吃吸附"，证不了"合法性判在吸附之后"。
+    // 夹具：一个 T 接 —— 贯通线 x=0（A→(0,1000) 与 A→(0,-1000) 共点 A）+ 一根 45° 斜撑 A→(700,-700)，
+    // A 是三臂点。尺子取 1px = 100mm（`pxPerMm: 0.01`）：容差 8px 在这把尺子上就是 800mm，
+    // 所以第五发对角 (600,600) 的裸落点虽然离贯通线还有 600mm，仍然吸得回来（垂足档，6.00px）。
+    // 裸的那一发把三臂拧成 star ⇒ S1 不支持；吸回线上 (0,600) 的那一发仍是"一条线 + 一根撑" ⇒ 过守卫。
+    // 于是判 `drop.raw` 的实现（改坏 HB5）会把十发全筛光 ⇒ 报 null（2026-09-28 实测：本夹具上
+    // 判 raw 的探针给 null，判 mm 的给 to=(506,394)、mm=(0,600)），两条探针用例一起红。
     const projectId = uuidv7();
     const log = new TransactionLog(Document.create(projectId));
     log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
@@ -559,22 +573,26 @@ describe('拖拽吃吸附（Task 6）', () => {
       if (log.document.get(id)?.kind === 'storey') storeyId = id;
     }
     if (storeyId === '') throw new TypeError('affected 里没有新建的楼层');
-    // 共享 P 的两面墙（同一条竖线、方向相反 ⇒ 接头只有一个线组，S1 造得成）：`sharedBy >= 2` 成立。
-    // 530 那面同时是陷阱口：`wallCreate` 的最小轴长 500 与墙厚 240 都过得去，建得成。
-    log.dispatch(wallCreate({ storeyId, start: { x: 0, y: 0 }, end: { x: 0, y: 530 }, thicknessMm: 240, heightMm: 3000 }));
-    const north = createdWallOf(log);
-    log.dispatch(wallCreate({ storeyId, start: { pointId: north.startId }, end: { x: 0, y: -800 }, thicknessMm: 240, heightMm: 3000 }));
-    // (40,760) 这一枚既有点离第一发的裸落点 (0,800) 56.6mm ⇒ 0.1px/mm 下 5.66px，容差 8px 之内
-    // ⇒ 探针第一发必然吸到它（实测两把共享把手都是 `endpoint@5.66`）。
-    log.dispatch(wallCreate({ storeyId, start: { x: 40, y: 760 }, end: { x: 1040, y: 760 }, thicknessMm: 240, heightMm: 3000 }));
-    const v = viewportOf(1000, 800, { pxPerMm: 0.1, center: vec(200, 300) });
+    log.dispatch(wallCreate({ storeyId, start: { x: 0, y: 0 }, end: { x: 0, y: 1000 }, thicknessMm: 240, heightMm: 3000 }));
+    const up = createdWallOf(log);
+    log.dispatch(wallCreate({ storeyId, start: { pointId: up.startId }, end: { x: 0, y: -1000 }, thicknessMm: 240, heightMm: 3000 }));
+    log.dispatch(wallCreate({ storeyId, start: { pointId: up.startId }, end: { x: 700, y: -700 }, thicknessMm: 240, heightMm: 3000 }));
+    const v = viewportOf(1000, 800, { pxPerMm: 0.01, center: vec(0, 0) });
     const doc = log.document;
     const ops = buildDrawList(doc, storeyId, v, EMPTY_SELECTION);
     const p = dragProbe(doc, storeyId, ops, v);
     expect(p).not.toBeNull();
-    expect(p!.sharedBy).toBeGreaterThanOrEqual(2);
-    // 现场自证分歧真的存在，且就在**赢的那把把手**身上：同一发整数像素，裸落点过得了守卫、
-    // 吸上去那一发过不了。这一句不判探针，只判"这条红不是靠运气挑到靶子"。
+    expect(p!.sharedBy).toBe(3); // 三臂点：star 这条判据要的就是"搬起来会拧成三方向"
+    // 现场自证分歧真的存在：同一发整数像素，裸落点过不了守卫，吸上去那一发过得了。
+    expect(moveTargetOf(v, p!.toPx)).toEqual({ x: 600, y: 600 });
+    expect(p!.targetMm).toEqual({ x: 0, y: 600 });
+    expect(legalDrop(doc, p!.wallId, p!.end, { x: 600, y: 600 })).toBe(false);
+    expect(() =>
+      wallMoveEndpoint({ wallId: p!.wallId, end: p!.end, x: 600, y: 600 }).build(doc),
+    ).toThrow(/S1 不支持/);
+    expect(legalDrop(doc, p!.wallId, p!.end, p!.targetMm)).toBe(true);
+    // 前提不许是假设：探针**赢的那把把手**上，前四发（+y / +x / -y / -x）吸附后的落点逐发非法，
+    // 第五发才第一次合法 —— 前提漂了这里先红，上面那五句不会变成猜。
     const field = snapFieldOf(doc, storeyId);
     const handle = dragHandlesOf(
       doc,
@@ -582,19 +600,24 @@ describe('拖拽吃吸附（Task 6）', () => {
       { ids: new Set(doc.byKind('wall').filter((w) => w.storeyId === storeyId).map((w) => w.id)) },
       v,
     ).find((h) => h.wallId === p!.wallId && h.end === p!.end)!;
-    const firstPx = {
-      x: Math.round(mmToPx(v, { x: handle.atMm.x, y: handle.atMm.y + 800 }).x),
-      y: Math.round(mmToPx(v, { x: handle.atMm.x, y: handle.atMm.y + 800 }).y),
+    const firstFour = [
+      { x: 0, y: 800 },
+      { x: 800, y: 0 },
+      { x: 0, y: -800 },
+      { x: -800, y: 0 },
+    ];
+    const pxOf = (mm: MoveTarget): { x: number; y: number } => {
+      const at = mmToPx(v, mm);
+      return { x: Math.round(at.x), y: Math.round(at.y) };
     };
-    const firstDrop = handleDropTarget(v, firstPx, handle, field);
-    expect(firstDrop.raw).toEqual({ x: 0, y: 800 });
-    expect(firstDrop.mm).toEqual({ x: 40, y: 760 }); // 吸上了那枚既有点
-    expect(legalDrop(doc, handle.wallId, handle.end, firstDrop.raw)).toBe(true);
-    expect(legalDrop(doc, handle.wallId, handle.end, firstDrop.mm)).toBe(false);
-    // ⇒ 探针报出来的必须是**别的一发**：不是那个非法的吸点，且它真能落
-    expect(p!.targetMm).not.toEqual({ x: 40, y: 760 });
-    expect(p!.toPx).not.toEqual(firstPx);
-    expect(legalDrop(doc, p!.wallId, p!.end, p!.targetMm)).toBe(true);
+    for (const off of firstFour) {
+      const px = pxOf(off);
+      expect(legalDrop(doc, handle.wallId, handle.end, handleDropTarget(v, px, handle, field).mm)).toBe(false);
+    }
+    const fifth = handleDropTarget(v, pxOf({ x: 600, y: 600 }), handle, field);
+    expect(fifth.raw).toEqual({ x: 600, y: 600 });
+    expect(fifth.mm).toEqual({ x: 0, y: 600 });
+    expect(fifth.snap?.kind).toBe('foot'); // 吸的是贯通线上那枚垂足，不是既有点
   });
 
   it('探针的三枚像素在分数尺子下才见取整的牙齿：取整前是浮点，报出来全为整数', () => {

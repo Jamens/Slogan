@@ -375,8 +375,9 @@ export interface WallProbe {
  *    新墙的轮廓与老墙叠在一起，`pickPxOf` 的"唯一命中"筛会一路换边换到 null。
  * ⑤ **三发像素全在画布内**（`insideCanvas`）：越界的那一发 `sendInputEvent` 发不出去，
  *    闸门会在"按了没反应"和"毫米对不上"之间反复横跳。
- * ⑥ **建得出还要画得出**（`derivesCleanly`）：命令层的 `build` 不含接头分类，斜向候选会把共享点
- *    凑成星形接头（S1 不支持），那一发在松手之后的 `buildDrawList` 里抛。
+ * ⑥ **建得出还要画得出**（`derivesCleanly`）：T7 起 `wallCreate` 的 `build` 末尾就复核了派生，
+ *    所以这一筛在样例房上与 `legalWallCreate` **判得一样**（实测同一批候选）。留着它是因为
+ *    "画得出"这句话在屏幕上只有这一个读者 —— 见 `derivesCleanly` 的注释，别顺手删。
  */
 export function wallProbe(
   doc: Document,
@@ -416,7 +417,8 @@ export function wallProbe(
         legal: false,
       };
       if (!legalWallCreate(doc, draft)) continue;
-      // 筛 ⑥：建得成还要画得出。`legalWallCreate` 只跑命令的 `build`，看不见接头分类。
+      // 筛 ⑥：建得成还要画得出。T7 之后 `legalWallCreate` 里的 `build` 已经复核过派生，
+      // 这一筛与它判得一样（实测同一批候选）；留着它是"画得出"这句话的唯一读者。
       if (!derivesCleanly(doc, { ...draft, legal: true }, v, defaults)) continue;
       return {
         startPx,
@@ -436,8 +438,9 @@ export function wallProbe(
 /**
  * 筛 ⑥：拿一份**副本真建一遍、再把整层派生一遍**。
  *
- * `legalWallCreate` 只跑命令的 `build`，那一道里没有接头分类；而 `buildDrawList` 会走
- * `deriveStoreyGeometry` → `deriveJoints`，对"三个方向过同一枚点"抛 `RangeError`（S1 不支持星形接头）。
+ * `legalWallCreate` 跑命令的 `build`，而 T7 起 `build` 的最后一行就是派生复核（`assertDerivesAfterApply`）；
+ * `buildDrawList` 走的也是 `deriveStoreyGeometry` → `deriveJoints` 那一条 —— 两侧从此对"三个方向过同一枚点"
+ * （S1 不支持星形接头）给同一个判决。
  * 这条筛不是想象出来的：加进筛 ⑤ 之后样例房的探针改挑 `(0,0) → (2000,2000)` 那发 45°，
  * 而 `(0,0)` 本来已经过着两条线 —— 建完墙 `buildDrawList` 当场抛
  * 「接头 … 有 3 个墙端、3 组方向线，S1 不支持」（2026-09-28 实测，红在既有那条"建出来真的点得中"上）。
@@ -445,9 +448,11 @@ export function wallProbe(
  * 判据会红在一句与画墙无关的对账上。所以挑靶子阶段就拒掉。
  *
  * **代价与边界**：每个候选多一次整层派生（样例房一层八面墙，`wallProbe` 全程仍在毫秒级）。
- * 它只护住探针 —— 用户手拉的那一发斜墙仍然只过 `legalWallCreate`，星形接头在屏幕上的缺口
- * 原样登记给 T7（`legalDrop` / `legalWallCreate` 都不跑派生，真要补的是 core 侧的派生复核，
- * 不是 UI 再算一遍接头分类）。
+ * **T7 之后它不再是唯一防线**：`wallCreate` 的 `build` 已经复核过派生（`assertDerivesAfterApply`），
+ * 它与 `legalWallCreate` 从此判得一样（2026-09-28 实测 80 发候选里被挡的那 48 发在两侧是同一批），
+ * 是**第二道保险**而不是唯一防线。留着它是因为它是**画得出**而不是**建得出**的唯一读者：
+ * `buildDrawList` 将来长出派生之外的失败（渲染期的算术、新的抛点）时，探针依然只给得出
+ * 真窗口里点得中、画得出的一发。摘掉它的改坏行是 E28，登记在执行日的重测里。
  */
 function derivesCleanly(
   doc: Document,
