@@ -13169,11 +13169,11 @@ Expected: `pnpm verify` exit=0；`Tests` 从 Task 7 落地的 **438** 涨到 **4
 ```bash
 # 2) 临时工程那九条变异，在真仓库原样复跑一遍（同九条命令、同一份剥色管道）
 # 3) 四个闸门各跑一遍
-pnpm shot        # 6 条
-pnpm pick-shot   # 10 条
-pnpm edit-shot   # 21 条
-pnpm draw-shot   # 28 条
-pnpm prop-shot   # 本任务新增，判据条数执行日回填
+pnpm shot        # 6 条（实测）
+pnpm pick-shot   # 11 条（实测；编写期写 10）
+pnpm edit-shot   # 21 条（实测）
+pnpm draw-shot   # 28 条（实测）
+pnpm prop-shot   # 29 条（实测 = 共用那 6 条 + 本任务新增 23 条；编写期留空）
 ```
 
 Expected: 前三个闸门**逐字不变**（本任务没碰它们的通路：`planDelete` 的两条既有规则一字未动，`wallProbe` 的六道筛只被 Step 4 加了夹具、没加筛）。`--draw-shot` 若红，先按 Task 7 Step 8 那句处理（读新靶子、换字面量、重跑三遍确认稳定），再怀疑本任务 —— 本任务唯一可能影响它的地方是 `--draw-shot` 第 12/13 步那两条删除判据读的是 `planDelete` 的输出，而 `candidateIds` 的顺序定义从"洞口在前、墙在后"扩成四段；样例房无柱无板 ⇒ 两者对同一发给出逐字相同的数组，红了就是改错了。
@@ -13187,6 +13187,32 @@ git commit -m "feat(desktop): 楼层 tab 与属性面板上屏，--prop-shot 十
 ```
 
 第一条提交信息正文带上：`panel.ts` 五个出口、`planDelete` 的两条新规则与四段顺序、35 + 21 那两份用例数、九条变异的红名表。第二条带上 `--prop-shot` 的实测条数与前三个闸门的重跑结果（编写期这两笔都还没有）。
+
+#### 执行回填（Task 8，2026-09-29/30 实测；commits `c820327` + `59b918b` + `90b837a` + `eb0f28a` + `d7d8e7a` + `7c8ea24` + `0f67e4d` + `cbd6a75` + `ef5db0d` + `cb27c50`）
+
+**落地形状**：A/B（node 侧 TDD 直接在真仓库，裁决 T8-1 放弃临时工程搬运）→ C（`panel.ts` 五出口的 GREEN）→ D1/D2（renderer 真布局接屏 + 三道旧闸门重测）→ D3/D4（跑 `--draw-shot`/`--edit-shot` 时揪出的**两个既有 bug**：`snapFromCursor` 的无名垂足抢端点、`dragProbe` 漏筛锚点）→ E-1…E-4（`propProbe` 探针 + `runPropShot` 十六步 + `--prop` 判据 23 行）。D3 起座位派发撞平台日额度上限 ⇒ **控制位 inline 接管**。BASE = `3c11183`。
+
+- **计数账（盘上真话，覆盖编写期那三段拼账）**：`pnpm verify` = **`Test Files 34 passed (34)` / `Tests 482 passed (482)`**；core **25 文件 / 316 条一字未动**（⇒ 边界段那句"要改 core 就回 Task 7"没被触发）；scene-2d **6→7 文件 / 115→158 条**（新文件只有 `panel.test.ts`）。起点是 T7 回填的 **439**，净增 **43** = panel 21 + `editing.test.ts` 5（计划预见的 26）+ snapping 4 + handles 2（**裁决 T8-5 与 D4 两处修 bug 的用例，计划没有**）+ handles 11（棒 E 的 `propProbe` 那一组，**编写期没有**）。⇒ 本节上面那句「438 → 464」按盘上是 **439 → 482**，差的 18 里有 1 条是 T7 已登记的 `sharedBy` 收紧、17 条是上面那两组。
+- **五个真窗口闸门在最终这份树上跑到稳定**：`shot 6/6` ×2、`pick-shot 11/11` ×2、`edit-shot 21/21` ×2、`draw-shot 28/28` ×2、**`prop-shot 29/29` ×4**（第四遍在改掉一段误引计划原文的注释之后重跑）。⇒ 编写期预言的「前三个闸门逐字不变」**成立**：6/11/21/28 那 66 条判据一行没动、一行没红，动的只有 `--pick` 那行的原点字面量（(0,0) → **(0,32)**，裁决 T8-3 授权的**唯一**一次字面量回填，判据仍是硬等式）。
+- **`--prop-shot` 的形状**：共用那 6 条 + 本任务新增 **23 条**（P1…P23）。Step 7 那张十五行表落下来是三处展开、两处换证人：
+  1. **第 11 行与实现互斥 ⇒ 拆成 11a/11b/11c**（本任务最贵的一处计划缺陷）。正文写「点墙 + Shift 点它身上的洞口 ⇒ `panelWallId === null`」，而 `selectedWallForPanel` 与 `panel.test.ts` 的口径是**混选里只要有一面墙就开面板**（P3 关掉的是"面板偷偷取第一面"那条路）。两种读法只能活一个：**裁决 = 实现与 node 测赢**，判据**不放宽**而是加发 —— 11a 墙 + 自己的洞口（面板照开、三格逐字不变）、11b **再 Shift 点第二面墙**（三枚选中、面板整块消失）、11c 点空白清空再重选（把选中集交回第 12 步）。**代价**：`propProbe` 多两个 nullable 字段 `secondWallId` / `secondWallPx`（探针的"尽力"那一发，**不是第七道筛** —— 单墙夹具照样交得出靶子，`handles.test.ts` 新增那条钉的就是这个形状），而主进程"不许自己猜坐标"这条纪律靠它才没被破。
+  2. **第 12 行那句 `deletedIds` 只有那面墙与实现一致，但它证不了级联**。`deletedIds` 记的是**计划账**（`candidateIds` 里真源不再含有的那些），而 `planDelete` 的 `solo` 过滤本来就不给"宿主墙同批要删的洞口"发第二条 ⇒ 实测 `deletedIds.length === 1`。**换证人**：`layers.opening` **10 → 8**（删）→ **10**（撤销），同时 `depth` 只 +1 —— 没发第二条命令、构件却从画面上一起消失，这才是级联在屏幕上的形状；撤销那一半的凭据（"级联走的要跟着回来"）与删除用同一把尺。
+  3. **第 10 行「Ctrl+Z 三次」实测 2 发**：第 5 步那发厚度已在第 7 步单独撤过 ⇒ 撤销数 = 材料发数 + 1。判据钉 `undoCount === 2` 与 `undoCombos` 逐字两条，**没写成"若干发"**。
+- **两条只在真窗口才现形的实测纪律**（node 侧永远证不到）：
+  - **`<select>` 的方向键要先有焦点**（Electron 44.4.5）：焦点在 `body` 时发 `Down` 谁都不动 —— 静默停在 0，既不报错也不改值。⇒ 第 8 步前 `moveFocus(MATERIAL_SELECT)`，第 10 步发快捷键前把焦点从刚点过的复选框交出去。材料那一发的 depth 预言基线是**撤销之后**那份（`undid1.depth`）；首跑拿撤销前去加，红成"永远差一发"。
+  - **写盘报告的键名会静默覆盖终态**：`outReport = {...fin, ...逐步读数}`，同名键后者胜。首跑第 3 步的读数取了裸名 `panelWallId`，把 `fin.panelWallId`（null）盖掉 ⇒ 落盘的账与跑判据的账成了两份，而 29 行照绿。修法 = 逐步读数一律带"第几步"后缀（`panelWallIdAtSelect` / `planDeletedIds`），外加一枚**撞车就在写盘前抛**的守卫。
+- **牙测（控制位亲手，两条都改完就 `cp` + `md5sum` 还原，不碰 git）**：
+  - `STOREY_TAB_HEIGHT_PX` 32 → 40 ⇒ **P3、P7 FAIL / 27 PASS / exit=1**。P3 是布局前提、P7 是墨迹字面量（30744），其余 27 行不受影响 ⇒ 十六步自己走完了，这两行不是空转。
+  - `storeyTabsOf` 的 label 改字 ⇒ **P1 FAIL / 28 PASS / exit=1**（基线那行吃的是 tab 内容字面量）。
+  - **没做的一条要如实登记**：M2 类变异（`selectedWallForPanel` 摘掉 `kind === 'wall'` 过滤、改成取第一面）在真窗口红在 main 第 11b 步的 `waitUntil` **抛**，不落脚本判据行 —— 它的脚本侧凭据要等 `runPropShot` 不再自己抛才有意义。node 侧两条（`handles.test.ts` 第二面墙 + `panel.test.ts` 混选墙 + 洞口）是有牙的，故不为它单开一次跑。
+- **listing 与盘上不符（逐条）**：
+  - Step 8 的 `git add` 白名单（`packages/scene-2d/{src,test}` + `apps/desktop` + 根 `package.json`）**漏 `scripts/desktop-shot.mjs`** ⇒ 照抄会把 23 行判据落在提交外（Task 7 同款漏排，第二次犯）。
+  - Step 7 那句「`whenLoaded` / `waitForDebug` / `focusForInput` / `pressPx` / `movePx` / `keyCombo` / `readReport` 六个助手沿用 T3~T6 那一份，**一步都不许新写**」在屏幕上不成立：棒 E 新写八个 —— `propShotRequested` / `readPropReport` / `domCenterPx` / `clickDomPx` / `shiftClickCanvasPx` / `typeText` / `moveFocus` / `readSelectState`。原因是面板那一发点的是 **DOM**（页面空间，**不**加 `canvasOriginPx`），而 T3~T6 那批只会点画布与发快捷键；沿用那六个一字未动。**代价**：主进程多八个助手，全是读 DOM 或转发 `sendInputEvent`，没有新语义。
+  - Files 表里 `main/index.ts` 那行只写「加 `--prop-shot` 的十六步合成输入」，实际还加了四个形状（`WallPropsShape` / `StoreyTabShape` / `PanelTrialShape` / `PropProbeShape`）、`whenReady` 的四段→五段分支，以及 `--prop` 进 `wantInput`（派发合成输入必须拿 OS 前台焦点）。
+  - 本节引言那句「`.tscheck/t9` = 31 文件 / 449 条」是临时工程的账；盘上从 34/439 起算 ⇒ 裁决 T8-1 换轨真仓库，Step 8 的"逐字搬回三个文件"那一步**没有发生**（也不该发生）。
+  - `panelReadout()` 这条约束（面板上屏的值必须由**面板自己在 commit 后的 `useEffect`** 公布，不许 `PlanCanvas` 拿同一批纯函数重算，也不许渲染期赋值 —— `StrictMode` 双跑会公布没上屏的值）只存在于台账（裁决 T8-4 的 R2），正文 Step 7 没写。**这是"面板画空也绿"那类假绿的结构性修法，后续任务加诊断字段照此办理。**
+- **转下游 / 仍未收掉的**：`storeyDelete` 的入口不是 Delete 键（删整层要确认框，S1 没有）；柱与板屏幕上点不到 ⇒ 删柱 / 删板只有 node 侧红绿（P9 的代价原样成立，`--prop-shot` 第 12 行那句"素材自证"只证了"取不到柱板时 `unsupported` 就该空"）；面板的多选批量改厚（P3 现形 = 两面墙就整块不显示）；材料候选按构件分表（P4 的代价）；`--prop-shot` P4/P5 两行吃的 `revision` 是 **store 的重绘计数**（`useEditor((s) => s.revision)`），**不是**文档 revision —— 它钉的是"切层重绘了但没写文档"，别读成后者。
+- **过程教训（进台账）**：`git add` 两次被权限分类器拒（棒 B、D1）⇒ 提交一律由控制位执行；`main/index.ts` 那段注释曾把一条**我自己的执行笔记**的话引成"计划原文"（`deletedIds` 两枚），E-4 按盘上口径订正 —— 引语要对着计划正文再念一遍才许写进注释。
 
 ---
 
@@ -13957,10 +13983,10 @@ Expected: `pnpm verify` exit=0；`Tests` 从 Task 8 落地的 **464** 涨到 **4
 # 2) Step 6 那九条变异在真仓库原样复跑（同九条模式串、同一条剥色管道、同一个 try/finally 还原）
 # 3) 五个闸门各跑一遍，判据一个字都不改
 pnpm shot        # 6 条
-pnpm pick-shot   # 10 条
+pnpm pick-shot   # 11 条（Task 8 实测订正：编写期写 10）
 pnpm edit-shot   # 21 条
 pnpm draw-shot   # 28 条
-pnpm prop-shot   # 16 条
+pnpm prop-shot   # 29 条（Task 8 实测回填：6 条共用 + 23 条面板行）
 ```
 
 Expected: **五个闸门的判据逐字不变、且全都 PASS** —— 这不是"大概不受影响"，是 Step 5 那六进程实测出来的：样例房一层的场表 `{endpoint:8, midpoint:8, axes:8}`、sweep 计数、`dragProbe` 的落点在补档前后**逐字相同**，交点档对样例房进表 **0** 枚（28 对 → 15 不平行 → 9 枚去重坐标 → 9 枚全被端点/中点占住），而样例房无柱无板 ⇒ 柱心/板角两段循环对它空转（T5 已核实那条）。
