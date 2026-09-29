@@ -6,12 +6,17 @@ import {
   requirePoint,
   wallAxisById,
   wallMoveEndpoint,
+  wallSetLoadBearing,
+  wallSetMaterial,
+  wallSetThickness,
   type Document,
+  type EntityId,
   type WallEnd,
 } from '@dajia/core';
 import { mmToPx, type Px, type Viewport } from './viewport';
 import type { DrawOp, Selection } from './drawlist';
-import { PICK_TOL_PX, pickOne } from './pick';
+import { openingPickPx, PICK_TOL_PX, pickOne, pickPxOf, probeTarget } from './pick';
+import { PANEL_MATERIAL_OPTIONS, trialCommand, wallPropsOf, type WallProps } from './panel';
 import {
   dropTargetOf,
   snapFieldOf,
@@ -362,4 +367,117 @@ export function pointSnapshot(doc: Document, storeyId: string): Record<string, M
     }
   }
   return out;
+}
+
+/**
+ * 面板那一步的厚度候选表，**与裁决 P8 的 B 组实测同一张表**（样例房一层八面墙各试这四档：
+ * 四面全档可改、四面全档锁死）。顺序是判据的一部分：`propProbe` 交的是**表里第一档改得动的**，
+ * 所以红了先查这张表与那面墙的轴长，别查屏幕。
+ */
+export const PROP_THICKNESS_CANDIDATES: readonly number[] = [120, 370, 500, 3900];
+
+/** `--prop-shot` 的靶子：一面改得动的墙、它身上的一樘洞口、以及三格要写进去的新值。 */
+export interface PropProbe {
+  readonly wallId: EntityId;
+  /** 选中这面墙的那一发（画布空间、整数）。 */
+  readonly clickPx: Px;
+  /** 清空选中集的那一发：序列里每两步之间都要它，否则会带着上一步的选中集进下一步。 */
+  readonly blankPx: Px;
+  /** 住在 `wallId` 那面墙上的一樘洞口（第 11 步的 shift 点击）。 */
+  readonly openingId: EntityId;
+  readonly openingPx: Px;
+  /** 探针当时刻意**没有**改过的读数：闸门拿它当"第 3 步该读到什么"的预言。 */
+  readonly props: WallProps;
+  readonly thicknessTo: number;
+  readonly materialTo: string;
+  readonly loadBearingTo: boolean;
+}
+
+/**
+ * 找一发"值得在真窗口里改属性"的墙 —— `--prop-shot` 十六步的靶子，与 `dragProbe` / `wallProbe`
+ * 同一条纪律：**主进程只读它，不猜坐标，也不猜哪面墙改得动**。
+ *
+ * 六道筛，每条各堵一处假绿：
+ * ① `wallPropsOf` 给得出读数（本层的墙、还活在文档里）。
+ * ② 点得中且在画布内：`pickPxOf` 那把"全局唯一命中"的尺 + `insideCanvas`（D4 那次的教训 ——
+ *    越界那一发会被 `sendInputEvent` 夹到边界上，测的就不再是探针声称的那一发）。
+ * ③ **改得动**：`PROP_THICKNESS_CANDIDATES` 里第一档"与现值不同且真源收"的厚度。少了这一筛，
+ *    探针可能挑到 P8 B 组那四面被 T 接同厚锁死的墙，`--prop-shot` 第 5 步会红成"面板拒了合法输入"
+ *    的假象（计划原文那句「挑到后四面上，那六步会红成假象」说的就是这件事）。
+ *    "与现值不同"是 P12 的另一半：同值那一发屏幕上根本不发命令，depth 判据会空转。
+ * ④ 材料候选同理。**诚实说一句：④⑤ 那两次现问真源今天没有能红的路径** —— core 对
+ *    `wall.setMaterial` 只判写法（非空、无首尾空白、≤32 字符），对 `wall.setLoadBearing` 连写法都不判，
+ *    五档候选全过 ⇒ 摘掉这两次试跑，`handles.test.ts` 31 条一条不红（2026-09-30 变异实测
+ *    M-E1-d / M-E1-e，见 `t8E-teeth-2.log`）。留着它们要买的东西写在这里：屏幕侧不许攒第二套合法性
+ *    口径（裁决 P11），将来 core 给材料或承重补一道守卫时这里**不需要改**就能把"改不动的墙"跳过去。
+ * ⑤ 承重翻转同理（真源今天没有守卫会拒它，但那是**判出来的**，不是假设的）。
+ * ⑥ 它身上有一樘点得中的洞口：第 11 步"墙 + 洞口"多选与第 12 步那句 cascade 全靠它。
+ *    样例房一层四樘洞口实测全点得中（2026-09-30），但**不是每面墙都有洞口** ——
+ *    横墙 `stem` 与两面隔墙就没有，③④⑤ 全过而 ⑥ 不过，必须跳过。
+ *
+ * 谁被挑中由 uuidv7 每次现建的 id 定（`byKind` 是 id 升序），所以调用方与测试都**只判性质，
+ * 不判具体 id**。返回 null 是合法结果（空层、没有带洞口的可改墙），闸门在那一步就抛。
+ */
+export function propProbe(
+  doc: Document,
+  storeyId: string,
+  ops: readonly DrawOp[],
+  v: Viewport,
+): PropProbe | null {
+  // 空白点与"随便一面墙"都由 `probeTarget` 给：它比这里的每一筛都便宜，且它 null 就意味着
+  // 这一层铺满了画布 —— 那种屏幕上"点空白清空选中"根本做不到，整条序列的前提没了。
+  const target = probeTarget(ops, v);
+  if (target === null) return null;
+  const blankPx = snapPx(target.blankPx);
+  for (const wall of doc.byKind('wall')) {
+    if (wall.storeyId !== storeyId) continue;
+    const props = wallPropsOf(doc, wall.id); // 筛 ①
+    if (props === null) continue;
+    const rawClick = pickPxOf(ops, wall.id); // 筛 ② 之一
+    if (rawClick === null) continue;
+    const clickPx = snapPx(rawClick);
+    if (!insideCanvas(v, clickPx)) continue; // 筛 ② 之二
+    const thicknessTo = PROP_THICKNESS_CANDIDATES.find(
+      // 筛 ③：现问真源，不查表里的"应该能改"
+      (cand) =>
+        cand !== props.thicknessMm &&
+        trialCommand(doc, () => wallSetThickness({ wallId: wall.id, thicknessMm: cand })).ok,
+    );
+    if (thicknessTo === undefined) continue;
+    const materialTo = PANEL_MATERIAL_OPTIONS.find(
+      (opt) =>
+        opt.value !== props.material &&
+        trialCommand(doc, () => wallSetMaterial({ wallId: wall.id, material: opt.value })).ok,
+    )?.value; // 筛 ④
+    if (materialTo === undefined) continue;
+    const loadBearingTo = !props.loadBearing;
+    if (
+      !trialCommand(doc, () => wallSetLoadBearing({ wallId: wall.id, loadBearing: loadBearingTo })).ok
+    ) {
+      continue; // 筛 ⑤
+    }
+    let openingId: EntityId | null = null;
+    let openingPx: Px | null = null;
+    for (const opening of doc.byKind('opening')) {
+      if (opening.hostWallId !== wall.id) continue;
+      const px = openingPickPx(ops, opening.id);
+      if (px === null || !insideCanvas(v, px)) continue;
+      openingId = opening.id;
+      openingPx = px;
+      break;
+    }
+    if (openingId === null || openingPx === null) continue; // 筛 ⑥
+    return {
+      wallId: wall.id,
+      clickPx,
+      blankPx,
+      openingId,
+      openingPx,
+      props,
+      thicknessTo,
+      materialTo,
+      loadBearingTo,
+    };
+  }
+  return null;
 }

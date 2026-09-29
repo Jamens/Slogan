@@ -1,5 +1,5 @@
 import { DRAW_LAYERS, type DrawLayer, type DrawOp } from './drawlist';
-import type { Px, Viewport } from './viewport';
+import { intPx, type Px, type Viewport } from './viewport';
 
 /**
  * 吸附半径，单位是**屏幕像素**。换算成毫米比较就做不到"放大时吸附不变松"：
@@ -199,6 +199,37 @@ function uniqueHitOf(ops: readonly DrawOp[], ownerId: string, minEdgePx: number)
  */
 export function pickPxOf(ops: readonly DrawOp[], ownerId: string): Px | null {
   return uniqueHitOf(ops, ownerId, MIN_PICK_EDGE_PX);
+}
+
+/**
+ * 洞口那种"只有线、没有面"的实体的可点像素（`--prop-shot` 第 11 步"墙 + 它身上的洞口"多选的靶子）。
+ *
+ * 它与 `pickPxOf` **故意不是同一把尺**：洞口的两条断口线横穿墙厚，中点正好压在宿主墙的轴线上
+ * ⇒ "全局恰好一条命中"在洞口身上永远不成立（2026-09-30 实测：1167×833 那份视口下四樘洞口的
+ * 每一发候选都是 2 个 owner —— 洞口自己 + 宿主墙）。照抄那把尺，`--prop-shot` 挑不出靶子。
+ * 这里要求的是"**赢得不靠巧合**"，两条：
+ * ① `pickOne` 的赢家必须是它本身。层序上 `opening` 恒压 `structure`（`DRAW_LAYERS` 的次序），
+ *    所以宿主墙那一发不参与"谁赢"的争论 —— 但这一条仍然要**实测**判，不许由注释假定。
+ * ② 同层不许有第二个 owner 命中。两樘相邻洞口之间那点墙垛在屏幕上就是几像素的距离，
+ *    这时"谁被选中"是 `pickAt` 收尾那个 ownerId 升序给的巧合，不是判据（与 `uniqueHitOf` 的
+ *    "多命中就换下一条边"同一条纪律，只是把"全局"收窄成"同层"）。
+ *
+ * 候选像素**先取整再判**：量的是 `sendInputEvent` 真发出去的那一发，不是它四舍五入之前的浮点。
+ * 边长下限在这里用不上（`MIN_PICK_EDGE_PX` 管的是"多边形一条边"）：洞口本来就只有几十像素长的
+ * 断口线，套那把尺等于判它永远点不中 —— 而屏幕上它当然点得中。
+ */
+export function openingPickPx(ops: readonly DrawOp[], ownerId: string): Px | null {
+  for (const op of ops) {
+    if (op.kind !== 'line' || op.ownerId !== ownerId) continue;
+    const mid = intPx({ x: (op.from.x + op.to.x) / 2, y: (op.from.y + op.to.y) / 2 });
+    const hits = pickAt(ops, mid);
+    if (hits.length === 0 || hits[0].ownerId !== ownerId) continue; // 筛 ①
+    const layer = op.pen.layer;
+    const sameLayer = new Set(hits.filter((h) => h.layer === layer).map((h) => h.ownerId));
+    if (sameLayer.size !== 1) continue; // 筛 ②
+    return mid;
+  }
+  return null;
 }
 
 /**

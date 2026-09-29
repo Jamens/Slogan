@@ -67,6 +67,19 @@ export function pxToMm(v: Viewport, p: Px): Vec2 {
 }
 
 /**
+ * 像素取整：`mmToPx` 在分数尺子下给的是浮点（`fitStorey` 的 `pxPerMm = widthPx / 包围盒宽`
+ * 多半不是整齐数），而闸门那一侧 `sendInputEvent` 只收整数 DIP —— 探针交出浮点等于拿浮点跟
+ * 主进程对赌。取整之后必须**拿取整那一发再问一次**屏幕会选中谁，不许继续拿浮点判命中。
+ *
+ * 本包里另有两份同体的私有函数（`handles.ts` 的 `snapPx`、`editing.ts` 的 `intPx`）：它们是
+ * T5/T6 各文件自带的，本棒只把**新出口**接在这里、不动那两份 —— 收拢它们要重跑五道闸门，
+ * 这件事登记在计划 4 的入口债里，不该由一道新探针顺路牵进来。
+ */
+export function intPx(p: Px): Px {
+  return { x: Math.round(p.x), y: Math.round(p.y) };
+}
+
+/**
  * 平移视口：`dPx` 是**指针移动量**，图跟手 —— 同一个毫米点在屏幕上移动 `dPx`。
  * 于是 x 用减（原点在世界里往左），y 用加（屏幕 y 轴朝下，`mmToPx` 里已经翻过一次，
  * 这里再翻就变成"往右拖图往左走"）。约定写在函数上而不是只写在测试标题里：

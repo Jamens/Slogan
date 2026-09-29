@@ -4,6 +4,7 @@ import {
   deriveStoreyGeometry,
   Document,
   TransactionLog,
+  openingCreate,
   requirePoint,
   storeyCreate,
   uuidv7,
@@ -11,6 +12,9 @@ import {
   wallAxisById,
   wallCreate,
   wallMoveEndpoint,
+  wallSetLoadBearing,
+  wallSetMaterial,
+  wallSetThickness,
   type WallEntity,
 } from '@dajia/core';
 import {
@@ -24,22 +28,31 @@ import {
   HANDLE_COLOR,
   HANDLE_RADIUS_PX,
   handleDropTarget,
+  INK,
   legalDrop,
   mmToPx,
   moveTargetOf,
+  openingPickPx,
+  pickAt,
   pickHandle,
   pickOne,
+  pickPxOf,
   PIXEL_CHANNEL_TOL,
   pointSnapshot,
   PREVIEW_COLOR,
+  propProbe,
+  PROP_THICKNESS_CANDIDATES,
   pxToMm,
   PICK_TOL_PX,
   SELECTED,
   snapFieldOf,
   SNAP_COLOR,
   SNAP_TOL_PX,
+  trialCommand,
   viewportOf,
+  wallPropsOf,
   type DragHandle,
+  type DrawOp,
   type MoveTarget,
   type Px,
   type Selection,
@@ -783,5 +796,258 @@ describe('回读用的投影与配色', () => {
     expect(spread(HANDLE_COLOR, PREVIEW_COLOR)).toBeGreaterThan(min);
     expect(spread(HANDLE_COLOR, SNAP_COLOR)).toBeGreaterThan(min);
     expect(spread(PREVIEW_COLOR, SNAP_COLOR)).toBeGreaterThan(min);
+  });
+});
+
+/**
+ * 面板靶子的夹具：一面 8000×240 的横墙，外加指定位置 / 宽度的窗。
+ *
+ * 为什么不用样例房：样例房一层八面墙里有四面被 T 接同厚锁死（裁决 P8 的 B 组实测），
+ * 而"这面墙改得动"正是 `propProbe` 最重要的一道筛 —— 在样例房里判它，红了分不清是筛坏了
+ * 还是这面墙本来就该被跳过。这份夹具里唯一一面墙**必然改得动**，于是那一条筛的牙看得见。
+ */
+function wallWithOpenings(
+  openings: readonly { readonly distanceMm: number; readonly widthMm: number }[],
+  thicknessMm = 240,
+): { doc: Document; storeyId: string; wallId: string; openingIds: string[] } {
+  const projectId = uuidv7();
+  const log = new TransactionLog(Document.create(projectId));
+  log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+  let storeyId = '';
+  for (const id of log.affected) {
+    if (log.document.get(id)?.kind === 'storey') storeyId = id;
+  }
+  if (storeyId === '') throw new TypeError('affected 里没有新建的楼层');
+  log.dispatch(
+    wallCreate({ storeyId, start: { x: 0, y: 0 }, end: { x: 8000, y: 0 }, thicknessMm, heightMm: 3000 }),
+  );
+  const wallId = createdWallOf(log).id;
+  const openingIds: string[] = [];
+  for (const o of openings) {
+    log.dispatch(
+      openingCreate({
+        hostWallId: wallId,
+        distanceMm: o.distanceMm,
+        widthMm: o.widthMm,
+        heightMm: 1500,
+        category: 'window',
+      }),
+    );
+    let id = '';
+    for (const aid of log.affected) {
+      if (log.document.get(aid)?.kind === 'opening') id = aid;
+    }
+    if (id === '') throw new TypeError('affected 里没有新建的洞口');
+    openingIds.push(id);
+  }
+  return { doc: log.document, storeyId, wallId, openingIds };
+}
+
+describe('面板靶子探针 propProbe 与洞口像素 openingPickPx（Task 8 棒 E：--prop-shot 的靶子由 scene-2d 给）', () => {
+  // 闸门那份视口：真窗口三格布局稳定后画布实测 1167×833（见 desktop-shot 的 D1 与 origin 那一行）。
+  const gate = fitStorey(house.doc, house.lowerStoreyId, 1167, 833, 60);
+  const gateOps = buildDrawList(house.doc, house.lowerStoreyId, gate, EMPTY_SELECTION);
+  /**
+   * 三发像素的合格形状：**整数**且**在画布内**。
+   * 整数是 `sendInputEvent` 的口径（它只收整数 DIP，浮点等于拿浮点跟主进程对赌）；
+   * 在画布内是 T5/D4 那条实测教训 —— 越界那一发会被夹到边界上，测的就不再是探针声称的那一发。
+   */
+  const usablePx = (v: Viewport, px: Px): boolean =>
+    Number.isInteger(px.x) &&
+    Number.isInteger(px.y) &&
+    px.x >= 0 &&
+    px.y >= 0 &&
+    px.x < v.widthPx &&
+    px.y < v.heightPx;
+
+  it('闸门那份视口交得出靶子：三发像素整数且在画布内，每一发点下去赢的正是它认领的那个 owner', () => {
+    const p = propProbe(house.doc, house.lowerStoreyId, gateOps, gate);
+    expect(p).not.toBeNull();
+    expect(usablePx(gate, p!.clickPx) && usablePx(gate, p!.openingPx) && usablePx(gate, p!.blankPx)).toBe(true);
+    // 点下去真选中它：`pickOne` 是 renderer 那一发唯一的裁判。探针说"这发选墙"而屏幕选了别的
+    // ⇒ `--prop-shot` 第 3 步的面板开在别面墙上，后面每一格读数都对不上那面改得动的墙。
+    expect(pickOne(gateOps, p!.clickPx)?.ownerId).toBe(p!.wallId);
+    expect(pickOne(gateOps, p!.openingPx)?.ownerId).toBe(p!.openingId);
+    expect(pickAt(gateOps, p!.blankPx).length).toBe(0);
+    // 洞口必须住在这面墙上：第 11 步的"墙 + 它身上的洞口"多选，选了别处的洞口就不 cascade，
+    // 第 12 步那句 `deletedIds` 会变成两笔不相干的删除。
+    const opening = house.doc.get(p!.openingId);
+    expect(opening?.kind === 'opening' ? opening.hostWallId : null).toBe(p!.wallId);
+  });
+
+  it('交出的那面墙一定改得动：三格候选都现问过真源，厚度取候选表里第一档改得动的', () => {
+    const p = propProbe(house.doc, house.lowerStoreyId, gateOps, gate)!;
+    const props = wallPropsOf(house.doc, p.wallId);
+    expect(props).not.toBeNull();
+    // 探针报的读数 = 真源读数（它不许自己攒一份，否则面板与探针各说各话）
+    expect(p.props).toEqual(props);
+    expect(
+      trialCommand(house.doc, () => wallSetThickness({ wallId: p.wallId, thicknessMm: p.thicknessTo })).ok,
+    ).toBe(true);
+    // 同值那一发屏幕上根本不发（P12）⇒ 挑中它 `--prop-shot` 第 5 步的 depth 判据就空转
+    expect(p.thicknessTo).not.toBe(props!.thicknessMm);
+    expect(
+      trialCommand(house.doc, () => wallSetMaterial({ wallId: p.wallId, material: p.materialTo })).ok,
+    ).toBe(true);
+    expect(p.materialTo).not.toBe(props!.material);
+    expect(
+      trialCommand(house.doc, () => wallSetLoadBearing({ wallId: p.wallId, loadBearing: p.loadBearingTo })).ok,
+    ).toBe(true);
+    expect(p.loadBearingTo).toBe(!props!.loadBearing);
+    // 「第一档改得动的」这句是筛 ③ 的形状：挑了中间某一档 = 探针在按别的规则挑
+    const first = PROP_THICKNESS_CANDIDATES.find(
+      (cand) =>
+        cand !== props!.thicknessMm &&
+        trialCommand(house.doc, () => wallSetThickness({ wallId: p.wallId, thicknessMm: cand })).ok,
+    );
+    expect(p.thicknessTo).toBe(first ?? null);
+  });
+
+  it('墙上现值正好是候选表第一档（120）时不许把同值那一头发出去：P12 的另一半靠 ③ 那句 `!==` 兜', () => {
+    // 屏幕上同值那一发根本不调 `dispatch`（裁决 P12），于是 `--prop-shot` 第 5 步的 depth 判据会空转
+    // —— 探针若把 120 交给它，那一步就成了"什么都没发生也算过"。
+    const f = wallWithOpenings([{ distanceMm: 3000, widthMm: 1500 }], 120);
+    // 0.2px/mm 而不是前面用例的 0.1：120mm 墙在 0.1 下只有 12px 厚，轮廓边中点离洞口的断口线
+    // 实测 6.0px（在 8px 容差内）⇒ 那一发是两次命中，`pickPxOf` 给 null，筛 ② 先拒 —— 与本条要判的
+    // 筛 ③ 无关（2026-09-30 实测，见 t8E-120.log）。放大一档，那面墙就点得中了。
+    const v = viewportOf(1000, 800, { pxPerMm: 0.2, center: vec(4000, 0) });
+    const ops = buildDrawList(f.doc, f.storeyId, v, EMPTY_SELECTION);
+    const p = propProbe(f.doc, f.storeyId, ops, v);
+    expect(p).not.toBeNull();
+    expect(p!.props.thicknessMm).toBe(120); // 素材自证：这面墙的现值就是表里的第一档
+    expect(p!.thicknessTo).toBe(370); // 表里下一档，且它真改得动
+    expect(p!.thicknessTo).not.toBe(p!.props.thicknessMm);
+  });
+
+  it('换一份分数原点的视口（1200×901）照样交得出靶子：探针不吃整数尺子', () => {
+    const frac = fitStorey(house.doc, house.lowerStoreyId, 1200, 901, 60);
+    const fracOps = buildDrawList(house.doc, house.lowerStoreyId, frac, EMPTY_SELECTION);
+    const p = propProbe(house.doc, house.lowerStoreyId, fracOps, frac);
+    expect(p).not.toBeNull();
+    expect(usablePx(frac, p!.clickPx) && usablePx(frac, p!.openingPx) && usablePx(frac, p!.blankPx)).toBe(true);
+  });
+
+  it('没有可点洞口的墙一律不许交出去：第 11 步那句"墙 + 它身上的洞口"多选靠的就是这一筛', () => {
+    const bare = wallWithOpenings([]);
+    const v = viewportOf(1000, 800, { pxPerMm: 0.1, center: vec(4000, 0) });
+    const bareOps = buildDrawList(bare.doc, bare.storeyId, v, EMPTY_SELECTION);
+    // 素材自证：这份夹具的墙**点得中**、也**改得动**、还在画布内 ⇒ 下面那句 null 只可能来自"没有洞口"
+    expect(pickPxOf(bareOps, bare.wallId)).not.toBeNull();
+    expect(trialCommand(bare.doc, () => wallSetThickness({ wallId: bare.wallId, thicknessMm: 370 })).ok).toBe(true);
+    expect(propProbe(bare.doc, bare.storeyId, bareOps, v)).toBeNull();
+    // 补一樘窗 ⇒ 同一把尺子下立刻交得出（证明上面那句 null 不是"墙本身不合格"，而是缺 ⑥ 那一发）
+    const withWin = wallWithOpenings([{ distanceMm: 3000, widthMm: 1500 }]);
+    const winOps = buildDrawList(withWin.doc, withWin.storeyId, v, EMPTY_SELECTION);
+    const p = propProbe(withWin.doc, withWin.storeyId, winOps, v);
+    expect(p).not.toBeNull();
+    expect(p!.wallId).toBe(withWin.wallId);
+    expect(p!.openingId).toBe(withWin.openingIds[0]);
+  });
+
+  it('洞口的像素判"同层唯一赢家"，不判"全局唯一命中"：断口线的中点天生压在宿主墙的轴线上', () => {
+    const f = wallWithOpenings([{ distanceMm: 3000, widthMm: 1500 }]);
+    const v = viewportOf(1000, 800, { pxPerMm: 0.1, center: vec(4000, 0) });
+    const o = f.openingIds[0]!;
+    const oOps = buildDrawList(f.doc, f.storeyId, v, EMPTY_SELECTION);
+    const px = openingPickPx(oOps, o);
+    expect(px).not.toBeNull();
+    // 这一条只判"取整"（`openingPickPx` 的口径）；在不在画布内由 `propProbe` 那道 `insideCanvas`
+    // 负责（上面第四条用例判的就是它），两把尺不许在同一处各判一半。
+    expect(Number.isInteger(px!.x) && Number.isInteger(px!.y)).toBe(true);
+    expect(pickOne(oOps, px!)?.ownerId).toBe(o);
+    // 牙在这一句：那一发上**宿主墙也命中**（断口线横穿墙厚、中点正落在墙的轴线上），
+    // 所以墙那把尺"pickAt 恰好返回 1 条"在洞口身上永远不成立 ⇒ 照抄它这里就是 null。
+    const hits = pickAt(oOps, px!);
+    expect(hits.length).toBeGreaterThan(1);
+    // 反过来它按 `pickPxOf`（点墙的尺）取就是 null：洞口只有线与字，没有面
+    expect(pickPxOf(oOps, o)).toBeNull();
+  });
+
+  it('两份"差一发就越界"的视口各判一道筛：墙点在画布外拒 ②，洞口点在画布外拒 ⑥', () => {
+    // 同一份夹具（一面 8000mm 墙 + 一樘 x=1000..2500 的窗），只挪视口中心，
+    // 于是两发像素在屏幕上**先后**掉出边界：中心 -3500 时墙点 (1250,388) 出界、洞口点 (950,400) 仍在界内；
+    // 中心 +8000 时反过来，墙点 (100,388) 在界内、洞口点 (-200,400) 出界。
+    // 为什么非要两份：对称视口下摘掉任意一道 `insideCanvas` 都还是 null（另一道接着拒），判不出少了哪一道
+    // —— 摘掉筛 ② 那半的变异只有第一份能红，摘掉 ⑥ 里那半的变异只有第二份能红。
+    const f = wallWithOpenings([{ distanceMm: 1000, widthMm: 1500 }]);
+    const opsOf = (cx: number) => {
+      const v = viewportOf(1000, 800, { pxPerMm: 0.1, center: vec(cx, 0) });
+      return { v, ops: buildDrawList(f.doc, f.storeyId, v, EMPTY_SELECTION) };
+    };
+    const inCanvas = (v: Viewport, px: Px | null): boolean =>
+      px !== null && Math.round(px.x) >= 0 && Math.round(px.y) >= 0 && Math.round(px.x) < v.widthPx && Math.round(px.y) < v.heightPx;
+
+    // 第一份：墙点出界。素材自证 ⑥ 那一发本可用（不然 null 也可能是"没有洞口"给的），
+    // 且这面墙 ①③④⑤ 全过 —— 于是那句 null 只可能来自 ② 的后半。
+    const a = opsOf(-3500);
+    expect(pickPxOf(a.ops, f.wallId)).not.toBeNull();
+    expect(inCanvas(a.v, pickPxOf(a.ops, f.wallId))).toBe(false);
+    expect(inCanvas(a.v, openingPickPx(a.ops, f.openingIds[0]!))).toBe(true);
+    expect(trialCommand(f.doc, () => wallSetThickness({ wallId: f.wallId, thicknessMm: 370 })).ok).toBe(true);
+    expect(propProbe(f.doc, f.storeyId, a.ops, a.v)).toBeNull();
+
+    // 第二份：洞口点出界。这里墙点在界内 ⇒ 拒的只能是 ⑥ 里那半句 `insideCanvas`。
+    const b = opsOf(8000);
+    expect(inCanvas(b.v, pickPxOf(b.ops, f.wallId))).toBe(true);
+    expect(openingPickPx(b.ops, f.openingIds[0]!)).not.toBeNull(); // 点得出，只是落在画布外
+    expect(inCanvas(b.v, openingPickPx(b.ops, f.openingIds[0]!))).toBe(false);
+    expect(propProbe(f.doc, f.storeyId, b.ops, b.v)).toBeNull();
+  });
+
+  it('两樘洞口挨在一处时不许靠 ownerId 升序的巧合赢：同层有两个 owner 命中的那一发必须换掉', () => {
+    // 0.05px/mm 下两樘窗之间那 100mm 墙垛 = 5px（在 8px 容差内）⇒ 洞口 2 的**第一条**候选
+    // （近端断口线中点）与洞口 1 的远端断口线在同层撞车。它必须被拒，然后换到自己那一发干净的。
+    const f = wallWithOpenings([
+      { distanceMm: 1000, widthMm: 1500 },
+      { distanceMm: 2600, widthMm: 1500 },
+    ]);
+    const v = viewportOf(1000, 800, { pxPerMm: 0.05, center: vec(4000, 0) });
+    const o2 = f.openingIds[1]!;
+    const twoOps = buildDrawList(f.doc, f.storeyId, v, EMPTY_SELECTION);
+    // 素材自证：撞车那一发确实存在，而且正是扫描顺序里的第一发候选（少了这两句，下面全恒真）
+    const firstJamb = twoOps.find((op) => op.ownerId === o2 && op.kind === 'line');
+    expect(firstJamb?.kind).toBe('line');
+    if (firstJamb?.kind !== 'line') throw new TypeError('夹具没造出洞口的断口线');
+    const firstMid: Px = {
+      x: Math.round((firstJamb.from.x + firstJamb.to.x) / 2),
+      y: Math.round((firstJamb.from.y + firstJamb.to.y) / 2),
+    };
+    expect(
+      pickAt(twoOps, firstMid).filter((h) => h.layer === 'opening').map((h) => h.ownerId),
+    ).toHaveLength(2);
+    const px = openingPickPx(twoOps, o2);
+    expect(px).not.toBeNull();
+    // 交出来的那一发上同层只有一个 owner：赢家由层序给，不由 ownerId 升序给
+    const sameLayer = new Set(pickAt(twoOps, px!).filter((h) => h.layer === 'opening').map((h) => h.ownerId));
+    expect([...sameLayer]).toEqual([o2]);
+    expect(pickOne(twoOps, px!)?.ownerId).toBe(o2);
+  });
+
+  it('候选那一发上压着更高一层时不许交出去：赢家判据不靠"同层只有一个"就够', () => {
+    // 合成一条 annotation 层的线压在候选点上当挡路牌 —— 这是**喂给纯函数的入参**，
+    // 不是替屏幕造一个假命中：`buildDrawList` 的注记层本来就用 `LABEL_PEN`（layer:'annotation'）
+    // 出线，楼层标签压住洞口断口线在真窗口里是可能发生的事（`distanceOfOp` 只让 line/polygon 参与命中，
+    // text 不参与，所以这里用线复现同一层序）。少了筛 ①，这一发会因为"同层只有这樘洞口"而照交。
+    const f = wallWithOpenings([{ distanceMm: 1000, widthMm: 1500 }]);
+    const v = viewportOf(1000, 800, { pxPerMm: 0.1, center: vec(4000, 0) });
+    const ops = buildDrawList(f.doc, f.storeyId, v, EMPTY_SELECTION);
+    const o = f.openingIds[0]!;
+    const px = openingPickPx(ops, o);
+    expect(px).not.toBeNull();
+    const blocker: DrawOp = {
+      kind: 'line',
+      ownerId: f.storeyId, // 注记层的 owner 是别处的实体，不是这樘洞口
+      from: { x: px!.x - 30, y: px!.y },
+      to: { x: px!.x + 30, y: px!.y },
+      pen: { layer: 'annotation', lineType: 'solid', widthPx: 1, color: INK },
+    };
+    const withBlocker = [...ops, blocker];
+    // 素材自证：挡路牌确实压在那一发上，而且层序让它赢（少了这两句，下面全恒真）
+    expect(pickOne(withBlocker, px!)?.ownerId).toBe(f.storeyId);
+    expect(pickAt(withBlocker, px!).some((h) => h.ownerId === o)).toBe(true);
+    const moved = openingPickPx(withBlocker, o);
+    // 两樘断口线的中点同在一行上（y 相同），所以"换了一发"= 任一通道不同，不是两通道都不同。
+    expect(moved === null || moved.x !== px!.x || moved.y !== px!.y).toBe(true);
+    if (moved !== null) expect(pickOne(withBlocker, moved)?.ownerId).toBe(o);
   });
 });
