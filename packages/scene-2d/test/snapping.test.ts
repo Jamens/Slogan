@@ -22,7 +22,9 @@ import {
   EMPTY_SNAP_FIELD,
   PICK_TOL_PX,
   SNAP_TOL_PX,
+  buildDrawList,
   demoHouse,
+  draftAtPress,
   dropTargetOf,
   fitStorey,
   mmToPx,
@@ -31,6 +33,7 @@ import {
   snapFieldOf,
   snapFromCursor,
   viewportOf,
+  wallProbe,
   type MoveTarget,
   type Px,
   type SnapField,
@@ -366,6 +369,75 @@ describe('光标 → 吸附结果', () => {
     expect([[2000, 0], [2000, 8]]).toContainEqual([first!.mm.x, first!.mm.y]);
     // 判据只许比"倒序前后相等"，**不许**钉死哪一枚赢：两面墙每次现建 uuidv7，谁小不一定。
     expect(flipped).toEqual(first);
+  });
+});
+
+/**
+ * Task 8 撞出来的那一发（控制位实测）：画布从 1427×865 变 1167×833 ⇒ `wallProbe` 筛① 的幸存者
+ * 从 **2/8** 掉到 **0/8**，`--draw-shot` 直接死在第 0 步。旧尺寸那一份也不是"对"，只是运气好 ——
+ * 判据押在视口相位上，正是这条缺陷的病根，所以用例一律**遍历**而不挑一枚。
+ *
+ * 机理：端点候选存真源的整数毫米（`mmToPx` 出来带小数），垂足候选经 `footOf` 的 `quantizeTarget`
+ * 也落在整数毫米上；光标是"端点那一发取整像素"时，同一根轴上离角点 0.5~4.4mm 的垂足常常比角点
+ * 自己还近零点几像素，而 `takeBest` 先比 `distPx` 才轮到 `PRIORITY` ⇒ 档位表里"端点 < 中点 < 垂足"
+ * 这条意图被取整噪声吃掉。屏幕上表现为"按在墙角吸到角点旁一枚无名点"⇒ 接头悄悄断掉。
+ */
+const gateView = fitStorey(house.doc, house.lowerStoreyId, 1167, 833, 60);
+
+/** 与 `wallProbe` 的 `startPx` 同一发像素（取整），不然测的就不是屏幕上那一发了。 */
+const intPxOf = (mm: MoveTarget, v: Viewport): Px => {
+  const p = mmToPx(v, vec(mm.x, mm.y));
+  return { x: Math.round(p.x), y: Math.round(p.y) };
+};
+
+describe('具名点优先：垂足不许靠取整噪声赢掉角点与中点', () => {
+  it('按在端点那一发像素上：逐枚端点都吸回自己（遍历，不挑一枚）', () => {
+    const endpoints = field.points.filter((p) => p.kind === 'endpoint');
+    // 素材自证：这一层确实有八枚去重端点（`snapFieldOf` 按 pointId 去重），零枚的话下面那个循环恒真
+    expect(endpoints.length).toBe(8);
+    for (const ep of endpoints) {
+      const press = intPxOf(ep.mm, gateView);
+      const d = draftAtPress(gateView, press, field);
+      const at = `(${String(ep.mm.x)},${String(ep.mm.y)})`;
+      expect(d.snap?.kind, `端点 ${at} 被吸成了 ${String(d.snap?.kind)}`).toBe('endpoint');
+      expect(d.snap?.pointId, `端点 ${at} 没复用成自己`).toBe(ep.pointId);
+      expect(d.snap?.mm).toEqual(ep.mm);
+    }
+  });
+
+  it('中段垂足照吸：离两端与中点都远超一像素的落点仍然是 foot（不许过吸）', () => {
+    // 南墙轴上 (0,1500)：离两端各 1500mm ≈ 171px、离该墙中点 (0,3000) 同样 171px，
+    // 远超吸收带（1.5px ≈ 13mm）⇒ 它必须是墙上那个点，而不是被角点吸走。
+    const raw: MoveTarget = { x: 0, y: 1500 };
+    const d = dropTargetOf(gateView, intPxOf(raw, gateView), null, field);
+    expect(d.snap?.kind).toBe('foot');
+    expect(d.snap?.pointId).toBeNull();
+  });
+
+  it('按在中点那一发像素上：不被自己那根轴上的垂足赢掉（除非该处另有端点，那由端点接）', () => {
+    const endpoints = field.points.filter((p) => p.kind === 'endpoint');
+    const midpoints = field.points.filter((p) => p.kind === 'midpoint');
+    expect(midpoints.length).toBeGreaterThan(0);
+    let tested = 0;
+    for (const mid of midpoints) {
+      // 与某枚端点重合的中点（T 字头）由端点接走：那是档位表本来的顺序，不是本条判据要问的事
+      if (endpoints.some((ep) => ep.mm.x === mid.mm.x && ep.mm.y === mid.mm.y)) continue;
+      tested += 1;
+      const d = draftAtPress(gateView, intPxOf(mid.mm, gateView), field);
+      expect(d.snap?.kind, `中点 (${String(mid.mm.x)},${String(mid.mm.y)}) 被吸成了 ${String(d.snap?.kind)}`).toBe('midpoint');
+      expect(d.snap?.mm).toEqual(mid.mm);
+    }
+    // 素材自证：这一层至少有一枚"不与端点重合的中点"，否则上面那个循环恒真
+    expect(tested).toBeGreaterThan(0);
+  });
+
+  it('闸门前置条件：这一份 1167×833 视口下 `wallProbe` 给得出靶子，起点是真源端点', () => {
+    const probe = wallProbe(house.doc, house.lowerStoreyId, buildDrawList(house.doc, house.lowerStoreyId, gateView), gateView);
+    expect(probe).not.toBeNull();
+    const start = field.points.find(
+      (p) => p.kind === 'endpoint' && p.mm.x === probe?.startMm.x && p.mm.y === probe?.startMm.y,
+    );
+    expect(start?.pointId).toBe(probe?.startPointId);
   });
 });
 

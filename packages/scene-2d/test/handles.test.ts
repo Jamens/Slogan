@@ -41,7 +41,9 @@ import {
   viewportOf,
   type DragHandle,
   type MoveTarget,
+  type Px,
   type Selection,
+  type Viewport,
 } from '@dajia/scene-2d';
 
 const house = demoHouse();
@@ -565,6 +567,10 @@ describe('拖拽吃吸附（Task 6）', () => {
     // 裸的那一发把三臂拧成 star ⇒ S1 不支持；吸回线上 (0,600) 的那一发仍是"一条线 + 一根撑" ⇒ 过守卫。
     // 于是判 `drop.raw` 的实现（改坏 HB5）会把十发全筛光 ⇒ 报 null（2026-09-28 实测：本夹具上
     // 判 raw 的探针给 null，判 mm 的给 to=(506,394)、mm=(0,600)），两条探针用例一起红。
+    // **Task 8 D3 之后那一发 mm 换成 (0,500)**：这把尺子 1px = 100mm，而贯通线那截墙的**中点**
+    // 就在 (0,500) —— 它与原来的垂足 (0,600) 在屏幕上只差 1px，具名点优先那条规则（`FOOT_ABSORB_PX`
+    // = 1.5px）因此把无名垂足挡在池外。判据没换：裸落点 (600,600) 仍然拧成 star 被拒，
+    // 吸回来的那一发仍然在贯通线上、仍然过守卫，只是"线上那一点"从垂足换成了那截墙的中点。
     const projectId = uuidv7();
     const log = new TransactionLog(Document.create(projectId));
     log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
@@ -585,7 +591,7 @@ describe('拖拽吃吸附（Task 6）', () => {
     expect(p!.sharedBy).toBe(3); // 三臂点：star 这条判据要的就是"搬起来会拧成三方向"
     // 现场自证分歧真的存在：同一发整数像素，裸落点过不了守卫，吸上去那一发过得了。
     expect(moveTargetOf(v, p!.toPx)).toEqual({ x: 600, y: 600 });
-    expect(p!.targetMm).toEqual({ x: 0, y: 600 });
+    expect(p!.targetMm).toEqual({ x: 0, y: 500 });
     expect(legalDrop(doc, p!.wallId, p!.end, { x: 600, y: 600 })).toBe(false);
     expect(() =>
       wallMoveEndpoint({ wallId: p!.wallId, end: p!.end, x: 600, y: 600 }).build(doc),
@@ -616,8 +622,15 @@ describe('拖拽吃吸附（Task 6）', () => {
     }
     const fifth = handleDropTarget(v, pxOf({ x: 600, y: 600 }), handle, field);
     expect(fifth.raw).toEqual({ x: 600, y: 600 });
-    expect(fifth.mm).toEqual({ x: 0, y: 600 });
-    expect(fifth.snap?.kind).toBe('foot'); // 吸的是贯通线上那枚垂足，不是既有点
+    expect(fifth.mm).toEqual({ x: 0, y: 500 });
+    // Task 8 D3 之前这两句钉的是 (0,600) 与 `'foot'`（"吸的是垂足，不是既有点"）。这把尺子
+    // 1px = 100mm，而贯通线那截墙的中点 (0,500) 与那枚垂足在屏幕上只差 1px ⇒ 具名点优先
+    // （`FOOT_ABSORB_PX` = 1.5px）把无名垂足挡在池外，赢的换成中点。**本条用例判的还是同一件事**：
+    // 裸落点 (600,600) 拧成 star 被拒，吸附后那一发在贯通线上、过得了守卫 —— 换的只是
+    // "线上那一点"由谁提供。垂足档本身仍然有牙，而且是在"离具名点足够远"的那一侧：
+    // `snapping.test.ts`「垂足比端点近时距离赢」（垂足离端点 200mm = 4px）与
+    // 「中段垂足照吸：离两端与中点都远超一像素的落点仍然是 foot（不许过吸）」两条钉着它。
+    expect(fifth.snap?.kind).toBe('midpoint');
   });
 
   it('探针的三枚像素在分数尺子下才见取整的牙齿：取整前是浮点，报出来全为整数', () => {
@@ -649,6 +662,82 @@ describe('拖拽吃吸附（Task 6）', () => {
     expect(
       handleDropTarget(frac, p.toPx, h, snapFieldOf(house.doc, house.lowerStoreyId)).mm,
     ).toEqual(p.targetMm);
+  });
+
+  it('探针交出的三发像素全在画布内（锚点也算一发）：四份视口相位都交得出可用靶子（相位扫，牙在下一条）', () => {
+    // `--edit-shot` 第 9 步「压扁到锚点」按的是 `anchorPx`。T5 写这条探针时画布铺满整个窗口
+    // ⇒ 越界不可能发生，`anchorPx` 因此从没进过筛（`fromPx` / `toPx` 都进了）。Task 8 的三格布局
+    // 把画布缩成 1167×833，同一份样例房第一次出现"锚点在画布外"的靶子（2026-09-29 实测
+    // `anchorPx=(1302,-32)`），那一发点到属性面板上 ⇒ `lastError` 恒空，闸门在十秒等待上抛。
+    // 判据口径与 `wallProbe` 的筛⑤ 同一条（留 2px 边：`Math.round` 出来的 0 与 `widthPx` 本身
+    // 压在边界像素上，而画布外侧没有像素）。
+    // **这一条是相位扫，不是牙**：样例房哪把把手赢由 uuidv7 定，"锚点出界"只在恰好挑中那一把时
+    // 才红（本仓库实测：同一份 1167×833，真窗口那次挑中了出界的那把、单元测试连跑几次都挑中
+    // 没出界的）⇒ 确定性判据在下一条夹具用例。这一条管的是反面：锚点筛若过严把靶子全筛光，红在这儿。
+    const inside = (v: Viewport, px: Px): boolean =>
+      px.x >= 2 && px.y >= 2 && px.x < v.widthPx - 2 && px.y < v.heightPx - 2;
+    for (const [wPx, hPx] of [
+      [1167, 833], // Task 8 之后真窗口的实测画布
+      [1427, 865], // Task 8 之前那一份
+      [1200, 901], // 上面那条分数尺子用例用的那一份
+      [900, 700], // 再窄一档：整张图缩得更小，锚点更容易跑出画布
+    ]) {
+      const v = fitStorey(house.doc, house.lowerStoreyId, wPx, hPx, 60);
+      const p = dragProbe(
+        house.doc,
+        house.lowerStoreyId,
+        buildDrawList(house.doc, house.lowerStoreyId, v, EMPTY_SELECTION),
+        v,
+      );
+      expect(p, `${String(wPx)}×${String(hPx)} 这份视口下探针给不出靶子`).not.toBeNull();
+      for (const [label, px] of [
+        ['fromPx', p!.fromPx],
+        ['toPx', p!.toPx],
+        ['anchorPx', p!.anchorPx],
+      ] as const) {
+        expect(inside(v, px), `${String(wPx)}×${String(hPx)} 的 ${label}=(${px.x},${px.y}) 出界`).toBe(true);
+      }
+    }
+  });
+
+  it('锚点出界的靶子一律不许交出去：宽窄两份视口只差锚点那一发出不出画布', () => {
+    // `--edit-shot` 第 9 步「压扁到锚点」按的是 `anchorPx`，而 `dragProbe` 只筛了 `fromPx` 与
+    // `toPx`（T5 那两份），锚点从来没进筛 —— 画布铺满整窗时它不可能出界，于是这条漏筛在
+    // Task 6/7 一直不可见。Task 8 把画布缩成 1167×833 之后它第一次被真窗口踩中：探针交出的
+    // `anchorPx=(1302,-32)` 落在属性面板上，那一发点不到画布 ⇒ `lastError` 恒空，闸门在
+    // 「压扁拖没被拒」那一句十秒等待上抛（2026-09-29 实测）。
+    // 夹具刻意做成"除了锚点，两条视口之间没有任何差别"：A 是三臂以外的普通共享端点（两臂），
+    // 两根 40000mm 的长墙把两端推到画布外，而 800 / 2400mm 那十发偏移在窄视口里仍然全在画布内。
+    const projectId = uuidv7();
+    const log = new TransactionLog(Document.create(projectId));
+    log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+    let storeyId = '';
+    for (const id of log.affected) {
+      if (log.document.get(id)?.kind === 'storey') storeyId = id;
+    }
+    if (storeyId === '') throw new TypeError('affected 里没有新建的楼层');
+    log.dispatch(wallCreate({ storeyId, start: { x: 0, y: 0 }, end: { x: 40000, y: 0 }, thicknessMm: 240, heightMm: 3000 }));
+    const east = createdWallOf(log);
+    log.dispatch(wallCreate({ storeyId, start: { pointId: east.startId }, end: { x: 0, y: 40000 }, thicknessMm: 240, heightMm: 3000 }));
+    const doc = log.document;
+    const inside = (v: Viewport, px: Px): boolean =>
+      px.x >= 2 && px.y >= 2 && px.x < v.widthPx - 2 && px.y < v.heightPx - 2;
+    const roundPx = (px: Px): Px => ({ x: Math.round(px.x), y: Math.round(px.y) });
+    const probeAt = (v: Viewport) =>
+      dragProbe(doc, storeyId, buildDrawList(doc, storeyId, v, EMPTY_SELECTION), v);
+    const wide = viewportOf(1000, 800, { pxPerMm: 0.01, center: vec(20000, 20000) });
+    const narrow = viewportOf(1000, 800, { pxPerMm: 0.1, center: vec(0, 0) });
+    // 素材自证 ①：宽的那一份给得出靶子，三发像素（含锚点）全在画布内 ⇒ 这套夹具是"可探针"的
+    const pWide = probeAt(wide);
+    expect(pWide).not.toBeNull();
+    expect(inside(wide, pWide!.fromPx) && inside(wide, pWide!.toPx) && inside(wide, pWide!.anchorPx)).toBe(true);
+    // 素材自证 ②：换到窄的那一份，**同一把把手的按下点仍然在画布内**，跑出去的只有锚点
+    const h = dragHandlesOf(doc, storeyId, sel(pWide!.wallId), narrow).find((x) => x.end === pWide!.end)!;
+    expect(inside(narrow, roundPx(h.atPx))).toBe(true);
+    expect(inside(narrow, roundPx(h.anchorPx))).toBe(false);
+    // 于是窄的那一份里 null 只可能来自锚点这一道筛 —— 它现在不 null，交出的正是那发出界的靶子
+    const pNarrow = probeAt(narrow);
+    expect(pNarrow === null || inside(narrow, pNarrow.anchorPx), `锚点出界的靶子被交了出去：${JSON.stringify(pNarrow?.anchorPx)}`).toBe(true);
   });
 });
 

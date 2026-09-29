@@ -150,6 +150,30 @@ const PRIORITY: Record<SnapKind, number> = {
 };
 
 /**
+ * **具名点吸收带**（px）：一枚垂足如果离某枚端点 / 中点不到这个像素数，它就不是"墙上的另一个点"，
+ * 而是那一角、那一点本身 —— 于是它整发不进候选池，`takeBest` 只能看见具名点那一枚。
+ *
+ * 为什么要有这条（Task 8 撞出来的，不是预防性设计）：端点候选存的是真源整数毫米，`mmToPx` 出来带
+ * 小数；垂足候选经 `footOf` 的 `quantizeTarget` 也落在整数毫米上。光标是"端点那一发取整像素"时，
+ * 同一根轴上离角点 0.5~4.4mm 的垂足常常比角点自己还近零点几像素 —— 而 `takeBest` 先比 `distPx`
+ * 才轮到 `PRIORITY`，档位表里「端点 < 中点 < 垂足」那条意图就被取整噪声吃掉了。屏幕上表现为
+ * "按在墙角吸到角点旁一枚无名点"（`pointId = null`）⇒ 拉出的新墙不复用那枚点，接头悄悄断掉。
+ *
+ * 为什么是 1.5：垂足只可能靠取整噪声在 **< √2 ≈ 1.4142px** 的差距里赢（`intPx` 每轴各舍 0.5px，
+ * 两轴合成 √2），1.5 是第一个盖住它的整齐值 —— 与 `--draw-shot` 的 D4 那条 `distPx ≤ 1.5` 同一把尺。
+ * 阈值住在 px 而毫米数由 `pxPerMm` 折回来：判据是"屏幕上同一个位置"，写死毫米数一缩放就得重测。
+ *
+ * **代价**：角点旁一像素以内（本尺度约 13mm）的墙上点吸不到了。认了 —— 施工图纸上那一像素不构成
+ * 另一个可命名的点，而吸错到它上面断掉的是接头。
+ */
+const FOOT_ABSORB_PX = 1.5;
+
+/** 这枚垂足是否被池里某枚具名点（端点 / 中点）吸收。距离走毫米，容差由 `pxPerMm` 折回来。 */
+function absorbedByPoint(mm: MoveTarget, points: readonly SnapPoint[], absorbMm: number): boolean {
+  return points.some((p) => Math.hypot(p.mm.x - mm.x, p.mm.y - mm.y) <= absorbMm);
+}
+
+/**
  * 本层的端点（按 pointId 去重）+ 每面墙的中点 + 每面墙的轴线。
  *
  * 去重是必须的：样例房一层有六枚共享端点，不去重就是"同一个点六个候选、六个 ownerId"，
@@ -260,7 +284,14 @@ export function snapFromCursor(
   // 池子里留 null 是"这一档没命中"，不是"没有候选点" —— 过滤只发生在下面那一趟循环里。
   const pool: (Ranked | null)[] = [];
   for (const p of field.points) pool.push(p);
-  for (const axis of field.axes) pool.push(footOf(axis, raw));
+  // 垂足档先过一遍"具名点吸收带"（见 `FOOT_ABSORB_PX`）：与某一枚端点或中点在屏幕上同一位置的
+  // 垂足不进池子，于是那一角那一档只剩具名点一枚候选，`takeBest` 的距离比较无从赢起。
+  const absorbMm = FOOT_ABSORB_PX / viewport.pxPerMm;
+  for (const axis of field.axes) {
+    const foot = footOf(axis, raw);
+    if (foot === null || absorbedByPoint(foot.mm, field.points, absorbMm)) continue;
+    pool.push(foot);
+  }
   if (anchorMm !== null) {
     // 一律走裸算术，不调 core 的 sub/scale/advance/add：那些助手每个返回值都把 -0 归一成
     // +0，但**输入参数**里的 -0 会原样参与乘法，`-0 * 0` 仍是 -0，最后 `anchor.x + (-0)`
@@ -297,7 +328,8 @@ export function snapFromCursor(
  * 垂足：光标（量化后的 `raw`）到轴线那段**线段**的正投影。
  * `t` 的上下界不能省 —— 放开它就会吸到轴延长线上，画出一条"对着空气齐"的墙。
  * 投影长度不量化，所以端点判定比真正垂线的参数范围宽一整个 |Δraw|：光标离墙端 1mm 时
- * 仍可能给出一枚墙外垂足，而它比端点更近，于是赢。误差 < 1mm 且永远被端点吸收，不补。
+ * 仍可能给出一枚墙外垂足。那一枚离角点不到一像素，由 `FOOT_ABSORB_PX` 那道吸收带挡在候选池外
+ * （旧注释在这儿写的是"永远被端点吸收，不补"—— 那件事当时并没有被实现，Task 8 把它撞红了）。
  */
 function footOf(axis: SnapAxis, raw: MoveTarget): Ranked | null {
   const dx = raw.x - axis.startMm.x;

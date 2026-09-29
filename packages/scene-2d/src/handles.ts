@@ -314,6 +314,11 @@ export function dragProbe(
     // 选不中就换一把 —— 而不是拖一面"屏幕上没红着的"墙。
     if (!insideCanvas(v, fromPx)) continue;
     if (pickOne(ops, fromPx)?.ownerId !== h.wallId) continue;
+    // 锚点也要进筛：`--edit-shot` 第 9 步「压扁到锚点」按的就是这一发（T5 只筛了 `fromPx`/`toPx`，
+    // 因为那时画布铺满整个窗口，锚点不可能跑出画布）。Task 8 把画布缩成格子之后，长墙的锚点
+    // 第一次落到画布外 ⇒ `sendInputEvent` 打中属性面板，那一发既没拖也没拒，`lastError` 恒空。
+    const anchorPx = snapPx(h.anchorPx);
+    if (!insideCanvas(v, anchorPx)) continue;
     for (const off of PROBE_OFFSETS) {
       const toPx = snapPx(mmToPx(v, { x: h.atMm.x + off.x, y: h.atMm.y + off.y }));
       // 落点越界 = 这一发会被 sendInputEvent 夹到边界上，测的就不再是探针声称的那个落点
@@ -333,7 +338,7 @@ export function dragProbe(
         sharedBy,
         fromPx,
         toPx,
-        anchorPx: snapPx(h.anchorPx),
+        anchorPx,
         targetMm,
       };
     }
