@@ -25,6 +25,7 @@ import {
   PREVIEW_COLOR,
   probeTarget,
   pruneSelection,
+  propProbe,
   SNAP_COLOR,
   SNAP_MARK_HALF_PX,
   SNAP_MARK_OUTER_HALF_PX,
@@ -38,10 +39,12 @@ import {
   type DraftWall,
   type Pen,
   type PickProbe,
+  type PropProbe,
   type Px,
   type SnapField,
   type StoreyTab,
   type Tool,
+  type Viewport,
   type WallProbe,
   type WallProps,
 } from '@dajia/scene-2d';
@@ -193,6 +196,24 @@ export interface DebugReport {
   lastTrial: PanelTrialReport | null;
   /** 最近一次成功提交后的**真源**读数（不是输入框的值）：证"面板读真源"。 */
   propsAfterEdit: WallProps | null;
+  // ↓ Task 8 棒 E 的 3 个：`--prop-shot` 第 1、2 步（切层 + P10）的读数口。
+  // 这一对不读 `panelReadout()`，读的是 store 自己（视口只住在那里）—— 面板那五格的
+  // "不许重算"纪律管不到它，这里也没有第二份算式：`fitStorey` 的答案在写进 store 那一刻就定了。
+  /** 当前层（`useEditor.storeyId`）。tab 判据问"点第 2 个 tab 之后当前层是不是它"。 */
+  storeyId: EntityId;
+  /** 当前视口：null = 还没量过画布（`fit()` 之前的一帧）。 */
+  viewport: Viewport | null;
+  /**
+   * 这份视口是**为哪一层**算的。样例房两层的 footprint 相同 ⇒ 两层的 `fitStorey` 结果逐字相同，
+   * "切层那一发的 `pxPerMm` 与另一层不同"这一口咬不住（2026-09-30 实测），于是 P10 的牙改在配对上：
+   * 它必须跟着 `storeyId` 一起动。摘掉 `setStorey` 里的重算，它就留在上一层。
+   */
+  viewportStoreyId: EntityId | null;
+  /**
+   * `--prop-shot` 的靶子（一面改得动的墙 + 它身上点得中的洞口 + 三格要写的新值）。
+   * 与 `edit` / `draw` 同一条纪律：主进程只读它，不猜坐标、也不猜哪面墙改得动。
+   */
+  prop: PropProbe | null;
 }
 
 declare global {
@@ -547,7 +568,7 @@ export function PlanCanvas(): React.JSX.Element {
       // 漂到 (332,75)，第 7 步「原地松手」按到了空白）。闸门侧由 `waitForLayoutSettled`
       // 把 resize 收敛掉，这里则由"要当下的文档就从 store 一次性取"保证读到的不是陈旧闭包。
       // 换层与改尺寸才是重算视口的两个真实理由。
-      setViewport(fitStorey(useEditor.getState().log.document, storeyId, wPx, hPx, VIEW_PAD_PX));
+      setViewport(fitStorey(useEditor.getState().log.document, storeyId, wPx, hPx, VIEW_PAD_PX), storeyId);
     };
     fit();
     window.addEventListener('resize', fit);
@@ -949,6 +970,12 @@ export function PlanCanvas(): React.JSX.Element {
         panelProps: panel.panelProps,
         lastTrial: panel.lastTrial,
         propsAfterEdit: panel.propsAfterEdit,
+        // ↓ Task 8 棒 E 的 3 个。`viewport` 用闭包里那一份（ paint effect 与探针用的就是它，
+        // 报告里的视口必须与报告里的像素同源），`storeyId` / `viewportStoreyId` 活读 `s`。
+        storeyId: s.storeyId,
+        viewport,
+        viewportStoreyId: s.viewportStoreyId,
+        prop: propProbe(s.log.document, s.storeyId, ops, viewport),
       };
     };
     return () => {

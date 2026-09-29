@@ -44,6 +44,19 @@ export interface EditorState {
   /** null = 还没量过窗口尺寸，一帧都还没画 */
   readonly viewport: Viewport | null;
   /**
+   * 眼下这份 `viewport` 是**为哪一层**算的。它与 `viewport` 必须同一发 `set`，理由与 P10 同一条：
+   * 分两拍就有一个"新一层的图配旧一层的口径"的中间帧，而这里更糟 —— 那一帧上两个字段都对，
+   * 只有配对错，屏幕上什么都看不出来。
+   *
+   * 它存在的唯一理由是 `--prop-shot` 第 1 步那条 P10 判据需要一颗牙，而数值那一口咬不住：
+   * 样例房两层是同一 footprint（实测 `fitStorey` 两次的 `pxPerMm` 与 `origin` 逐字相同，
+   * 见 2026-09-30 的 t8E 注记），所以"切层后视口数值变了"这句话在样例房里**根本不成立**，
+   * 计划原文那句「`pxPerMm` 与 `origin` 逐字等于同一次调用算出的 `fitStorey(二层)`」只能降级成
+   * "视口是为这一层算的" + "两次切回来数值逐字回到第 0 步"。摘掉 `setStorey` 里那份重算，
+   * 这一格就留在上一层 ⇒ 判据红；只改 `storeyId` 不改视口，那一发也红。
+   */
+  readonly viewportStoreyId: string | null;
+  /**
    * 唯一的"该重绘了"扳机（D6）。`log` 是可变类实例，引用永远不变 ⇒ zustand 的
    * `Object.is` 判定相等 ⇒ 只订阅 `{log}` 的组件**永不重渲**，所以这不是保险，是唯一的通路。
    * 它只在 `dispatch`/`dispatchBatch`/`undo`/`redo` **成功**之后 +1：失败不动它 ⇒ 既不重绘也无副作用，
@@ -56,7 +69,12 @@ export interface EditorState {
   readonly tool: Tool;
   /** 进行中的墙草稿。中途只活在这里，不进真源（与 `drag` 同一条 D4 纪律）。 */
   readonly draft: DraftWall | null;
-  setViewport: (viewport: Viewport | null) => void;
+  /**
+   *  resize / 挂载那一发的视口写入。`storeyId` 是**这次 fitStorey 是为哪一层算的** ——
+   *  它必须跟着视口一起进来：分两拍就有一个"视口是新一层、记账还是旧一层"的中间帧
+   *  （`--prop-shot` 第 1 步的 P10 牙就判这一对，见 `viewportStoreyId`）。
+   */
+  setViewport: (viewport: Viewport | null, storeyId: string | null) => void;
   /**
    * P10：换层与视口复位必须是同一次 `set`。调用方负责清选中集（store 不碰 selectionStore），
    * 尺寸也由调用方算好递进来（只有画在屏上的 `PlanCanvas` 量得到画布自己有多大）。
@@ -86,17 +104,30 @@ export const useEditor = create<EditorState>((set, get) => ({
   log: demo.log,
   storeyId: demo.lowerStoreyId,
   viewport: null,
+  viewportStoreyId: null,
   revision: 0,
   lastError: null,
   drag: null,
   tool: 'select',
   draft: null,
-  setViewport: (viewport) => set({ viewport }),
+  // `viewport === null` 时那一格也必须 null：留着一层的 id 配一份不存在的视口，
+  // 判据读到的是"记账说有、屏幕上没有"。
+  setViewport: (viewport, storeyId) =>
+    set({ viewport, viewportStoreyId: viewport === null ? null : storeyId }),
   // 一次 `set` 换两格（P10）：分两次就留一个中间帧 —— 新一层的图配旧一层的 `origin`，
   // 画在画布外，红形是"pxPerMm 对不上"这种谁也看不懂的话。
   // 代价照付：`storeyId` 的变更入口从"随便谁 set"收成一个函数，以后滚轮切层也得走这一道。
+  // 第三格 `viewportStoreyId` 是同一发 `set` 里的记账（不是第四次 `set`）：
+  // 视口与"它为哪一层算的"永远成对出现，缺一半就是 P10 那个中间帧。
   setStorey: (storeyId, viewport) =>
-    set({ storeyId, viewport, draft: null, tool: 'select', revision: get().revision + 1 }),
+    set({
+      storeyId,
+      viewport,
+      viewportStoreyId: storeyId,
+      draft: null,
+      tool: 'select',
+      revision: get().revision + 1,
+    }),
   setDrag: (drag) => set({ drag }),
   setTool: (tool) => set({ tool }),
   setDraft: (draft) => set({ draft }),
