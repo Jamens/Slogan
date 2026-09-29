@@ -168,18 +168,17 @@ try {
       ['D21 重做回到基线，终态探针与 points 快照逐字回到第 0 步', report.pointsAfterRedo === report.basePoints && report.probeMatchesStart === true && report.pointsMatchStart === true && report.comboAfterRedo === 'Ctrl+Shift+Z'],
       // 最后一条 = addendum A3 的正式判据（十六步之外那一发）：主进程在画布空白角**现造**一枚角点
       // （横、竖两发预备墙把它凑成二臂直角），再按在**同一发像素**上补一发 45° 斜臂 ⇒ 三臂三方向
-      // = star ⇒ `buildDrawList` 抛 ⇒ 走 F1 那张网。为什么不是"按在样例房某枚既有角点上"：那枚角点
-      // 是探针按 uuid 序抽出来的，而"按下吸不吸得上"比的是 distPx，垂足按构造永不比端点远 —— 旧写法
-      // （±1px 与环扫 49 发）赌的是"量化毫米恰好落回角点坐标"那一列/那一行，看视口相位（run3 九发全
-      // 吸成 foot、run6 抽中自由端补出干净 corner 而 lastError 恒空，根因钉在 main 第 16 步的注释里）。
-      // 现造这一枚靠的是不动点：端点候选与两枚垂足候选的毫米**逐字相同**，并列由 `PRIORITY` 判给端点，
-      // 比的不是"谁更近"。
-      // F1 之前这一发把 React 树卸掉、`__dajiaDebug` 整个没了（48/48 全抛）；现在要的读数走**两条**：
-      // 报告能读回来（starAppAlive —— 树没了 executeJavaScript 就抛，走不到写盘）且 lastError 非空。
-      // 第三行是"复用"的对账，走毫米不走像素（A1：第四色标记只证存在，`> 0` 那一判在 main 里，
-      // 位置一律由真源毫米钉）：斜墙起点吸的那枚 id 与那份毫米，逐字等于刚建的那枚角点。
-      // Task 7 落地 `assertDerivesAfterApply` 后这一条的语义要改成"两边都不许写进真源"（已登记）。
-      ['D22 空白角现造角点、按同一发像素补一发 45° 斜臂把它逼成三臂星形：__dajiaDebug 仍在返回报告、lastError 非空、斜墙起点逐字复用现造那枚角点（F1 兜网，addendum A3）', report.starAppAlive === true && typeof report.starLastError === 'string' && report.starLastError.length > 0 && report.starStartPointId === report.starBuiltCornerId && JSON.stringify(report.starStartMm) === JSON.stringify(report.starBuiltCornerMm)],
+      // = star。为什么不是"按在样例房某枚既有角点上"：那枚角点是探针按 uuid 序抽出来的，而"按下吸不吸
+      // 得上"比的是 distPx，垂足按构造永不比端点远 —— 旧写法（±1px 与环扫 49 发）赌的是"量化毫米恰好
+      // 落回角点坐标"那一列/那一行，看视口相位（run3 九发全吸成 foot、run6 抽中自由端补出干净 corner
+      // 而 lastError 恒空，根因钉在 main 第 16 步的注释里）。现造这一枚靠的是不动点：端点候选与两枚
+      // 垂足候选的毫米**逐字相同**，并列由 `PRIORITY` 判给端点，比的不是"谁更近"。
+      // Task 7 之后这一条钉的是**两边都不许写进真源**：屏幕侧 `legalAtMove` 判 false（预言试跑的就是
+      // 带 `assertDerivesAfterApply` 的真命令）、渲染端走 `rejected` 那一支一条命令不发、真源的
+      // depth/revision/点数三者纹丝不动、`lastError` 恒空（旧语义"发出去了但画不出来"在绘制通路上
+      // 已结构性不可达）。最后那两句是**复用**的对账，走毫米不走像素（A1：第四色标记只证存在，`> 0`
+      // 那一判在 main 里，位置一律由真源毫米钉）：斜墙起点吸的那枚 id 与那份毫米，逐字等于刚建的那枚角点。
+      ['D22 空白角现造角点、按同一发像素补一发 45° 斜臂逼成三臂星形：屏幕判不合法、命令一条没发、真源纹丝不动、lastError 恒空、斜墙起点逐字复用现造那枚角点（两边都不许写进真源，addendum A3 / T7 语义）', report.starLegalAtMove === false && report.starRejectedOutcome === 'rejected' && report.starRejectedWallId === null && report.starRejectedCounts === `${String(report.basePoints + 3)}→${String(report.basePoints + 3)}` && report.starNoopDepth === true && report.starNoopRevision === true && report.starPointsAfter === report.basePoints + 3 && report.starLastError === null && report.starAppAlive === true && report.starStartPointId === report.starBuiltCornerId && JSON.stringify(report.starStartMm) === JSON.stringify(report.starBuiltCornerMm)],
     );
   }
   let bad = 0;

@@ -1189,14 +1189,19 @@ async function runDrawShot(win: BrowserWindow, out: string): Promise<void> {
   if (fin.tool !== 'select' || fin.draft !== null) throw new Error('终态没回到"选择模式、无草稿"');
   if (fin.snapMarkPx !== 0) throw new Error('终态还留着吸附标记');
 
-  // 16) addendum A3 那一发（十六步之外的正式判据）：把一枚角点逼成**三臂星形**接头，看 F1 那张
-  //     兜网接不接得住。星形接头在 `buildDrawList` 里抛 RangeError（`joint.ts` 的 `kindOf` 那一支
-  //     "画不出来：…3 个墙端、3 个方向…"），F1 之前这一发是 dispatch 成功 ⇒ React 树整个卸掉、
-  //     `__dajiaDebug` 随之没掉（实测 48/48 发全抛，证据 scratch-star-gesture.test.txt）；F1 之后
-  //     要的形状是两条读数：报告还读得回来（`starAppAlive`）+ lastError 非空且走"画不出来"那一路。
-  //     斜墙与两发预备墙都留在文档里：写盘的报告 spread 的是 `fin`（第 15 步的基线读数），
-  //     基线六条不受影响。Task 7 落地 `assertDerivesAfterApply` 后这条判据的语义要改成
-  //     "两边都不许写进真源"（已登记给 T7）。
+  // 16) addendum A3 那一发（十六步之外的正式判据）：把一枚角点逼成**三臂星形**接头，看**两边**
+  //     是不是都不放它进真源。星形接头在派生层抛 RangeError（`joint.ts` 的 `kindOf` 那一支
+  //     "画不出来：…3 个墙端、3 个方向…"），Task 7 把 `assertDerivesAfterApply` 挂上
+  //     `wallCreate.build` 末尾之后，屏幕上那条 `legal` 预言（`legalWallCreate` 试跑的就是这发
+  //     真命令）也跟着判 false ⇒ 命令压根不发 ⇒ 渲染端 `buildDrawList` 等不到那份坏数据，
+  //     F1 那张兜网在这条通路上结构性不可达（旧语义"发出去了但画不出来"从此没有下一发）。
+  //     所以这里钉的是**拒绝**的四份账：① 屏幕判不合法；② `draftCommand` 给 null、渲染端走
+  //     `rejected` 那一支、一条命令都没发；③ 真源的 depth/revision/点数三者与上一发逐字相同；
+  //     ④ `lastError` 恒空 + 报告仍读得回来（坏数据没进真源，派生跑干净才是对的）。
+  //     命令层那一半（"就算绕过屏幕直接发，`build` 也抛 `/star/`"）由 core 的
+  //     `derive-guard.test.ts` 那组星形用例钉，不在真窗口里复述一遍。
+  //     斜墙**没**进文档、两发预备墙留着：写盘的报告 spread 的是 `fin`（第 15 步的基线读数），
+  //     基线六条不受影响。
   //     —— 为什么不"按在样例房某枚既有角点上、±1px 找吸得上的那一发"了事（run3 / run6 两轮红的根因）：
   //     能当锚点的共享端点是 dragProbe / wallProbe 各自按 **id 的代码单元序**挑的（handles.ts:117 与
   //     `snapFieldOf` 的 `byKind('wall')`），而 id 是每次开机重造的 uuidv7 ⇒ 每一发闸门抽到哪枚角点
@@ -1443,39 +1448,44 @@ async function runDrawShot(win: BrowserWindow, out: string): Promise<void> {
     );
   }
   const starEndSnap = w3.endSnap;
-  if (!w3.legalAtMove) {
+  // T7 之后这一发要读的是**拒绝**（旧形状"命令发出去了、画不出来、被兜网接住"没了：`legal` 预言
+  // 试跑的就是带复核的真命令，星形在屏幕上就判 false）。钉四件事，方向与旧判据相反、数目只多不减。
+  if (w3.legalAtMove) {
     throw new Error(
-      `斜墙草稿在屏幕上判不合法（落点 ${String(w3.endMm.x)},${String(w3.endMm.y)}）—— ` +
-        '命令发不出去，F1 要测的那一发没有发生（legal 预言漂了）',
+      `45° 第三臂在屏幕上仍判合法（落点 ${String(w3.endMm.x)},${String(w3.endMm.y)}）—— ` +
+        'legalWallCreate 试跑的那一发真命令没接到派生复核，T7 的 assertDerivesAfterApply 掉了一处',
     );
   }
-  if (w3.create.outcome !== 'ok' || w3.create.startId !== starCornerId) {
-    throw new Error(`斜墙没复用角点（回执 ${JSON.stringify(w3.create)}）—— 第三臂没接上，star 的账不成立`);
-  }
-  if (w3.create.pointCountAfter !== basePoints + 4) {
+  if (w3.create.outcome !== 'rejected' || w3.create.wallId !== null) {
     throw new Error(
-      `斜墙只该多一枚新点：${String(w3.create.pointCountBefore)} → ${String(w3.create.pointCountAfter)}`,
+      `星形那一发没走"拒绝就不留痕迹"那支（回执 ${JSON.stringify(w3.create)}）—— ` +
+        '草稿判不合法却还是把命令发了出去',
     );
   }
-
-  // 松手在上面已经发生，命令也真发出去了（`w3.create` 就是凭据）—— 抛的是**派生那一步**：
-  // 三臂三方向的接头在 `buildDrawList` 里进 `kindOf` 的 else 支。前面两发都钉过 lastError 为空
-  // （`w1.after` / `w2.after`），所以这一发等到的 non-null 只可能是星形那一抛，不存在"网接住了
-  // 上一发的旧错"那种读法。绘制错误与 store 更新挨着落地，`w3.after` 那份可能已经带着错误 ——
-  // 那就第一趟等待立刻返回；晚一拍也是同一句判据，不另开一条通路。
-  const starred = await waitUntil(
-    '三臂星形没走到画层抛错（lastError 恒空）—— 要么接头分类没抛（那是几何变了），要么网没接住',
-    () => readDrawReport(win, '星形松手后'),
-    (r) => r.lastError !== null,
-  );
-  const starError = starred.lastError;
-  if (starError === null) throw new Error('不可达：waitUntil 判定 lastError 非空后读回 null（星形松手后）');
-  if (!starError.includes('画不出来')) {
-    throw new Error(`星形斜墙的报错不来自绘制兜网（应以"画不出来"开头）：${starError.slice(0, 80)}`);
+  if (w3.create.pointCountBefore !== w3.create.pointCountAfter) {
+    throw new Error(
+      `被拒的松手动了点数（${String(w3.create.pointCountBefore)} → ${String(w3.create.pointCountAfter)}）` +
+        '—— 拒绝那一条路径上不该有任何写入',
+    );
   }
-  // 读到这儿本身**就是** `__dajiaDebug` 仍在的凭据：React 树被卸掉时 readDrawReport 直接抛，
-  // 走不到这一行（所以 `starAppAlive` 在写盘时恒真 —— 它不是自洽断言，是"读到了"的记录）。
-  const starAppAlive = typeof starred.ops === 'number';
+  if (w3.after.depth !== w2.after.depth || w3.after.revision !== w2.after.revision) {
+    throw new Error(
+      `被拒的星形改动了真源的 depth/revision（${String(w2.after.depth)},${String(w2.after.revision)} → ` +
+        `${String(w3.after.depth)},${String(w3.after.revision)}）—— 没发命令也该一个字都不动` +
+        '（D7 同一条账，这次钉在拒绝分支上）',
+    );
+  }
+  // 拒绝之后什么都没变 ⇒ 这一读不等任何变化，直接读回来当"树还活着 + 报错通路干净"的凭据。
+  // 读到这儿本身就是 `__dajiaDebug` 仍在的凭据：React 树被卸掉时 readDrawReport 直接抛，走不到这一行。
+  const starFinal = await readDrawReport(win, '星形被拒后');
+  const starAppAlive = typeof starFinal.ops === 'number';
+  const starError = starFinal.lastError;
+  if (starError !== null) {
+    throw new Error(
+      `星形被拒之后 lastError 非空（${starError.slice(0, 80)}）—— 坏数据没进真源，` +
+        '派生就该跑得干干净净；这条报错只可能是别处来的，与本发无关但判据分不清它接的是谁',
+    );
+  }
 
 
   const out1 = {
@@ -1563,6 +1573,12 @@ async function runDrawShot(win: BrowserWindow, out: string): Promise<void> {
     starEndSnapPointId: starEndSnap.pointId,
     starMarkAtPress: w3.markAtPress,
     starLegalAtMove: w3.legalAtMove,
+    starRejectedOutcome: w3.create.outcome,
+    starRejectedWallId: w3.create.wallId,
+    starRejectedCounts: `${String(w3.create.pointCountBefore)}→${String(w3.create.pointCountAfter)}`,
+    starNoopDepth: w3.after.depth === w2.after.depth,
+    starNoopRevision: w3.after.revision === w2.after.revision,
+    starPointsAfter: pointCountOf(w3.after, '星形被拒后'),
     starAppAlive,
     starLastError: starError,
   };
