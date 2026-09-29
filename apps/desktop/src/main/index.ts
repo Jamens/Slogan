@@ -1220,7 +1220,7 @@ async function runDrawShot(win: BrowserWindow, out: string): Promise<void> {
   //     直角（corner，派生干净、不抛）；W3 再按在**同一发像素**上：端点候选与两枚垂足候选（横墙
   //     t=0、竖墙 t=length）的毫米逐字都是那枚点的毫米 ⇒ 三枚候选同点同 distPx，并列由 PRIORITY
   //     判给端点 —— 这条不比"谁更近"，比的是"同一个数"，与视口相位无关。再补第三臂（45° 斜墙）⇒
-  //     三臂三方向 = star ⇒ 绘制层抛 ⇒ 走 F1 那张网。
+  //     三臂三方向 = star ⇒（Task 7 之后）屏幕判不合法 ⇒ 命令一条不发 ⇒ 真源收不到那份坏数据。
   //     坐标一个都不硬编码：三发像素 = `pick.blankPx` 沿"朝画布中心"的两个轴向各推
   //     `STAR_EDGE_MM × pxPerMm`，比例取第 0 步探针自己给的 px↔mm 对比（`endPx - startPx` 对
   //     `lengthMm`）。

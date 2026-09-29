@@ -535,7 +535,7 @@ describe('拖拽吃吸附（Task 6）', () => {
     const doc = log.document;
     const p = dragProbe(doc, storeyId, buildDrawList(doc, storeyId, v, EMPTY_SELECTION), v);
     expect(p).not.toBeNull();
-    expect(p!.sharedBy).toBeGreaterThanOrEqual(2);
+    expect(p!.sharedBy).toBe(2);
     // 先自证现场：裸落点确实是第三发那一发，而探针给的是**吸到垂足之后**那对毫米
     expect(moveTargetOf(v, p!.toPx)).toEqual({ x: 0, y: -800 });
     expect(p!.targetMm).toEqual({ x: 40, y: -800 });

@@ -808,14 +808,21 @@ describe('新建回执与探针', () => {
         if (!expectLegal(draft.end.mm)) {
           // 单向钉子（这一段**不读 `build`**，保住原注释担心的那颗牙）：表判 false 的候选，
           // `legal` 必须 false 且命令层不给命令。「摘掉 core 的 `assertWallShape` ⇒ 零长/厚度
-          // 一起变恒真」那种失效会让下面两句先红。
+          // 一起变恒真」那种失效会让下面两句先红 —— **2026-09-29 实测过这颗牙**：把 `assertWallShape`
+          // 改成进门就 `return`，这一发红在下面第一句（反例 `(-1, 0)`：轴长 1mm 的墙过得了派生层
+          // 那道复核，只有这道构造期守卫挡它），「三种拒绝各一色」那条同时红。
           expect(draft.legal).toBe(false);
           expect(draftCommand(draft, defaults)).toBeNull(); // 只有 legal 为假才许给 null
           return;
         }
         // 反向（表判 true 的候选）：`legal` 与「真 `build` 会不会抛」逐字同口径。
-        // 手把 `legal` 置真取命令（`draftCommand` 只认 legal 一色），再问真 `build` ——
-        // 预言侧读 `draft.legal`，判决侧读真源，两个产地对账，不是自己抄自己。
+        // 手把 `legal` 置真取命令（`draftCommand` 只认 legal 一色），再问真 `build`。
+        // 判的是**同一产地的两个消费者**：`legalWallCreate` 里的 `buildCreate` 与这里的 `draftCommand`
+        // 拿同一份 doc、同一组入参构造同一条 `wallCreate` ⇒ 这一支**今天恒真**（`throws === !legal`
+        // 是当前实现的恒等式），它钉的是那两处字段映射/默认值漂开时才红（`draftCommand` 还看了别的
+        // 东西 ⇒ 下面那句 TypeError；legal 为真却拿不到命令 ⇒ 支尾的 TypeError）。
+        // 别把它读成"摘掉派生复核会红在这里"：摘掉复核时两侧同时变合法，这一支照绿 —— 会红的是上面
+        // 那半边（表判 false 的单向钉子）与 core 的 `derive-guard.test.ts`，不在这里。
         const probe = draftCommand({ ...draft, legal: true }, defaults);
         if (probe === null) throw new TypeError('legal 置真后拿不到命令（`draftCommand` 还看了别的？）');
         let throws = false;
