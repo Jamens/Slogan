@@ -11911,6 +11911,31 @@ git commit -m "feat(core): 派生复核进改几何的三条命令，补属性�
 
 提交信息按仓库口径再补一段正文：五条新命令（`storey.delete` / `wall.setMaterial` / `wall.setLoadBearing` / `column.delete` / `slab.delete`）、`assertDerivesAfterApply` 与 `pointStillReferenced` 两个产地、core 测试 276 → 309、以及 `joint.test.ts` 那五条哨兵改手工造文档的理由。
 
+#### 执行回填（Task 7，2026-09-29 实测；commits `b2b59f0` + `b6a1d69` + `9ca3d43` + `8a8d2ee` + `bc35ecf` + `e22d700` + `684a4fb`）
+
+**落地形状**：本任务按「单棒 ≤150 轮」拆成 **A/B/C/D/E** 五棒，执行中又**补排两棒**（F 量闸门、G 换判据），评审一席。BASE = `0b12ca2`。
+
+- **A**（`b6a1d69`）`derive-guard.test.ts` 9 条 RED + `joint.test.ts` 五处改 `handBuild`（18 条不变）。**B**（`9ca3d43`）`commands-attributes.test.ts` 12 条 + `commands-delete.test.ts` 12 条 RED。**C**（`8a8d2ee`）Step 3+4+5 实现（`assertDerivesAfterApply` / `pointStillReferenced` / 三条改几何命令挂复核 + 两条属性命令 + 三条删除命令）。**D**（`bc35ecf`）Step 6（scene-2d 七条夹具前提改写 + `editing.ts` 三段注释，代码行零改动）。**E** Step 7 的 15 条改坏表，**零提交**（树逐条 `cp` 还原）。
+- **计数账（盘上真话，覆盖编写期那三段拼账）**：`pnpm verify` = **`Test Files 33 passed (33)` / `Tests 439 passed (439)`**、typecheck exit=0、`lint:deps` 无新边；core **25 文件 / 316 条**（编写期的 24/309 是临时工程 `.tscheck/t8` 的数，盘上多 `commands-drag.test.ts` 7 条、少 3 条的差额已被 T5/T6 的落地填平）；scene-2d **6 文件 / 115 条**（`handles.test.ts` 是 **20** 条，不是 19）。⇒ 本节上面那句「core 测试 276 → 309」按盘上口径是 **283 → 316**。
+- **Step 7 的 15 条改坏：13 条有牙、2 条无牙**（M4、M7，两条控制位**亲自重跑**：`npx vitest run packages/core/test` = exit=0 / 316 全绿）：
+  - **M4**（给 `wallDelete` 挂复核没被抓到）根因：复核派生的是**补丁应用之后**的文档，删掉一根星臂后 3 端 3 方向自动解除 ⇒「坏数据必须还能删」那条哨兵**结构上抓不到**；能抓的形状（坏数据藏在另一处接头/另一层、删的是一把无关的墙）无覆盖 ⇒ **裁决 A1「删除路径永不复核」至今没有正面凭据**。补法（归 Task 8）：`derive-guard.test.ts` 加一条"别层/别处藏着坏数据时本层一条无关删除命令仍要跑得动"。
+  - **M7**（给 `wallSetLoadBearing` 加 noop 短路没被抓到）根因：`commands-attributes.test.ts` 只有一条承重用例（`:107`，从不同值发同值）⇒ 短路分支不可达 ⇒ **A4「属性命令不许 noop 短路」只在材料半边有牙**。补法（归 Task 8 的属性面板）：加一条"同值再发一次，`build().upsert` 逐字是那面墙且 `depth` 每次 +2"。
+  - 与预言相符的部分：M1 红 3 条、M10 红 4 条、M14/M15 各红 3 条（比 brief 点名多红一条同组见证「wallDelete 用的就是这一份判据」）；M8 `tsc errors=1`、M11/M12 `errors=2` 且首错互为镜像；**没有任何 M 额外红在 `commands-drag.test.ts`**。
+- **Step 8 的判据冲突（本任务最贵的一条计划缺陷）**：正文写「判据形状一字不改，只允许更新写死的毫米/像素字面量」，而 `apps/desktop/src/main/index.ts:1198-1199` 与 `scripts/desktop-shot.mjs:181` **两处都登记着**「Task 7 落地 `assertDerivesAfterApply` 后这条判据的语义要改成'两边都不许写进真源'」。二者互斥，且 Step 1–8 没有任何一棒授权动 `apps/desktop` 与 `scripts` 的判据 ⇒ **计划漏排**。
+  - 实测：`shot` 6 PASS、`pick-shot` 11、`edit-shot` 21（两遍落点读数逐字相同 ⇒ 担心的 `dragProbe` 靶子换**没发生**），**`draw-shot` exit=1、三遍红字逐字相同**（`斜墙草稿在屏幕上判不合法（落点 -1188,5835）`，抛点 `index.ts:1446`）。**这不是漂移**：`legalWallCreate` 试跑的就是带复核的真 `wallCreate().build(doc)` ⇒ 星形草稿 `legal` 由 true 转 false ⇒ 命令不发 ⇒ 渲染端等不到坏数据 ⇒ D22 的旧语义结构性不可达。
+  - **裁决 G-1**：Task 7 不许带红闸门收棒，也不许放宽判据绕过去 ⇒ 补棒 G（`e22d700`）兑现那句已登记的语义替换。D22 那**一行**由 5 条与判换成 **11 条与判**（屏幕判不合法 + `rejected` 且 `wallId` 为 null + 点数 `N→N` + 真源 depth/revision/点数三者不动 + `lastError` 恒空 + 报告读得回来 + 起点逐字复用现造那枚角点），28 行总数不增不减、前 27 行一字未动。命令层那一半由 `derive-guard.test.ts` 的星形用例钉，真窗口不复述。
+  - **牙测（控制位亲手，不采信报告）**：注释掉 `wall.ts:142` 的 `assertDerivesAfterApply` → `pnpm --filter @dajia/desktop build` → `--draw` ⇒ **exit=1，红在新那条判据**（`45° 第三臂在屏幕上仍判合法…assertDerivesAfterApply 掉了一处`）⇒ 新判据不是空转；`cp` 还原验 md5、重 build、再跑 ⇒ 28 PASS。
+  - **代价（如实入账）**：F1 兜网（`PlanCanvas` 的 catch ⇒ `lastError`）在**绘制通路**上失去唯一真窗口凭据 —— A1 之后三条改几何命令都造不出坏几何，而删除路径按裁决永不复核且删除在派生上单调向好（删臂解星），现在硬造只能靠假通路。**Task 8 待办**：等出现"不经命令层的坏几何来源"（计划 4 读盘 / 计划 6 协作写入）时重造该凭据。另：`drawStarWall` 的"等 `lastCreate` 换新"依赖"被拒也写回执"这条隐式契约，它的正面凭据是 **D9**（`index.ts:1058-1062` + `desktop-shot.mjs:154-155`），不是 D22。
+- **裁决 D-1 的落地与评审裁定**（`editing.test.ts:805-830`）：表判 false ⇒ 单向钉 `legal===false` 且 `draftCommand` 给 `null`（不读 `build`）；表判 true ⇒ 手工置真取命令、`try { probe.build(doc) }` 现问真源。评审席裁定：① **反向支今天恒真**（`buildCreate` 与 `draftCommand` 是**同一产地的两个消费者**，`throws === !legal` 是实现恒等式），它钉的是两处入参/字段映射漂开，**注释原称"两个产地对账，不是自己抄自己"属冒领** ⇒ 已按如实说法改掉（`684a4fb`），并明写"摘掉复核不会红在这里"；② 正向钉子**实测有牙**（评审席的只读推理"被派生层掩蔽所以不红"**是错的**：把 `assertWallShape` 改成进门 `return` ⇒ 红在 `expect(draft.legal).toBe(false)`，fast-check 反例 `(-1, 0)` —— 轴长 1mm 的墙过得了复核，只有这道构造期守卫挡它；「三种拒绝各一色」同时红）⇒ 凭据抄进注释；③ 第三种形状（既不抄派生规则又对今天代码非恒真）**不存在** ⇒ 维持现状 + 台账记两条已知弱点（反向支恒真、给表加「同向重叠」这条路已实测堵死：6 遍 5 红 1 绿，反例是轴长 ≈241～250 的短斜墙被判翻面）。
+- **listing 与盘上不符（逐条，含一条假阳性）**：
+  - **假阳性要纠**：6.1 的坐标「brief 写 `(-2000,60)` 而盘上是 `pxOf({x:5000,y:60})`」是**控制位记错的**（评审席逐字比对：listing 与盘上**一致**）。要纠的是 `task-7D-report.md:65` 的表述，不是 brief 正文。
+  - 6.6 整段（把那条夹具重写成"既有点 (40,-760) 陷阱 + `sharedBy` 恰为 2 + 中心 `vec(400,100)`）**未落地也不该落地**：盘上那条是**垂足**版夹具、T7 之后本来就绿 ⇒ 只兑现其中一句真正缺的牙：`sharedBy` 从 `>= 2` 收成 **`toBe(2)`**（`684a4fb`，改后 handles 20/20）。行号锚 `:482`/`:549` 对不上盘上（实为 `:521`/`:558`）。
+  - 6.8 的助手 `wallsFromOrigin` **盘上不存在**（`grep -rn` 零命中）⇒ 无段可删；6.5 注释里的 `stem 3671` 实算 **3231**。
+  - Files 列表与 Step 8 的 `git add` 白名单**漏掉** `apps/desktop/src/main/index.ts` 与 `scripts/desktop-shot.mjs` ⇒ 照抄会把棒 G 落在提交外。
+  - RED 条数：本任务开工时的盘上 RED 是 **29 条**（不是 33），另有 7 个 `TS2305` 名字充当"名字都补齐了"的清单；`pnpm verify` 在 typecheck 阶段就停，看不到测试段。
+  - 正文原先那两行指向 `desktop-draw.mjs` / `desktop-edit.mjs` 的**从未存在过**（四道闸门一直是同一个 runner 的开关）—— 已在 `ab3115e` 订正。
+- **过程教训（进台账）**：本任务出现**两条凭空捏造的完成通知**（对我从未派出的座位报"已提交"，哈希全是无效对象）⇒ 收棒判据升级为 `git cat-file` + `ls` 报告文件 + **控制位复跑同一命令**，且**后续棒次一律前台派发**（返回值是工具结果本身，不是通知）。
+
 ---
 ### Task 8: 楼层切换 + 属性面板 + 删除接屏（把 T7 补的那五道口用到屏幕上）
 
