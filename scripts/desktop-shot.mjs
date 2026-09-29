@@ -38,41 +38,51 @@ const out = join(dir, 'report.json');
 // mode 判定链：`mode` 只有一个值。三个 `includes` 各自为政的旧形状里，`--edit --draw` 会给
 // 主进程两个具体 flag，而主进程分支只认第一个、脚本却按后攒的判据读报告 ⇒ 红在"报告里没这个键"。
 // 走这条链后两侧永远只认同一个模式，这件事在构造上不可能发生。
-const mode = process.argv.includes('--draw')
-  ? 'draw'
-  : process.argv.includes('--edit')
-    ? 'edit'
-    : process.argv.includes('--pick')
-      ? 'pick'
-      : 'shot';
+// `--prop` 判在最前只是链的一处落点（Task 8 的第五个模式）：真正配对的顺序在主进程那段
+// 「从具体到通用」的分支里，这儿四个 `includes` 谁先谁后都一样，因为 `mode` 只会有一个值。
+const mode = process.argv.includes('--prop')
+  ? 'prop'
+  : process.argv.includes('--draw')
+    ? 'draw'
+    : process.argv.includes('--edit')
+      ? 'edit'
+      : process.argv.includes('--pick')
+        ? 'pick'
+        : 'shot';
+const wantProp = mode === 'prop';
 const wantPick = mode === 'pick';
 const wantEdit = mode === 'edit';
 const wantDraw = mode === 'draw';
 // 具体 flag 与 `--shot` 成对给：`--shot out` 不是"再写一份报告"，主进程用它判定进不进 shot 模式
 // （隐藏窗口、跑完 exit）。少了它，`--draw-shot` 那份路径根本没人读。
-// 一次运行只有 `runDrawShot` 或 `runEditShot` 或 `runPickShot` 或 `runShot` 会写盘 ⇒ 四个开关
-// 共用 `out` 这一个路径；开关与路径成对（`--draw-shot out`），主进程的 `argPath` 读各自开关
+// 一次运行只有 `runPropShot` 或 `runDrawShot` 或 `runEditShot` 或 `runPickShot` 或 `runShot` 会写盘
+// ⇒ 五个开关共用 `out` 这一个路径；开关与路径成对（`--prop-shot out`），主进程的 `argPath` 读各自开关
 // 后面的路径 —— 裸开关被当成缺路径的 T4 隐患早已被那条 fail-fast 收掉。
-const specificFlag = wantDraw
-  ? '--draw-shot'
-  : wantEdit
-    ? '--edit-shot'
-    : wantPick
-      ? '--pick-shot'
-      : null;
+const specificFlag = wantProp
+  ? '--prop-shot'
+  : wantDraw
+    ? '--draw-shot'
+    : wantEdit
+      ? '--edit-shot'
+      : wantPick
+        ? '--pick-shot'
+        : null;
 const electronArgs = ['.', ...(specificFlag === null ? [] : [specificFlag, out]), '--shot', out];
 try {
   runPnpm('pnpm --filter @dajia/desktop build');
-  // 只有 draw 那一发放宽到 300 秒：它一次跑要过 30 处等待（每处上限 10 秒 —— 但一处等不到就抛、
+  // 只有 draw 与 prop 那一发放宽到 300 秒：它们一次跑要过 20+ 处等待（每处上限 10 秒 —— 但一处等不到就抛、
   // 进程当场退出，所以真上界是"走完序列的实测一分多钟 + 一处超时"，300 秒是给慢机器留的余量）。
   // 另三条**不跟着放宽** —— 它们的等待数量一字没动，跟着涨等于把"变慢了"这件事抹平。
-  runElectron(electronArgs, wantDraw ? 300_000 : 180_000);
+  runElectron(electronArgs, wantProp || wantDraw ? 300_000 : 180_000);
   const report = JSON.parse(readFileSync(out, 'utf8'));
   const layers = report.layers ?? {};
   const edit = report.edit ?? {};
   // `draw` 是**探针**那一份；序列的逐步读数全部平铺在报告根上 —— 与 `edit` 那一份的形状
   // 不同，那些是 `runEditShot` 自己组的嵌套对象。
   const probe = report.draw ?? {};
+  // `prop` 是 `--prop-shot` 第 0 步读到的那枚**面板靶子**（`propProbe` 的六道筛 + 尽力那一发的
+  // 第二面墙）。它与 `pick` / `edit` / `draw` 那三枚探针同一条通路：主进程一律不许自己猜坐标。
+  const prop = report.prop ?? {};
   // 前六条与 drawlist.test.ts 同源；--pick 下追加的五条：一条实测原点前提 + 四条与
   // pick.test.ts 同源的判据。改样例房必须几处一起改，别只调这里。
   const checks = [
@@ -183,6 +193,107 @@ try {
       // 已结构性不可达）。最后那两句是**复用**的对账，走毫米不走像素（A1：第四色标记只证存在，`> 0`
       // 那一判在 main 里，位置一律由真源毫米钉）：斜墙起点吸的那枚 id 与那份毫米，逐字等于刚建的那枚角点。
       ['D22 空白角现造角点、按同一发像素补一发 45° 斜臂逼成三臂星形：屏幕判不合法、命令一条没发、真源纹丝不动、lastError 恒空、斜墙起点逐字复用现造那枚角点（两边都不许写进真源，addendum A3 / T7 语义）', report.starLegalAtMove === false && report.starRejectedOutcome === 'rejected' && report.starRejectedWallId === null && report.starRejectedCounts === `${String(report.basePoints + 3)}→${String(report.basePoints + 3)}` && report.starNoopDepth === true && report.starNoopRevision === true && report.starPointsAfter === report.basePoints + 3 && report.starLastError === null && report.starAppAlive === true && report.starStartPointId === report.starBuiltCornerId && JSON.stringify(report.starStartMm) === JSON.stringify(report.starBuiltCornerMm)],
+    );
+  }
+  if (wantProp) {
+    // 前六条与 drawlist.test.ts 同源（读的是第 15 步终态那份 `fin`：整条序列回基线 ⇒ `ops === 31`
+    //   在这里仍是回归判据）。
+    // 这二十三条与 panel.test.ts + handles.test.ts 同源，但只测它们管不到的那一层：真窗口里
+    //   "点 tab / 点面板控件 → 屏幕上的读数 → 真源的账（depth）→ 重绘的账（revision）"。
+    //   node 侧证得到 `wall.setMaterial` 不跑复核，证不到"画面上一个字都没变"（P13 那三处墨迹对账）；
+    //   也证不到"`<select>` 的方向键真落到了焦点上"（P12 那一发只按了一次，blur 掉焦点时它是 0 发）。
+    // 写死的字面量全是 2026-09-30 首跑实测回填：depth 基线 30、revision 0 → 1 → 2 → 3、8 枚点、
+    //   选中那份墨迹 30744、opening 层 10 → 8 → 10、材料 1 发方向键、撤销 2 发
+    //   （计划原文写"Ctrl+Z 三次"，实测是"材料发数 + 1"：第 5 步那发厚度在第 7 步已单独撤过）。
+    //   改布局或改样例房要连同 main 的十六步一起重测三遍，别只调这里。
+    checks.push(
+      ['P1 基线读数写死：depth 30 / 重绘计数 0 / 8 枚点 / 指令表 31 条 / tab 两条（第 1 层标高 0、第 2 层 3000）',
+        report.baseDepth === 30 && report.baseRevision === 0 && report.basePoints === 8 && report.opsAtStart === 31 &&
+          report.tabStripAtStart === '[{"index":0,"label":"第 1 层","elevationMm":0,"heightMm":3000},{"index":1,"label":"第 2 层","elevationMm":3000,"heightMm":3000}]'],
+      ['P2 面板靶子三枚 id 各不相等，且三格读数挂在自己的墙上（"尽力"那一发的第二面墙也在场）',
+        typeof prop.wallId === 'string' && typeof prop.openingId === 'string' && typeof prop.secondWallId === 'string' &&
+          prop.openingId !== prop.wallId && prop.secondWallId !== prop.wallId && prop.secondWallId !== prop.openingId &&
+          prop.props?.wallId === prop.wallId],
+      ['P3 画布原点实测 = (0,32)（tab 栏在下边界、面板在右侧），终态视口仍与当前层配对',
+        report.canvasOriginPx?.x === 0 && report.canvasOriginPx?.y === 32 && report.viewportStoreyId === report.storeyId],
+      ['P4 二层 tab 那发：换层且视口跟着换、选中与面板一起清空、真源 depth 不动而重绘确实发生（revision 0→1）、两层的点不共用（素材自证 8 枚）',
+        typeof report.storeyIdAfterTab === 'string' && report.storeyIdAfterTab !== report.storeyIdAtStart &&
+          report.viewportStoreyIdAfterTab === report.storeyIdAfterTab && report.selectedCountAfterTab === 0 &&
+          report.panelWallAfterTab === null && report.depthAfterTab === report.baseDepth && report.revisionAfterTab === 1 &&
+          report.pointKeysDisjoint === true && report.upperPointCount === 8],
+      ['P5 点回一层可逆：视口两份值逐字回到第 0 步那一份，depth 仍是基线（P10：切层只换视图，不写文档）',
+        report.storeyIdAfterTabBack === report.storeyIdAtStart && report.viewportStoreyIdAfterTabBack === report.storeyIdAfterTabBack &&
+          report.viewportBackMatches === true && report.depthAfterTabBack === report.baseDepth && report.revisionAfterTabBack === 2],
+      ['P6 点一面改得动的墙：面板开、三格逐字 = 探针那份预言、轴长 > 墙厚、选中集就它一个',
+        report.panelWallIdAtSelect === prop.wallId && report.panelMatchesProbe === true &&
+          JSON.stringify(report.panelPropsAtSelect) === JSON.stringify(prop.props) &&
+          report.axisLongerThanThickness === true && report.selectedIdsAtSelect?.length === 1 && report.selectedIdsAtSelect?.[0] === prop.wallId],
+      ['P7 选中那一刻"画面确实变了、几何一个字没变"：墨迹实测 30744（终态 30671 是空面板那一份），ops 与三层计数逐字等于基线',
+        report.nonBlankAtSelect === 30744 && report.opsAtSelect === 31 &&
+          JSON.stringify(report.layersAtSelect) === JSON.stringify(report.layers)],
+      ['P8 厚度框打 240.5 不回车：只问不写 —— 试跑 ok=false、真源中文「整数毫米」、depth 仍基线、真源厚度还是 240',
+        report.trial4Kind === 'thickness' && report.trial4Input === '240.5' && report.trial4Ok === false &&
+          /整数毫米/.test(report.trial4Reason ?? '') && report.depthAfterTrial4 === report.baseDepth &&
+          report.thicknessAfterTrial4 === 240],
+      ['P9 换成探针给的第一档合法值回车：恰好一条命令（depth 基线 +1）、面板读回新值 = 真源',
+        report.trial5Input === String(prop.thicknessTo) && report.trial5Ok === true &&
+          report.depthAfterThickness === report.baseDepth + 1 && report.revisionAfterThickness === 3 &&
+          report.thickness5 === prop.thicknessTo && report.propsAfterEdit5?.thicknessMm === prop.thicknessTo &&
+          report.panelMatchesAfterEdit5 === true],
+      ['P10 同值再交一次 = 屏幕上一个字都不发（P12，比真源严）：depth 与 revision 两步都不许多',
+        report.trial6Input === String(prop.thicknessTo) && report.depthAfterSameValue === report.depthAfterThickness &&
+          report.revisionAfterSameValue === report.revisionAfterThickness],
+      ['P11 Ctrl+Z 之后面板跟着真源回 240：面板读的是真源，不是本地态',
+        report.comboAfterUndoThickness === 'Ctrl+Z' && report.depthAfterUndoThickness === report.baseDepth &&
+          report.thicknessAfterUndoThickness === 240],
+      ['P12 材料下拉框只按一发方向键就落到 concrete：depth +1、试跑 kind=material 且 ok',
+        report.materialArrowPresses === 1 && report.material8 === prop.materialTo && report.trial8Kind === 'material' &&
+          report.trial8Ok === true && report.depthAfterMaterial === report.baseDepth + 1],
+      ['P13 材料不进派生（P4 在屏幕上的唯一凭据）：ops、三层计数、墨迹三处逐字等于第 3 步那一份',
+        report.opsAfterMaterial === report.opsAtSelect &&
+          JSON.stringify(report.layersAfterMaterial) === JSON.stringify(report.layersAtSelect) &&
+          report.nonBlankAfterMaterial === report.nonBlankAtSelect && report.pixelCountsMatchMaterial === true],
+      ['P14 承重的复选框真点得动：loadBearing 翻成探针预言的值、depth 再 +1（此刻基线 +2）',
+        report.trial9Kind === 'loadBearing' && report.trial9Ok === true && report.loadBearing9 === prop.loadBearingTo &&
+          report.depthAfterLoadBearing === report.baseDepth + 2],
+      ['P15 逐发撤销回到第 3 步读数：实测恰好 2 发（不是四发也不是三发），三格逐字相同、depth 回基线',
+        report.undoCount === 2 && JSON.stringify(report.undoCombos) === '["Ctrl+Z","Ctrl+Z"]' &&
+          report.propsMatchStep3 === true && JSON.stringify(report.propsAfterUndos) === JSON.stringify(prop.props) &&
+          report.depthAfterUndos === report.baseDepth],
+      ['P16 点墙 + Shift 点它身上的洞口 = 混选：两枚选中、面板仍指那面墙（P3 里"选中集不止一个就关面板"是错的读法）',
+        report.selectedAfterOpeningShift?.length === 2 && report.selectedAfterOpeningShift?.includes(prop.wallId) === true &&
+          report.selectedAfterOpeningShift?.includes(prop.openingId) === true && report.panelWallAfterMixed === prop.wallId &&
+          report.panelMatchesOnMixed === true],
+      ['P17 再 Shift 点探针给的第三发（第二面墙）= 两面墙：三枚选中、面板整块消失而不是"取第一面"（M2 那一发红在这儿）',
+        report.secondWallId === prop.secondWallId && JSON.stringify(report.secondWallPx) === JSON.stringify(prop.secondWallPx) &&
+          report.selectedAfterSecondWall?.length === 3 && report.selectedAfterSecondWall?.includes(prop.secondWallId) === true &&
+          report.panelWallAfterTwoWalls === null && report.panelPropsAfterTwoWalls === null],
+      ['P18 点空白清空、再点墙恢复：面板关到 null、选中 0，重选又指回那面墙（第 12 步吃的正是这份选中集）',
+        report.selectedAfterClear === 0 && report.panelWallAfterClear === null &&
+          report.panelWallAfterReselect === prop.wallId && report.selectedBeforeDelete?.length === 2 &&
+          report.depthAfterMultiSequence === report.baseDepth],
+      ['P19 Delete 只发一条命令：plan 账就那面墙（宿主墙身上的洞口归级联，不发第二条）、unsupported 空、选中剪空、面板关而 tab 两条还在',
+        report.deleteOutcome === 'ok' && report.depthAfterDelete === report.baseDepth + 1 &&
+          JSON.stringify(report.planDeletedIds) === JSON.stringify([prop.wallId]) && report.deletedCount === 1 &&
+          report.unsupportedCount === 0 && report.selectionAfterDeleteCount === 0 && report.panelWallAfterDelete === null &&
+          report.tabsCountAtDelete === 2],
+      ['P20 级联在屏幕上留痕（真源删的那一发，不在 plan 账上）：opening 层实测 10 → 8',
+        report.openingOpsBeforeDelete === 10 && report.openingOpsAfterDelete === 8 &&
+          report.openingOpsVanishedOnDelete === true],
+      ['P21 Ctrl+Z 撤销的是文档不是视图（D7）：opening 层回 10、指令表回 31、点逐字回第 3 步那份、选中仍为空',
+        report.comboAfterUndoDelete === 'Ctrl+Z' && report.openingOpsAfterUndoDelete === 10 &&
+          report.opsAfterUndoDelete === 31 && report.depthAfterUndoDelete === report.baseDepth &&
+          report.pointsAfterUndoDelete === report.basePoints && report.pointsMatchAfterUndoDelete === true &&
+          report.selectedAfterUndoDelete === 0],
+      ['P22 连点两次 tab：两份读数与第 0 步那份逐字相同（P6：tab 顺序不随进程漂）',
+        report.tabsJsonMatch === true && report.tabStripUpper === report.tabStripAtStart &&
+          report.tabStripLower === report.tabStripAtStart],
+      ['P23 总账：终态 depth / 点数 / 当前层 / 视口 / 工具全部回第 0 步，面板关、选中空，探针重新算出的靶子逐字相同（整条序列没留痕）',
+        report.depthAtFinish === report.baseDepth && report.pointsAtFinish === report.basePoints &&
+          report.storeyIdAtFinish === report.storeyIdAtStart && report.toolAtFinish === 'select' &&
+          report.panelWallAtFinish === null && report.selectedAtFinish === 0 &&
+          JSON.stringify(report.viewportAtFinish) === JSON.stringify(report.viewportAtStart) &&
+          report.propMatchesStart === true],
     );
   }
   let bad = 0;

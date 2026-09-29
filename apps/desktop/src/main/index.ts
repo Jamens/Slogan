@@ -2175,10 +2175,12 @@ async function runPropShot(win: BrowserWindow, out: string): Promise<void> {
     () => readPropReport(win, '删除后'),
     (r) => r.depth === baseDepth + 1 && r.selectionAfterDelete.length === 0 && r.panelWallId === null,
   );
-  // 计划原文那句「`deletedIds` 两枚：墙 + 级联掉的洞口」实测不成立，2026-09-30 订正为**一枚**：
-  // `deletedIds` 记的是**计划账**（`candidateIds` 里真源不再含有的那些，见 PlanCanvas 那段注释），
-  // 级联掉的洞口从来不上这本账。于是"洞口跟着走了"换了个证人：画布上它那些线一起消失
-  // （`layers.opening` 少了）而 `depth` 只 +1 —— 没发第二条命令、构件却没了，这正是级联在屏幕上的形状。
+  // 计划行 12 那句「`deletedIds` 只有那面墙」与实现一致，但**它证不了级联**：`deletedIds` 记的是
+  // **计划账**（`candidateIds` 里真源不再含有的那些，见 PlanCanvas 那段注释），级联掉的洞口从来不上
+  // 这本账 —— 账对得上而洞口还画在屏幕上，这一发就绿成假象。于是"洞口跟着走了"换了个证人：
+  // 画布上它那些线一起消失（`layers.opening` 少了）而 `depth` 只 +1 —— 没发第二条命令、构件却没了，
+  // 这正是级联在屏幕上的形状。（2026-09-30 首跑实测：原写法拿 `deletedIds.length === 2` 当判据，
+  // 红在"计划账上只有一枚" —— 那句话的出处是本任务的执行笔记，不是计划正文，此处按盘上口径订正。）
   if (deleted.deletedIds.length !== 1 || deleted.deletedIds[0] !== prop.wallId) {
     throw new Error(
       `计划账上该只有那面墙（洞口由它的级联收走，不发第二条）：${JSON.stringify(deleted.deletedIds)}（靶子墙 ${prop.wallId}）`,

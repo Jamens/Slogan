@@ -15,6 +15,7 @@
     "pick-shot": "node scripts/desktop-shot.mjs --pick",
     "edit-shot": "node scripts/desktop-shot.mjs --edit",
     "draw-shot": "node scripts/desktop-shot.mjs --draw",
+    "prop-shot": "node scripts/desktop-shot.mjs --prop",
     "verify": "pnpm typecheck && pnpm lint:deps && pnpm test"
   },
   "devDependencies": {
