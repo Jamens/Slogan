@@ -1,8 +1,10 @@
 import {
+  columnDelete,
   length,
   openingDelete,
   quantizeMm,
   requireStorey,
+  slabDelete,
   sub,
   TransactionLog,
   vec,
@@ -27,7 +29,7 @@ import {
 } from './snapping';
 
 /**
- * 屏幕上"这一发该不该发命令"的那一层（Task 6）。三个模块各管一问，互不越界：
+ * 屏幕上"这一发该不该发命令"的那一层（Task 6 起，Task 8 补柱/板两支）。三个模块各管一问，互不越界：
  * `snapping.ts` = 这一发光标落在**哪儿**；`handles.ts` = 这一发**接得到**哪枚既有的点；
  * 本文件 = 接住了之后**要不要发**这条命令、发出去把谁拿回来、删的时候发几条。
  *
@@ -39,7 +41,10 @@ import {
 /** 交互模式。`wall` = 正在拉新墙，此时删除键什么都不发（见 `planDelete`）。 */
 export type Tool = 'select' | 'wall';
 
-/** 新墙的默认墙厚。真源里没有"上一层用多厚"可读，这是产品给的起点；Task 8 的数值输入替换它。 */
+/**
+ * 新墙的默认墙厚。真源里没有"上一层用多厚"可读，这是产品给的起点；Task 8 的数值输入替换它
+ * —— 而**本任务没有替换它**：属性面板改的是既有墙的厚度，新建墙那一路仍然吃这个常量。
+ */
 export const NEW_WALL_THICKNESS_MM = 240;
 
 /**
@@ -50,8 +55,8 @@ export const NEW_WALL_THICKNESS_MM = 240;
  * 为什么探针还需要这条：像素那一道下限量的是**轮廓长边**（`lengthMm - thicknessMm` 对 64px），
  * 放大越多它换算回毫米越小 —— 2px/mm 时一面 272mm 长的墙（长边只剩 32mm）就够 64px 了，
  * 而真源只不许 `thicknessMm >= lengthMm`，所以 240mm 到 500mm 之间那段墙全都合法、又短得没法施工。
- * 这道毫米筛把靶子钉在 500mm 以上，与放大倍率无关。Task 8 的"数值输入 + 最小墙长"才把这条下限
- * 搬到交互路径上。
+ * 这道毫米筛把靶子钉在 500mm 以上，与放大倍率无关。Task 8 落地时也没有把这条下限搬到输入框上
+ * —— 它到今天仍只作用于探针，边界由 `panel.test.ts` 那条用例钉着。
  */
 export const MIN_WALL_LENGTH_MM = 500;
 
@@ -187,27 +192,38 @@ export type DeleteOutcome = 'ok' | 'empty' | 'ignored-in-wall-mode' | 'unsupport
 
 export interface DeletePlan {
   readonly outcome: DeleteOutcome;
-  /** 派发顺序 = 数组顺序：先洞口后墙（S5）。 */
+  /** 派发顺序 = 数组顺序：洞口 → 柱 → 板 → 墙（S5 扩成四段，理由见 `planDelete`）。 */
   readonly commands: readonly Command[];
   /** `commands` 的 `type` 抄一份：探针与日志判"发了哪几条"用它，不用反射。 */
   readonly commandTypes: readonly string[];
-  /** 真的发出命令的那些 id，与 `commands` 同序（洞口在前、墙在后，各自按 id 升序）。 */
+  /** 真的发出命令的那些 id，与 `commands` 同序（洞口 → 柱 → 板 → 墙，各段内按 id 升序）。 */
   readonly candidateIds: readonly EntityId[];
-  /** 本次不删、留给后续任务的 id（柱 / 板 / 楼层，以及别层构件）。 */
+  /**
+   * 本次不删的 id：**别层构件**，加上屏幕上取不到的 `storey` / `point`（后两者的删除入口不是
+   * Delete 键，理由写在 `planDelete` 最后那段注释里）。样例房里恒空 —— 那儿没有别层的东西被选中。
+   */
   readonly unsupported: readonly EntityId[];
 }
 
 /**
- * 选中集 → 删除命令。**两条规则，一条都不复述真源已经做的事**：
+ * 选中集 → 删除命令。**四条规则，一条都不复述真源已经做的事**：
  * ① 选中的墙 → `wall.delete`（它自己会级联收掉宿主是它的洞口、自己判端点还剩谁引用）；
- * ② 选中的洞口且**宿主墙不在本次删除集里** → `opening.delete`。
+ * ② 选中的洞口且**宿主墙不在本次删除集里** → `opening.delete`；
+ * ③ 选中的柱 → `column.delete`（它自己收掉独占的落点，孤儿判定问 `pointStillReferenced`）；
+ * ④ 选中的板 → `slab.delete`（同上，逐枚边界点各问一次）。
  *
  * 为什么反过来（先给每个选中洞口发 `opening.delete`、再删墙）也不行：那是对真源已有级联的
  * 复述，复述的规则一定会漂；而先删墙之后那些洞口已经不存在，第二条命令 `requireOpening`
  * 直接抛，`dispatchBatch` 就在半途留下半套状态。
  *
- * 顺序排成"洞口在前"是为了撤销的可读性：栈顶是 `wall.delete`，一次 Ctrl+Z 把"墙 + 它自己
- * 级联掉的洞口"整组还原，而不是先还回一樘无主的洞口。
+ * 顺序排成"洞口 → 柱 → 板 → 墙"是为了撤销的可读性：栈顶是 `wall.delete`，一次 Ctrl+Z 把
+ * "墙 + 它自己级联掉的洞口"整组还原，而不是先还回一樘无主的洞口。柱与板排在墙**之前**：
+ * 它们与墙共享端点时，先删板/柱会让那些点变成孤儿候选，而 `wallDelete` 的孤儿判定是事后问的，
+ * 两个顺序都合法 —— 定死一个，撤销栈的形状才可预测（`--prop-shot` 里"删一根柱再撤销"那条判据读它）。
+ *
+ * **屏幕上今天还点不到柱与板**：`buildDrawList` 的指令表与 `pickAt` 的命中集都只认墙与洞口，
+ * 所以 ③④ 两支的凭据只能是合成夹具（手工把柱/板的 id 放进选中集）。不许为了在屏幕上"证明它"
+ * 就把柱画进指令表 —— 那是 Task 9 / 计划 4 的边界，混进来会让 `--draw-shot` 那 28 行像素判据全数重测。
  */
 export function planDelete(
   doc: Document,
@@ -219,9 +235,10 @@ export function planDelete(
   if (tool === 'wall') {
     return { outcome: 'ignored-in-wall-mode', commands: [], commandTypes: [], candidateIds: [], unsupported: [] };
   }
-  // 先分两堆：要删的墙、要单独删的洞口。别的一律进 unsupported，不当"没选中"处理。
   const wallIds = new Set<EntityId>();
   const openingIds = new Set<EntityId>();
+  const columnIds = new Set<EntityId>();
+  const slabIds = new Set<EntityId>();
   const unsupported: EntityId[] = [];
   for (const id of all) {
     const entity = doc.get(id);
@@ -241,7 +258,21 @@ export function planDelete(
       else openingIds.add(id);
       continue;
     }
-    unsupported.push(id); // column / slab / storey / point ⇒ 本任务不发命令（Task 8 接 delete）
+    if (entity.kind === 'column') {
+      if (entity.storeyId !== storeyId) unsupported.push(id);
+      else columnIds.add(id);
+      continue;
+    }
+    if (entity.kind === 'slab') {
+      if (entity.storeyId !== storeyId) unsupported.push(id);
+      else slabIds.add(id);
+      continue;
+    }
+    // 剩下只有 `storey` 与 `point` 两种，而它们**不进删除集**：
+    // 楼层实体没有 `storeyId`（它就是层本身），`pruneSelection` 一律剔掉，所以它进不到这里；
+    // `storeyDelete` 的入口因此不是 Delete 键，而是楼层 tab 上那条显式动作（删整层 = 连带删光该层
+    // 所有构件，需要确认框，S1 没有确认框）。点在屏幕上也不会命中楼层或裸点 —— 命中集只有墙与洞口。
+    unsupported.push(id);
   }
   // 宿主墙要一起删的洞口不发第二条：wallDelete 的级联已经收了它。
   const solo = [...openingIds].filter((id) => {
@@ -250,12 +281,16 @@ export function planDelete(
     return !wallIds.has(opening.hostWallId);
   });
   const sortedSolo = solo.sort();
+  const sortedColumns = [...columnIds].sort();
+  const sortedSlabs = [...slabIds].sort();
   const sortedWalls = [...wallIds].sort();
   const commands: Command[] = [
     ...sortedSolo.map((openingId) => openingDelete({ openingId })),
+    ...sortedColumns.map((columnId) => columnDelete({ columnId })),
+    ...sortedSlabs.map((slabId) => slabDelete({ slabId })),
     ...sortedWalls.map((wallId) => wallDelete({ wallId })),
   ];
-  const candidateIds = [...sortedSolo, ...sortedWalls];
+  const candidateIds = [...sortedSolo, ...sortedColumns, ...sortedSlabs, ...sortedWalls];
   const outcome: DeleteOutcome =
     commands.length > 0 ? 'ok' : unsupported.length > 0 ? 'unsupported' : 'empty';
   return { outcome, commands, commandTypes: commands.map((c) => c.type), candidateIds, unsupported };
@@ -274,8 +309,9 @@ export function pruneSelection(doc: Document, storeyId: string, ids: Iterable<En
     const entity = doc.get(id);
     if (entity === undefined) continue;
     // 楼层实体没有 `storeyId`（它就是层本身），本层的选中集里出现它就是错 ⇒ 一律剔掉。
-    // 少这一支下面那句会编译不过，所以它不是"顺手写的"：`storeyDelete` 是 Task 8 的活，
-    // 届时该由 `planDelete` 的 'unsupported' 记账，而不是让它滞留在选中集里。
+    // 少这一支下面那句会编译不过，所以它不是"顺手写的"：Task 8 决定 `storeyDelete` 的入口
+    // **不是** Delete 键（删整层要连带删光该层构件，需要确认框，S1 没有），于是这一支剔掉的就是
+    // 最终答案，而不是"先剔掉、等 planDelete 再记账"的中间态。
     if (entity.kind === 'storey') continue;
     // 点按它自己的 `storeyId` 筛：`PointEntity.storeyId` 可为 null（地形 / 园林点不属于任何一层），
     // 那一支同样落不进本层的选中集。曾经这里写的是"point 一律放行"，理由是"点没有 storeyId" ——
@@ -375,7 +411,7 @@ export interface WallProbe {
  *    新墙的轮廓与老墙叠在一起，`pickPxOf` 的"唯一命中"筛会一路换边换到 null。
  * ⑤ **三发像素全在画布内**（`insideCanvas`）：越界的那一发 `sendInputEvent` 发不出去，
  *    闸门会在"按了没反应"和"毫米对不上"之间反复横跳。
- * ⑥ **建得出还要画得出**（`derivesCleanly`）：T7 起 `wallCreate` 的 `build` 末尾就复核了派生，
+ * ⑥ **建得出还要画得出**（`derivesCleanly`）：Task 7 起 `wallCreate` 的 `build` 末尾就复核了派生，
  *    所以这一筛在样例房上与 `legalWallCreate` **判得一样**（实测同一批候选）。留着它是因为
  *    "画得出"这句话在屏幕上只有这一个读者 —— 见 `derivesCleanly` 的注释，别顺手删。
  */
@@ -417,7 +453,7 @@ export function wallProbe(
         legal: false,
       };
       if (!legalWallCreate(doc, draft)) continue;
-      // 筛 ⑥：建得成还要画得出。T7 之后 `legalWallCreate` 里的 `build` 已经复核过派生，
+      // 筛 ⑥：建得成还要画得出。Task 7 之后 `legalWallCreate` 里的 `build` 已经复核过派生，
       // 这一筛与它判得一样（实测同一批候选）；留着它是"画得出"这句话的唯一读者。
       if (!derivesCleanly(doc, { ...draft, legal: true }, v, defaults)) continue;
       return {
@@ -438,7 +474,7 @@ export function wallProbe(
 /**
  * 筛 ⑥：拿一份**副本真建一遍、再把整层派生一遍**。
  *
- * `legalWallCreate` 跑命令的 `build`，而 T7 起 `build` 的最后一行就是派生复核（`assertDerivesAfterApply`）；
+ * `legalWallCreate` 跑命令的 `build`，而 Task 7 起 `build` 的最后一行就是派生复核（`assertDerivesAfterApply`）；
  * `buildDrawList` 走的也是 `deriveStoreyGeometry` → `deriveJoints` 那一条 —— 两侧从此对"三个方向过同一枚点"
  * （S1 不支持星形接头）给同一个判决。
  * 这条筛不是想象出来的：加进筛 ⑤ 之后样例房的探针改挑 `(0,0) → (2000,2000)` 那发 45°，
@@ -448,7 +484,7 @@ export function wallProbe(
  * 判据会红在一句与画墙无关的对账上。所以挑靶子阶段就拒掉。
  *
  * **代价与边界**：每个候选多一次整层派生（样例房一层八面墙，`wallProbe` 全程仍在毫秒级）。
- * **T7 之后它不再是唯一防线**：`wallCreate` 的 `build` 已经复核过派生（`assertDerivesAfterApply`），
+ * **Task 7 之后它不再是唯一防线**：`wallCreate` 的 `build` 已经复核过派生（`assertDerivesAfterApply`），
  * 它与 `legalWallCreate` 从此判得一样（2026-09-28 实测 80 发候选里被挡的那 48 发在两侧是同一批），
  * 是**第二道保险**而不是唯一防线。留着它是因为它是**画得出**而不是**建得出**的唯一读者：
  * `buildDrawList` 将来长出派生之外的失败（渲染期的算术、新的抛点）时，探针依然只给得出
