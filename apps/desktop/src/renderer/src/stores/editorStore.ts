@@ -57,6 +57,15 @@ export interface EditorState {
   /** 进行中的墙草稿。中途只活在这里，不进真源（与 `drag` 同一条 D4 纪律）。 */
   readonly draft: DraftWall | null;
   setViewport: (viewport: Viewport | null) => void;
+  /**
+   * P10：换层与视口复位必须是同一次 `set`。调用方负责清选中集（store 不碰 selectionStore），
+   * 尺寸也由调用方算好递进来（只有画在屏上的 `PlanCanvas` 量得到画布自己有多大）。
+   *
+   * 这一发顺手把 `revision` +1：切层不是真源编辑，是视图状态，而扳的正是"派生读数该重算了" ——
+   * `storeyTabsOf` 与 `wallPropsOf` 都吃文档，文档没变但"当前层"变了，不扳一次面板与 tab
+   * 就留着上一层的读数。与上面那句"只在成功之后 +1"不冲突：切层没有失败那一支。
+   */
+  setStorey: (storeyId: string, viewport: Viewport) => void;
   setDrag: (drag: DragState | null) => void;
   setTool: (tool: Tool) => void;
   setDraft: (draft: DraftWall | null) => void;
@@ -83,6 +92,11 @@ export const useEditor = create<EditorState>((set, get) => ({
   tool: 'select',
   draft: null,
   setViewport: (viewport) => set({ viewport }),
+  // 一次 `set` 换两格（P10）：分两次就留一个中间帧 —— 新一层的图配旧一层的 `origin`，
+  // 画在画布外，红形是"pxPerMm 对不上"这种谁也看不懂的话。
+  // 代价照付：`storeyId` 的变更入口从"随便谁 set"收成一个函数，以后滚轮切层也得走这一道。
+  setStorey: (storeyId, viewport) =>
+    set({ storeyId, viewport, draft: null, tool: 'select', revision: get().revision + 1 }),
   setDrag: (drag) => set({ drag }),
   setTool: (tool) => set({ tool }),
   setDraft: (draft) => set({ draft }),

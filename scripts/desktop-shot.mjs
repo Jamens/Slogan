@@ -89,9 +89,11 @@ try {
     // 下面这四条的 FAIL 都真打得出来（改坏验证：buildDrawList 第四参删掉、选中不上屏时，
     // "点中墙后屏幕上真的有红色像素"这一行红，而不是 main 先抛错）。
     checks.push(
-      // 画布原点必须是实测的 (0,0)：探针点（画布 px）→sendInputEvent（页面 px）的换算
-      // 靠它，Task 8 改布局后若原点漂移，这一行先红 —— 前提从此是断言不是默契。
-      ['画布原点实测 = 视口原点 (0,0)', report.canvasOriginPx?.x === 0 && report.canvasOriginPx?.y === 0],
+      // 画布原点必须是实测的 (0,32)：探针点（画布 px）→sendInputEvent（页面 px）的换算
+      // 靠它。Task 8 的三格布局把画布下移了一栏 tab，所以原点不再是视口原点。
+      // 前提从此是断言不是默契：若布局再漂移，这一行先红。
+      // y = 32 = 楼层 tab 栏高（`panels.tsx` 的 `STOREY_TAB_HEIGHT_PX`），x 分量仍严格 0（面板在右侧）。
+      ['画布原点实测 = (0,32)（Task 8 布局后 y = tab 栏高 32）', report.canvasOriginPx?.x === 0 && report.canvasOriginPx?.y === 32],
       ['探针给出可点的构件', typeof report.pick?.ownerId === 'string'],
       ['点中墙后屏幕上真的有红色像素', report.pickedSelectedPx > 100],
       ['选中的就是探针指的那面墙', report.clickedOwner === report.pick?.ownerId],
@@ -141,7 +143,9 @@ try {
       // 档位只钉到「是方向档、且零位移」：钉死 ortho 还是 angle15 等于拿判据赌 uuidv7 的端点顺序（探针挑中哪枚起点会漂，见 S8 ① 那段实测）。
       // S3 那句"画 4000 的水平墙必须是 ortho"由 snapping.test.ts 的档位互斥用例负责，那一份是确定性的。
       // distPx 的 0 订正为 ≤1.5（D2a 实测）：S8 ① 那句"十发 distPx 逐字为 0"量在 8mm=1px 的二进制对齐格点上
-      // （pxPerMm=0.125）；真窗口 fitStorey(1427×865,60) 实测 pxPerMm≈0.12417，整数毫米落不到整数像素上，
+      // （pxPerMm=0.125）；真窗口 Task 8 布局之后是 `fitStorey(1167×833, 60)`，四个进程实测
+      // `pxPerMm = 0.114`（draw 报告的 `starPxPerMm`）与 `endSnapDistPx = 0.5007` —— 落在这把尺子的
+      // √2 上界之内，且 0.5px 那一发正是"整数毫米落不到整数像素"的往返残差本体。整数毫米落不到整数像素上，
       // `intPx → pxToMm → quantize → mmToPx` 的往返残差按构造 ≤1px/轴（√2≈1.42）。"零位移"的毫米侧对账
       // 由第 3 步与 D12 的 `end.mm === probe.endMm` **逐字相等**钉着；这一行只钉"方向档不把落点拽离光标一像素以上"
       // —— 拽去 8px 容差内的别处、或拽去别面墙，都会红在这一行。

@@ -180,8 +180,9 @@ async function focusForInput(win: BrowserWindow): Promise<void> {
 }
 
 /**
- * 布局要等它**停下来**再读探针：窗口在 show/focus 之后自己还会改尺寸（实测画布高 865 → 839），
- * 而 `dragProbe` 给的像素是按当时 viewport 算的。拿 865 那版的 fromPx 去点 839 的屏幕，
+ * 布局要等它**停下来**再读探针：窗口在 show/focus 之后自己还会改尺寸（本棒实测：三格布局稳定后
+ * 画布 1167×833，即报告 JSON 的 `wPx`/`hPx`；停下前的尺寸不可信），
+ * 而 `dragProbe` 给的像素是按当时 viewport 算的。拿停下前那一版的 fromPx 去点已停下来的屏幕，
  * 落点差出的不是一两个像素而是整个命中半径 —— 落空白就 `clear()`（选中集空），
  * 落别面墙就选中别的 owner，两种都只会等满 10 秒超时，看不出是"坐标过期"。
  * 判据是"连续三读尺寸不变"，不是固定 sleep：稳定即走，稳不下来带着最后一眼失败。

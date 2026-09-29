@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { requirePoint, wallMoveEndpoint } from '@dajia/core';
+import { useEffect, useRef, useState } from 'react';
+import { requirePoint, wallMoveEndpoint, type EntityId } from '@dajia/core';
 import {
   buildDrawList,
   draftAtPress,
@@ -40,11 +40,21 @@ import {
   type PickProbe,
   type Px,
   type SnapField,
+  type StoreyTab,
   type Tool,
   type WallProbe,
+  type WallProps,
 } from '@dajia/scene-2d';
 import { useEditor } from './stores/editorStore';
 import { useSelection } from './stores/selectionStore';
+import {
+  panelReadout,
+  PropPanel,
+  STOREY_TAB_HEIGHT_PX,
+  StoreyTabs,
+  VIEW_PAD_PX,
+  type PanelTrialReport,
+} from './panels';
 
 export interface DropReport {
   outcome: 'ok' | 'noop' | 'failed';
@@ -122,8 +132,9 @@ export interface DebugReport {
   /**
    * 画布原点在**页面/视口坐标空间**（CSS px，getBoundingClientRect 口径）的位置。
    * `pick` 与 `edit` 里的像素点是**画布坐标空间**；sendInputEvent 吃页面空间。两套空间
-   * 差的就是这个值 —— 换算由 main 的 clickCanvasPx / 拖拽助手做，"它今天等于 (0,0)"
-   * 由 --pick-shot / --edit-shot 的 origin PASS 行断言，不靠 body margin 归零默默兜底。
+   * 差的就是这个值 —— 换算由 main 的 clickCanvasPx / 拖拽助手做，"它今天等于 (0, 32)"
+   * 由 --pick-shot / --edit-shot 的 origin PASS 行断言。32 那一格是 Task 8 的楼层 tab 栏
+   * （高度住在 `panels.tsx` 的 `STOREY_TAB_HEIGHT_PX`，与这里同一个数），不是 body margin。
    */
   canvasOriginPx: { x: number; y: number };
   // ↓ T5 的 14 个
@@ -159,13 +170,29 @@ export interface DebugReport {
    * 那些构件还在文档里 ⇒ 不许出现在这一本账上（D2 的 `--draw-shot` 与 Task 8 拿它对账）。
    */
   deletedIds: string[];
-  /** 最后一次删除计划留给 Task 8 的 id。样例房里恒空 —— 那儿没有柱板可删，字段是接线凭据不是分支凭据。 */
+  /**
+   * 最后一次删除计划留给面板的、本层取不到的 id（别层构件）。样例房里恒空 ——
+   * 两层房的构件都点在这一层里，字段是接线凭据不是分支凭据。
+   */
   unsupportedIds: string[];
   /** 删除剪枝**之后**的选中集（`pruneSelection` 的答案直接落在这儿，不经过 store 二次推导）。 */
   selectionAfterDelete: string[];
   lastHotkey: HotkeyReport | null;
   /** 拉墙的靶子：与 `edit` 同一条纪律 —— 主进程只读它，不猜坐标（`pxPerMm` 住在 renderer）。 */
   draw: WallProbe | null;
+  // ↓ Task 8 棒 D1 的 5 个。全部读 `panelReadout()`（面板自己上屏那一帧公布的值），
+  // 这里**不许**再拿 `storeyTabsOf` / `wallPropsOf` 算第二遍：重算等于用结论证结论 ——
+  // 面板画错、画空、画陈旧，报告照样绿。
+  /** 当前层的 tab 列表（顺序、标签、标高全部来自 `storeyTabsOf`，renderer 不自己排）。 */
+  storeyTabs: StoreyTab[];
+  /** `selectedWallForPanel` 的答案；null = 面板不渲染。 */
+  panelWallId: EntityId | null;
+  /** 面板三格读数 + 轴长；null 同上。 */
+  panelProps: WallProps | null;
+  /** 最近一次输入框预言：`{ kind, input, ok, reason }`。`--prop-shot` 的红字判据读它。 */
+  lastTrial: PanelTrialReport | null;
+  /** 最近一次成功提交后的**真源**读数（不是输入框的值）：证"面板读真源"。 */
+  propsAfterEdit: WallProps | null;
 }
 
 declare global {
@@ -392,21 +419,31 @@ function countPixels(
 }
 
 /**
- * 画布像素坐标。`offsetX/offsetY` 相对**事件目标**，而目标在窗口级监听下仍然是命中到的那块
- * canvas（它铺满内容区、1 canvas px = 1 CSS px，没有 CSS 缩放掺进来），所以它与 `DrawOp`
- * 的坐标同一单位、同一原点 —— 指针拖出画布外时目标会变成 `<html>`，那时 `offsetX` 就不是
- * 画布坐标了，但 `moveTargetOf` 拿到的仍是同一张屏幕上的数，最多是落点偏一点，不会算错单位。
+ * 画布像素坐标。**不再读 `event.offsetX/offsetY`**：那两个数相对**事件目标**，而目标在窗口级
+ * 监听下会变成 `<html>`（指针拖出画布外那一刻），那时它是页面空间坐标 —— 而本棒之后画布原点
+ * 不再是视口原点（上面多了一栏 32px 的楼层 tab），两套空间差的就是实测原点，按下去会整体偏 32px，
+ * 红形是"点了没反应"，那是最难查的一类。
+ * 口径与 `canvasOriginPx` 同源：都从这块 canvas 的 `getBoundingClientRect()` 减出来 ——
+ * 两套空间的换算只有一份数，主进程与这里不许各减各的。
  * 非有限值返回 null：`quantizeMm` 会抛 RangeError，而那一发既没什么可写、也没什么可撤销。
  */
-function pointerPx(event: PointerEvent): Px | null {
-  const x = Number.isFinite(event.offsetX) ? event.offsetX : event.clientX;
-  const y = Number.isFinite(event.offsetY) ? event.offsetY : event.clientY;
+function pointerPx(event: PointerEvent, canvas: HTMLCanvasElement): Px | null {
+  const rect = canvas.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
   return { x, y };
 }
 
 export function PlanCanvas(): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  /**
+   * 画布外面那一格（`fit()` 量的是**它**，不是 canvas）。量 canvas 自己是行不通的：
+   * 本棒的 CSS 尺寸由 `fit()` 写死成整数，于是 canvas 的 CSS 宽**依赖上一次量的结果** ——
+   * 第一次量到的是 `<canvas>` 的默认 300×150，之后就锁死在 300。格子是 flex 给的，
+   * 与画布尺寸无关（画布绝对定位），所以它才是那个"独立于结论"的读数来源。
+   */
+  const canvasCellRef = useRef<HTMLDivElement | null>(null);
   // 指针事件的靶子必须是**刷上屏的那一份**指令表与把手表（T4 的纪律延续到把手上）：
   // 副本与屏幕一旦漂开，"点得中的就是画出来的"就只剩注释在守。
   const opsRef = useRef<readonly DrawOp[]>([]);
@@ -426,7 +463,7 @@ export function PlanCanvas(): React.JSX.Element {
   // 放在 `pointermove` 里就是每发一次整层遍历）。它必须是**刷上屏那一份**：场与屏幕不同步，
   // 判据就会说"吸上了一个屏幕上根本不存在的东西"。
   const fieldRef = useRef<SnapField>(EMPTY_SNAP_FIELD);
-  /** 最后一次删除计划的三本账（发出的 / 留给 Task 8 的 / 剪完之后剩下的），给 `__dajiaDebug` 读。 */
+  /** 最后一次删除计划的三本账（发出的 / 本层取不到的 / 剪完之后剩下的），给 `__dajiaDebug` 读。 */
   const deleteRef = useRef<{
     deletedIds: string[];
     unsupportedIds: string[];
@@ -437,6 +474,11 @@ export function PlanCanvas(): React.JSX.Element {
   const hotRef = useRef<HotkeyReport | null>(null);
   /** 只数 `w`/`Escape`/`Delete`/`Backspace` 这一路，与 `keySeqRef` 各数各的（见 `HotkeyReport`）。 */
   const hotSeqRef = useRef<number>(0);
+  /**
+   * 画布自己的实测尺寸（CSS px），由 `fit()` 写、`StoreyTabs` 读：tab 点击那一发要用它算
+   * 新层的 `fitStorey`，而面板量不到画布 —— 递数字进去，比让面板去读 `window.innerWidth` 少一套口径。
+   */
+  const [canvasSizePx, setCanvasSizePx] = useState<{ readonly w: number; readonly h: number } | null>(null);
 
   const log = useEditor((s) => s.log);
   const storeyId = useEditor((s) => s.storeyId);
@@ -461,9 +503,10 @@ export function PlanCanvas(): React.JSX.Element {
 
   // 页面归位（真窗口实测后补的一行）：默认 body margin 8px 会把画布原点推到 (8,8)，
   // 而探针点/把手点的口径是画布坐标 —— 差值恰好 8px，等于吃光 PICK_TOL_PX，同一判据在
-  // 真窗口里间歇性"点了没反应"（T4 实测 12 跑 5 红）。归零仍是必需的（它同时治了 innerWidth
-  // 画布的溢出），但它**不再是坐标系的前提**：前提由 __dajiaDebug 实测的 canvasOriginPx 明说，
-  // 闸门有 PASS 行断言它等于 (0,0)，拖拽助手也照 measured origin 换算（见 main）。
+  // 真窗口里间歇性"点了没反应"（T4 实测 12 跑 5 红）。归零仍是必需的（它同时治了画布溢出），
+  // 但它**不再是坐标系的前提**：前提由 __dajiaDebug 实测的 canvasOriginPx 明说，
+  // 闸门的 origin PASS 行照实测值断言（Task 8 布局之后是 (0, 32)，32 那一格是 tab 栏），
+  // 拖拽助手也照 measured origin 换算（见 main）。
   // cleanup 恢复原值：样式突变不许"改了没人还"。
   useEffect(() => {
     const previous = document.body.style.margin;
@@ -475,15 +518,27 @@ export function PlanCanvas(): React.JSX.Element {
 
   useEffect(() => {
     const fit = (): void => {
-      const wPx = Math.max(1, Math.floor(window.innerWidth));
-      const hPx = Math.max(1, Math.floor(window.innerHeight));
       const canvas = canvasRef.current;
-      if (canvas !== null) {
-        canvas.width = wPx;
-        canvas.height = hPx;
-        canvas.style.width = `${String(wPx)}px`;
-        canvas.style.height = `${String(hPx)}px`;
-      }
+      const cell = canvasCellRef.current;
+      if (canvas === null || cell === null) return;
+      // 尺寸来源是**画布那一格的实测**，不再是 `window.innerWidth/innerHeight`：Task 8 之后画布
+      // 只是中栏左侧那一格（右边 260px 是属性面板，上面 32px 是 tab 栏），拿窗口尺寸当画布尺寸
+      // 会让画布画到面板底下去 —— 而 `fitStorey` 按整窗算出的 `pxPerMm` 与屏幕上真的看得见的
+      // 那块区域不再是一回事。
+      const rect = cell.getBoundingClientRect();
+      const wPx = Math.max(1, Math.floor(rect.width));
+      const hPx = Math.max(1, Math.floor(rect.height));
+      // 属性与 CSS 两边写**同一个整数**（这一条从 T3 起就在，本棒只是把尺寸来源从窗口换成画布）：
+      // 格子宽是 `100vw − 260`，缩放比例非 100% 时它会带小数，而 `width: 100%` 让 CSS 尺寸跟着小数走
+      // ⇒ `canvas.width`（整数）≠ CSS 宽 ⇒ 位图被合成器缩放，`countPixels` 数的与屏幕上点的不是同一份，
+      // "1 canvas px = 1 CSS px" 一崩，像素判据全体失效。所以这里显式写死 CSS 尺寸，不靠格子给。
+      canvas.width = wPx;
+      canvas.height = hPx;
+      canvas.style.width = `${String(wPx)}px`;
+      canvas.style.height = `${String(hPx)}px`;
+      // tab 点击那一发要拿**同一份**实测尺寸去 `fitStorey`（面板量不到画布），所以把它抬进 state。
+      // 只在真的变了时才 `set`：`fit()` 由 resize 触发，同尺寸的重入不该白排一帧。
+      setCanvasSizePx((prev) => (prev !== null && prev.w === wPx && prev.h === hPx ? prev : { w: wPx, h: hPx }));
       // 视口只在挂载、换层、窗口改尺寸这三件事上重算，**不跟着重渲染重算**。
       // 依赖里不写 `log`：`log` 是可变类实例、引用永不变，写进依赖挡不住任何东西 ——
       // 真正会咬人的是下面这句 `log.document` 是个**活读**的 getter：窗口改尺寸那一发
@@ -492,7 +547,7 @@ export function PlanCanvas(): React.JSX.Element {
       // 漂到 (332,75)，第 7 步「原地松手」按到了空白）。闸门侧由 `waitForLayoutSettled`
       // 把 resize 收敛掉，这里则由"要当下的文档就从 store 一次性取"保证读到的不是陈旧闭包。
       // 换层与改尺寸才是重算视口的两个真实理由。
-      setViewport(fitStorey(useEditor.getState().log.document, storeyId, wPx, hPx, 60));
+      setViewport(fitStorey(useEditor.getState().log.document, storeyId, wPx, hPx, VIEW_PAD_PX));
     };
     fit();
     window.addEventListener('resize', fit);
@@ -551,7 +606,9 @@ export function PlanCanvas(): React.JSX.Element {
     // 没有 viewport 就什么都没有：handlesRef 与 opsRef 由 paint effect 填，而它在
     // viewport === null 时直接 return（屏幕上是空的）。在这里返回假视口等于自欺。
     if (viewport === null) return;
-    const px = pointerPx(event.nativeEvent);
+    const canvas = canvasRef.current;
+    if (canvas === null) return;
+    const px = pointerPx(event.nativeEvent, canvas);
     if (px === null) return;
     const hit = pickHandle(handlesRef.current, px);
     if (hit !== null) {
@@ -616,7 +673,9 @@ export function PlanCanvas(): React.JSX.Element {
   useEffect(() => {
     const onMove = (event: PointerEvent): void => {
       if (!activeRef.current || viewport === null) return;
-      const px = pointerPx(event);
+      const canvas = canvasRef.current;
+      if (canvas === null) return;
+      const px = pointerPx(event, canvas);
       if (px === null) return;
       const s = useEditor.getState();
       const current = s.drag;
@@ -840,6 +899,10 @@ export function PlanCanvas(): React.JSX.Element {
           : countPixels(ctx, canvas, s.drag?.cursorPx ?? s.draft?.cursorPx ?? null);
       // 实测画布原点（页面空间）：探针点/把手点在画布空间，main 拿这个值做换算与 PASS 断言。
       const rect = canvas.getBoundingClientRect();
+      // Task 8 那五格的唯一读者是判据，而判据要问的是"屏幕上真画了什么"：值由面板在自己
+      // 提交后的 effect 里公布（见 `panels.tsx` 的 `panelReadout`）。这里**一律不重算** ——
+      // 拿同一批纯函数再算一遍，"panelProps 与真源逐字相同"就变成同义反复。
+      const panel = panelReadout();
       return {
         ops: ops.length,
         layers,
@@ -879,6 +942,13 @@ export function PlanCanvas(): React.JSX.Element {
         selectionAfterDelete: deleteRef.current.selectionAfterDelete,
         lastHotkey: hotRef.current,
         draw: wallProbe(s.log.document, s.storeyId, ops, viewport),
+        // ↓ Task 8 棒 D1 的 5 个。五者**只**读 `panel`（面板在自己提交后的 effect 里公布的上屏值），
+        // 这里一个都不重算：拿同一批纯函数再算一遍，"panelProps 与真源逐字相同"就成了同义反复。
+        storeyTabs: panel.storeyTabs,
+        panelWallId: panel.panelWallId,
+        panelProps: panel.panelProps,
+        lastTrial: panel.lastTrial,
+        propsAfterEdit: panel.propsAfterEdit,
       };
     };
     return () => {
@@ -887,10 +957,47 @@ export function PlanCanvas(): React.JSX.Element {
   }, [viewport, ids, revision]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      onPointerDown={onPointerDown}
-      style={{ display: 'block', touchAction: 'none', cursor: 'crosshair' }}
-    />
+    // 三格真布局（裁决 T8-3）：上 = 楼层 tab（32px），中左 = 画布，中右 = 属性面板（260px）。
+    // 两个尺寸常量住在 `panels.tsx`（面板自己的口径），这里只摆格子 —— 于是画布原点
+    // 从 (0,0) 变成 (0,32)，而 `pointerPx` 与 `canvasOriginPx` 都按实测值走（见那两处的注释）。
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        width: '100vw',
+        height: '100vh',
+        overflow: 'hidden',
+      }}
+    >
+      {canvasSizePx === null ? (
+        // 第一帧还没量过画布：先按同一个 `STOREY_TAB_HEIGHT_PX` 占住这一栏，否则 `fit()` 量到的
+        // 画布高度会把栏位吃掉，量完再渲染就来回抖一次（而闸门的原点判据读的是量完之后那一帧）。
+        <div style={{ height: `${String(STOREY_TAB_HEIGHT_PX)}px`, flex: '0 0 auto' }} />
+      ) : (
+        <StoreyTabs widthPx={canvasSizePx.w} heightPx={canvasSizePx.h} />
+      )}
+      <div style={{ display: 'flex', flex: 1, minHeight: 0, minWidth: 0 }}>
+        <div
+          ref={canvasCellRef}
+          style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden' }}
+        >
+          <canvas
+            ref={canvasRef}
+            onPointerDown={onPointerDown}
+            // 位置钉在格子左上角，**尺寸不交给格子**：CSS 宽高由 `fit()` 写死成与 `canvas.width`
+            // 同一个整数（见那里），这样 `countPixels` 读的仍是 1 canvas px = 1 CSS px。
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              display: 'block',
+              touchAction: 'none',
+              cursor: 'crosshair',
+            }}
+          />
+        </div>
+        <PropPanel />
+      </div>
+    </div>
   );
 }
