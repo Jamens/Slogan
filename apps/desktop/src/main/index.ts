@@ -1587,23 +1587,841 @@ async function runDrawShot(win: BrowserWindow, out: string): Promise<void> {
   process.stdout.write(`${JSON.stringify(out1)}\n`);
 }
 
+// ────────────────────────── Task 8 棒 E：--prop-shot ──────────────────────────
+
+/** 与 scene-2d 的 `WallProps` 逐字段对齐（主进程产物里没有 scene-2d，见 `STAR_EDGE_MM` 那段注）。 */
+interface WallPropsShape {
+  wallId: string;
+  thicknessMm: number;
+  heightMm: number;
+  material: string;
+  loadBearing: boolean;
+  axisLengthMm: number;
+}
+
+/** 与 `StoreyTab` 逐字段对齐。`storeyId` 是 uuid（跨进程漂），判据只吃后四格。 */
+interface StoreyTabShape {
+  storeyId: string;
+  index: number;
+  elevationMm: number;
+  heightMm: number;
+  label: string;
+}
+
+interface PanelTrialShape {
+  kind: 'thickness' | 'material' | 'loadBearing';
+  input: string;
+  ok: boolean;
+  reason: string | null;
+}
+
+interface ViewportShape {
+  pxPerMm: number;
+  origin: MmShape;
+  widthPx: number;
+  heightPx: number;
+}
+
+/** `propProbe` 的产物：一面改得动的墙、它身上点得中的洞口、再外加一面点得中的墙、三格要写的新值。 */
+interface PropProbeShape {
+  wallId: string;
+  clickPx: ClickPoint;
+  blankPx: ClickPoint;
+  openingId: string;
+  openingPx: ClickPoint;
+  /** 第 11 步第二发的靶子：单墙文档给 null（探针的"尽力"那一发，不是筛）。 */
+  secondWallId: string | null;
+  secondWallPx: ClickPoint | null;
+  props: WallPropsShape;
+  thicknessTo: number;
+  materialTo: string;
+  loadBearingTo: boolean;
+}
+
+interface PropReportShape extends DrawReportShape {
+  storeyTabs: StoreyTabShape[];
+  panelWallId: string | null;
+  panelProps: WallPropsShape | null;
+  lastTrial: PanelTrialShape | null;
+  propsAfterEdit: WallPropsShape | null;
+  storeyId: string;
+  viewport: ViewportShape | null;
+  viewportStoreyId: string | null;
+  prop: PropProbeShape | null;
+}
+
+function propShotRequested(): boolean {
+  return process.argv.includes('--prop-shot');
+}
+
 /**
- * 四段分支（T5 的三段再加一段）。顺序是**从具体到通用**：`--draw-shot` 判在
- * `editShotRequested()` 之前 —— 四个 runner 共用 `--shot` 那份落盘路径，谁先命中谁写盘。
+ * 复用 `readDrawReport` 那道"undefined = renderer 死了"的守卫，不再抄第四份 throw。
+ * 这一发是**向下转型**（报告里真有的字段比 `DrawReportShape` 多），转得太宽的风险由第 0 步
+ * 那三格 `undefined` 检查兜住：旧 bundle 缺的是 `undefined` 而不是 `null`，取 falsy 不取等号。
+ */
+async function readPropReport(win: BrowserWindow, label: string): Promise<PropReportShape> {
+  return (await readDrawReport(win, label)) as PropReportShape;
+}
+
+/**
+ * 面板元素在**页面空间**的中心像素（`getBoundingClientRect` 口径，与 sendInputEvent 同一空间）。
+ *
+ * 为什么不复用 `clickCanvasPx` 那条通路：它给画布 px 加 `canvasOriginPx`，而 tab 条、输入框、
+ * 复选框住在画布**外面** —— 给它们加原点等于把页面 px 再往右下推一格，点到的永远是别处。
+ * 坐标一律现问 DOM，一个都不硬编码：面板改字号、改按钮宽度，闸门不必跟着改。
+ */
+async function domCenterPx(win: BrowserWindow, selector: string, label: string): Promise<ClickPoint> {
+  const js =
+    `(() => { const el = document.querySelector(${JSON.stringify(selector)});` +
+    'if (!el) return null;' +
+    'const r = el.getBoundingClientRect();' +
+    'return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2),' +
+    ' w: Math.round(r.width), h: Math.round(r.height) }; })()';
+  const rect = (await win.webContents.executeJavaScript(js)) as
+    | (ClickPoint & { w: number; h: number })
+    | null;
+  if (rect === null) {
+    throw new Error(`${label}：DOM 里找不到 ${selector} —— 面板没上屏，不是"元素在屏外"`);
+  }
+  if (rect.w <= 0 || rect.h <= 0) {
+    throw new Error(`${label}：${selector} 的盒子是 0 尺寸（${JSON.stringify(rect)}）—— 拿中心点当靶子毫无意义`);
+  }
+  return { x: rect.x, y: rect.y };
+}
+
+/** 页面空间的真鼠标点击（tab / 复选框走这条；画布构件走 `clickCanvasPx`）。 */
+async function clickDomPx(win: BrowserWindow, p: ClickPoint): Promise<void> {
+  // 与画布那一条同形：先发一发 move 报到，再按下松开。Blink 的命中测试要先见过这个坐标，
+  // 才保证这一发裸 mouseDown 真产生 pointerdown/click（T5 的实测教训，不区分事件目标）。
+  win.webContents.sendInputEvent({ type: 'mouseMove', x: p.x, y: p.y });
+  await new Promise((resolve) => setTimeout(resolve, 16));
+  win.webContents.sendInputEvent({ type: 'mouseDown', x: p.x, y: p.y, button: 'left', clickCount: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 16));
+  win.webContents.sendInputEvent({ type: 'mouseUp', x: p.x, y: p.y, button: 'left', clickCount: 1 });
+  await new Promise((resolve) => setTimeout(resolve, 16));
+}
+
+/** 画布空间的 Shift 点击：`onPointerDown` 读 `event.shiftKey` 走 `toggle`（多选唯一通路）。 */
+async function shiftClickCanvasPx(win: BrowserWindow, p: CanvasPx, origin: ViewportPx): Promise<void> {
+  const x = Math.round(p.x + origin.x);
+  const y = Math.round(p.y + origin.y);
+  win.webContents.sendInputEvent({ type: 'mouseMove', x, y });
+  await new Promise((resolve) => setTimeout(resolve, 16));
+  win.webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1, modifiers: ['shift'] });
+  await new Promise((resolve) => setTimeout(resolve, 16));
+  win.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1, modifiers: ['shift'] });
+  await new Promise((resolve) => setTimeout(resolve, 16));
+}
+
+/**
+ * 往当前聚焦的元素里打字：先 Ctrl+A 全选（**替换**而不是追加），再逐字符发 `char`。
+ *
+ * 2026-09-30 在这台运行时实测过三件事（一次性探针工程 `.superpowers/sdd/…/ke`，不入库）：
+ * ① `keyDown` 单独一发**不会**往输入框里落字（`{type:'keyDown', keyCode:'5'}` 之后 value 还是
+ *    "240"）⇒ 现有快捷键与打字互不干扰；
+ * ② `{type:'char', keyCode:'.'}` 落得出小数点，`keyCode` 不必再配 `text` / `character`
+ *    （三种写法都试过，只有 keyCode 这一种是必需的）⇒ `240.5` 那一发五个字符全到；
+ * ③ Ctrl+A 在输入框里把选区拉成 [0,3]（全选），下一发 `char` 是**替换**选区。
+ * 三条都在这里钉死，是因为第 4 步的判据吃的就是"`lastTrial.input` 逐字等于 `240.5`"——
+ * 少一个字符、多一个字符、变成追加，都会立刻红在这一行，而不是红在下游一句"守卫没拦住"。
+ */
+async function typeText(win: BrowserWindow, text: string): Promise<void> {
+  await keyCombo(win, 'A', ['ctrl']);
+  for (const ch of text) {
+    win.webContents.sendInputEvent({ type: 'char', keyCode: ch });
+    await new Promise((resolve) => setTimeout(resolve, 16));
+  }
+}
+
+/**
+ * 焦点搬运：`selector === null` 是把当前聚焦元素 blur 掉。
+ *
+ * 这里**只动焦点，不动值** —— 值必须由真键盘/真鼠标事件改出来（`element.value = x` 加一发
+ * `change` 是合成出来的假状态，React 的受控值与它都对不上，更不用说用户根本没那么操作过）。
+ * 需要它有两个理由：① 快捷键发出去之前把输入框的焦点挪走，否则 Ctrl+Z 会先被 Blink 当成
+ * 输入框的本地撤销吃掉；② 材料下拉框要先有焦点才吃方向键（实测 `.focus()` + keyDown 'Down'
+ * 之后 value 变、change 事件发、`selectedIndex` 跟着走）。
+ */
+async function moveFocus(win: BrowserWindow, selector: string | null, label: string): Promise<void> {
+  const js =
+    selector === null
+      ? '(() => { const a = document.activeElement; if (a instanceof HTMLElement) a.blur(); return 1; })()'
+      : `(() => { const el = document.querySelector(${JSON.stringify(selector)});` +
+        'if (!el) return 0; el.focus(); return document.activeElement === el ? 1 : 2; })()';
+  const state = (await win.webContents.executeJavaScript(js)) as number;
+  if (state !== 1) {
+    throw new Error(`${label}：焦点没挪到位（${String(state)}；${selector ?? 'blur'}）—— 面板上屏了吗`);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 16));
+}
+
+/** 下拉框此刻的真实选项与选中位（选项表从 DOM 读，不在主进程抄一份 `PANEL_MATERIAL_OPTIONS`）。 */
+async function readSelectState(
+  win: BrowserWindow,
+  selector: string,
+): Promise<{ index: number; values: string[] }> {
+  const js =
+    `(() => { const el = document.querySelector(${JSON.stringify(selector)});` +
+    'if (!el) return null;' +
+    'return { index: el.selectedIndex, values: Array.from(el.options).map((o) => o.value) }; })()';
+  const state = (await win.webContents.executeJavaScript(js)) as { index: number; values: string[] } | null;
+  if (state === null) throw new Error(`DOM 里找不到 ${selector} —— 材料下拉框没上屏`);
+  return state;
+}
+
+/**
+ * 十六步（0…15）：楼层 tab 往返 → 选墙 → 三格属性（含一发被拒）→ P12 同值 → 两次撤销 →
+ * 材料 → 承重 → 回到第 3 步读数 → 混选（墙 + 洞口仍开面板、两面墙才关面板）→ 清空重选 →
+ * Delete 级联 → 撤销 → tab 往返 → 终态。
+ *
+ * 坐标一个都不硬编码：tab / 输入框 / 复选框由 `domCenterPx` 现问 DOM，墙与洞口的画布像素与
+ * 三格要写的新值全部来自第 0 步读到的 `propProbe`（探针只在第 0 步取一次并留档 —— 与
+ * `runDrawShot` 同一条纪律：文档一变它就换靶子，后面再问会拿到"改过一次"之后的另一发）。
+ *
+ * 每步读数存成独立 const，最后一起写盘：TS 的使用先于声明会替我们守住
+ * "少跑一步就编译不过"（与 `runEditShot` / `runDrawShot` 同一条纪律）。
+ */
+async function runPropShot(win: BrowserWindow, out: string): Promise<void> {
+  await whenLoaded(win);
+  await waitForDebug(win);
+  await focusForInput(win);
+  await waitForLayoutSettled(win);
+
+  // 0) 起始读数 + 探针。
+  const start = await readPropReport(win, '起始');
+  if (
+    start.prop === undefined ||
+    start.storeyTabs === undefined ||
+    start.panelWallId === undefined ||
+    start.viewportStoreyId === undefined
+  ) {
+    throw new Error(
+      '报告里没有 prop / storeyTabs / panelWallId / viewportStoreyId —— desktop 产物是旧的，' +
+        '先跑 pnpm --filter @dajia/desktop build',
+    );
+  }
+  const prop = start.prop;
+  if (prop === null) {
+    throw new Error(
+      'propProbe 没给靶子：这一层没有"改得动、点得中、身上还有一樘点得中的洞口"的墙' +
+        '（六道筛里的一条没过，先看 handles.ts 的筛 ③⑥）',
+    );
+  }
+  const origin = start.canvasOriginPx;
+  const tabs = start.storeyTabs;
+  if (tabs.length !== 2) throw new Error(`样例房应有两枚楼层 tab，实测 ${String(tabs.length)}`);
+  const baseDepth = start.depth;
+  const baseRevision = start.revision;
+  const basePoints = pointCountOf(start, '起始');
+  const propJson = JSON.stringify(prop);
+  // 探针像素必须是整数且在画布内：`sendInputEvent` 会把出界的坐标夹到边界上，
+  // 夹过的那一发测的就不再是探针声称的那个点（D4 的教训，见 wallProbe 筛 ②）。
+  const probePixels: [string, ClickPoint][] = [
+    ['clickPx', prop.clickPx],
+    ['openingPx', prop.openingPx],
+    ['blankPx', prop.blankPx],
+  ];
+  // `secondWallPx` 是探针的"尽力"那一发：null 在这里不抛（只有第 11 步第二读需要它，
+  // 那儿自己抛），但给了就必须过同一把尺 —— 不许第 11 步拿一发越界像素去点。
+  if (prop.secondWallPx !== null) probePixels.push(['secondWallPx', prop.secondWallPx]);
+  for (const [name, p] of probePixels) {
+    if (!Number.isInteger(p.x) || !Number.isInteger(p.y)) {
+      throw new Error(`探针给的 ${name} 不是整数像素：${JSON.stringify(p)}`);
+    }
+    if (p.x < 0 || p.y < 0 || p.x >= start.wPx || p.y >= start.hPx) {
+      throw new Error(`探针的 ${name} (${String(p.x)},${String(p.y)}) 出画布 ${String(start.wPx)}×${String(start.hPx)}`);
+    }
+  }
+  if (start.tool !== 'select') throw new Error(`起始工具不是 select：${start.tool}`);
+  if (start.selectedIds.length !== 0) throw new Error(`起始选中集非空：${JSON.stringify(start.selectedIds)}`);
+  if (start.panelWallId !== null) throw new Error(`起始没选墙却读得出面板墙：${String(start.panelWallId)}`);
+  if (start.storeyId !== tabs[0].storeyId) {
+    throw new Error('起始层不是 index 0 那一格 —— demo 的初值或 P6 的 tab 顺序改了');
+  }
+  if (start.viewportStoreyId !== start.storeyId) {
+    throw new Error(
+      `起始的视口配对就不对：viewportStoreyId=${String(start.viewportStoreyId)} storeyId=${start.storeyId}`,
+    );
+  }
+  process.stdout.write(
+    `靶子：墙 ${prop.wallId.slice(-6)} 洞口 ${prop.openingId.slice(-6)} ` +
+      `第二面墙 ${prop.secondWallId === null ? '无' : prop.secondWallId.slice(-6)} ` +
+      `厚度 ${String(prop.props.thicknessMm)}→${String(prop.thicknessTo)} ` +
+      `材料 ${prop.props.material}→${prop.materialTo} ` +
+      `承重 ${String(prop.props.loadBearing)}→${String(prop.loadBearingTo)} ` +
+      `click=(${String(prop.clickPx.x)},${String(prop.clickPx.y)}) ` +
+      `画布 ${String(start.wPx)}×${String(start.hPx)}\n`,
+  );
+
+  const tabSelector = (storeyId: string): string =>
+    `[data-dajia="storey-tab"][data-storey-id="${storeyId}"]`;
+  const THICKNESS_INPUT = '[data-dajia="thickness-input"]';
+  const MATERIAL_SELECT = '[data-dajia="material-select"]';
+  const LOAD_BEARING = '[data-dajia="load-bearing"]';
+  // 画布一发点击：先 move 报到再按下松开（T5 实测：加载后第一发裸 mouseDown 不保证进
+  // pointerdown）。与 runEditShot 第 1 步同一形状，只是这里全程用第 0 步那份 origin 换算。
+  const canvasClick = async (p: ClickPoint): Promise<void> => {
+    await movePx(win, p, origin);
+    await clickCanvasPx(win, p, origin);
+  };
+  const pointKeys = (r: PropReportShape): string[] => Object.keys(r.points);
+
+  // 1) 点二层 tab：层与视口配对必须一起动（P10），真源一步都不许动。
+  //    计划原文那句「pxPerMm 与 origin 逐字等于同一次调用算出的 fitStorey(二层)」在样例房里
+  //    落不了地：两层是同一 footprint，`fitStorey` 两次给的数值**逐字相同**（2026-09-30 实测），
+  //    所以这一发的牙改咬两处 —— `viewportStoreyId` 的配对 + "另一层构件的 id 集与本层不相交"。
+  await clickDomPx(win, await domCenterPx(win, tabSelector(tabs[1].storeyId), '二层 tab'));
+  const upper = await waitUntil(
+    `点了二层 tab 但 storeyId / viewportStoreyId 没一起跟到 ${tabs[1].storeyId.slice(-6)}（P10 的那一发 set）`,
+    () => readPropReport(win, '切到二层'),
+    (r) => r.storeyId === tabs[1].storeyId && r.viewportStoreyId === tabs[1].storeyId && r.viewport !== null,
+  );
+  const lowerKeys = new Set(pointKeys(start));
+  const upperKeys = pointKeys(upper);
+  const pointKeysDisjoint = upperKeys.length > 0 && upperKeys.every((k) => !lowerKeys.has(k));
+  if (!pointKeysDisjoint) {
+    throw new Error(
+      `切层后画布没换到另一层的构件：本层 ${String(lowerKeys.size)} 枚、另一层 ${String(upperKeys.length)} 枚，` +
+        'id 集有交集或为空 —— 屏幕画的还是上一层',
+    );
+  }
+  if (upper.revision !== baseRevision + 1) {
+    throw new Error(`setStorey 该把 revision 扳恰好一次：${String(baseRevision)} → ${String(upper.revision)}`);
+  }
+  if (upper.depth !== baseDepth) throw new Error(`切层动了真源：depth ${String(baseDepth)} → ${String(upper.depth)}`);
+  if (upper.selectedIds.length !== 0) throw new Error(`切层没清选中集：${JSON.stringify(upper.selectedIds)}`);
+  if (upper.panelWallId !== null) throw new Error('切到二层后面板还指着上一层的墙');
+
+  // 2) 点回一层：视口两份值逐字回到第 0 步那一份（P6 的 tab 与 P10 的复位都可逆）。
+  await clickDomPx(win, await domCenterPx(win, tabSelector(tabs[0].storeyId), '一层 tab'));
+  const back = await waitUntil(
+    '点回一层之后视口没逐字回到第 0 步那一份（或配对没跟着回来）',
+    () => readPropReport(win, '切回一层'),
+    (r) =>
+      r.storeyId === start.storeyId &&
+      r.viewportStoreyId === start.storeyId &&
+      JSON.stringify(r.viewport) === JSON.stringify(start.viewport),
+  );
+  if (back.depth !== baseDepth) throw new Error('切层往返动了真源');
+  if (back.revision !== baseRevision + 2) {
+    throw new Error(`两次切层该各扳一次 revision：${String(baseRevision)} → ${String(back.revision)}`);
+  }
+
+  // 3) 点一面**改得动**的墙：面板读到的三格 = 探针当场记下的那一份（P3 / P8 的靶子在这一发成立）。
+  await canvasClick(prop.clickPx);
+  const chosen = await waitUntil(
+    `点 ${prop.wallId.slice(-6)} 没让面板指到它（panelWallId ≠ 探针墙，或选中集不止一个）`,
+    () => readPropReport(win, '选中靶子墙'),
+    (r) => r.panelWallId === prop.wallId && r.selectedIds.length === 1 && r.panelProps !== null,
+  );
+  // `waitUntil` 的判据只回布尔，TS 带不出 `panelProps !== null` 这一半 —— 当场钉一枚非空局部量。
+  // 那句抛是窄化的副产品（判据已要求非空，走到这儿必然非空），不是第二条判据。
+  const props3 = chosen.panelProps;
+  if (props3 === null) throw new Error('不可达：waitUntil 判定非空后读回 null（选中靶子墙）');
+  if (JSON.stringify(chosen.panelProps) !== JSON.stringify(prop.props)) {
+    throw new Error(
+      `面板三格与探针读数不同：${JSON.stringify(chosen.panelProps)} ≠ ${JSON.stringify(prop.props)}`,
+    );
+  }
+  if (!(props3.axisLengthMm > props3.thicknessMm)) {
+    throw new Error(
+      `轴长不大于墙厚（${String(props3.axisLengthMm)} ≤ ${String(props3.thicknessMm)}）` +
+        '—— 靶子不该过得了真源那道几何下限',
+    );
+  }
+  // P4 的像素对照基线：材料那一发提交前后，指令表与像素计数必须逐字相同。
+  const opsAtSelect = chosen.ops;
+  const layersAtSelect = JSON.stringify(chosen.layers);
+  const nonBlankAtSelect = chosen.nonBlankPx;
+
+  // 4) 厚度框打 `240.5` 不回车：只问真源，一个字都不写（P1 的预言 + P2 的构造期那半道门）。
+  await clickDomPx(win, await domCenterPx(win, THICKNESS_INPUT, '厚度输入框'));
+  await typeText(win, '240.5');
+  const rejected = await waitUntil(
+    '打完 240.5 之后 lastTrial 还没换成 thickness 那一发（输入框的 onChange 没跑到？）',
+    () => readPropReport(win, '打完非法厚度'),
+    (r) => r.lastTrial !== null && r.lastTrial.kind === 'thickness' && r.lastTrial.input === '240.5',
+  );
+  const trial4 = rejected.lastTrial;
+  if (trial4 === null) throw new Error('不可达：waitUntil 判定非空后读回 null（打完非法厚度）');
+  if (trial4.ok) throw new Error(`240.5 被真源判收了（reason=${String(trial4.reason)}）—— assertMm 掉了`);
+  if (trial4.reason === null || !trial4.reason.includes('必须是整数毫米')) {
+    throw new Error(`红字不是那句整数毫米：${String(trial4.reason)}`);
+  }
+  if (rejected.depth !== baseDepth || rejected.revision !== back.revision) {
+    throw new Error(
+      `非法输入写了真源：depth ${String(baseDepth)}→${String(rejected.depth)}，` +
+        `revision ${String(back.revision)}→${String(rejected.revision)}`,
+    );
+  }
+  if (rejected.panelProps?.thicknessMm !== prop.props.thicknessMm) {
+    throw new Error(`非法输入把面板读数改写了：${String(rejected.panelProps?.thicknessMm)}`);
+  }
+
+  // 5) 换成探针给的合法值再 Enter：一发命令、面板读的是真源而不是输入框。
+  await typeText(win, String(prop.thicknessTo));
+  await keyCombo(win, 'Return', []);
+  const thicker = await waitUntil(
+    `Enter 之后 depth 没 +1 或真源厚度没落到 ${String(prop.thicknessTo)}`,
+    () => readPropReport(win, '提交合法厚度'),
+    (r) => r.depth === baseDepth + 1 && r.propsAfterEdit !== null &&
+      r.propsAfterEdit.thicknessMm === prop.thicknessTo,
+  );
+  const trial5 = thicker.lastTrial;
+  if (trial5 === null || !trial5.ok || trial5.input !== String(prop.thicknessTo)) {
+    throw new Error(`提交那一发的预言不是 ok/${String(prop.thicknessTo)}：${JSON.stringify(trial5)}`);
+  }
+  // 「屏幕与真源同一份账」的凭据：`propsAfterEdit`（提交后那一帧从 `wallPropsOf` 拿的读数）
+  // 与 `panelProps`（同一帧屏幕上的三格）必须逐字相同，而且输入框那串字已经作废。
+  if (JSON.stringify(thicker.panelProps) !== JSON.stringify(thicker.propsAfterEdit)) {
+    throw new Error(
+      `面板读的不是真源：${JSON.stringify(thicker.panelProps)} ≠ ${JSON.stringify(thicker.propsAfterEdit)}`,
+    );
+  }
+
+  // 6) 同值再来一发（框里还是那串字）：P12 的"改了什么"不许交给撤销栈去背。
+  //    预言仍是 ok —— 真源确实收这一发；挡下来的是面板自己那句"要写的值 == 刚读出的值"。
+  //    摘掉那道守卫，这一发的 depth 就 +1，判据当场红。
+  await typeText(win, String(prop.thicknessTo));
+  await keyCombo(win, 'Return', []);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const samValue = await readPropReport(win, '同值再 Enter');
+  const trial6 = samValue.lastTrial;
+  if (trial6 === null || trial6.input !== String(prop.thicknessTo) || !trial6.ok) {
+    throw new Error(`同值那一发的预言不是 ok/${String(prop.thicknessTo)}：${JSON.stringify(trial6)}`);
+  }
+  if (samValue.depth !== baseDepth + 1 || samValue.revision !== thicker.revision) {
+    throw new Error(
+      `同值重设入了栈：depth ${String(baseDepth + 1)}→${String(samValue.depth)}，` +
+        `revision ${String(thicker.revision)}→${String(samValue.revision)}`,
+    );
+  }
+
+  // 7) Ctrl+Z：面板读数跟着真源回去（证面板读的是真源而不是本地态）。
+  //    先把焦点从输入框挪走：焦点还在输入框里时，Ctrl+Z 会先被 Blink 当成输入框的本地撤销。
+  await moveFocus(win, null, '撤销前把焦点交出输入框');
+  const beforeUndo1 = await readPropReport(win, '厚度撤销前');
+  await keyCombo(win, 'Z', ['ctrl']);
+  const undo1Key = await waitKeyApplied(win, beforeUndo1, 'Ctrl+Z（厚度）');
+  const undid1 = await waitUntil(
+    `撤销后真源厚度没回到 ${String(prop.props.thicknessMm)} 或 depth 没回到基线`,
+    () => readPropReport(win, '厚度撤销后'),
+    (r) => r.depth === baseDepth && r.panelProps !== null &&
+      r.panelProps.thicknessMm === prop.props.thicknessMm,
+  );
+  if (undo1Key.combo !== 'Ctrl+Z') throw new Error(`撤销读到的是另一发快捷键：${undo1Key.combo}`);
+
+  // 8) 材料：逐发方向键走到探针给的候选（值由真键盘改，不由 JS 赋值）。
+  //    每一发方向键 = 一次 change = 一条命令 ⇒ `presses` 记进账，判据钉的是"恰好一发"。
+  //    先 `moveFocus` 到下拉框：第 7 步刚把焦点 blur 掉，焦点在 body 上时方向键谁都不改
+  //    （2026-09-30 探针实测的是 `.focus()` + keyDown 'Down' 那一对，缺前一半就静默）。
+  await moveFocus(win, MATERIAL_SELECT, '材料下拉框');
+  const selectBefore = await readSelectState(win, MATERIAL_SELECT);
+  const targetIndex = selectBefore.values.indexOf(prop.materialTo);
+  if (targetIndex < 0) {
+    throw new Error(`材料下拉框里没有探针给的 ${prop.materialTo}（实测 ${JSON.stringify(selectBefore.values)}）`);
+  }
+  let presses = 0;
+  let cursorIndex = selectBefore.index;
+  while (cursorIndex !== targetIndex) {
+    if (presses >= selectBefore.values.length) {
+      throw new Error(
+        `方向键走了 ${String(presses)} 发还没到第 ${String(targetIndex)} 项（当前 ${String(cursorIndex)}）` +
+          '—— 键没落到下拉框，或选项表与真源不同步',
+      );
+    }
+    await keyCombo(win, cursorIndex < targetIndex ? 'Down' : 'Up', []);
+    presses += 1;
+    const now = await readSelectState(win, MATERIAL_SELECT);
+    if (now.index === cursorIndex) {
+      throw new Error(`方向键没让下拉框动（停在 ${String(cursorIndex)}）—— 焦点不在材料框上？`);
+    }
+    cursorIndex = now.index;
+  }
+  const materialized = await waitUntil(
+    `材料提交后真源没落到 ${prop.materialTo}（depth 该加 ${String(presses)} 发）`,
+    () => readPropReport(win, '改材料后'),
+    // 基线是**撤销之后**那一读（`beforeUndo1` 是撤销**之前**，多着第 5 步那一条）：
+    // 2026-09-30 首跑实测就是错在这里 —— 材料已经落到 concrete、预言也报了 material/ok，
+    // 判据却拿撤销前的 depth 去加，永远差一发。
+    (r) => r.panelProps !== null && r.panelProps.material === prop.materialTo &&
+      r.depth === undid1.depth + presses,
+  );
+  // P4「材料不进派生」在屏幕上的唯一凭据：node 侧只能证 `wall.setMaterial` 不跑复核，
+  // 证不到"画面上一个字都没变"。指令表条数、分层计数、非背景像素三处逐字对照第 3 步。
+  const pixelCountsSame =
+    materialized.ops === opsAtSelect &&
+    JSON.stringify(materialized.layers) === layersAtSelect &&
+    materialized.nonBlankPx === nonBlankAtSelect;
+  const trial8 = materialized.lastTrial;
+  if (trial8 === null || trial8.kind !== 'material' || !trial8.ok) {
+    throw new Error(`材料那一发的预言不是 material/ok：${JSON.stringify(trial8)}`);
+  }
+
+  // 9) 承重开关：真鼠标点在复选框的中心（`checked` 由浏览器翻转，React 的 onChange 吃到同一发）。
+  await clickDomPx(win, await domCenterPx(win, LOAD_BEARING, '承重复选框'));
+  const flipped = await waitUntil(
+    `点复选框没把承重翻成 ${String(prop.loadBearingTo)}`,
+    () => readPropReport(win, '点承重后'),
+    (r) => r.panelProps !== null && r.panelProps.loadBearing === prop.loadBearingTo,
+  );
+  if (flipped.depth !== materialized.depth + 1) {
+    throw new Error(`承重那一发不是恰好一条命令：depth ${String(materialized.depth)} → ${String(flipped.depth)}`);
+  }
+  const trial9 = flipped.lastTrial;
+  if (trial9 === null || trial9.kind !== 'loadBearing' || !trial9.ok) {
+    throw new Error(`承重那一发的预言不是 loadBearing/ok：${JSON.stringify(trial9)}`);
+  }
+
+  // 10) 逐发撤销材料 + 承重（共 `presses + 1` 发），三格读数回到第 3 步那一份。
+  //     计划原文写"Ctrl+Z 三次"，实测是 `材料发数 + 1`：第 5 步那发厚度改在第 7 步已经撤过，
+  //     栈上此刻只剩材料与承重（2026-09-30 回填，见计划文档 Step 8 的执行注记）。
+  const undoCount = presses + 1;
+  // 与第 7 步同一条纪律：快捷键发出去之前先把焦点从面板控件上挪开（此处是刚点过的复选框），
+  // 否则 `waitKeyApplied` 等的是"Blink 有没有把这一发吃掉"，不是"真源有没有撤销"。
+  await moveFocus(win, null, '批量撤销前把焦点交出复选框');
+  let beforeStep10 = flipped;
+  const undoCombos: string[] = [];
+  for (let i = 0; i < undoCount; i += 1) {
+    await keyCombo(win, 'Z', ['ctrl']);
+    const key = await waitKeyApplied(win, beforeStep10, `Ctrl+Z（第 ${String(i + 1)} 次）`);
+    if (key.combo !== 'Ctrl+Z') throw new Error(`撤销读到的是另一发快捷键：${key.combo}`);
+    undoCombos.push(key.combo);
+    const targetDepth = baseDepth + undoCount - 1 - i;
+    beforeStep10 = await waitUntil(
+      `第 ${String(i + 1)} 次撤销没把 depth 带到 ${String(targetDepth)}`,
+      () => readPropReport(win, `撤销 ${String(i + 1)}/${String(undoCount)}`),
+      (r) => r.depth === targetDepth,
+    );
+  }
+  const restored = await waitUntil(
+    '撤销完三格读数没逐字回到第 3 步那一份',
+    () => readPropReport(win, '撤销完'),
+    (r) => JSON.stringify(r.panelProps) === JSON.stringify(prop.props),
+  );
+  if (restored.depth !== baseDepth) throw new Error(`撤销完 depth 没回基线：${String(restored.depth)}`);
+
+  // 11a) 点墙 + Shift 点它身上的洞口：选中集两枚，面板**仍指那面墙**（混选里只有一面墙可编辑）。
+  //      2026-09-30 首跑红在这里：原写法把 P3 读成"选中集不止一个 id ⇒ 面板消失"，而实现与
+  //      `panel.test.ts`「混选（墙 + 柱 / 墙 + 洞口）仍是那面墙」读成"墙**不止一面**才消失"。
+  //      取后者（裁决见计划 Step 8 回填）：面板关了就没人显示第 12 步删的是哪面墙。
+  await shiftClickCanvasPx(win, prop.openingPx, origin);
+  const mixed = await waitUntil(
+    `Shift 点洞口没把 ${prop.openingId.slice(-6)} 加进选中集（或面板丢了那面墙）`,
+    () => readPropReport(win, '墙+洞口多选后'),
+    (r) => r.selectedIds.length === 2 && r.selectedIds.includes(prop.openingId) &&
+      r.selectedIds.includes(prop.wallId) && r.panelWallId === prop.wallId,
+  );
+  if (JSON.stringify(mixed.panelProps) !== JSON.stringify(prop.props)) {
+    throw new Error(
+      `混选里面板读数与真源那份不同（${JSON.stringify(mixed.panelProps)}）—— 面板在多选下自己攒了一套值`,
+    );
+  }
+  if (mixed.depth !== baseDepth) throw new Error(`多选动了真源：depth ${String(baseDepth)} → ${String(mixed.depth)}`);
+
+  // 11b) 再 Shift 点**第二面墙** ⇒ 选中集里有两面墙 ⇒ 面板整块消失。
+  //      这才是 P3 在屏幕上的形状，也是 `selectedWallForPanel` 那句 `picked.length === 1`
+  //      唯一的真窗口见证：改成"取第一面"（变异 M2）时这一读会把面板留在第一面墙上，判据当场红。
+  const secondTarget =
+    prop.secondWallId !== null && prop.secondWallPx !== null
+      ? { id: prop.secondWallId, px: prop.secondWallPx }
+      : null;
+  if (secondTarget === null) {
+    throw new Error(
+      'propProbe 没交第二面墙 ⇒ 多选那一发无从落下：样例房一层有八面墙，红这一句先查 handles.ts ' +
+        '的"尽力"那一发（它要求本层另一面墙点得中且在画布内）',
+    );
+  }
+  await shiftClickCanvasPx(win, secondTarget.px, origin);
+  const multi = await waitUntil(
+    `Shift 点第二面墙 ${secondTarget.id.slice(-6)} 之后两面墙没全进选中集、或面板没整块消失`,
+    () => readPropReport(win, '两墙+洞口多选后'),
+    (r) => r.selectedIds.length === 3 && r.selectedIds.includes(secondTarget.id) &&
+      r.panelWallId === null && r.panelProps === null,
+  );
+
+  // 11c) 退回第 12 步要的选中集（墙 + 它身上的洞口）：点空白清空 → 点墙 → Shift 点洞口。
+  //      清空那一发顺带把 `blankPx` 这一发在属性闸门里也用上了（画布那三发的纪律在面板序列同样成立）。
+  await canvasClick(prop.blankPx);
+  const cleared = await waitUntil(
+    '点空白没清空选中集（或面板没跟着关）',
+    () => readPropReport(win, '清空选中集后'),
+    (r) => r.selectedIds.length === 0 && r.panelWallId === null && r.panelProps === null,
+  );
+  if (cleared.depth !== baseDepth) throw new Error(`点空白动了真源：depth ${String(baseDepth)} → ${String(cleared.depth)}`);
+  await canvasClick(prop.clickPx);
+  const reselected = await waitUntil(
+    '重新点墙没让面板回到那面墙',
+    () => readPropReport(win, '重选靶子墙'),
+    (r) => r.panelWallId === prop.wallId && r.selectedIds.length === 1,
+  );
+  await shiftClickCanvasPx(win, prop.openingPx, origin);
+  const readyToDelete = await waitUntil(
+    'Shift 点洞口没把选中集恢复到"墙 + 洞口"两枚',
+    () => readPropReport(win, '删除前恢复多选'),
+    (r) => r.selectedIds.length === 2 && r.selectedIds.includes(prop.openingId) &&
+      r.selectedIds.includes(prop.wallId) && r.panelWallId === prop.wallId,
+  );
+  if (readyToDelete.depth !== baseDepth) throw new Error('多选序列动了真源');
+
+  // 12) Delete：选中集是"墙 + 它身上的洞口"两枚，却**只发一条命令**（`planDelete` 的 `solo` 那一句：
+  //     宿主墙同批要删的洞口不再发第二条），选中集剪成空。
+  const beforeDel = await readPropReport(win, '删除前');
+  await keyCombo(win, 'Delete', []);
+  const delHot = await waitHot(win, beforeDel, 'Delete', '按 Delete 删墙 + 洞口');
+  if (delHot.deleteOutcome !== 'ok') throw new Error(`删除读成 ${String(delHot.deleteOutcome)}`);
+  const deleted = await waitUntil(
+    '删除后 depth 没 +1 或选中集没剪空（谓词含 panelWallId 为空）',
+    () => readPropReport(win, '删除后'),
+    (r) => r.depth === baseDepth + 1 && r.selectionAfterDelete.length === 0 && r.panelWallId === null,
+  );
+  // 计划原文那句「`deletedIds` 两枚：墙 + 级联掉的洞口」实测不成立，2026-09-30 订正为**一枚**：
+  // `deletedIds` 记的是**计划账**（`candidateIds` 里真源不再含有的那些，见 PlanCanvas 那段注释），
+  // 级联掉的洞口从来不上这本账。于是"洞口跟着走了"换了个证人：画布上它那些线一起消失
+  // （`layers.opening` 少了）而 `depth` 只 +1 —— 没发第二条命令、构件却没了，这正是级联在屏幕上的形状。
+  if (deleted.deletedIds.length !== 1 || deleted.deletedIds[0] !== prop.wallId) {
+    throw new Error(
+      `计划账上该只有那面墙（洞口由它的级联收走，不发第二条）：${JSON.stringify(deleted.deletedIds)}（靶子墙 ${prop.wallId}）`,
+    );
+  }
+  const openingOpsBeforeDelete = beforeDel.layers.opening ?? -1;
+  const openingOpsAfterDelete = deleted.layers.opening ?? -1;
+  if (!(openingOpsAfterDelete < openingOpsBeforeDelete)) {
+    throw new Error(
+      `删墙之后 opening 层的线数没少（${String(openingOpsBeforeDelete)} → ${String(openingOpsAfterDelete)}）` +
+        '—— 洞口没跟着级联走，而命令又只发了一条：那它现在画在哪儿？',
+    );
+  }
+  if (deleted.unsupportedIds.length !== 0) {
+    throw new Error(`样例房里不该有 unsupported 构件：${JSON.stringify(deleted.unsupportedIds)}`);
+  }
+  // 素材自证：无柱无板（T5 已核实）⇒ 这一发证的是"屏幕上取不到柱板时 unsupported 就该空"，
+  // 它不能当 P7 那两支（删柱 / 删板）的验收 —— 那两支只有 M4 / M5 的红绿可看（P9）。
+  if (deleted.storeyTabs.length !== 2) throw new Error('删除后楼层 tab 少了 —— 素材自己变了');
+
+  // 13) Ctrl+Z：墙与洞口都回来，但**选中集不跟着回来**（D7「撤销的是文档，不是视图」）。
+  const beforeUndo2 = await readPropReport(win, '删除撤销前');
+  await keyCombo(win, 'Z', ['ctrl']);
+  const undo2Key = await waitKeyApplied(win, beforeUndo2, 'Ctrl+Z（撤销删除）');
+  const undid2 = await waitUntil(
+    '撤销删除没把构件与点数带回来',
+    () => readPropReport(win, '删除撤销后'),
+    (r) => r.depth === baseDepth && Object.keys(r.points).length === basePoints && r.ops === opsAtSelect,
+  );
+  if (undo2Key.combo !== 'Ctrl+Z') throw new Error(`撤销删除读到的是另一发快捷键：${undo2Key.combo}`);
+  if (undid2.selectedIds.length !== 0) {
+    throw new Error(`撤销把选中集也恢复了（D7 说不许）：${JSON.stringify(undid2.selectedIds)}`);
+  }
+  // 级联的另一半账：撤销一条命令，连**没上计划账**的那樘洞口也一起回来（opening 线数回到删除前）。
+  // 少了这一句，"删的时候顺手少画、撤销时只补墙"那种写法不会红 —— 它的凭据与第 12 步同一把尺。
+  const openingOpsAfterUndoDelete = undid2.layers.opening ?? -1;
+  if (openingOpsAfterUndoDelete !== openingOpsBeforeDelete) {
+    throw new Error(
+      `撤销后 opening 层线数没回到删除前（${String(openingOpsBeforeDelete)} → ` +
+        `${String(openingOpsAfterUndoDelete)}）—— 级联走的没跟着回来`,
+    );
+  }
+  const pointsRestored = JSON.stringify(undid2.points) === JSON.stringify(chosen.points);
+
+  // 14) 连点两次 tab 切换：两次的 `storeyTabs` 读数逐字相同（P6 的顺序来自真源 index，不吃 id 序）。
+  await clickDomPx(win, await domCenterPx(win, tabSelector(tabs[1].storeyId), '二层 tab（第二次）'));
+  const tabsUpper = await waitUntil(
+    '第二次切层没跟到二层',
+    () => readPropReport(win, 'tab 往返 1'),
+    (r) => r.storeyId === tabs[1].storeyId && r.viewportStoreyId === tabs[1].storeyId,
+  );
+  await clickDomPx(win, await domCenterPx(win, tabSelector(tabs[0].storeyId), '一层 tab（第二次）'));
+  const tabsLower = await waitUntil(
+    '第二次切回一层没跟到一层',
+    () => readPropReport(win, 'tab 往返 2'),
+    (r) => r.storeyId === tabs[0].storeyId && r.viewportStoreyId === tabs[0].storeyId,
+  );
+  const stripId = (list: StoreyTabShape[]): string =>
+    JSON.stringify(list.map((t) => ({ index: t.index, label: t.label, elevationMm: t.elevationMm, heightMm: t.heightMm })));
+  const tabsJsonMatch =
+    stripId(tabsUpper.storeyTabs) === stripId(tabsLower.storeyTabs) &&
+    stripId(tabsLower.storeyTabs) === stripId(start.storeyTabs);
+
+  // 15) 终态：账回基线，探针重新算出的靶子与第 0 步**逐字相同**（整条序列"没留痕"的总账）。
+  const fin = await waitUntil(
+    '终态探针没回到第 0 步那一份靶子',
+    () => readPropReport(win, '终态'),
+    (r) => r.prop !== null && JSON.stringify(r.prop) === propJson,
+  );
+  if (fin.depth !== baseDepth) throw new Error(`终态 depth 没回基线：${String(fin.depth)}`);
+  if (pointCountOf(fin, '终态') !== basePoints) throw new Error('终态点数没回基线');
+  if (fin.panelWallId !== null || fin.selectedIds.length !== 0) throw new Error('终态还有选中或面板读数');
+  if (fin.tool !== 'select') throw new Error(`终态工具不是 select：${fin.tool}`);
+  if (fin.storeyId !== tabs[0].storeyId) throw new Error('终态停在别层');
+  if (JSON.stringify(fin.viewport) !== JSON.stringify(start.viewport)) throw new Error('终态视口没回到第 0 步那一份');
+
+  // 逐步读数（键名不许与 `fin` 撞车，守卫在下面）：脚本判据拿它们与终态那一份对账。
+  const extras = {
+    // ↓ 探针与第 0 步的读数留档：脚本判据拿它们跟逐步读数对账。
+    propJsonAtStart: propJson,
+    baseDepth,
+    baseRevision,
+    basePoints,
+    opsAtStart: start.ops,
+    viewportAtStart: start.viewport,
+    storeyIdAtStart: start.storeyId,
+    tabStripAtStart: stripId(start.storeyTabs),
+    // 第 1、2 步：切层（P10 的配对 + P6 的可逆）
+    storeyIdAfterTab: upper.storeyId,
+    viewportStoreyIdAfterTab: upper.viewportStoreyId,
+    pointKeysDisjoint,
+    upperPointCount: upperKeys.length,
+    revisionAfterTab: upper.revision,
+    depthAfterTab: upper.depth,
+    selectedCountAfterTab: upper.selectedIds.length,
+    panelWallAfterTab: upper.panelWallId,
+    storeyIdAfterTabBack: back.storeyId,
+    viewportStoreyIdAfterTabBack: back.viewportStoreyId,
+    viewportBackMatches: JSON.stringify(back.viewport) === JSON.stringify(start.viewport),
+    revisionAfterTabBack: back.revision,
+    depthAfterTabBack: back.depth,
+    // 第 3 步：面板三格 = 探针那份（P3 / P8 的靶子成立）
+    // 键名一律带"第几步"的后缀：`outReport` 是 `{...fin, ...读数}`，同名键会静默覆盖终态那一份
+    //（下面那道撞车守卫就是为这件事立的；`panelWallId` / `deletedIds` 两个裸名各踩过一次）。
+    panelWallIdAtSelect: chosen.panelWallId,
+    panelPropsAtSelect: chosen.panelProps,
+    propsFromProbe: prop.props,
+    panelMatchesProbe: JSON.stringify(chosen.panelProps) === JSON.stringify(prop.props),
+    axisLongerThanThickness:
+      (chosen.panelProps?.axisLengthMm ?? 0) > (chosen.panelProps?.thicknessMm ?? Number.POSITIVE_INFINITY),
+    selectedIdsAtSelect: chosen.selectedIds,
+    opsAtSelect,
+    layersAtSelect: chosen.layers,
+    nonBlankAtSelect,
+    // 第 4 步：非法输入只问不写（P1 + P2 构造期那半道门）
+    trial4Kind: trial4.kind,
+    trial4Input: trial4.input,
+    trial4Ok: trial4.ok,
+    trial4Reason: trial4.reason,
+    depthAfterTrial4: rejected.depth,
+    thicknessAfterTrial4: rejected.panelProps?.thicknessMm ?? null,
+    // 第 5 步：一发命令 + 面板读真源
+    depthAfterThickness: thicker.depth,
+    revisionAfterThickness: thicker.revision,
+    trial5Input: trial5.input,
+    trial5Ok: trial5.ok,
+    propsAfterEdit5: thicker.propsAfterEdit,
+    panelMatchesAfterEdit5: JSON.stringify(thicker.panelProps) === JSON.stringify(thicker.propsAfterEdit),
+    thickness5: thicker.panelProps?.thicknessMm ?? null,
+    // 第 6 步：同值不发（P12）
+    depthAfterSameValue: samValue.depth,
+    revisionAfterSameValue: samValue.revision,
+    trial6Input: trial6?.input ?? null,
+    trial6Ok: trial6?.ok ?? null,
+    // 第 7 步：撤销跟着真源走
+    depthAfterUndoThickness: undid1.depth,
+    thicknessAfterUndoThickness: undid1.panelProps?.thicknessMm ?? null,
+    comboAfterUndoThickness: undo1Key.combo,
+    // 第 8 步：材料不进派生（P4 的屏幕凭据）
+    materialArrowPresses: presses,
+    depthAfterMaterial: materialized.depth,
+    material8: materialized.panelProps?.material ?? null,
+    opsAfterMaterial: materialized.ops,
+    layersAfterMaterial: materialized.layers,
+    nonBlankAfterMaterial: materialized.nonBlankPx,
+    pixelCountsMatchMaterial: pixelCountsSame,
+    trial8Kind: trial8.kind,
+    trial8Ok: trial8.ok,
+    // 第 9 步：承重翻转
+    depthAfterLoadBearing: flipped.depth,
+    loadBearing9: flipped.panelProps?.loadBearing ?? null,
+    trial9Kind: trial9.kind,
+    trial9Ok: trial9.ok,
+    // 第 10 步：逐发撤销回到第 3 步读数
+    undoCount,
+    undoCombos,
+    propsAfterUndos: restored.panelProps,
+    propsMatchStep3: JSON.stringify(restored.panelProps) === JSON.stringify(prop.props),
+    depthAfterUndos: restored.depth,
+    // 第 11a 步：墙 + 它身上的洞口 = 混选，面板仍指那面墙（读数照旧来自真源）
+    selectedAfterOpeningShift: mixed.selectedIds,
+    panelWallAfterMixed: mixed.panelWallId,
+    panelPropsOnMixed: mixed.panelProps,
+    panelMatchesOnMixed: JSON.stringify(mixed.panelProps) === JSON.stringify(prop.props),
+    // 第 11b 步：两面墙 ⇒ 面板整块消失（P3 的形状，M2「取第一面」在此有牙）
+    secondWallId: secondTarget.id,
+    secondWallPx: secondTarget.px,
+    selectedAfterSecondWall: multi.selectedIds,
+    panelWallAfterTwoWalls: multi.panelWallId,
+    panelPropsAfterTwoWalls: multi.panelProps,
+    // 第 11c 步：清空 + 重选，把选中集交回第 12 步
+    selectedAfterClear: cleared.selectedIds.length,
+    panelWallAfterClear: cleared.panelWallId,
+    panelWallAfterReselect: reselected.panelWallId,
+    selectedBeforeDelete: readyToDelete.selectedIds,
+    depthAfterMultiSequence: readyToDelete.depth,
+    // 第 12 步：Delete 一条命令，级联不收进计划账
+    deleteOutcome: delHot.deleteOutcome,
+    depthAfterDelete: deleted.depth,
+    planDeletedIds: deleted.deletedIds,
+    deletedCount: deleted.deletedIds.length,
+    unsupportedCount: deleted.unsupportedIds.length,
+    selectionAfterDeleteCount: deleted.selectionAfterDelete.length,
+    panelWallAfterDelete: deleted.panelWallId,
+    tabsCountAtDelete: deleted.storeyTabs.length,
+    openingOpsBeforeDelete,
+    openingOpsAfterDelete,
+    openingOpsVanishedOnDelete: openingOpsAfterDelete < openingOpsBeforeDelete,
+    // 第 13 步：撤销的是文档，不是视图（D7）
+    openingOpsAfterUndoDelete,
+    depthAfterUndoDelete: undid2.depth,
+    opsAfterUndoDelete: undid2.ops,
+    pointsAfterUndoDelete: Object.keys(undid2.points).length,
+    pointsMatchAfterUndoDelete: pointsRestored,
+    selectedAfterUndoDelete: undid2.selectedIds.length,
+    comboAfterUndoDelete: undo2Key.combo,
+    // 第 14 步：tab 读数跨两发逐字相同
+    tabStripUpper: stripId(tabsUpper.storeyTabs),
+    tabStripLower: stripId(tabsLower.storeyTabs),
+    tabsJsonMatch,
+    // 第 15 步：总账
+    depthAtFinish: fin.depth,
+    pointsAtFinish: pointCountOf(fin, '终态'),
+    panelWallAtFinish: fin.panelWallId,
+    selectedAtFinish: fin.selectedIds.length,
+    toolAtFinish: fin.tool,
+    storeyIdAtFinish: fin.storeyId,
+    viewportAtFinish: fin.viewport,
+    propMatchesStart: JSON.stringify(fin.prop) === propJson,
+  };
+  // 键名守卫：`{...fin, ...extras}` 里同名键会**静默覆盖**终态那一份 —— 2026-09-30 首跑实测踩过：
+  // 第 3 步的读数取了裸名 `panelWallId`，报告上"终态面板还指着那面墙"（判据读的却是 `fin.panelWallId`，
+  // 当时是 null），写盘的账与跑判据的账成了两份。判据将来若改读报告（脚本侧就是这么读的），
+  // 这种覆盖会红成假象，或更糟 —— 绿成假象。撞车就在写盘之前抛，不留到下游猜。
+  const collided = Object.keys(extras).filter((k) => k in fin);
+  if (collided.length !== 0) {
+    throw new Error(`逐步读数与终态报告的键名撞车（终态那一份会被静默覆盖）：${collided.join(', ')}`);
+  }
+  const outReport = { ...fin, ...extras };
+  writeFileSync(out, `${JSON.stringify(outReport, null, 2)}\n`, 'utf8');
+  process.stdout.write(`${JSON.stringify(outReport)}\n`);
+}
+
+/**
+ * 五段分支（T5 的三段加 T6 的 draw，再加 Task 8 棒 E 的 prop）。顺序是**从具体到通用**：
+ * `--prop-shot` 判在最前、`--draw-shot` 判在 `editShotRequested()` 之前 —— 五个 runner 共用
+ * `--shot` 那份落盘路径，谁先命中谁写盘。
  * 脚本侧同样只允许一个具体 flag 生效（`mode` 只有一个值），两边配成一对。
  */
 void app.whenReady().then(async () => {
-  // fail-fast：四个开关的路径都在起窗之前读完，任何一个开关后面缺路径或跟了另一个开关，
+  // fail-fast：五个开关的路径都在起窗之前读完，任何一个开关后面缺路径或跟了另一个开关，
   // 立刻 stderr + exit(2)（毫秒级），绝不落到被丢弃的 promise rejection 里挂到脚本超时。
   let shotPath: string | null;
   let editPath: string | null;
   let pickPath: string | null;
   let drawPath: string | null;
+  let propPath: string | null;
   try {
     shotPath = argPath('--shot');
     editPath = argPath('--edit-shot');
     pickPath = argPath('--pick-shot');
     drawPath = argPath('--draw-shot');
+    propPath = argPath('--prop-shot');
   } catch (err) {
     process.stderr.write(`--shot 参数无效：${String(err)}\n`);
     app.exit(2);
@@ -1612,7 +2430,10 @@ void app.whenReady().then(async () => {
   // --draw-shot 与 --pick-shot、--edit-shot 一样派发合成输入（鼠标/键盘），要求窗口拿到 OS
   // 前台焦点（见 focusForInput），隐藏窗在 Windows 前台锁下拿不到焦点是 T4 实测过的。纯 --shot
   // 保持 6ddb090 落地的隐藏绘制路径不变 —— 它不派发输入，只回读像素。
-  const wantInput = drawShotRequested() || pickShotRequested() || editShotRequested();
+  // `--prop-shot` 同属"派发输入"那一类：点楼层 tab、在输入框里打字、按方向键改 <select>、
+  // 真点复选框 —— 全都走 sendInputEvent，隐藏窗一样吃前台锁的亏。
+  const wantInput =
+    propShotRequested() || drawShotRequested() || pickShotRequested() || editShotRequested();
   // 摘默认应用菜单必须发生在**建窗之前**：菜单条占着约 26px 客户端高度，运行中摘掉等于给窗口
   // 来一发 resize ⇒ renderer 重算视口 ⇒ 闸门已经发出去的探针像素全体作废（实测：第一次 Ctrl+Z
   // 之后同一个把手从 (253,74) 漂到 (332,75)，第 7 步"原地松手"按到空白，红成"noop 没给出"）。
@@ -1627,7 +2448,8 @@ void app.whenReady().then(async () => {
   }
   let code = 0;
   try {
-    if (drawShotRequested()) await runDrawShot(win, drawPath ?? shotPath);
+    if (propShotRequested()) await runPropShot(win, propPath ?? shotPath);
+    else if (drawShotRequested()) await runDrawShot(win, drawPath ?? shotPath);
     else if (editShotRequested()) await runEditShot(win, editPath ?? shotPath);
     else if (pickShotRequested()) await runPickShot(win, pickPath ?? shotPath);
     else await runShot(win, shotPath);

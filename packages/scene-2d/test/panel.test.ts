@@ -179,11 +179,16 @@ describe('面板取哪一面墙', () => {
     expect(selectedWallForPanel(house.doc, house.upperStoreyId, [upper.id])).toBe(upper);
   });
 
-  it('空集给 null 不抛；混选（墙 + 柱）仍是那面墙', () => {
-    const { log, storeyId, wall, columnId } = wallWithNeighbours();
+  it('空集给 null 不抛；混选（墙 + 柱 / 墙 + 洞口）仍是那面墙', () => {
+    const { log, storeyId, wall, columnId, openingId } = wallWithNeighbours();
     expect(selectedWallForPanel(log.document, storeyId, [])).toBeNull();
     // 混选给墙：面板照开。柱只是**改不了属性**（S1 没有柱面板），不是删不掉（Task 8 接了 columnDelete）
     expect(selectedWallForPanel(log.document, storeyId, [columnId, wall.id])).toBe(wall);
+    // 洞口同理 —— 这一发就是 `--prop-shot` 第 11 步的中间读数（点墙 + Shift 点它身上的洞口）。
+    // 计划里 P3 的两种读法在此结清：**"选中集不止一个 id 就关面板"是错的读法**，
+    // 它会把第 12 步那句 cascade 的前提（面板指着正要删的那面墙）一起关掉。
+    // 摘掉实现里那句 `entity?.kind !== 'wall' ⇒ continue` 的过滤、改成按 id 数判，红在这一行。
+    expect(selectedWallForPanel(log.document, storeyId, [wall.id, openingId])).toBe(wall);
   });
 });
 

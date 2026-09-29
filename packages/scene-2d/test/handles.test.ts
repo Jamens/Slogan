@@ -45,6 +45,7 @@ import {
   pxToMm,
   PICK_TOL_PX,
   SELECTED,
+  selectedWallForPanel,
   snapFieldOf,
   SNAP_COLOR,
   SNAP_TOL_PX,
@@ -873,6 +874,48 @@ describe('面板靶子探针 propProbe 与洞口像素 openingPickPx（Task 8 �
     // 第 12 步那句 `deletedIds` 会变成两笔不相干的删除。
     const opening = house.doc.get(p!.openingId);
     expect(opening?.kind === 'opening' ? opening.hostWallId : null).toBe(p!.wallId);
+  });
+
+  /**
+   * 第二面墙（第 11 步"多选"那一发的靶子）由探针给，主进程不许自己猜坐标 —— 与 `clickPx` /
+   * `openingPx` 同一条纪律。它挑的是**本层另一面点得中且在画布内**的墙，不要求它改得动：
+   * 那一发判的是面板**消失**，与第二面墙的合法性无关。
+   */
+  it('第二面墙：本层另一面、点得中、在画布内；两面墙混选 ⇒ 面板消失，一面墙 + 洞口 ⇒ 仍指那面墙', () => {
+    const p = propProbe(house.doc, house.lowerStoreyId, gateOps, gate)!;
+    const secondWallId = p.secondWallId;
+    const secondWallPx = p.secondWallPx;
+    // 样例房一层八面墙 ⇒ 第二发必须给得出；这一句自己就是判据（"尽力"那一发从不落地时红在这儿）
+    if (secondWallId === null || secondWallPx === null) {
+      throw new TypeError('样例房交不出第二面墙 —— 第 11 步那一发没了靶子');
+    }
+    expect(usablePx(gate, secondWallPx)).toBe(true);
+    expect(pickOne(gateOps, secondWallPx)?.ownerId).toBe(secondWallId);
+    expect(secondWallId).not.toBe(p.wallId);
+    const second = house.doc.get(secondWallId);
+    if (second?.kind !== 'wall') throw new TypeError('第二面墙不在文档里、或不是墙');
+    expect(second.storeyId).toBe(house.lowerStoreyId);
+    // P3 在真窗口里唯一能落地的形状：选中集里有两面墙 ⇒ 面板整块消失（不是"取第一面"）。
+    expect(
+      selectedWallForPanel(house.doc, house.lowerStoreyId, [p.wallId, p.openingId, secondWallId]),
+    ).toBeNull();
+    // 反过来"一面墙 + 它身上的洞口"必须**不**消失 —— 第 11 步中间那读吃的就是这一句。
+    // 把 P3 写成 `ids.size !== 1 ⇒ null` 的那种更严的读法会红在这里（它同时是第 12 步那句
+    // cascade 的前提：删的就是这一面墙和它身上的洞口）。
+    expect(selectedWallForPanel(house.doc, house.lowerStoreyId, [p.wallId, p.openingId])).toBe(
+      house.doc.get(p.wallId),
+    );
+  });
+
+  it('单墙夹具交不出第二面墙，但靶子照交：这一发是"尽力"，不是拒人的第七道筛', () => {
+    const f = wallWithOpenings([{ distanceMm: 3000, widthMm: 1500 }]);
+    const v = viewportOf(1000, 800, { pxPerMm: 0.2, center: vec(4000, 0) });
+    const ops = buildDrawList(f.doc, f.storeyId, v, EMPTY_SELECTION);
+    const p = propProbe(f.doc, f.storeyId, ops, v);
+    // 素材自证：六道筛全过（0.2 那把尺的来历见上面"120 现值"那条用例的注）
+    expect(p).not.toBeNull();
+    expect(p!.secondWallId).toBeNull();
+    expect(p!.secondWallPx).toBeNull();
   });
 
   it('交出的那面墙一定改得动：三格候选都现问过真源，厚度取候选表里第一档改得动的', () => {

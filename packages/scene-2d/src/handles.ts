@@ -386,6 +386,13 @@ export interface PropProbe {
   /** 住在 `wallId` 那面墙上的一樘洞口（第 11 步的 shift 点击）。 */
   readonly openingId: EntityId;
   readonly openingPx: Px;
+  /**
+   * 本层**另一面**点得中且在画布内的墙（第 11 步再 shift 点它 ⇒ 选中集里有两面墙 ⇒ 面板消失）。
+   * 挑不到给 null（单墙层是合法文档），闸门在那一步自己抛 —— 它是"尽力靶子"，
+   * 不是第七道拒人的筛：把它做成筛会让所有单墙夹具交不出靶子，下游每条用例都得陪改。
+   */
+  readonly secondWallId: EntityId | null;
+  readonly secondWallPx: Px | null;
   /** 探针当时刻意**没有**改过的读数：闸门拿它当"第 3 步该读到什么"的预言。 */
   readonly props: WallProps;
   readonly thicknessTo: number;
@@ -414,6 +421,9 @@ export interface PropProbe {
  * ⑥ 它身上有一樘点得中的洞口：第 11 步"墙 + 洞口"多选与第 12 步那句 cascade 全靠它。
  *    样例房一层四樘洞口实测全点得中（2026-09-30），但**不是每面墙都有洞口** ——
  *    横墙 `stem` 与两面隔墙就没有，③④⑤ 全过而 ⑥ 不过，必须跳过。
+ *
+ * 六道筛之外还交一发**尽力**靶子（不是筛，挑不到不影响靶子成立）：本层另一面点得中、在画布内的
+ * 墙 `secondWallPx`。第 11 步"再 shift 点一面墙 ⇒ 面板整块消失"要靠它，而主进程不许自己猜坐标。
  *
  * 谁被挑中由 uuidv7 每次现建的 id 定（`byKind` 是 id 升序），所以调用方与测试都**只判性质，
  * 不判具体 id**。返回 null 是合法结果（空层、没有带洞口的可改墙），闸门在那一步就抛。
@@ -467,12 +477,29 @@ export function propProbe(
       break;
     }
     if (openingId === null || openingPx === null) continue; // 筛 ⑥
+    // 第二面墙（多选那一发的靶子）：只要求"本层、不是它自己、点得中、在画布内"。
+    // 不要求它改得动 —— 那一发判的是面板**消失**，与第二面墙的三格无关；挑不到就交 null，
+    // 由闸门在那一步抛（单墙层是合法文档，不该让探针整体失能）。
+    let secondWallId: EntityId | null = null;
+    let secondWallPx: Px | null = null;
+    for (const other of doc.byKind('wall')) {
+      if (other.storeyId !== storeyId || other.id === wall.id) continue;
+      const raw = pickPxOf(ops, other.id);
+      if (raw === null) continue;
+      const px = snapPx(raw);
+      if (!insideCanvas(v, px)) continue;
+      secondWallId = other.id;
+      secondWallPx = px;
+      break;
+    }
     return {
       wallId: wall.id,
       clickPx,
       blankPx,
       openingId,
       openingPx,
+      secondWallId,
+      secondWallPx,
       props,
       thicknessTo,
       materialTo,
