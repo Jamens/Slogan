@@ -7,6 +7,7 @@ import {
   openingCreate,
   openingDelete,
   requirePoint,
+  slabCreate,
   storeyCreate,
   uuidv7,
   vec,
@@ -106,8 +107,25 @@ function onlyWall(log: TransactionLog): WallEntity {
   return walls[0]!;
 }
 
+/**
+ * 从上一次派发的 `affected` 里挑出该 kind 的那枚 id。柱与板在屏幕上点不到（`pickAt` 只认墙与洞口），
+ * 所以 ③④ 两支的夹具只能这样手工构造 —— 这道助手就是"合成夹具"这四个字的具体形状。
+ */
+function kindId(log: TransactionLog, kind: 'column' | 'slab'): string {
+  const id = [...log.affected].find((a) => log.document.get(a)?.kind === kind);
+  if (id === undefined) throw new TypeError(`affected 里没有那枚 ${kind}`);
+  return id;
+}
+
 /** 光标就停在这对整数毫米的像素上：草稿拿到的像素与毫米因此逐字自洽。 */
 const pxOf = (mm: MoveTarget, v: Viewport): Px => mmToPx(v, vec(mm.x, mm.y));
+
+/** `editing.ts` 里那道私有的 `intPx`：探针发出去的 DIP 是取整后的像素，比对界也要用同一份取整。 */
+const intPxOf = (p: Px): Px => ({ x: Math.round(p.x), y: Math.round(p.y) });
+
+/** 同 `insideCanvas`（私有），边距 2px 抄同一份：这里判的是"探针给的靶子发不发得出 DIP"。 */
+const insidePx = (v: Viewport, p: Px): boolean =>
+  p.x >= 2 && p.y >= 2 && p.x < v.widthPx - 2 && p.y < v.heightPx - 2;
 
 /**
  * 一条**一面墙**的合成现场。所有移动 / 合法性用例都吃它，所以三个数字在整份文件里只解释一次：
@@ -366,51 +384,156 @@ describe('删除计划', () => {
     expect(log.document.byKind('opening').length).toBe(0);
   });
 
-  it('三种沉默三种颜色：拉墙模式 / 只剩柱 / 空集', () => {
+  it('三种沉默三种颜色：拉墙模式 / 只剩裸点 / 空集', () => {
     const { log, storeyId } = oneWall();
     const wall = onlyWall(log);
-    log.dispatch(columnCreate({ storeyId, at: { x: 500, y: 500 }, widthMm: 400, depthMm: 400 }));
-    const columnId = [...log.affected].find((id) => log.document.get(id)?.kind === 'column');
-    if (columnId === undefined) throw new TypeError('affected 里没有那根柱');
+    // Task 8 把柱与板接进 `planDelete` 之后，"只剩一根柱"不再是 unsupported 的样例 —— 它发得出
+    // `column.delete`。这一格从此只装屏幕上根本取不到的两样东西：裸点与楼层本身。这里用裸点当靶子
+    // （`wall.startId` 在屏幕上不是一个命中目标：`pickAt` 的命中集只有墙与洞口）。
+    const bare = wall.startId;
+    expect(log.document.get(bare)?.kind).toBe('point');
     // ① 拉墙时误触 Delete：什么都不发，但**不许**报"没选中东西"（选中集不该被清空）
-    expect(planDelete(log.document, storeyId, 'wall', [wall.id, columnId])).toEqual({
+    expect(planDelete(log.document, storeyId, 'wall', [wall.id, bare])).toEqual({
       outcome: 'ignored-in-wall-mode',
       commands: [],
       commandTypes: [],
       candidateIds: [],
       unsupported: [],
     });
-    // ② 只选了一根柱：本任务没有 columnDelete，如实报 unsupported（Task 8 接上之后这一格少一个取值）
-    const only = planDelete(log.document, storeyId, 'select', [columnId]);
+    // ② 只选了一枚裸点：发不出命令，如实报 unsupported（Delete 键不是删点的入口）
+    const only = planDelete(log.document, storeyId, 'select', [bare]);
     expect(only.outcome).toBe('unsupported');
     expect(only.commands).toHaveLength(0);
-    expect(only.unsupported).toEqual([columnId]);
+    expect(only.unsupported).toEqual([bare]);
     // ③ 什么都没选：'empty'，与 ② 不同色
     const none = planDelete(log.document, storeyId, 'select', []);
     expect(none.outcome).toBe('empty');
     expect(none.unsupported).toEqual([]);
     // 三色的存在性：写成布尔（"发没发命令"）就把 ①②③ 糊成一格
     expect(new Set(['ignored-in-wall-mode', only.outcome, none.outcome]).size).toBe(3);
-    // 混选：柱 + 墙 ⇒ 墙照删，柱进 unsupported（不是"整批不做"）
-    const mixed = planDelete(log.document, storeyId, 'select', [columnId, wall.id]);
+    // 混选：裸点 + 墙 ⇒ 墙照删，点进 unsupported（不是"整批不做"）
+    const mixed = planDelete(log.document, storeyId, 'select', [bare, wall.id]);
     expect(mixed.outcome).toBe('ok');
     expect(mixed.commandTypes).toEqual(['wall.delete']);
-    expect(mixed.unsupported).toEqual([columnId]);
+    expect(mixed.unsupported).toEqual([bare]);
+    // 素材自证：同一根柱换到本层就发得出命令 ⇒ 上面那发红在"它是点"，不红在"这层没东西可删"
+    log.dispatch(columnCreate({ storeyId, at: { x: 500, y: 500 }, widthMm: 400, depthMm: 400 }));
+    const columnId = kindId(log, 'column');
+    expect(planDelete(log.document, storeyId, 'select', [columnId]).outcome).toBe('ok');
   });
 
-  it('别层构件进 unsupported，不是"没选中"：本层没这个权力', () => {
+  it('别层构件进 unsupported，不是"没选中"：本层没这个权力（墙、洞口、柱三样一起判）', () => {
+    const log = new TransactionLog(house.doc);
+    log.dispatch(
+      columnCreate({ storeyId: house.upperStoreyId, at: { x: 100, y: 100 }, widthMm: 400, depthMm: 400 }),
+    );
+    const doc = log.document;
     const upper = upperWalls[0]!;
-    const upperOpening = house.doc.byKind('opening').find((o) => o.storeyId === house.upperStoreyId);
+    const upperOpening = doc.byKind('opening').find((o) => o.storeyId === house.upperStoreyId);
     if (upperOpening === undefined) throw new TypeError('样例房二层应当有洞口');
-    const plan = planDelete(house.doc, house.lowerStoreyId, 'select', [upper.id, upperOpening.id]);
+    const upperColumn = kindId(log, 'column');
+    const plan = planDelete(doc, house.lowerStoreyId, 'select', [upper.id, upperOpening.id, upperColumn]);
     expect(plan.outcome).toBe('unsupported');
-    expect(plan.commands).toHaveLength(0); // 一发都不许发：删二层的墙不在本层的权力里
+    expect(plan.commands).toHaveLength(0); // 一发都不许发：删二层的构件不在本层的权力里
     expect(plan.candidateIds).toEqual([]);
-    expect([...plan.unsupported].sort()).toEqual([upper.id, upperOpening.id].sort());
-    // 素材自证：同一枚洞口换到它自己的层就发得出命令 ⇒ 上一发红在认层，不红在"洞口删不掉"
-    const same = planDelete(house.doc, house.upperStoreyId, 'select', [upperOpening.id]);
+    expect([...plan.unsupported].sort()).toEqual([upper.id, upperOpening.id, upperColumn].sort());
+    // 素材自证：同一枚柱换到它自己的层就发得出命令 ⇒ 上一发红在认层，不红在"柱删不掉"
+    const same = planDelete(doc, house.upperStoreyId, 'select', [upperColumn]);
     expect(same.outcome).toBe('ok');
-    expect(same.commandTypes).toEqual(['opening.delete']);
+    expect(same.commandTypes).toEqual(['column.delete']);
+  });
+
+  it('③④ 接上屏幕：四类混选发四条，顺序定死成 洞口 → 柱 → 板 → 墙', () => {
+    const { log, storeyId } = synthStorey();
+    const host = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    const other = wallAt(log, storeyId, { x: 0, y: 2000 }, { x: 4000, y: 2000 });
+    const openingId = openingAt(log, host.id, 1200); // 宿主是 host，而 host **不**进本次删除集 ⇒ 它得自己发一条
+    log.dispatch(columnCreate({ storeyId, at: { x: 500, y: 500 }, widthMm: 400, depthMm: 400 }));
+    const columnId = kindId(log, 'column');
+    log.dispatch(
+      slabCreate({
+        storeyId,
+        boundary: [
+          { x: 0, y: 4000 },
+          { x: 4000, y: 4000 },
+          { x: 4000, y: 6000 },
+          { x: 0, y: 6000 },
+        ],
+        thicknessMm: 120,
+      }),
+    );
+    const slabId = kindId(log, 'slab');
+    const other2 = wallAt(log, storeyId, { x: 0, y: 8000 }, { x: 4000, y: 8000 });
+    // 同类多枚时**输入故意降序**：只有一枚墙的夹具测不出 sort（实测摘掉四处 sort 全绿，
+    // 因为单元素数组排不排都一样）。降序进、升序出才是这道 sort 的牙齿。
+    const wallsDesc = [other.id, other2.id].sort().reverse();
+    // 传入顺序故意打乱：判的是"输出顺序由规则定死"，不是"跟着选中集走"
+    const plan = planDelete(log.document, storeyId, 'select', [slabId, ...wallsDesc, openingId, columnId]);
+    expect(plan.outcome).toBe('ok');
+    expect(plan.commandTypes).toEqual([
+      'opening.delete',
+      'column.delete',
+      'slab.delete',
+      'wall.delete',
+      'wall.delete',
+    ]);
+    expect(plan.candidateIds).toEqual([openingId, columnId, slabId, ...[other.id, other2.id].sort()]);
+    // 判据的牙齿：栈顶必须是 wall.delete。摘掉四处 sort（按集合插入序发）这一发就红，
+    // 于是撤销一次还回来的不是"墙 + 它级联掉的洞口"整组，而是一樘无主的洞口。
+    const tx = new TransactionLog(log.document);
+    for (const command of plan.commands) tx.dispatch(command);
+    expect(tx.depth).toBe(5);
+    expect(tx.document.get(host.id)?.kind).toBe('wall'); // host 没被选中，它和它的洞口都该还在
+    expect(tx.document.get(openingId)).toBeUndefined();
+    expect(tx.document.get(columnId)).toBeUndefined();
+    expect(tx.document.get(slabId)).toBeUndefined();
+    expect(tx.document.get(other.id)).toBeUndefined();
+    expect(tx.document.get(other2.id)).toBeUndefined();
+    // 撤销栈顶那一条：最后删的那面墙回来了，其余四条各占一格 ⇒ 一次 Ctrl+Z 只回来一面墙
+    const undone = wallsDesc[0]!;
+    tx.undo();
+    expect(tx.document.get(undone)?.kind).toBe('wall');
+    expect(tx.document.get(slabId)).toBeUndefined();
+  });
+
+  it('柱落在墙端点上：删柱只删柱，那枚点还被墙引用 ⇒ 不许跟着走（删柱拆墙）', () => {
+    const { log, storeyId } = oneWall();
+    const wall = onlyWall(log);
+    // 复用墙起点当柱心：这是 S1 里柱最常见的形态（柱在墙角）
+    log.dispatch(columnCreate({ storeyId, at: { pointId: wall.startId }, widthMm: 400, depthMm: 400 }));
+    const columnId = kindId(log, 'column');
+    const pointsBefore = log.document.byKind('point').length;
+    const plan = planDelete(log.document, storeyId, 'select', [columnId]);
+    for (const command of plan.commands) log.dispatch(command);
+    expect(log.document.get(columnId)).toBeUndefined();
+    expect(log.document.byKind('point').length).toBe(pointsBefore); // 一根点都不许少
+    expect(requirePoint(log.document, wall.startId, '墙起点').storeyId).toBe(storeyId);
+    // 反向自证：同一根柱换成独占落点，那枚点就跟着走 —— 区别只在"还有谁引用它"
+    const solo = new TransactionLog(log.document);
+    solo.dispatch(columnCreate({ storeyId, at: { x: 900, y: 900 }, widthMm: 400, depthMm: 400 }));
+    const soloId = kindId(solo, 'column');
+    const soloPoint = (solo.document.get(soloId) as { pointId: string }).pointId;
+    const before = solo.document.byKind('point').length;
+    for (const command of planDelete(solo.document, storeyId, 'select', [soloId]).commands) {
+      solo.dispatch(command);
+    }
+    expect(solo.document.byKind('point').length).toBe(before - 1);
+    expect(solo.document.get(soloPoint)).toBeUndefined();
+  });
+
+  it('删一根带独占落点的柱：pruneSelection 把柱与孤儿点一起剔掉', () => {
+    const { log, storeyId } = oneWall();
+    const wall = onlyWall(log);
+    log.dispatch(columnCreate({ storeyId, at: { x: 500, y: 500 }, widthMm: 400, depthMm: 400 }));
+    const columnId = kindId(log, 'column');
+    const columnPoint = (log.document.get(columnId) as { pointId: string }).pointId;
+    const selected = [columnId, columnPoint, wall.id];
+    const plan = planDelete(log.document, storeyId, 'select', [columnId]);
+    for (const command of plan.commands) log.dispatch(command);
+    expect(log.document.get(columnId)).toBeUndefined();
+    expect(log.document.get(columnPoint)).toBeUndefined(); // 级联收的，不是 UI 发的
+    // 柱与它的点都不在选中集里了，而墙还在 —— 这一发的凭据是"问真源"，不是 UI 自己抄一份孤儿判定
+    expect(pruneSelection(log.document, storeyId, selected)).toEqual([wall.id]);
   });
 
   it('删掉一面带洞口的墙：洞口与它的孤儿点一起消失，pruneSelection 把两者都剔掉', () => {
@@ -712,6 +835,39 @@ describe('新建回执与探针', () => {
     expect(wallProbe(house.doc, house.lowerStoreyId, ops, view)).not.toBeNull();
   });
 
+  it('筛 ⑤ 的确定性夹具：两个端点绕不开同一发 —— 画布外那一发只由 ⑤ 拒', () => {
+    // 上一发判的是"越界会让探针没靶子"，但它读的是样例房，而样例房里**哪个端点先被枚举**随
+    // uuidv7 变，所以它只能说"给不给得出"，不能说"给的是哪一发"。Task 8 要把 ⑤ 钉成可复算的账，
+    // 于是这里换一份一面墙的合成现场：把画布摆到只有 (4000,0) 那端在界内（另一端 (0,0) 的
+    // startPx 就越界 ⇒ 它的十个候选全被 ⑤ 拒），于是无论枚举顺序如何，答案只能是同一发。
+    // 视口尺寸 / 中心是算出来的不是试出来的：pxPerMm=0.2、640×800 ⇒ x 可见 [1900, 5100]、
+    // y 可见 [-1000, 3000]。于是 (4000,0) 的候选里 E=(6000,0) 越右界、S=(4000,-2000) 越下界、
+    // W=(2000,0) 压在既有墙上（筛 ④），只剩 N=(4000,2000)。
+    const { log, storeyId } = synthStorey();
+    const wall = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    const v = viewportOf(640, 800, { pxPerMm: 0.2, center: vec(3500, 1000) });
+    const doc = log.document;
+    const vOps = buildDrawList(doc, storeyId, v, EMPTY_SELECTION);
+    // 素材自证（三发都在界外/界内的哪一侧，先钉死，才许说"答案唯一"）
+    expect(mmToPx(v, vec(0, 0)).x).toBeLessThan(2); // A 端整个在画布左外 ⇒ 它的候选全交不出靶子
+    expect(insidePx(v, intPxOf(mmToPx(v, vec(4000, 0))))).toBe(true); // B 端在界内
+    const eastOff = intPxOf(mmToPx(v, vec(6000, 0)));
+    expect(eastOff.x).toBeGreaterThanOrEqual(v.widthPx - 2); // E 候选越右界
+    expect(pickAt(vOps, eastOff)).toEqual([]); // ……而筛 ④ 放行它 ⇒ 拒它的只有 ⑤
+    expect(snapFieldOf(doc, storeyId).points.length).toBeGreaterThan(0);
+    const probe = wallProbe(doc, storeyId, vOps, v);
+    if (probe === null) throw new TypeError('这个夹具上探针该给得出靶子');
+    // 判据的牙齿（2026-09-28 实测）：摘掉 ⑤ 那一发不是"探针没靶子"，而是**换了一发挑不中 DIP 的**
+    // —— 答案改挑 (0,0) 那端（它的 startPx 在画布左外），四个独立进程都红在这里。
+    // 而"答案只能是 B 端那一发"这件事本身是确定性的：A 端十个候选全被 ⑤ 拒（startPx 越界与候选无关），
+    // 所以无论 uuidv7 让哪一端先被枚举，能交靶子的只有 B。
+    expect(probe.startMm).toEqual({ x: 4000, y: 0 });
+    expect(probe.startPointId).toBe(wall.endId);
+    expect(probe.endMm).toEqual({ x: 4000, y: 2000 });
+    expect(insidePx(v, probe.endPx)).toBe(true);
+    expect(insidePx(v, probe.midPx)).toBe(true);
+  });
+
   it('⑥ 的前提：同一发候选在命令层与派生层一起拒（星形接头）', () => {
     // 角点 (0,0) 已经过着两条线（x 轴与 y 轴）。第三发 45° 斜线过同一点 ⇒ core 的 `deriveJoints`
     // 判它星形接头。Task 6 写这一条时它**过了 ①~⑤ 也过了命令层**，只在派生层炸；Task 7 把派生复核
@@ -761,6 +917,56 @@ describe('新建回执与探针', () => {
       }),
     );
     expect(() => buildDrawList(t2.document, storeyId, sv)).not.toThrow();
+  });
+
+  it('⑥ 的确定性夹具：八发候选在命令层与派生层判得一字一样', () => {
+    // 上一发只钉了 45° 那一发。Task 8 把属性面板接上屏之后，"屏幕上拒过一次"就不再是孤例，
+    // 于是这里把 (0,0) 这个三臂点周围的**八发**候选全问一遍，判的是两层**逐发同判**：
+    // 摘掉 core 的 `assertDerivesAfterApply` ⇒ 四发斜线在命令层翻成放行、派生层仍然抛 ⇒ 本条红。
+    // 这一条不读探针挑了谁，所以它不受 uuidv7 影响 —— 这就是"确定性夹具"四个字的含义。
+    const { log, storeyId } = synthStorey();
+    const east = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    wallAt(log, storeyId, { pointId: east.startId }, { x: 0, y: 4000 });
+    const doc = log.document;
+    const fd = snapFieldOf(doc, storeyId);
+    const defaults = newWallDefaults(doc, storeyId);
+    const startMm: MoveTarget = { x: 0, y: 0 };
+    const start = draftAtPress(sv, pxOf(startMm, sv), fd);
+    expect(start.snap?.kind).toBe('endpoint'); // 素材自证：起点真的压在三臂点上，否则八发都在别处
+    const rows = [
+      { x: 2000, y: 0 },
+      { x: 0, y: 2000 },
+      { x: -2000, y: 0 },
+      { x: 0, y: -2000 },
+      { x: 2000, y: 2000 },
+      { x: -2000, y: 2000 },
+      { x: 2000, y: -2000 },
+      { x: -2000, y: -2000 },
+    ].map((off) => {
+      const endPx = pxOf(off, sv);
+      const end = dropTargetOf(sv, endPx, startMm, fd, { excludeMm: startMm });
+      const draft: DraftWall = { storeyId, start, cursorPx: endPx, end, legal: true };
+      const command = legalWallCreate(doc, draft);
+      let derived: boolean;
+      try {
+        const commandBuilt = draftCommand(draft, defaults);
+        if (commandBuilt === null) throw new TypeError('legal 为真却拿不到命令');
+        const trial = new TransactionLog(doc);
+        trial.dispatch(commandBuilt);
+        buildDrawList(trial.document, storeyId, sv);
+        derived = true;
+      } catch {
+        derived = false;
+      }
+      return { mm: end.mm, command, derived };
+    });
+    for (const row of rows) expect(row.derived).toBe(row.command);
+    // 四发斜线（过同一枚点的第三个方向）两层一起拒：这就是星形接头搬迁后的形状
+    for (const row of rows.filter((r) => Math.abs(r.mm.x) === Math.abs(r.mm.y))) {
+      expect(row.command).toBe(false);
+    }
+    // 判据不空转：八发里确实有放行的（四条轴向外侧），否则"同判"可以靠"全拒"糊过去
+    expect(rows.filter((r) => r.command).length).toBeGreaterThan(0);
   });
 
   it('wallProbe 在空层给 null（不抛），有了靶子才给得出', () => {
