@@ -7,3 +7,4 @@ export * from './demo';
 export * from './handles';
 export * from './snapping';
 export * from './editing';
+export * from './panel';
