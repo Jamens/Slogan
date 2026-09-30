@@ -36,7 +36,7 @@ describe('闸门字面量 ↔ 结构账', () => {
     expect(grabAll(shot, /layers\.annotation === (\d+)/g, 1, 'layers.annotation')[0]).toBe(layers.annotation);
   });
 
-  it('runner 两处画布原点 y=32（pick :106 / prop :218 同型）== panels.tsx 的 STOREY_TAB_HEIGHT_PX', () => {
+  it('runner 两处画布原点 y=32（--pick 与 --prop 段各一处）== panels.tsx 的 STOREY_TAB_HEIGHT_PX', () => {
     const ys = grabAll(shot, /canvasOriginPx\?\.y === (\d+)/g, 2, '画布原点 y 断言（pick 与 prop 各一处）');
     const tabHeight = grabAll(panels, /STOREY_TAB_HEIGHT_PX\s*=\s*(\d+)/g, 1, 'STOREY_TAB_HEIGHT_PX')[0];
     for (const y of ys) expect(y).toBe(tabHeight);
