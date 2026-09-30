@@ -65,7 +65,7 @@ export interface Selection {
 export const EMPTY_SELECTION: Selection = { ids: new Set<string>() };
 
 export const INK = '#1f1f1f';
-export const GLAZING = '#2f6fb3';
+const GLAZING = '#2f6fb3';
 export const SELECTED = '#c9252d';
 
 const WALL_PEN: Pen = { layer: 'structure', lineType: 'solid', widthPx: 2, color: INK };
