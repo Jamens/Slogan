@@ -752,14 +752,16 @@ describe('Task 9 轴网交点档', () => {
     // (3000,0) 在两墙的**线段内部** ⇒ 那一处同时是两枚垂足候选与一枚交点候选
     expect(crossKeys(fd)).toEqual(['3000,0']);
     // 前提可见：那一处**静态表里只有交点**，垂足是 `snapFromCursor` 现造的 —— 吸收带能对它起作用，
-    // 正是因为表里那一处除交点外没有别的具名点（否则被吸收的是端点/中点，与本条无关）。
+    // 正是因为表里那一处除交点外没有别的具名点（若有端点/中点，先被吸掉的同样是那枚现造垂足，
+    // 轮不到交点说话，与本条无关）。
     expect(kindsAt(fd, 3000, 0)).toEqual(['axisCross']);
     const cursor = pxOf({ x: 3000, y: 0 }, view);
     const first = snapFromCursor(view, cursor, { x: 3000, y: 0 }, null, fd);
-    // 牙齿在吸收带，不在 PRIORITY：`absorbedByPoint` 只吸收端点/中点，所以现造垂足不被 (3000,0) 那枚
-    // 交点吃掉、能进池，两枚并列 0px 时才轮到 `PRIORITY` 判给 foot。挡住 X1（放开档位过滤）靠的恰恰是
-    // 吸收带本身 —— 过滤一放开，(3000,0) 那枚 axisCross 就把同坐标垂足整档吸出池子，`takeBest` 无从
-    // 并列、PRIORITY 根本没机会说话。`PRIORITY` 的 foot 2 < axisCross 3 是第二道（红在反面 N2）。
+    // 牙齿在吸收带，不在 PRIORITY：`absorbedByPoint` 只拿端点/中点当吸收者，所以现造垂足不被 (3000,0)
+    // 那枚交点吃掉、能进池；两墙各给一枚垂足、与交点同坐标并列 0px，这才轮到 `PRIORITY` 判给 foot。
+    // 挡住 X1（放开档位过滤）靠的恰恰是吸收带本身 —— 过滤一放开，(3000,0) 那枚 axisCross 就把同坐标
+    // 垂足整档吸出池子，`takeBest` 无从并列、PRIORITY 根本没机会说话。`PRIORITY` 的 foot 2 < axisCross 3
+    // 是第二道（红在反面 N2）。
     expect(first?.kind).toBe('foot');
     expect(first?.mm).toEqual({ x: 3000, y: 0 });
     expect(first?.pointId).toBeNull();
