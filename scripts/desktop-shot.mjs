@@ -120,8 +120,11 @@ try {
       ['探针给出可拖的共享端点（孤端点证不出邻墙）', typeof edit.wallId === 'string' && edit.sharedBy >= 2],
       ['按在把手上即选中那面墙（D5）', report.selectedAfterPress === edit.wallId && report.selectedPxAfterPress > 100],
       // 「第一发只选中、不起拖」（main 第 1 步那段：把手只从当前选中集生成，空集时 pickHandle 无从命中）
-      // 的唯一见证者是报告里的 `previewPxAfterClick` —— 今天写进报告零读者（终审 B2 P2-4/5）。
-      ['第一发只选中不起拖：临时线一个像素都没有', report.selectedAfterClick === edit.wallId && report.previewPxAfterClick === 0],
+      // 的见证者是两枚读数的**和**：`previewPxAfterClick === 0` 证"没起拖"，`handlePxAfterClick > 20`
+      // 证"选中真落到了 store"。只留前者的话，把第 1 步整个删掉也照样绿（临时线本来就 0），
+      // 而下一行 `handlePxAfterPress` 会把第 2 步画的把手误当成第 1 步的功劳。
+      // 阈值 20 与 `handlePxAfterPress` 同源；`handlePxAfterClick` 两次复跑实测 193 / 191（edit-shot.log）。
+      ['第一发只选中不起拖：临时线一个像素都没有、把手已上屏', report.selectedAfterClick === edit.wallId && report.previewPxAfterClick === 0 && report.handlePxAfterClick > 20],
       ['把手上屏（只有选中的墙才画把手）', report.handlePxAfterPress > 20],
       ['拖拽中不写真源：depth、revision、坐标三者都不动', report.depthDuringDrag === report.depthAtStart && report.revisionDuringDrag === report.revisionAtStart && report.xDuringDrag === report.xAtStart && report.yDuringDrag === report.yAtStart],
       ['拖拽中临时线上屏（白屏与"只画了图"都过不了）', report.previewPxDuringDrag > 20],
@@ -202,7 +205,7 @@ try {
   if (wantProp) {
     // 前六条与 drawlist.test.ts 同源（读的是第 15 步终态那份 `fin`：整条序列回基线 ⇒ `ops === 31`
     //   在这里仍是回归判据）。
-    // 这二十三条与 panel.test.ts + handles.test.ts 同源，但只测它们管不到的那一层：真窗口里
+    // 这二十四条与 panel.test.ts + handles.test.ts 同源，但只测它们管不到的那一层：真窗口里
     //   "点 tab / 点面板控件 → 屏幕上的读数 → 真源的账（depth）→ 重绘的账（revision）"。
     //   node 侧证得到 `wall.setMaterial` 不跑复核，证不到"画面上一个字都没变"（P13 那三处墨迹对账）；
     //   也证不到"`<select>` 的方向键真落到了焦点上"（P12 那一发只按了一次，blur 掉焦点时它是 0 发）。
