@@ -140,6 +140,40 @@ function wallsForProbeSnap(): { log: TransactionLog; storeyId: string } {
 }
 
 /**
+ * 交点档（Task 9 的第六档 `axisCross`）在**句柄 → 落点**那一整条出口上的确定性见证专用夹具。
+ * 评审席 P1-1：交点档在吸附层有牙（`snapping.test.ts` 那条断言它是赢家，走 `snapFromCursor`），
+ * 但 `handles.test.ts` 里 `handleDropTarget` 吃过的每张场**全部零交点** —— 摘掉交点档（变异 N1）时
+ * 句柄侧一格都不红。这一份夹具补的就是那一格。它自带一套墙，**不改** `wallsForProbeSnap`（那是
+ * Task 8 换来的垂足靶子）。
+ *
+ * 形状（`pxPerMm = 0.1`，1px = 10mm，与 `wallsForProbeSnap` 那套探针用例同一把尺子）：
+ * - 两臂同 A=(0,0)：竖 (0,0)→(0,1040)、横 (0,0)→(1040,0)，`thicknessMm` 都取 240 ⇒ A 是 2 向**角**
+ *   （不是 star，`deriveStoreyGeometry` 不抛 ⇒ `derivesAfterMove` 这一关过得去）；
+ * - 一面对手横墙 (-1200,-760)→(-400,-760)，离两臂都远；
+ * - 交点档在表里**唯一一枚**：竖轴 x=0 ∩ 横轴 y=-760 = (0,-760)，它不是任何端点/中点 ⇒ 规则 ③ 不挡。
+ * 第三发候选的裸落点 (0,-800) 处：交点 (0,-760) 差 40mm ⇒ **4px**（在 `SNAP_TOL_PX=8` 内）；垂足被墙端
+ * 夹掉、两臂自己的轴上垂足离裸点 76~80px 级；端点/中点最近者 40~80px ⇒ 赢家只能是 `axisCross`，
+ * 且吸到 (0,-760) ≠ 裸 (0,-800) ⇒ "吃场/不吃场"两个答案不同（Task 8 那条判据形状）。
+ */
+function wallsForCrossSnap(): { log: TransactionLog; storeyId: string } {
+  const projectId = uuidv7();
+  const log = new TransactionLog(Document.create(projectId));
+  log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+  let storeyId = '';
+  for (const id of log.affected) {
+    if (log.document.get(id)?.kind === 'storey') storeyId = id;
+  }
+  if (storeyId === '') throw new TypeError('affected 里没有新建的楼层');
+  log.dispatch(wallCreate({ storeyId, start: { x: 0, y: 0 }, end: { x: 0, y: 1040 }, thicknessMm: 240, heightMm: 3000 }));
+  const a = createdWallOf(log).startId;
+  log.dispatch(wallCreate({ storeyId, start: { pointId: a }, end: { x: 1040, y: 0 }, thicknessMm: 240, heightMm: 3000 }));
+  // 对手横墙：轴 y=-760，x∈[-1200,-400]。它与竖臂轴 x=0 的**轴延长线**交于 (0,-760) —— 那一处既不是
+  // 任何端点也不是中点（对手墙端点 (-1200,-760)/(-400,-760)、中点 (-800,-760) 都不在此）⇒ 表里唯一交点档。
+  log.dispatch(wallCreate({ storeyId, start: { x: -1200, y: -760 }, end: { x: -400, y: -760 }, thicknessMm: 240, heightMm: 3000 }));
+  return { log, storeyId };
+}
+
+/**
  * 最近一次 dispatch 的 affected 里那面墙。**不许** `byKind('wall').at(-1)`：uuidv7 同毫秒
  * 不单调，`byKind` 又是 id 升序，"最后一面"跟"最后建的"不是一回事。
  */
@@ -645,6 +679,59 @@ describe('拖拽吃吸附（Task 6）', () => {
     // `snapping.test.ts`「垂足比端点近时距离赢」（垂足离端点 200mm = 4px）与
     // 「中段垂足照吸：离两端与中点都远超一像素的落点仍然是 foot（不许过吸）」两条钉着它。
     expect(fifth.snap?.kind).toBe('midpoint');
+  });
+
+  it('句柄出口那一格被轴网交点档接住：第三发裸落点 (0,-800) 吸到唯一一枚交点 (0,-760)', () => {
+    // 评审席 P1-1 补的那一格：Task 9 的第六档 `axisCross` 在吸附层有牙，但 `handleDropTarget` 吃过
+    // 的每张场都零交点 ⇒ 摘掉交点档（变异 N1）句柄侧不红。这一条把"交点档走到了句柄 → 落点出口"
+    // 钉成**直接 kind 见证**（写法照「合法性判的是吸附后的毫米」那条：snapFieldOf + dragHandlesOf 取到
+    // 赢的那把把手，再 pxOf 反算整数像素）+ 探针吃场的毫米见证两句都齐。
+    const { log, storeyId } = wallsForCrossSnap();
+    const v = viewportOf(1000, 800, { pxPerMm: 0.1, center: vec(300, 300) }); // 1px = 10mm
+    const doc = log.document;
+    const field = snapFieldOf(doc, storeyId);
+    const pxOf = (mm: MoveTarget): Px => {
+      const at = mmToPx(v, mm);
+      return { x: Math.round(at.x), y: Math.round(at.y) };
+    };
+    // 素材自证（照 snapping.test.ts 里 crossKeys 的集合/排序坐标串写法，**不按数组下标**取候选）：
+    // 这一层的交点档恰好一枚，坐标 (0,-760)。
+    const crossKeys = field.points
+      .filter((p) => p.kind === 'axisCross')
+      .map((p) => `${p.mm.x},${p.mm.y}`)
+      .sort();
+    expect(crossKeys).toEqual(['0,-760']);
+    // (0,-760) 不是任何端点/中点 ⇒ 规则 ③ 没挡它，赢家唯一性来自几何而不是"这一档恰好排在前"。
+    expect(
+      field.points
+        .filter((p) => p.kind === 'endpoint' || p.kind === 'midpoint')
+        .some((p) => p.mm.x === 0 && p.mm.y === -760),
+    ).toBe(false);
+    // 现场自证：探针吃场，且吃的是这一档 —— 裸落点确实是第三发 (0,-800)，吸到的 (0,-760) 与它不同。
+    const p = dragProbe(doc, storeyId, buildDrawList(doc, storeyId, v, EMPTY_SELECTION), v);
+    expect(p).not.toBeNull();
+    expect(p!.sharedBy).toBe(2); // A 是那两面墙的 2 向角（不是 star，derivesAfterMove 才过得去）
+    expect(moveTargetOf(v, p!.toPx)).toEqual({ x: 0, y: -800 });
+    expect(p!.targetMm).toEqual({ x: 0, y: -760 });
+    expect(p!.targetMm).not.toEqual(moveTargetOf(v, p!.toPx));
+    // 探针跳到第三发的理由不是假设：前两发正向候选当场 `legalDrop` 为 false（各把某面墙拖到墙厚 240）。
+    for (const off of [
+      { x: 0, y: 800 },
+      { x: 800, y: 0 },
+    ]) {
+      expect(legalDrop(doc, p!.wallId, p!.end, off)).toBe(false);
+    }
+    // 句柄出口那一格的**直接 kind 见证**：赢的那把把手上，裸 (0,-800) 那一发被 `axisCross` 接住。
+    const handle = dragHandlesOf(
+      doc,
+      storeyId,
+      { ids: new Set(doc.byKind('wall').filter((w) => w.storeyId === storeyId).map((w) => w.id)) },
+      v,
+    ).find((h) => h.wallId === p!.wallId && h.end === p!.end)!;
+    const drop = handleDropTarget(v, pxOf({ x: 0, y: -800 }), handle, field);
+    expect(drop.raw).toEqual({ x: 0, y: -800 });
+    expect(drop.snap?.kind).toBe('axisCross');
+    expect(drop.mm).toEqual({ x: 0, y: -760 });
   });
 
   it('探针的三枚像素在分数尺子下才见取整的牙齿：取整前是浮点，报出来全为整数', () => {

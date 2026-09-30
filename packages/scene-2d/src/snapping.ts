@@ -99,7 +99,7 @@ export type SnapPointKind = 'endpoint' | 'midpoint' | 'axisCross';
 export interface SnapPoint {
   readonly kind: SnapPointKind;
   readonly mm: MoveTarget;
-  /** 端点才有：它是真源里那一枚点，`{ pointId }` 复用全靠这个值非 null。中点为 null。 */
+  /** 端点才有：它是真源里那一枚点，`{ pointId }` 复用全靠这个值非 null。中点与轴网交点为 null。 */
   readonly pointId: string | null;
   readonly ownerId: string;
 }
@@ -382,7 +382,7 @@ interface Ranked {
  * ② 严格 `<` 才换，所以并列时留下的是**先扫到**的那一枚 —— 扫描序与输入数组的序无关性由
  *    "并列判据全序化（group → distPx → PRIORITY → ownerId）"保证，`ownerId` 是 uuidv7，
  *    `byKind` 又已按 id 升序，故同一次扫描里两枚并列候选的 ownerId 不可能相等；
- * ③ 越界（> SNAP_TOL_PX）在这里统一挡，五个候选生成器都不必各自判容差。
+ * ③ 越界（> SNAP_TOL_PX）在这里统一挡，六个候选生成器都不必各自判容差。
  */
 function takeBest(best: Scored | null, cand: Scored | null): Scored | null {
   if (cand === null || !Number.isFinite(cand.distPx) || cand.distPx > SNAP_TOL_PX) return best;
@@ -396,7 +396,7 @@ function takeBest(best: Scored | null, cand: Scored | null): Scored | null {
 }
 
 /**
- * 光标 → 吸附结果。五档各造候选，`takeBest` 挑。
+ * 光标 → 吸附结果。六档各造候选，`takeBest` 挑。
  *
  * `raw` 是**已经量化过**的裸落点（调用方给 `moveTargetOf` 的结果）：角度档要的是"光标在
  * 世界里的位置"，用它而不是再用一次 cursorPx，才能保证落点是像素的不动点 ——
@@ -414,7 +414,7 @@ export function snapFromCursor(
   opts: SnapOptions = {},
 ): SnapResult | null {
   const exclude = opts.excludeMm ?? null;
-  // 五个档位先各造候选、合成一个池子，再统一排序：分开比五趟"谁更近"要把这条判据抄五遍，
+  // 六个档位先各造候选、合成一个池子，再统一排序：分开比五趟"谁更近"要把这条判据抄五遍，
   // 而漏抄的那一遍永远不会红（它只在两档同时命中的那一格才说话）。
   // 池子里留 null 是"这一档没命中"，不是"没有候选点" —— 过滤只发生在下面那一趟循环里。
   const pool: (Ranked | null)[] = [];

@@ -401,7 +401,9 @@ const intPxOf = (mm: MoveTarget, v: Viewport): Px => {
 describe('具名点优先：垂足不许靠取整噪声赢掉角点与中点', () => {
   it('按在端点那一发像素上：逐枚端点都吸回自己（遍历，不挑一枚）', () => {
     const endpoints = field.points.filter((p) => p.kind === 'endpoint');
-    // 素材自证：这一层确实有八枚去重端点（`snapFieldOf` 按 pointId 去重），零枚的话下面那个循环恒真
+    // 素材自证：这一层确实有八枚去重端点（`snapFieldOf` 的端点档按坐标 `${x},${y}` 去重，不是按
+    // `pointId` —— 柱用 `{x,y}` 字面量创建时 `resolvePointRef` 给 null，会留下一枚同坐标的孤儿点，
+    // 按 id 去重就留两枚、`ownerId` 破序跨进程漂），零枚的话下面那个循环恒真
     expect(endpoints.length).toBe(8);
     for (const ep of endpoints) {
       const press = intPxOf(ep.mm, gateView);
@@ -749,9 +751,16 @@ describe('Task 9 轴网交点档', () => {
     const fd = snapFieldOf(log.document, storeyId);
     // (3000,0) 在两墙的**线段内部** ⇒ 那一处同时是两枚垂足候选与一枚交点候选
     expect(crossKeys(fd)).toEqual(['3000,0']);
+    // 前提可见：那一处**静态表里只有交点**，垂足是 `snapFromCursor` 现造的 —— 吸收带能对它起作用，
+    // 正是因为表里那一处除交点外没有别的具名点（否则被吸收的是端点/中点，与本条无关）。
+    expect(kindsAt(fd, 3000, 0)).toEqual(['axisCross']);
     const cursor = pxOf({ x: 3000, y: 0 }, view);
     const first = snapFromCursor(view, cursor, { x: 3000, y: 0 }, null, fd);
-    expect(first?.kind).toBe('foot'); // PRIORITY：foot 2 < axisCross 3，距离并列时档位说话
+    // 牙齿在吸收带，不在 PRIORITY：`absorbedByPoint` 只吸收端点/中点，所以现造垂足不被 (3000,0) 那枚
+    // 交点吃掉、能进池，两枚并列 0px 时才轮到 `PRIORITY` 判给 foot。挡住 X1（放开档位过滤）靠的恰恰是
+    // 吸收带本身 —— 过滤一放开，(3000,0) 那枚 axisCross 就把同坐标垂足整档吸出池子，`takeBest` 无从
+    // 并列、PRIORITY 根本没机会说话。`PRIORITY` 的 foot 2 < axisCross 3 是第二道（红在反面 N2）。
+    expect(first?.kind).toBe('foot');
     expect(first?.mm).toEqual({ x: 3000, y: 0 });
     expect(first?.pointId).toBeNull();
     // 倒过来扫一遍还是同一个答案：并列判据（档位 → ownerId）是全序，不靠扫描顺序
