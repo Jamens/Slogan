@@ -1,6 +1,8 @@
 import {
+  intersectLines,
   quantizeMm,
   requirePoint,
+  vec,
   wallAxisById,
   type Document,
   type PointRef,
@@ -81,11 +83,17 @@ export const SNAP_MARK_HALF_PX = 2.5;
  */
 export const SNAP_MARK_OUTER_HALF_PX = 4.5;
 
-/** 五档吸附。前三种吸到**已有的东西**上，后两种吸到**方向**上。 */
-export type SnapKind = 'endpoint' | 'midpoint' | 'foot' | 'ortho' | 'angle15';
+/** 六档吸附。前四种吸到**已有的东西**上，后两种吸到**方向**上（spec §6 那张表）。 */
+export type SnapKind = 'endpoint' | 'midpoint' | 'foot' | 'axisCross' | 'ortho' | 'angle15';
 
-/** 静态点表里出现的两种档：垂足与角度档的候选按光标现算，不可能预先列出（见 `SnapField`）。 */
-export type SnapPointKind = 'endpoint' | 'midpoint';
+/**
+ * 静态点表里出现的三种档：垂足与两个角度档的候选按光标现算，不可能预先列出（见 `SnapField`）。
+ *
+ * `'endpoint'` 读作"**一枚真源点**"而不是"一面墙的头"：Task 9 把柱心与板角也归进这一档，
+ * 因为它们共享同一条语义 —— `pointId` 非空、`pointRefOf` 会复用它。改名成 `'point'` 要动
+ * `wallProbe` 的起点枚举、`--draw-shot` 与 `--edit-shot` 的字面量，换来的只有名字好看。
+ */
+export type SnapPointKind = 'endpoint' | 'midpoint' | 'axisCross';
 
 /** 表里的一枚候选点。`ownerId` 只用于并列破序，不给语义。 */
 export interface SnapPoint {
@@ -140,13 +148,26 @@ export interface SnapOptions {
 export const EMPTY_SNAP_FIELD: SnapField = { points: [], axes: [] };
 
 /** 先分组（对象档永远压过方向档），组内先比距离，再比档位，最后比 ownerId。 */
-const GROUP: Record<SnapKind, number> = { endpoint: 0, midpoint: 0, foot: 0, ortho: 1, angle15: 1 };
+const GROUP: Record<SnapKind, number> = {
+  endpoint: 0,
+  midpoint: 0,
+  foot: 0,
+  axisCross: 0,
+  ortho: 1,
+  angle15: 1,
+};
+/**
+ * 档位优先序 = spec §6 那张表的顺序，**只有一处故意不同**：正交排在 15° 前面。
+ * 理由是 `angle15Of` 把 90 的倍数整档让给了正交（S3），于是两档同时命中的场合只剩下
+ * "方向恰好落在轴上"那一种 —— 那里该赢的是保坐标的正交。这条在 T6 就是这样，Task 9 没改它。
+ */
 const PRIORITY: Record<SnapKind, number> = {
   endpoint: 0,
   midpoint: 1,
   foot: 2,
-  ortho: 3,
-  angle15: 4,
+  axisCross: 3,
+  ortho: 4,
+  angle15: 5,
 };
 
 /**
@@ -168,17 +189,44 @@ const PRIORITY: Record<SnapKind, number> = {
  */
 const FOOT_ABSORB_PX = 1.5;
 
-/** 这枚垂足是否被池里某枚具名点（端点 / 中点）吸收。距离走毫米，容差由 `pxPerMm` 折回来。 */
+/**
+ * 这枚垂足是否被池里某枚具名点（端点 / 中点）吸收。距离走毫米，容差由 `pxPerMm` 折回来。
+ *
+ * **档位写死在这一句里**（`endpoint || midpoint`）：Task 9 之后 `field.points` 还多出轴网交点那一档，
+ * 而交点不是"具名点"—— 它背后没有真源点，优先级（3）也低于垂足（2）。放开这一格，"两轴交点恰好落在
+ * 一面墙的线段内部"时交点就会把垂足整档吃掉，`takeBest` 再也看不到两枚并列候选，spec §6 那张表里
+ * "贴到墙上"那一档（foot）永远输给一个坐标（R4 的唯一凭据就是它）；屏幕上表现为"明明贴着墙，
+ * 却报成一枚交点"。吸收带只吸收**真源点与中点**，这条从 T8 就是这样，Task 9 没改它，只是把
+ * 它从"表里只有两种档"的隐含前提里解出来。
+ */
 function absorbedByPoint(mm: MoveTarget, points: readonly SnapPoint[], absorbMm: number): boolean {
-  return points.some((p) => Math.hypot(p.mm.x - mm.x, p.mm.y - mm.y) <= absorbMm);
+  return points.some(
+    (p) =>
+      (p.kind === 'endpoint' || p.kind === 'midpoint') &&
+      Math.hypot(p.mm.x - mm.x, p.mm.y - mm.y) <= absorbMm,
+  );
 }
 
 /**
- * 本层的端点（按 pointId 去重）+ 每面墙的中点 + 每面墙的轴线。
+ * 本层的吸附场：一面层的**全部既有靶子**在这里列齐，`snapFromCursor` 只读它。
  *
- * 去重是必须的：样例房一层有六枚共享端点，不去重就是"同一个点六个候选、六个 ownerId"，
- * 并列破序会挑出任意一面墙，`pointId` 却全都一样 —— 结果对，过程没法测。
- * 柱/板的顶点、洞口中心不在表里：Task 9 的补档（柱端点、轴网交点）要加时改这里，不在 UI 侧另搭一份。
+ * 五段来源，入表顺序定死成 **每面墙的〔两个端点，中点〕顺次 → 柱心 → 板角 → 轴网交点**：
+ * - **端点档**收三样真源点（墙端点、柱心、板角），它们共用同一条语义 —— `pointId` 非空，
+ *   吸上即复用。按**坐标**去重（键是 `${x},${y}`，不是 pointId）：样例房一层有六枚共享端点，
+ *   不去重就是"同一个点六个候选、六个 ownerId"，并列破序会挑出任意一面墙，`pointId` 却全都一样 ——
+ *   结果对，过程没法测；而柱/板带进来的**同坐标孤儿点**更要靠这一条挡住（见下面柱那一段）。
+ * - **轴网交点档**是本任务补的那一档：S1 没有轴网实体，所以它就是**本层墙轴线的两两求交**
+ *   （`axisCrossPoints`，含轴延长线上的交点）。
+ *
+ * 三道跨层的防线都在同一个循环里（`if (x.storeyId !== storeyId) continue`）：漏任何一道，
+ * 两层的同位置坐标就会互相吸 —— 上下层对齐是建筑的常态，所以这不是边角，是必然踩的那一发。
+ * `resolvePointRef` 紧接着拿跨层抛错，会把一发无害的吸附变成命令层异常。
+ *
+ * **洞口中心不在表里**（`snapping.ts` 在 T6 承诺"Task 9 补"的那半句，到此判掉而不是兑现）：
+ * ① 它不是 spec §6 那六档之一；② 它背后没有真源点，吸上去只会新建一枚坐标，与"随便吸到轴上
+ * 某处"没有区别 —— 而那个"某处"**恰好**已经被垂足档覆盖（洞口中心就在宿主墙的轴线上）；
+ * ③ 它许诺的语义是坏的：把新墙的头吸到门洞中心 = 往门中间立一堵墙。
+ * 想要"对齐门洞边"，那是洞口的两个端点，属计划 4 的洞口编辑，不属这一档。
  */
 export function snapFieldOf(doc: Document, storeyId: string): SnapField {
   const points: SnapPoint[] = [];
@@ -199,9 +247,10 @@ export function snapFieldOf(doc: Document, storeyId: string): SnapField {
       lengthMm: axis.lengthMm,
     });
     for (const pointId of [wall.startId, wall.endId]) {
-      if (seen.has(pointId)) continue;
-      seen.add(pointId);
       const point = requirePoint(doc, pointId, '吸附端点');
+      const key = `${point.x},${point.y}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
       points.push({
         kind: 'endpoint',
         // 直读真源，不做任何 px ↔ mm 往返：吸上去的坐标必须和点上存的逐字相同，
@@ -220,7 +269,93 @@ export function snapFieldOf(doc: Document, storeyId: string): SnapField {
       ownerId: wall.id,
     });
   }
+  // 柱心与板角走的是与墙端点完全相同的一条通路：读真源那枚点、按坐标去重、复用。
+  // 去重键是**坐标**而不是 pointId（墙那一段同理），理由是 `columnCreate` 拿坐标字面量时
+  // 会新建一枚**自己的**点（`resolvePointRef` 对字面量恒返回 null）—— 按 id 去重就会留下
+  // 两枚同坐标的端点候选，并列破序按 ownerId 挑，而 ownerId 是 uuidv7：吸到"墙的点"还是
+  // "柱那枚孤儿点"跨进程漂。孤儿点复用了也接不上头（墙不认识它），所以赢家恒取先扫到的墙端点。
+  // `seen` 跨三类共用是故意的 —— 柱落在墙端点上是常态（`columnCreate` 的 `at` 就写着可以
+  // 引既有墙端点），共用同一枚点时表里只该留一枚候选，留两枚等于让并列破序去挑"吸成墙还是吸成柱"。
+  for (const column of doc.byKind('column')) {
+    if (column.storeyId !== storeyId) continue;
+    const point = requirePoint(doc, column.pointId, '吸附柱心');
+    const key = `${point.x},${point.y}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    points.push({
+      kind: 'endpoint',
+      mm: { x: point.x, y: point.y },
+      pointId: column.pointId,
+      ownerId: column.id,
+    });
+  }
+  for (const slab of doc.byKind('slab')) {
+    if (slab.storeyId !== storeyId) continue;
+    for (const pointId of slab.boundaryPointIds) {
+      const point = requirePoint(doc, pointId, '吸附板角');
+      const key = `${point.x},${point.y}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      points.push({
+        kind: 'endpoint',
+        mm: { x: point.x, y: point.y },
+        pointId,
+        ownerId: slab.id,
+      });
+    }
+  }
+  // 交点排在最后算：它要拿上面三段的结果去重（一枚既是墙端点又是两轴交点的坐标，
+  // 该以"真源点"的身份被吸到，好让 `pointRefOf` 复用而不是新建）。
+  for (const cross of axisCrossPoints(axes, points)) points.push(cross);
   return { points, axes };
+}
+
+/**
+ * 轴网交点档：本层墙轴线**两两求交**（spec §6 的第四档，S1 里没有轴网实体时的唯一读法）。
+ *
+ * 四条规则，每条各挡一处：
+ * ① **无限直线**求交而不是线段：线段交点 = "墙已经十字相交"，那里本来就有靶子（垂足档覆盖它）；
+ *   这一档给的新东西恰恰是**轴延长线上**的交点 —— 让新墙与两面还没碰上的老墙同时对齐。
+ *   共线与近平行由 core 的 `intersectLines` 返回 null 挡掉（`PARALLEL_EPS = 1e-9` 相对容差）。
+ * ② **量化后去重**：三条共线横墙 × 一条竖墙 = 三枚同一坐标的候选。不去重，`--draw-shot` 里
+ *   "吸上了哪一档"的判据就取决于枚举顺序而不是几何，而表长度也变成实现细节的读数。
+ * ③ **与已有真源点/中点同坐标的交点不入表**：那一处已经有更高优先档的候选（端点 0 / 中点 1
+ *   都压过本档的 3），留两枚只会被 `takeBest` 立刻丢掉 —— 清掉它，表才是"这一档独有的靶子"。
+ * ④ `ownerId` 取该对中**id 较小**的那面墙：`axes` 来自 `byKind('wall')`（已按 id 升序），
+ *   所以先扫到的那面恒为较小者，不需要再比一次。它只用于并列破序，不给语义。
+ *
+ * **代价**：表长度是 O(墙数²)。样例房一层 8 面墙 → 28 对，但交点档进表 **0** 枚（9 枚格点全被端点/中点占了）；
+ *   30 横 × 31 竖 = 61 面墙的完整格网 → 1830 对、进表 784 枚，建一次场跑 200 次实测 0.21~0.25ms
+ *   （两次独立跑：0.212~0.231 与 0.233~0.254，取中位数那一段）。场只在按下时建一次、`pointermove` 只读，
+ *   所以这笔落在"按下那一发"上，不落在每帧上。近于平行的两轴会给出极远的交点：它进表，
+ *   但 `takeBest` 的 `SNAP_TOL_PX` 天然把它挡在候选之外 —— 除非用户真的把光标停在那一小格里，
+ *   而那一格的几何是**确定**的（同一个文档算同一个数），不是噪声。
+ */
+function axisCrossPoints(
+  axes: readonly SnapAxis[],
+  existing: readonly SnapPoint[],
+): SnapPoint[] {
+  const taken = new Set(existing.map((p) => `${p.mm.x},${p.mm.y}`));
+  const out: SnapPoint[] = [];
+  for (let i = 0; i < axes.length; i += 1) {
+    const a = axes[i]!;
+    for (let j = i + 1; j < axes.length; j += 1) {
+      const b = axes[j]!;
+      const hit = intersectLines(
+        vec(a.startMm.x, a.startMm.y),
+        a.dir,
+        vec(b.startMm.x, b.startMm.y),
+        b.dir,
+      );
+      if (hit === null) continue;
+      const mm = quantizeTarget(hit);
+      const key = `${mm.x},${mm.y}`;
+      if (taken.has(key)) continue;
+      taken.add(key);
+      out.push({ kind: 'axisCross', mm, pointId: null, ownerId: a.ownerId });
+    }
+  }
+  return out;
 }
 
 /** 取最优的内部形状 = `SnapResult` + `ownerId`：并列破序要用，但它不属于对外的落点结论。 */

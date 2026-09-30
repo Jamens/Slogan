@@ -223,7 +223,8 @@ export interface DeletePlan {
  *
  * **屏幕上今天还点不到柱与板**：`buildDrawList` 的指令表与 `pickAt` 的命中集都只认墙与洞口，
  * 所以 ③④ 两支的凭据只能是合成夹具（手工把柱/板的 id 放进选中集）。不许为了在屏幕上"证明它"
- * 就把柱画进指令表 —— 那是 Task 9 / 计划 4 的边界，混进来会让 `--draw-shot` 那 28 行像素判据全数重测。
+ * 就把柱画进指令表 —— 那是**计划 4** 的边界（Task 9 只把柱心/板角喂进**吸附场**，指令表与命中集一行未动），
+ * 混进来会让 `--draw-shot` 那 28 行像素判据全数重测。
  */
 export function planDelete(
   doc: Document,

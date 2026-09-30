@@ -4,11 +4,14 @@ import {
   Document,
   TransactionLog,
   advance,
+  columnCreate,
+  intersectLines,
   isExistingPoint,
   length,
   quantizeMm,
   requirePoint,
   resolvePointRef,
+  slabCreate,
   storeyCreate,
   uuidv7,
   vec,
@@ -82,8 +85,9 @@ const QUANT_SLACK_MM = 0.75;
 /**
  * 「这一对毫米是不是**这一档的候选**」—— 只按档位的几何定义判，入参一律来自 `field` 那张表与锚点，
  * **不调** `snapFromCursor` / `dropTargetOf`（拿结论证结论就是恒真）。
- * 五档各判各的：端点档复用真源那枚点 ⇒ 坐标与表里那条逐字相同；中点档同理；垂足档必须在某条轴线
- * **那一段**里；正交档**钉坐标**（某一根必须等于锚点那一根）；15° 档绕锚点**保距旋转**，
+ * 六档各判各的：端点档复用真源那枚点 ⇒ 坐标与表里那条逐字相同；中点档同理；垂足档必须在某条轴线
+ * **那一段**里；交点档（Task 9）建场时已量化进表 ⇒ 落点必须逐字等于表里那一枚；正交档**钉坐标**
+ * （某一根必须等于锚点那一根）；15° 档绕锚点**保距旋转**，
  * 于是落点到某条 15° 射线的垂距与半径差都只剩量化那一格。
  */
 function isCandidateForSnap(
@@ -110,6 +114,10 @@ function isCandidateForSnap(
           across <= QUANT_SLACK_MM && along >= -QUANT_SLACK_MM && along <= a.lengthMm + QUANT_SLACK_MM
         );
       });
+    case 'axisCross':
+      // 交点档的候选在建场时已经量化进表，所以这一档判的是"落点逐字等于表里那一枚"，
+      // 没有浮点余量可谈（现算第二遍就是 R9 那条纪律的反面）。
+      return fd.points.some((p) => p.kind === 'axisCross' && p.mm.x === mm.x && p.mm.y === mm.y);
     case 'ortho':
       return mm.x === anchor.x || mm.y === anchor.y;
     case 'angle15': {
@@ -631,5 +639,313 @@ describe('落点出口与复用引用', () => {
       }),
       { numRuns: 200 },
     );
+  });
+});
+
+/** 交点档的表内容按坐标列出来（排序后比：`byKind` 的 id 序随 uuidv7 漂，数组序不是判据）。 */
+function crossKeys(fd: SnapField): string[] {
+  return fd.points.filter((p) => p.kind === 'axisCross').map((p) => `${p.mm.x},${p.mm.y}`).sort();
+}
+
+describe('Task 9 轴网交点档', () => {
+  /**
+   * 两面对不上头的墙：A 沿 y=0 走到 x=4000 就完了，B 沿 x=6000 从 y=2000 才开始。
+   * 它们的**轴延长线**交于 (6000, 0) —— 那一处既不是任何墙的端点也不是中点，
+   * 所以表里若有它，只能是求交档给的。
+   */
+  function twoDetached(): { log: TransactionLog; storeyId: string; fd: SnapField } {
+    const { log, storeyId } = synthStorey();
+    wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    wallAt(log, storeyId, { x: 6000, y: 2000 }, { x: 6000, y: 5000 });
+    return { log, storeyId, fd: snapFieldOf(log.document, storeyId) };
+  }
+
+  it('两墙不相接、轴延长线上相交 ⇒ 交点档给得出唯一靶子，且它是新建点不是复用', () => {
+    const { log, fd } = twoDetached();
+    expect(crossKeys(fd)).toEqual(['6000,0']);
+    // 素材自证：这一处确实"不是既有靶子" —— 两墙各自的端点与中点四条坐标全不在此
+    expect(kindsAt(fd, 6000, 0)).toEqual(['axisCross']);
+    const cross = fd.points.find((p) => p.kind === 'axisCross')!;
+    expect(cross.pointId).toBeNull(); // 交点背后没有真源点：谈不到复用
+    const wallIds = new Set(log.document.byKind('wall').map((w) => w.id));
+    expect(wallIds.has(cross.ownerId)).toBe(true); // ownerId 只是并列破序的把手，但必须是本层的墙
+    // 光标停在交点上方 60mm（0.125px/mm ⇒ 7.5px，容差之内）：两墙的垂足都被墙端夹掉，只剩这一档
+    const snap = snapFromCursor(view, mmToPx(view, vec(6000, 60)), { x: 6000, y: 60 }, null, fd);
+    expect(snap?.kind).toBe('axisCross');
+    expect(snap?.mm).toEqual({ x: 6000, y: 0 });
+    expect(snap?.distPx).toBeCloseTo(7.5, 6);
+    // 再退 30mm 就出容差（11.25px）⇒ 整档没有候选，落点退回裸毫米
+    expect(
+      snapFromCursor(view, mmToPx(view, vec(6000, 90)), { x: 6000, y: 90 }, null, fd),
+    ).toBeNull();
+  });
+
+  it('样例房一枚交点档独有的靶子都没有：15 对轴求出的 9 枚格点逐枚落在既有端点或中点上', () => {
+    // 这一条是"`--draw-shot` / `--edit-shot` 的字面量不必重测"的**凭据**，不是顺手写的安慰剂：
+    // 样例房是 3 横（y=0/3000/6000）× 3 竖（x=0/4000/8000）的完整格网，9 个格点全部已经被
+    // 端点（8 枚）或中点（西/北/东三墙的中点正好是 (0,3000)/(4000,6000)/(8000,3000)）占住。
+    expect(crossKeys(field)).toEqual([]);
+    expect(field.axes).toHaveLength(8);
+    // 素材自证：不是"求交没跑"。拿 core 的原始助手独立算一遍九枚，逐枚问静态表里有没有更高档。
+    let pairs = 0;
+    for (let i = 0; i < field.axes.length; i += 1) {
+      for (let j = i + 1; j < field.axes.length; j += 1) {
+        const a = field.axes[i]!;
+        const b = field.axes[j]!;
+        const hit = intersectLines(vec(a.startMm.x, a.startMm.y), a.dir, vec(b.startMm.x, b.startMm.y), b.dir);
+        if (hit === null) continue;
+        pairs += 1;
+        const mm = { x: quantizeMm(hit.x), y: quantizeMm(hit.y) };
+        const kinds = kindsAt(field, mm.x, mm.y);
+        expect(
+          kinds.includes('endpoint') || kinds.includes('midpoint'),
+          `交点 ${mm.x},${mm.y} 既不是端点也不是中点，却不在交点档表里`,
+        ).toBe(true);
+      }
+    }
+    expect(pairs).toBe(15); // 3 竖 × 5 横（y=0 与 y=3000 上各有两面共线墙）= 15 对垂直，去重后 9 个格点
+  });
+
+  it('平行与共线都不求交；共线的三段横轴对同一根竖轴只留一枚交点', () => {
+    const { log, storeyId } = synthStorey();
+    // 三段**共线但不相接**的横墙（同一条几何线 y=0）+ 一面平行横墙
+    wallAt(log, storeyId, { x: 0, y: 0 }, { x: 2000, y: 0 });
+    wallAt(log, storeyId, { x: 3000, y: 0 }, { x: 4000, y: 0 });
+    wallAt(log, storeyId, { x: 6000, y: 0 }, { x: 8000, y: 0 });
+    expect(crossKeys(snapFieldOf(log.document, storeyId))).toEqual([]); // 共线 = 平行：三对全不求交
+    wallAt(log, storeyId, { x: 0, y: 2000 }, { x: 8000, y: 2000 });
+    expect(crossKeys(snapFieldOf(log.document, storeyId))).toEqual([]); // 不同线的平行也一样
+    // 竖轴来了：与 y=0 那三条共线轴各交一次，**同一个坐标** ⇒ 表里只许有一枚
+    wallAt(log, storeyId, { x: 5000, y: -2000 }, { x: 5000, y: 4000 });
+    const fd = snapFieldOf(log.document, storeyId);
+    expect(crossKeys(fd)).toEqual(['5000,0', '5000,2000']);
+    // 素材自证：这两处都不在端点/中点上（六段墙的端点与中点逐枚不在此），所以不是被去重挡掉的
+    expect(kindsAt(fd, 5000, 0)).toEqual(['axisCross']);
+    expect(kindsAt(fd, 5000, 2000)).toEqual(['axisCross']);
+  });
+
+  it('交点与既有端点同坐标 ⇒ 不重复入表：那一处该以真源点身份被吸到，好让接头闭合', () => {
+    const { log, storeyId } = synthStorey();
+    const a = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    // L 角：第二面墙**引**第一面的 endId ⇒ 两轴的交点恰好就是那枚共享点
+    wallAt(log, storeyId, { pointId: a.endId }, { x: 4000, y: 3000 });
+    const fd = snapFieldOf(log.document, storeyId);
+    expect(fd.axes).toHaveLength(2);
+    // 独立算一遍：两轴确实交于 (4000,0)，而那一处表里已经有端点了
+    const hit = intersectLines(vec(0, 0), vec(1, 0), vec(4000, 0), vec(0, 1));
+    expect(hit).not.toBeNull();
+    expect(kindsAt(fd, 4000, 0)).toEqual(['endpoint']);
+    expect(crossKeys(fd)).toEqual([]);
+    // 判据的另一半：吸上去复用的是**墙的那枚点**，不是"另建一枚同坐标的点"
+    const snap = snapFromCursor(view, pxOf({ x: 4000, y: 0 }, view), { x: 4000, y: 0 }, null, fd);
+    expect(snap?.kind).toBe('endpoint');
+    expect(snap?.pointId).toBe(a.endId);
+  });
+
+  it('垂足档压过交点档：三轴共点且其中一轴的墙段真的穿过该点 ⇒ 赢的是 foot', () => {
+    const { log, storeyId } = synthStorey();
+    wallAt(log, storeyId, { x: 0, y: 0 }, { x: 8000, y: 0 });
+    wallAt(log, storeyId, { x: 3000, y: -1000 }, { x: 3000, y: 3000 });
+    const fd = snapFieldOf(log.document, storeyId);
+    // (3000,0) 在两墙的**线段内部** ⇒ 那一处同时是两枚垂足候选与一枚交点候选
+    expect(crossKeys(fd)).toEqual(['3000,0']);
+    const cursor = pxOf({ x: 3000, y: 0 }, view);
+    const first = snapFromCursor(view, cursor, { x: 3000, y: 0 }, null, fd);
+    expect(first?.kind).toBe('foot'); // PRIORITY：foot 2 < axisCross 3，距离并列时档位说话
+    expect(first?.mm).toEqual({ x: 3000, y: 0 });
+    expect(first?.pointId).toBeNull();
+    // 倒过来扫一遍还是同一个答案：并列判据（档位 → ownerId）是全序，不靠扫描顺序
+    expect(snapFromCursor(view, cursor, { x: 3000, y: 0 }, null, reversed(fd))).toEqual(first);
+  });
+
+  it('属性：交点档命中时恒整数毫米、恒不给 pointId、恒在容差内，且答案恒来自表里那一枚', () => {
+    // 跑在**有交点**的场上：上面那条全场属性跑的是样例房，而样例房一枚交点都没有 ⇒ 对它 vacuous。
+    const fd = twoDetached().fd;
+    expect(crossKeys(fd)).toEqual(['6000,0']);
+    fc.assert(
+      fc.property(
+        fc.record({
+          x: fc.integer({ min: 4000, max: 8000 }),
+          y: fc.integer({ min: -2000, max: 4000 }),
+          dx: fc.double({ min: -20, max: 20, noNaN: true }),
+          dy: fc.double({ min: -20, max: 20, noNaN: true }),
+        }),
+        ({ x, y, dx, dy }) => {
+          const base = pxOf({ x, y }, view);
+          const drop = dropTargetOf(view, { x: base.x + dx, y: base.y + dy }, null, fd);
+          expect(Number.isInteger(drop.mm.x) && Number.isInteger(drop.mm.y)).toBe(true);
+          if (drop.snap?.kind !== 'axisCross') return;
+          expect(drop.snap.pointId).toBeNull();
+          expect(drop.snap.distPx).toBeLessThanOrEqual(SNAP_TOL_PX);
+          // 落点恒等于表里那一枚：现算出来的交点档 candidate 不许在 `snapFromCursor` 里被重算一遍
+          expect(crossKeys(fd)).toContain(`${drop.mm.x},${drop.mm.y}`);
+        },
+      ),
+      { numRuns: 400 },
+    );
+  });
+});
+
+describe('Task 9 柱心与板角进表', () => {
+  function synth(): { log: TransactionLog; storeyId: string; projectId: string } {
+    const projectId = uuidv7();
+    const log = new TransactionLog(Document.create(projectId));
+    log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+    let storeyId = '';
+    for (const id of log.affected) {
+      if (log.document.get(id)?.kind === 'storey') storeyId = id;
+    }
+    if (storeyId === '') throw new TypeError('affected 里没有新建的楼层');
+    return { log, storeyId, projectId };
+  }
+
+  function columnAt(log: TransactionLog, storeyId: string, at: PointRef): string {
+    log.dispatch(columnCreate({ storeyId, at, widthMm: 400, depthMm: 400, heightMm: 3000 }));
+    for (const id of log.affected) {
+      const entity = log.document.get(id);
+      if (entity?.kind === 'column') return entity.pointId;
+    }
+    throw new TypeError('affected 里没有新建的柱');
+  }
+
+  function slabAt(log: TransactionLog, storeyId: string, boundary: PointRef[]): string[] {
+    log.dispatch(slabCreate({ storeyId, boundary, thicknessMm: 120 }));
+    for (const id of log.affected) {
+      const entity = log.document.get(id);
+      if (entity?.kind === 'slab') return entity.boundaryPointIds;
+    }
+    throw new TypeError('affected 里没有新建的板');
+  }
+
+  it('柱心在表里：吸上去复用柱引用的那枚点', () => {
+    const { log, storeyId } = synth();
+    const pointId = columnAt(log, storeyId, { x: 1000, y: 1000 });
+    const fd = snapFieldOf(log.document, storeyId);
+    expect(kindsAt(fd, 1000, 1000)).toEqual(['endpoint']); // 柱心走的是端点档，不是新立一档
+    const hit = fd.points.find((p) => p.mm.x === 1000 && p.mm.y === 1000)!;
+    expect(hit.pointId).toBe(pointId);
+    const snap = snapFromCursor(view, pxOf({ x: 1000, y: 1000 }, view), { x: 1000, y: 1000 }, null, fd);
+    expect(snap?.kind).toBe('endpoint');
+    expect(snap?.pointId).toBe(pointId);
+    expect(pointRefOf(snap!.mm, snap)).toEqual({ pointId }); // 复用真源点，接头才闭合
+  });
+
+  it('板角四枚全在表里，逐枚 pointId 指向真源那个顶点', () => {
+    const { log, storeyId } = synth();
+    const ids = slabAt(log, storeyId, [
+      { x: 0, y: 0 },
+      { x: 4000, y: 0 },
+      { x: 4000, y: 3000 },
+      { x: 0, y: 3000 },
+    ]);
+    const fd = snapFieldOf(log.document, storeyId);
+    const eps = fd.points.filter((p) => p.kind === 'endpoint');
+    expect(eps).toHaveLength(4); // 板的四个顶点，一枚不多一枚不少
+    expect(new Set(eps.map((p) => p.pointId))).toEqual(new Set(ids));
+    for (const p of eps) {
+      const point = requirePoint(log.document, p.pointId as string, '板角');
+      expect(p.mm).toEqual({ x: point.x, y: point.y });
+      expect(p.ownerId).toBe(eps[0]!.ownerId); // ownerId 是**板**，不是某面墙（这里根本没有墙）
+    }
+    expect(log.document.byKind('wall')).toHaveLength(0); // 素材自证：四枚候选全是板的功劳
+  });
+
+  it('柱引既有墙端点 ⇒ 那一枚仍只有一份候选（去重跨三类共用）', () => {
+    const { log, storeyId } = synth();
+    const wall = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    const pointId = columnAt(log, storeyId, { pointId: wall.endId });
+    const fd = snapFieldOf(log.document, storeyId);
+    expect(kindsAt(fd, 4000, 0)).toEqual(['endpoint']);
+    const at = fd.points.filter((p) => p.mm.x === 4000 && p.mm.y === 0);
+    expect(at).toHaveLength(1);
+    expect(at[0]!.pointId).toBe(pointId); // 与墙共用同一枚点 ⇒ 去重前后是同一枚
+    expect(at[0]!.ownerId).toBe(wall.id); // 先扫到的墙赢：ownerId 只用于并列破序，不给语义
+  });
+
+  it('柱用坐标字面量落在墙端点上 ⇒ 墙的那枚点赢，孤儿点抢不走（去重键是坐标而不是 id）', () => {
+    const { log, storeyId } = synth();
+    const wall = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    // `resolvePointRef` 对字面量恒返回 null ⇒ 柱拿到一枚**自己的**点，坐标与墙的 endId 逐字相同
+    const orphanId = columnAt(log, storeyId, { x: 4000, y: 0 });
+    expect(orphanId).not.toBe(wall.endId);
+    const fd = snapFieldOf(log.document, storeyId);
+    const at = fd.points.filter((p) => p.mm.x === 4000 && p.mm.y === 0);
+    expect(at).toHaveLength(1); // 按 pointId 去重的写法会在这里留下两枚，赢家随 uuidv7 漂
+    expect(at[0]!.pointId).toBe(wall.endId); // 恒取墙的点：复用它才接得上头
+    const snap = snapFromCursor(view, pxOf({ x: 4000, y: 0 }, view), { x: 4000, y: 0 }, null, fd);
+    expect(snap?.pointId).toBe(wall.endId);
+  });
+
+  it('别层的柱与板一枚都不进本层表（上下层同位置是建筑常态，不是边角）', () => {
+    const { log, storeyId, projectId } = synth();
+    log.dispatch(storeyCreate({ projectId, index: 1, elevationMm: 3000, heightMm: 3000 }));
+    let upperId = '';
+    for (const id of log.affected) {
+      if (log.document.get(id)?.kind === 'storey' && id !== storeyId) upperId = id;
+    }
+    if (upperId === '') throw new TypeError('第二层没建出来');
+    columnAt(log, upperId, { x: 1000, y: 1000 }); // 与下面那枚同坐标，只差一层
+    slabAt(log, upperId, [
+      { x: 0, y: 0 },
+      { x: 2000, y: 0 },
+      { x: 2000, y: 2000 },
+    ]);
+    columnAt(log, storeyId, { x: 1000, y: 1000 });
+    const fd = snapFieldOf(log.document, storeyId);
+    const upper = snapFieldOf(log.document, upperId);
+    const lowerIds = new Set(fd.points.map((p) => p.pointId).filter((id): id is string => id !== null));
+    const upperIds = new Set(upper.points.map((p) => p.pointId).filter((id): id is string => id !== null));
+    expect(upperIds.size).toBeGreaterThan(lowerIds.size); // 素材自证：别层自己有东西可漏
+    for (const id of lowerIds) expect(upperIds.has(id)).toBe(false);
+    const upperOwners = new Set<string>([
+      ...log.document.byKind('column').filter((c) => c.storeyId === upperId).map((c) => c.id),
+      ...log.document.byKind('slab').filter((s) => s.storeyId === upperId).map((s) => s.id),
+    ]);
+    expect(upperOwners).toHaveLength(2); // 素材自证：别层确实进来了一柱一板
+    for (const p of fd.points) expect(upperOwners.has(p.ownerId)).toBe(false);
+    // 同坐标不等于同一点：本层那一枚必须还在，且它是本层柱的点
+    const at = fd.points.filter((p) => p.mm.x === 1000 && p.mm.y === 1000);
+    expect(at).toHaveLength(1);
+    expect(requirePoint(log.document, at[0]!.pointId as string, '本层柱心').storeyId).toBe(storeyId);
+  });
+
+  it('端点集 = 本层墙端点 ∪ 柱心 ∪ 板角 的坐标去重集（全量对账，多一枚少一枚都红）', () => {
+    const { log, storeyId } = synth();
+    const w1 = wallAt(log, storeyId, { x: 0, y: 0 }, { x: 4000, y: 0 });
+    wallAt(log, storeyId, { pointId: w1.endId }, { x: 4000, y: 3000 });
+    const columnPointId = columnAt(log, storeyId, { x: 800, y: 800 });
+    // 矩形往左上方去，只与 w1 共用 (0,0) 那一枚点：四个顶点里没有三个共线，`assertSimpleRing` 收得下
+    const slabIds = slabAt(log, storeyId, [
+      { pointId: w1.startId },
+      { x: -2000, y: 0 },
+      { x: -2000, y: 2000 },
+      { x: 0, y: 2000 },
+    ]);
+    const fd = snapFieldOf(log.document, storeyId);
+    const eps = fd.points.filter((p) => p.kind === 'endpoint');
+    // 期望的坐标集：墙 (0,0)(4000,0)(4000,3000) + 柱 (800,800) + 板角 (0,0)(-2000,0)(-2000,2000)(0,2000)
+    // 去重后 7 枚 —— 板与墙共用的那枚 (0,0) 只算一次（键是坐标）。
+    const expected = new Set([
+      '0,0',
+      '4000,0',
+      '4000,3000',
+      '800,800',
+      '-2000,0',
+      '-2000,2000',
+      '0,2000',
+    ]);
+    expect(new Set(eps.map((p) => `${p.mm.x},${p.mm.y}`))).toEqual(expected);
+    expect(eps).toHaveLength(expected.size);
+    expect(eps.map((p) => p.pointId)).toContain(columnPointId); // 柱心那一枚的 id 真的进了表
+    // 每一枚的 pointId 都必须是真的、属于本层的点
+    for (const p of eps) {
+      const point = requirePoint(log.document, p.pointId as string, '端点集对账');
+      expect(point.storeyId).toBe(storeyId);
+    }
+    // 中点每面墙一枚；交点档在这一格里也没有新增靶子：唯一的轴对 (w1,w2) 交于 (4000,0)，
+    // 那里已经有墙端点 ⇒ 被规则 ③ 挡掉（板角不是轴，不参与求交）。
+    expect(fd.points.filter((p) => p.kind === 'midpoint')).toHaveLength(2);
+    expect(crossKeys(fd)).toEqual([]);
+    expect(slabIds).toHaveLength(4);
   });
 });
