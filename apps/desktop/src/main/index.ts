@@ -142,7 +142,11 @@ async function waitUntil<T>(label: string, probe: () => Promise<T>, done: (value
 }
 
 async function readReport(win: BrowserWindow): Promise<ReportShape> {
-  return (await win.webContents.executeJavaScript('window.__dajiaDebug()')) as ReportShape;
+  const raw = await win.webContents.executeJavaScript('window.__dajiaDebug()');
+  if (raw === undefined) {
+    throw new Error('renderer 的 window.__dajiaDebug() 没给出报告（渲染通路在报告之前崩了）');
+  }
+  return raw as ReportShape;
 }
 
 /**
