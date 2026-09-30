@@ -91,6 +91,9 @@ describe('绘制指令表', () => {
     expect(new Set(openingOps.map((o) => o.ownerId))).toEqual(openingIds);
     expect(openingOps.filter((o) => o.pen.lineType === 'solid')).toHaveLength(8);
     expect(openingOps.filter((o) => o.pen.lineType === 'dashed')).toHaveLength(2);
+    // opening===10 的结构字面量锚：与 `scripts/desktop-shot.mjs:89-92` 同一笔账
+    // （四条锚的完整说明见「指令按层序出」那条用例末尾的注释）。
+    expect(openingOps).toHaveLength(10);
   });
 
   it('每条指令的 ownerId 只能是本层的实体或 null', () => {
@@ -135,6 +138,12 @@ describe('绘制指令表', () => {
     // byKind(...).at(-1) 无关 —— 那条禁的是靠 uuid 序猜"刚创建的那个实体"。
     expect(ops[ops.length - 1]!.pen.layer).toBe('annotation');
     expect(ops.filter((o) => o.pen.layer === 'annotation')).toHaveLength(1);
+    // ↓ 结构字面量锚 ops 31 / structure 20 / annotation 1：与 `scripts/desktop-shot.mjs:89-92`
+    //   那四行写死的常数是**同一笔账** —— 改样例房（`demo.ts`）必须同一次 diff 里两处一起改。
+    //   本仓其余判据一律保持关系式（"等于 `geo.walls.length`"那种），不许把它们也改成硬数。
+    //   annotation===1 那条锚就是上面那句 `toHaveLength(1)`，四条锚里已含它。
+    expect(ops.length).toBe(31);
+    expect(ops.filter((o) => o.pen.layer === 'structure')).toHaveLength(20);
   });
 
   it('空层给空表：没有墙就没有任何指令', () => {
