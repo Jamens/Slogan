@@ -10,6 +10,7 @@ import {
 import {
   buildDrawList,
   demoHouse,
+  DRAW_LAYERS,
   EMPTY_SELECTION,
   fitStorey,
   fitViewport,
@@ -48,7 +49,8 @@ const allPx = (ops: DrawOp[]): number[] =>
 const ptsOf = (o: DrawOp): readonly Px[] =>
   o.kind === 'polygon' ? o.pts : o.kind === 'line' ? [o.from, o.to] : [o.at];
 
-const layerRank = (l: DrawLayer) => ['structure', 'opening', 'annotation'].indexOf(l);
+// 层序从 DRAW_LAYERS 读（drawlist.ts 声明的唯一真源），不在测试里重抄一遍层表
+const layerRank = (l: DrawLayer) => DRAW_LAYERS.indexOf(l);
 
 describe('绘制指令表', () => {
   it('一面墙一个轮廓多边形，四角，层是 structure', () => {
