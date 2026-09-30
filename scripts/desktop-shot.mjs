@@ -114,7 +114,7 @@ try {
   }
   if (wantEdit) {
     // 前六条与 drawlist.test.ts 同源（拖动改的是坐标不是指令数，所以 `ops === 31` 在 edit 模式下
-    // 仍是回归判据）；这十四条与 handles.test.ts + commands-drag.test.ts 同源，
+    // 仍是回归判据）；这十六条与 handles.test.ts + commands-drag.test.ts 同源，
     // 但只测它们管不到的那一层：真窗口里"发的像素 → 真源的毫米 → 撤销栈"。
     checks.push(
       ['探针给出可拖的共享端点（孤端点证不出邻墙）', typeof edit.wallId === 'string' && edit.sharedBy >= 2],
@@ -157,7 +157,8 @@ try {
       // S3 那句"画 4000 的水平墙必须是 ortho"由 snapping.test.ts 的档位互斥用例负责，那一份是确定性的。
       // distPx 的 0 订正为 ≤1.5（D2a 实测）：S8 ① 那句"十发 distPx 逐字为 0"量在 8mm=1px 的二进制对齐格点上
       // （pxPerMm=0.125）；真窗口 Task 8 布局之后是 `fitStorey(1167×833, 60)`，四个进程实测
-      // `pxPerMm = 0.114`（draw 报告的 `starPxPerMm`）与 `endSnapDistPx = 0.5007` —— 落在这把尺子的
+      // `pxPerMm = 0.114`（main 第 16 步现算的探针比例，终审 B2 P2-6 起不再以 `starPxPerMm` 写进报告——
+      // 那格只写不读，删了）与 `endSnapDistPx = 0.5007`（这一格有读者：下面 D4 判据正拿它对账）—— 落在这把尺子的
       // √2 上界之内，且 0.5px 那一发正是"整数毫米落不到整数像素"的往返残差本体。整数毫米落不到整数像素上，
       // `intPx → pxToMm → quantize → mmToPx` 的往返残差按构造 ≤1px/轴（√2≈1.42）。"零位移"的毫米侧对账
       // 由第 3 步与 D12 的 `end.mm === probe.endMm` **逐字相等**钉着；这一行只钉"方向档不把落点拽离光标一像素以上"

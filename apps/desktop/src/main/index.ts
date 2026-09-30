@@ -390,7 +390,7 @@ function mmOf(report: EditReportShape, pointId: string, label: string): MmShape 
  * 拖拽三件套：探针点的是**画布 px**，sendInputEvent 吃**页面 px**，差一个实测的画布原点。
  * 这里显式加回 origin（与 clickCanvasPx 同一口径），不假定两套空间重合 —— Task 8 的三格布局已落地、
  * 原点是实测的 (0,32)，换算吃的就是报告里那份实测 `canvasOriginPx`；"前提成立"
- * 由 --edit-shot 的 origin PASS 行断言。这不是模型几何（角点/沿墙偏移一律没碰），是回读通道对齐。
+ * 由 --pick-shot / --prop-shot 的 origin PASS 行断言（edit 段没有 origin 判据行）。这不是模型几何（角点/沿墙偏移一律没碰），是回读通道对齐。
  */
 async function pressPx(win: BrowserWindow, p: ClickPoint, origin: ViewportPx): Promise<void> {
   win.webContents.sendInputEvent({
@@ -1560,7 +1560,6 @@ async function runDrawShot(win: BrowserWindow, out: string): Promise<void> {
     //   哪一发的吸附变了，`starPrep*` 与 `star*` 这两组就能一眼指出是预备墙还是斜臂。
     starEdgeMm: STAR_EDGE_MM,
     starEdgePx,
-    starPxPerMm: pxPerMm,
     starPressPx: cornerPx,
     starEastPx: eastPx,
     starSouthPx: southPx,

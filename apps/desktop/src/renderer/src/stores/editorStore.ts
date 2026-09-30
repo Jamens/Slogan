@@ -175,7 +175,8 @@ export const useEditor = create<EditorState>((set, get) => ({
   /**
    * 绘制那一趟的抛点记账：**只动 lastError，一个字的 revision 都不碰**（接口上那条注释是纪律原文）。
    * 文案沿用 `拖不动：` / `删不动：` 的同一口径 —— 屏幕上出现的中文报错只有一种形状，
-   * 判据（与以后 T7 的 `assertDerivesAfterApply`）才分得出"哪一路抛的"而不用读栈。
+   * 判据（与 T7 已落地的 `assertDerivesAfterApply`——见 `packages/core/src/commands/wall.ts`
+   * 里 `wallSetThickness.build` 末尾那一句）才分得出"哪一路抛的"而不用读栈。
    */
   reportPaintError: (err) => {
     set({ lastError: `画不出来：${String(err)}` });

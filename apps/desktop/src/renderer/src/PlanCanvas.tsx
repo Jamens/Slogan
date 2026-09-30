@@ -136,7 +136,7 @@ export interface DebugReport {
    * 画布原点在**页面/视口坐标空间**（CSS px，getBoundingClientRect 口径）的位置。
    * `pick` 与 `edit` 里的像素点是**画布坐标空间**；sendInputEvent 吃页面空间。两套空间
    * 差的就是这个值 —— 换算由 main 的 clickCanvasPx / 拖拽助手做，"它今天等于 (0, 32)"
-   * 由 --pick-shot / --edit-shot 的 origin PASS 行断言。32 那一格是 Task 8 的楼层 tab 栏
+   * 由 --pick-shot / --prop-shot 的 origin PASS 行断言（edit 与 draw 段零条 origin 判据行）。32 那一格是 Task 8 的楼层 tab 栏
    * （高度住在 `panels.tsx` 的 `STOREY_TAB_HEIGHT_PX`，与这里同一个数），不是 body margin。
    */
   canvasOriginPx: { x: number; y: number };
@@ -593,9 +593,10 @@ export function PlanCanvas(): React.JSX.Element {
     // 只有 `deriveStoreyGeometry` 一个产地，计划 8427/8474 那条禁令在这儿原样有效），
     // 只保证"派生层任何抛点都不会把 React 树卸掉"—— renderer 全仓没有 ErrorBoundary，
     // 一次裸抛的 `RangeError` 就是白屏 + `window.__dajiaDebug` 一起消失，后续判据全读不到东西。
-    // 真源的收口在 T7：`assertDerivesAfterApply` 挂上 `wallCreate.build` 之后，星形接头那一发
-    // 在 `dispatch` 就抛、被既有的 catch 记进 `lastError`、`outcome` 报 `failed`，
-    // 屏幕上根本不会留下这一发几何 —— 届时这一支 catch 退化成不会被走到的保险。
+    // T7 已落地（`assertDerivesAfterApply` 挂在 `wallCreate.build` 末尾）⇒ 星形接头那一发的真话是
+    // （`--draw-shot` D22，见 `desktop-shot.mjs` 那条判据）：屏幕侧 `legalAtMove` 判 false ⇒ 命令不发 ⇒
+    // `rejected`、`lastError` 恒空 —— 坏几何压根到不了这一支 catch。
+    // 所以这一支只是不会被走到的保险、不是判据。
     // 失败那一帧 `opsRef` / `fieldRef` / `handlesRef` 留的是**上一趟的好值**：`buildDrawList`
     // 在赋值之前抛 ⇒ 引用不会变成半成品（不为此加清理逻辑：清成空表等于让指针事件打空）。
     try {
