@@ -209,8 +209,13 @@ try {
     //   "点 tab / 点面板控件 → 屏幕上的读数 → 真源的账（depth）→ 重绘的账（revision）"。
     //   node 侧证得到 `wall.setMaterial` 不跑复核，证不到"画面上一个字都没变"（P13 那三处墨迹对账）；
     //   也证不到"`<select>` 的方向键真落到了焦点上"（P12 那一发只按了一次，blur 掉焦点时它是 0 发）。
-    // 写死的字面量全是 2026-09-30 首跑实测回填：depth 基线 30、revision 0 → 1 → 2 → 3、8 枚点、
-    //   选中那份墨迹 30744、opening 层 10 → 8 → 10、材料 1 发方向键、撤销 2 发
+    // 写死的字面量全是实测回填，且**只在靶子定序之后才算有产地**：`propProbe` 原先按 `byKind`
+    //   的 id 升序挑第一面过筛的墙，而样例房的 id 每次现建（uuidv7 同毫秒不保证单调）⇒ 2026-10-01
+    //   盘上 13 发实测 11 发挑中右墙 (1027,416)、2 发挑中上墙 (584,87)，红的偏偏是吃"哪面墙"的
+    //   P7 与 P20 两格。改成按轴线端点毫米定序（`handles.ts` 的 `wallCornerKey`）以后，靶子恒为
+    //   左墙 (113,416)：连续 7 发 `--prop-shot` 的 clickPx / openingPx / 墨迹 / 级联逐字相同。
+    //   数值：depth 基线 30、revision 0 → 1 → 2 → 3、8 枚点、选中那份墨迹 30742、
+    //   opening 层 10 → 7 → 10、材料 1 发方向键、撤销 2 发
     //   （计划原文写"Ctrl+Z 三次"，实测是"材料发数 + 1"：第 5 步那发厚度在第 7 步已单独撤过）。
     //   改布局或改样例房要连同 main 的十六步一起重测三遍，别只调这里。
     checks.push(
@@ -241,8 +246,8 @@ try {
           report.wallIdDomAtSelect === prop.wallId &&
           report.heightDomAtSelect === String(report.panelPropsAtSelect?.heightMm) &&
           report.axisLenDomAtSelect === String(report.prop?.props?.axisLengthMm ?? '')],
-      ['P7 选中那一刻"画面确实变了、几何一个字没变"：墨迹实测 30744（终态 30671 是空面板那一份），ops 与三层计数逐字等于基线',
-        report.nonBlankAtSelect === 30744 && report.opsAtSelect === 31 &&
+      ['P7 选中那一刻"画面确实变了、几何一个字没变"：墨迹实测 30742（终态 30671 是空面板那一份），ops 与三层计数逐字等于基线',
+        report.nonBlankAtSelect === 30742 && report.opsAtSelect === 31 &&
           JSON.stringify(report.layersAtSelect) === JSON.stringify(report.layers)],
       ['P8 厚度框打 240.5 不回车：只问不写 —— 试跑 ok=false、真源中文「整数毫米」、depth 仍基线、真源厚度还是 240',
         report.trial4Kind === 'thickness' && report.trial4Input === '240.5' && report.trial4Ok === false &&
@@ -302,8 +307,8 @@ try {
           JSON.stringify(report.planDeletedIds) === JSON.stringify([prop.wallId]) && report.deletedCount === 1 &&
           report.unsupportedCount === 0 && report.selectionAfterDeleteCount === 0 && report.panelWallAfterDelete === null &&
           report.tabsCountAtDelete === 2],
-      ['P20 级联在屏幕上留痕（真源删的那一发，不在 plan 账上）：opening 层实测 10 → 8',
-        report.openingOpsBeforeDelete === 10 && report.openingOpsAfterDelete === 8 &&
+      ['P20 级联在屏幕上留痕（真源删的那一发，不在 plan 账上）：opening 层实测 10 → 7',
+        report.openingOpsBeforeDelete === 10 && report.openingOpsAfterDelete === 7 &&
           report.openingOpsVanishedOnDelete === true],
       ['P21 Ctrl+Z 撤销的是文档不是视图（D7）：opening 层回 10、指令表回 31、点逐字回第 3 步那份、选中仍为空',
         report.comboAfterUndoDelete === 'Ctrl+Z' && report.openingOpsAfterUndoDelete === 10 &&

@@ -931,6 +931,64 @@ function wallWithOpenings(
   return { doc: log.document, storeyId, wallId, openingIds };
 }
 
+/**
+ * 两面**都过六道筛**的平行墙（各带一樘点得中的窗），差别只在**建墙顺序**：
+ * `low-first` 先建 y=0 那面，`high-first` 先建 y=3000 那面，几何逐字相同。
+ *
+ * 为什么要造这一对：`uuidv7` 同毫秒内不保证单调（见 core/ids.ts 那句注释），而
+ * `doc.byKind('wall')` 是 id 升序 ⇒ 两面同毫秒建的墙谁排前面**随进程漂**。探针只要按
+ * "id 序里第一面过筛的墙"挑靶子，这两份同几何文档就会交出不同靶子 —— 那正是
+ * `--prop-shot` 两个写死字面量的随机红产地（2026-10-01 盘上 13 发实测：11 发挑中
+ * clickPx (1027,416) 那面、2 发挑中 (584,87) 那面，红的恰好是 P7 墨迹 30744↔30747 与
+ * P20 级联 opening 层 10→8↔10→7，其余 28 格两次都照绿；窗口几何 1167×833/pxPerMm/视口
+ * 原点在三发里完全一致，所以不是尺寸漂）。
+ */
+function twoParallelWalls(order: 'low-first' | 'high-first'): {
+  doc: Document;
+  storeyId: string;
+  lowWallId: string;
+} {
+  const projectId = uuidv7();
+  const log = new TransactionLog(Document.create(projectId));
+  log.dispatch(storeyCreate({ projectId, index: 0, elevationMm: 0, heightMm: 3000 }));
+  let storeyId = '';
+  for (const id of log.affected) {
+    if (log.document.get(id)?.kind === 'storey') storeyId = id;
+  }
+  if (storeyId === '') throw new TypeError('affected 里没有新建的楼层');
+  const drawWallWithWindow = (yMm: number): string => {
+    log.dispatch(
+      wallCreate({
+        storeyId,
+        start: { x: 0, y: yMm },
+        end: { x: 8000, y: yMm },
+        thicknessMm: 240,
+        heightMm: 3000,
+      }),
+    );
+    const wallId = createdWallOf(log).id;
+    log.dispatch(
+      openingCreate({
+        hostWallId: wallId,
+        distanceMm: 3000,
+        widthMm: 1500,
+        heightMm: 1500,
+        category: 'window',
+      }),
+    );
+    return wallId;
+  };
+  const created =
+    order === 'low-first'
+      ? [drawWallWithWindow(0), drawWallWithWindow(3000)]
+      : [drawWallWithWindow(3000), drawWallWithWindow(0)];
+  return {
+    doc: log.document,
+    storeyId,
+    lowWallId: order === 'low-first' ? created[0] : created[1],
+  };
+}
+
 describe('面板靶子探针 propProbe 与洞口像素 openingPickPx（Task 8 棒 E：--prop-shot 的靶子由 scene-2d 给）', () => {
   // 闸门那份视口：真窗口三格布局稳定后画布实测 1167×833（见 desktop-shot 的 D1 与 origin 那一行）。
   const gate = fitStorey(house.doc, house.lowerStoreyId, 1167, 833, 60);
@@ -1003,6 +1061,31 @@ describe('面板靶子探针 propProbe 与洞口像素 openingPickPx（Task 8 �
     expect(p).not.toBeNull();
     expect(p!.secondWallId).toBeNull();
     expect(p!.secondWallPx).toBeNull();
+  });
+
+  it('靶子由几何定序、不由 id 定序：同几何而建墙顺序相反的多份文档，挑中的必须是同一面墙', () => {
+    // 24 份而不是一份对打：同毫秒的 id 序是**随机**的，一份 `high-first` 文档约有对半概率
+    // 恰好也挑中低墙（那就测不出东西）。24 份交替建墙顺序 ⇒ 旧写法要全绿得连掷 12 次同一面。
+    const v = viewportOf(1000, 800, { pxPerMm: 0.2, center: vec(4000, 1500) });
+    const clicks: Px[] = [];
+    const openings: Px[] = [];
+    const seconds: Px[] = [];
+    for (let i = 0; i < 24; i++) {
+      const f = twoParallelWalls(i % 2 === 0 ? 'low-first' : 'high-first');
+      const p = propProbe(f.doc, f.storeyId, buildDrawList(f.doc, f.storeyId, v, EMPTY_SELECTION), v);
+      if (p === null) throw new TypeError(`第 ${String(i)} 份夹具交不出靶子：筛或视口坏了，不是定序问题`);
+      // 规则本身是任意的（这里定的是"轴线小角在前、先比 y 再比 x"），要的只是它**只由几何决定**。
+      expect(p.wallId).toBe(f.lowWallId);
+      clicks.push(p.clickPx);
+      openings.push(p.openingPx);
+      if (p.secondWallPx !== null) seconds.push(p.secondWallPx);
+    }
+    // 三发像素每发都必须逐字相同 —— `--prop-shot` 的 P7（选中那份墨迹）与 P20（删除级联的
+    // opening 层数）两个写死字面量，唯一的产地就是"每次挑中的是同一面墙"这句话。
+    for (const px of clicks) expect(px).toEqual(clicks[0]);
+    for (const px of openings) expect(px).toEqual(openings[0]);
+    expect(seconds.length).toBe(24);
+    for (const px of seconds) expect(px).toEqual(seconds[0]);
   });
 
   it('交出的那面墙一定改得动：三格候选都现问过真源，厚度取候选表里第一档改得动的', () => {

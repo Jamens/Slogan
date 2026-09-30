@@ -400,6 +400,32 @@ export interface PropProbe {
   readonly loadBearingTo: boolean;
 }
 
+/** 定序键：轴线两端点里**小角在前**（先比 y 再比 x），比完大角。四个数全等才算并列。 */
+type CornerKey = readonly [number, number, number, number];
+
+function compareCornerKeys(a: CornerKey, b: CornerKey): number {
+  return a[0] - b[0] || a[1] - b[1] || a[2] - b[2] || a[3] - b[3];
+}
+
+/**
+ * 靶子的定序口径：**几何**，不是 id。规则本身是任意的（这里定的是"轴线小角在前、先比 y 再比 x"），
+ * 要的只是它**只由文档几何决定** —— 与 id 无关（id 每次现建、同毫秒会漂），与窗口尺寸无关
+ * （比的是毫米，不过视口）。`propProbe` 的三条挑法（第一面全过的墙 / 它身上第一樘点得中的洞口 /
+ * 第二面墙）都走它；洞口那一条用 `distanceMm`，同一条轴上的先后。
+ */
+function wallCornerKey(
+  doc: Document,
+  wall: { readonly startId: EntityId; readonly endId: EntityId },
+): CornerKey {
+  const a = requirePoint(doc, wall.startId, '墙起点');
+  const b = requirePoint(doc, wall.endId, '墙终点');
+  // 小角放前面：两面墙反向画（A→B 与 B→A）几何上是同一条轴，定序不许因画法而异
+  const loFirst = a.y < b.y || (a.y === b.y && a.x <= b.x);
+  const lo = loFirst ? a : b;
+  const hi = loFirst ? b : a;
+  return [lo.y, lo.x, hi.y, hi.x];
+}
+
 /**
  * 找一发"值得在真窗口里改属性"的墙 —— `--prop-shot` 十六步的靶子，与 `dragProbe` / `wallProbe`
  * 同一条纪律：**主进程只读它，不猜坐标，也不猜哪面墙改得动**。
@@ -425,8 +451,14 @@ export interface PropProbe {
  * 六道筛之外还交一发**尽力**靶子（不是筛，挑不到不影响靶子成立）：本层另一面点得中、在画布内的
  * 墙 `secondWallPx`。第 11 步"再 shift 点一面墙 ⇒ 面板整块消失"要靠它，而主进程不许自己猜坐标。
  *
- * 谁被挑中由 uuidv7 每次现建的 id 定（`byKind` 是 id 升序），所以调用方与测试都**只判性质，
- * 不判具体 id**。返回 null 是合法结果（空层、没有带洞口的可改墙），闸门在那一步就抛。
+ * **谁被挑中由几何定序（`wallCornerKey`）定，不由 id 定。** 原先它吃的是 `byKind` 的 id 升序，
+ * 而样例房的 id 每次现建、`uuidv7` 同毫秒内不保证单调（见 core/ids.ts 那句注释）⇒ 同毫秒的两面
+ * 改得动的墙谁排前面随进程漂。2026-10-01 盘上 13 发 `--prop-shot` 实测 11 发挑中 clickPx
+ * (1027,416) 那面、2 发挑中 (584,87) 那面，窗口尺寸、pxPerMm 与视口原点三发逐字相同，红的偏偏是
+ * 吃"哪面墙"的两个写死字面量：P7（选中那份墨迹 30744↔30747）与 P20（删墙级联掉的 opening 条数
+ * 10→8↔10→7）。**判据要钉住一个数，产地必须先钉住一面墙。**
+ * 调用方与测试仍然只判性质、不判具体 id —— 性质多了一条：同几何换个建墙顺序，靶子不许变。
+ * 返回 null 是合法结果（空层、没有带洞口的可改墙），闸门在那一步就抛。
  */
 export function propProbe(
   doc: Document,
@@ -439,6 +471,15 @@ export function propProbe(
   const target = probeTarget(ops, v);
   if (target === null) return null;
   const blankPx = snapPx(target.blankPx);
+  // 筛 ①② 先把候选收齐，再**按几何定序**（见 `wallCornerKey`）：③④⑤⑥ 那四筛要在定序之后
+  // 逐面现问真源，顺序一旦来自 id，"第一面全过的墙"就随进程漂，闸门那两个写死字面量跟着随机红。
+  const hitWalls: {
+    readonly wallId: EntityId;
+    readonly startId: EntityId;
+    readonly endId: EntityId;
+    readonly clickPx: Px;
+    readonly props: WallProps;
+  }[] = [];
   for (const wall of doc.byKind('wall')) {
     if (wall.storeyId !== storeyId) continue;
     const props = wallPropsOf(doc, wall.id); // 筛 ①
@@ -447,53 +488,66 @@ export function propProbe(
     if (rawClick === null) continue;
     const clickPx = snapPx(rawClick);
     if (!insideCanvas(v, clickPx)) continue; // 筛 ② 之二
+    hitWalls.push({ wallId: wall.id, startId: wall.startId, endId: wall.endId, clickPx, props });
+  }
+  const ordered = hitWalls
+    .map((c) => ({ c, key: wallCornerKey(doc, c) }))
+    // 四个数全等 = 两面墙躺在同一条轴上（真实图纸不该有，但文档合法）。那时按 id 收尾只为
+    // "同一个文档里也确定" —— 它没有机会换靶子，所以闸门的字面量不受它影响。
+    .sort((a, b) => compareCornerKeys(a.key, b.key) || (a.c.wallId < b.c.wallId ? -1 : 1));
+
+  for (const { c } of ordered) {
+    const { wallId, clickPx, props } = c;
     const thicknessTo = PROP_THICKNESS_CANDIDATES.find(
       // 筛 ③：现问真源，不查表里的"应该能改"
       (cand) =>
         cand !== props.thicknessMm &&
-        trialCommand(doc, () => wallSetThickness({ wallId: wall.id, thicknessMm: cand })).ok,
+        trialCommand(doc, () => wallSetThickness({ wallId, thicknessMm: cand })).ok,
     );
     if (thicknessTo === undefined) continue;
     const materialTo = PANEL_MATERIAL_OPTIONS.find(
       (opt) =>
         opt.value !== props.material &&
-        trialCommand(doc, () => wallSetMaterial({ wallId: wall.id, material: opt.value })).ok,
+        trialCommand(doc, () => wallSetMaterial({ wallId, material: opt.value })).ok,
     )?.value; // 筛 ④
     if (materialTo === undefined) continue;
     const loadBearingTo = !props.loadBearing;
     if (
-      !trialCommand(doc, () => wallSetLoadBearing({ wallId: wall.id, loadBearing: loadBearingTo })).ok
+      !trialCommand(doc, () => wallSetLoadBearing({ wallId, loadBearing: loadBearingTo })).ok
     ) {
       continue; // 筛 ⑤
     }
+    // 筛 ⑥：宿主是这面墙的洞口，按 `distanceMm` 升序取第一樘点得中且在画布内的 ——
+    // 同一条纪律：一樘还是另一樘，别交给会漂的 id 序（两面墙各有一樘时这里换面墙就换了洞口）。
+    const hosted = doc
+      .byKind('opening')
+      .filter((opening) => opening.hostWallId === wallId)
+      .sort((a, b) => a.distanceMm - b.distanceMm || (a.id < b.id ? -1 : 1));
     let openingId: EntityId | null = null;
     let openingPx: Px | null = null;
-    for (const opening of doc.byKind('opening')) {
-      if (opening.hostWallId !== wall.id) continue;
+    for (const opening of hosted) {
       const px = openingPickPx(ops, opening.id);
       if (px === null || !insideCanvas(v, px)) continue;
       openingId = opening.id;
       openingPx = px;
       break;
     }
-    if (openingId === null || openingPx === null) continue; // 筛 ⑥
-    // 第二面墙（多选那一发的靶子）：只要求"本层、不是它自己、点得中、在画布内"。
+    if (openingId === null || openingPx === null) continue;
+    // 第二面墙（多选那一发的靶子）：只要求"本层、不是它自己、点得中、在画布内"（①②），
     // 不要求它改得动 —— 那一发判的是面板**消失**，与第二面墙的三格无关；挑不到就交 null，
     // 由闸门在那一步抛（单墙层是合法文档，不该让探针整体失能）。
+    // 复用同一张定序表 ⇒ 第二发也不随 id 漂。①（`wallPropsOf` 给得出读数）在这一发上是白捡的：
+    // `byKind('wall')` 出来的墙必然活在文档里，那道筛对所有墙都过。
     let secondWallId: EntityId | null = null;
     let secondWallPx: Px | null = null;
-    for (const other of doc.byKind('wall')) {
-      if (other.storeyId !== storeyId || other.id === wall.id) continue;
-      const raw = pickPxOf(ops, other.id);
-      if (raw === null) continue;
-      const px = snapPx(raw);
-      if (!insideCanvas(v, px)) continue;
-      secondWallId = other.id;
-      secondWallPx = px;
+    for (const other of ordered) {
+      if (other.c.wallId === wallId) continue;
+      secondWallId = other.c.wallId;
+      secondWallPx = other.c.clickPx;
       break;
     }
     return {
-      wallId: wall.id,
+      wallId,
       clickPx,
       blankPx,
       openingId,
