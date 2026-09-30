@@ -227,14 +227,22 @@ try {
       ['P6 点一面改得动的墙：面板开、三格逐字 = 探针那份预言、轴长 > 墙厚、选中集就它一个',
         report.panelWallIdAtSelect === prop.wallId && report.panelMatchesProbe === true &&
           JSON.stringify(report.panelPropsAtSelect) === JSON.stringify(prop.props) &&
-          report.axisLongerThanThickness === true && report.selectedIdsAtSelect?.length === 1 && report.selectedIdsAtSelect?.[0] === prop.wallId],
+          report.axisLongerThanThickness === true && report.selectedIdsAtSelect?.length === 1 && report.selectedIdsAtSelect?.[0] === prop.wallId &&
+          // 上屏对账（终审 B2 P1-2）：三格的字真在 DOM 里。轴长那一式取 `prop.props`（探针的
+          // **独立预言**）而不是 `panelProps` —— 拿面板证面板又是"用结论证结论"；`?? ''` 只为类型，
+          // `chosen` 那一步 `prop.props` 必在。
+          report.wallIdDomAtSelect === prop.wallId &&
+          report.heightDomAtSelect === String(report.panelPropsAtSelect?.heightMm) &&
+          report.axisLenDomAtSelect === String(report.prop?.props?.axisLengthMm ?? '')],
       ['P7 选中那一刻"画面确实变了、几何一个字没变"：墨迹实测 30744（终态 30671 是空面板那一份），ops 与三层计数逐字等于基线',
         report.nonBlankAtSelect === 30744 && report.opsAtSelect === 31 &&
           JSON.stringify(report.layersAtSelect) === JSON.stringify(report.layers)],
       ['P8 厚度框打 240.5 不回车：只问不写 —— 试跑 ok=false、真源中文「整数毫米」、depth 仍基线、真源厚度还是 240',
         report.trial4Kind === 'thickness' && report.trial4Input === '240.5' && report.trial4Ok === false &&
           /整数毫米/.test(report.trial4Reason ?? '') && report.depthAfterTrial4 === report.baseDepth &&
-          report.thicknessAfterTrial4 === 240],
+          report.thicknessAfterTrial4 === 240 &&
+          // 红字真在屏幕上且与 debug 逐字相同（终审 B2 P1-2）：`trial-reason` 出口今天零读者。
+          report.trial4DomReason === report.trial4Reason],
       ['P9 换成探针给的第一档合法值回车：恰好一条命令（depth 基线 +1）、面板读回新值 = 真源',
         report.trial5Input === String(prop.thicknessTo) && report.trial5Ok === true &&
           report.depthAfterThickness === report.baseDepth + 1 && report.revisionAfterThickness === 3 &&
@@ -267,11 +275,16 @@ try {
       ['P17 再 Shift 点探针给的第三发（第二面墙）= 两面墙：三枚选中、面板整块消失而不是"取第一面"（M2 那一发红在这儿）',
         report.secondWallId === prop.secondWallId && JSON.stringify(report.secondWallPx) === JSON.stringify(prop.secondWallPx) &&
           report.selectedAfterSecondWall?.length === 3 && report.selectedAfterSecondWall?.includes(prop.secondWallId) === true &&
-          report.panelWallAfterTwoWalls === null && report.panelPropsAfterTwoWalls === null],
+          report.panelWallAfterTwoWalls === null && report.panelPropsAfterTwoWalls === null &&
+          // 整块消失的**屏幕**形状（终审 B2 P1-2）：`wall-id` 连节点都没有，外壳里只剩『未选中墙』
+          // 那一枚 span（`panels.tsx` props === null 分支）—— 渲染条件写反时 echo 全绿、这一行红。
+          report.wallIdDomAfterTwoWalls === null && report.noWallDomAfterTwoWalls === '未选中墙'],
       ['P18 点空白清空、再点墙恢复：面板关到 null、选中 0，重选又指回那面墙（第 12 步吃的正是这份选中集）',
         report.selectedAfterClear === 0 && report.panelWallAfterClear === null &&
           report.panelWallAfterReselect === prop.wallId && report.selectedBeforeDelete?.length === 2 &&
-          report.depthAfterMultiSequence === report.baseDepth],
+          report.depthAfterMultiSequence === report.baseDepth &&
+          // 与 P17 同一句字的上屏凭据（终审 B2 P1-2）：区别只在同时 `wall-id` 在不在。
+          report.noWallDomAfterClear === '未选中墙'],
       ['P19 Delete 只发一条命令：plan 账就那面墙（宿主墙身上的洞口归级联，不发第二条）、unsupported 空、选中剪空、面板关而 tab 两条还在',
         report.deleteOutcome === 'ok' && report.depthAfterDelete === report.baseDepth + 1 &&
           JSON.stringify(report.planDeletedIds) === JSON.stringify([prop.wallId]) && report.deletedCount === 1 &&

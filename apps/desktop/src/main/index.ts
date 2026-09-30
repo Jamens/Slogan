@@ -1696,6 +1696,22 @@ async function domCenterPx(win: BrowserWindow, selector: string, label: string):
   return { x: rect.x, y: rect.y };
 }
 
+/**
+ * 读一个 DOM 节点的**上屏文本**：`<input>` 读 `.value`，其余读 `.textContent`；节点不在 ⇒ `null`。
+ * 与 `domCenterPx` 同一条通路（`executeJavaScript` 现问），差别只在拿的是字不是坐标。
+ * 为什么需要它：`panelProps` / `trial.reason` 这些 debug 字段证的是"面板组件算出了什么"，
+ * 证不到"屏幕上真有几个字"。渲染条件写反时 debug 侧逐字全绿，只有 DOM 会红。
+ * 缺席要报 `null` 而不是抛：P17 判的正是"面板整块没了"，那一发找不到节点是**通过**而不是事故。
+ */
+async function domTextOf(win: BrowserWindow, selector: string): Promise<string | null> {
+  const js =
+    `(() => { const el = document.querySelector(${JSON.stringify(selector)});` +
+    "if (!el) return null;" +
+    "if (el instanceof HTMLInputElement) return el.value;" +
+    "return el.textContent; })()";
+  return (await win.webContents.executeJavaScript(js)) as string | null;
+}
+
 /** 页面空间的真鼠标点击（tab / 复选框走这条；画布构件走 `clickCanvasPx`）。 */
 async function clickDomPx(win: BrowserWindow, p: ClickPoint): Promise<void> {
   // 与画布那一条同形：先发一发 move 报到，再按下松开。Blink 的命中测试要先见过这个坐标，
@@ -1940,6 +1956,12 @@ async function runPropShot(win: BrowserWindow, out: string): Promise<void> {
   const opsAtSelect = chosen.ops;
   const layersAtSelect = JSON.stringify(chosen.layers);
   const nonBlankAtSelect = chosen.nonBlankPx;
+  // 上屏对账（终审 B2 P1-2）：这三枚 DOM 出口（`wall-id` / `height-mm` / `axis-length-mm`）今天
+  // 零读者 ⇒ 把 `props === null ? … : null` 的渲染条件写反，debug 侧逐字全绿。这里各读一发字，
+  // 判据在 `desktop-shot.mjs` 的 P6 与探针/面板两份预言对账。
+  const wallIdDomAtSelect = await domTextOf(win, '[data-dajia="wall-id"]');
+  const heightDomAtSelect = await domTextOf(win, '[data-dajia="height-mm"]');
+  const axisLenDomAtSelect = await domTextOf(win, '[data-dajia="axis-length-mm"]');
 
   // 4) 厚度框打 `240.5` 不回车：只问真源，一个字都不写（P1 的预言 + P2 的构造期那半道门）。
   await clickDomPx(win, await domCenterPx(win, THICKNESS_INPUT, '厚度输入框'));
@@ -1964,6 +1986,8 @@ async function runPropShot(win: BrowserWindow, out: string): Promise<void> {
   if (rejected.panelProps?.thicknessMm !== prop.props.thicknessMm) {
     throw new Error(`非法输入把面板读数改写了：${String(rejected.panelProps?.thicknessMm)}`);
   }
+  // 红字的上屏对账（终审 B2 P1-2）：`trial4Reason` 吃的是 debug 里的状态量，证不到红字真在屏幕上。
+  const trial4DomReason = await domTextOf(win, '[data-dajia="trial-reason"]');
 
   // 5) 换成探针给的合法值再 Enter：一发命令、面板读的是真源而不是输入框。
   await typeText(win, String(prop.thicknessTo));
@@ -2155,6 +2179,11 @@ async function runPropShot(win: BrowserWindow, out: string): Promise<void> {
     (r) => r.selectedIds.length === 3 && r.selectedIds.includes(secondTarget.id) &&
       r.panelWallId === null && r.panelProps === null,
   );
+  // 面板整块消失的**屏幕**凭据（终审 B2 P1-2）：`panelWallAfterTwoWalls === null` 吃的是 echo，
+  // 渲染条件写反（`props !== null` 时还放 no-wall 那一格 / 还留着 wall-id）它分不清。
+  // 两面墙 ⇒ `wall-id` 这一格连节点都没有（`null`），外壳还在，里面只有『未选中墙』那一枚 span。
+  const wallIdDomAfterTwoWalls = await domTextOf(win, '[data-dajia="wall-id"]');
+  const noWallDomAfterTwoWalls = await domTextOf(win, '[data-dajia="no-wall"]');
 
   // 11c) 退回第 12 步要的选中集（墙 + 它身上的洞口）：点空白清空 → 点墙 → Shift 点洞口。
   //      清空那一发顺带把 `blankPx` 这一发在属性闸门里也用上了（画布那三发的纪律在面板序列同样成立）。
@@ -2165,6 +2194,8 @@ async function runPropShot(win: BrowserWindow, out: string): Promise<void> {
     (r) => r.selectedIds.length === 0 && r.panelWallId === null && r.panelProps === null,
   );
   if (cleared.depth !== baseDepth) throw new Error(`点空白动了真源：depth ${String(baseDepth)} → ${String(cleared.depth)}`);
+  // 清空后外壳里那一枚『未选中墙』的上屏凭据（终审 B2 P1-2）：与 P17 同一句字，区别在同时 `wall-id` 在不在。
+  const noWallDomAfterClear = await domTextOf(win, '[data-dajia="no-wall"]');
   await canvasClick(prop.clickPx);
   const reselected = await waitUntil(
     '重新点墙没让面板回到那面墙',
@@ -2311,11 +2342,16 @@ async function runPropShot(win: BrowserWindow, out: string): Promise<void> {
     opsAtSelect,
     layersAtSelect: chosen.layers,
     nonBlankAtSelect,
+    // 第 3 步的三枚 DOM 出口读数（终审 B2 P1-2 的上屏对账，判据在 P6）
+    wallIdDomAtSelect,
+    heightDomAtSelect,
+    axisLenDomAtSelect,
     // 第 4 步：非法输入只问不写（P1 + P2 构造期那半道门）
     trial4Kind: trial4.kind,
     trial4Input: trial4.input,
     trial4Ok: trial4.ok,
     trial4Reason: trial4.reason,
+    trial4DomReason,
     depthAfterTrial4: rejected.depth,
     thicknessAfterTrial4: rejected.panelProps?.thicknessMm ?? null,
     // 第 5 步：一发命令 + 面板读真源
@@ -2367,9 +2403,12 @@ async function runPropShot(win: BrowserWindow, out: string): Promise<void> {
     selectedAfterSecondWall: multi.selectedIds,
     panelWallAfterTwoWalls: multi.panelWallId,
     panelPropsAfterTwoWalls: multi.panelProps,
+    wallIdDomAfterTwoWalls,
+    noWallDomAfterTwoWalls,
     // 第 11c 步：清空 + 重选，把选中集交回第 12 步
     selectedAfterClear: cleared.selectedIds.length,
     panelWallAfterClear: cleared.panelWallId,
+    noWallDomAfterClear,
     panelWallAfterReselect: reselected.panelWallId,
     selectedBeforeDelete: readyToDelete.selectedIds,
     depthAfterMultiSequence: readyToDelete.depth,
