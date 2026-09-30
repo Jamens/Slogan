@@ -13198,13 +13198,13 @@ git commit -m "feat(desktop): 楼层 tab 与属性面板上屏，--prop-shot 十
 - **五个真窗口闸门在最终这份树上跑到稳定**：`shot 6/6` ×2、`pick-shot 11/11` ×2、`edit-shot 21/21` ×2、`draw-shot 28/28` ×2、**`prop-shot 29/29` ×4**（第四遍在改掉一段误引计划原文的注释之后重跑）。⇒ 编写期预言的「前三个闸门逐字不变」**成立**：6/11/21/28 那 66 条判据一行没动、一行没红，动的只有 `--pick` 那行的原点字面量（(0,0) → **(0,32)**，裁决 T8-3 授权的**唯一**一次字面量回填，判据仍是硬等式）。
 - **`--prop-shot` 的形状**：共用那 6 条 + 本任务新增 **23 条**（P1…P23）。Step 7 那张十五行表落下来是三处展开、两处换证人：
   1. **第 11 行与实现互斥 ⇒ 拆成 11a/11b/11c**（本任务最贵的一处计划缺陷）。正文写「点墙 + Shift 点它身上的洞口 ⇒ `panelWallId === null`」，而 `selectedWallForPanel` 与 `panel.test.ts` 的口径是**混选里只要有一面墙就开面板**（P3 关掉的是"面板偷偷取第一面"那条路）。两种读法只能活一个：**裁决 = 实现与 node 测赢**，判据**不放宽**而是加发 —— 11a 墙 + 自己的洞口（面板照开、三格逐字不变）、11b **再 Shift 点第二面墙**（三枚选中、面板整块消失）、11c 点空白清空再重选（把选中集交回第 12 步）。**代价**：`propProbe` 多两个 nullable 字段 `secondWallId` / `secondWallPx`（探针的"尽力"那一发，**不是第七道筛** —— 单墙夹具照样交得出靶子，`handles.test.ts` 新增那条钉的就是这个形状），而主进程"不许自己猜坐标"这条纪律靠它才没被破。
-  2. **第 12 行那句 `deletedIds` 只有那面墙与实现一致，但它证不了级联**。`deletedIds` 记的是**计划账**（`candidateIds` 里真源不再含有的那些），而 `planDelete` 的 `solo` 过滤本来就不给"宿主墙同批要删的洞口"发第二条 ⇒ 实测 `deletedIds.length === 1`。**换证人**：`layers.opening` **10 → 8**（删）→ **10**（撤销），同时 `depth` 只 +1 —— 没发第二条命令、构件却从画面上一起消失，这才是级联在屏幕上的形状；撤销那一半的凭据（"级联走的要跟着回来"）与删除用同一把尺。
+  2. **第 12 行那句 `deletedIds` 只有那面墙与实现一致，但它证不了级联**。`deletedIds` 记的是**计划账**（`candidateIds` 里真源不再含有的那些），而 `planDelete` 的 `solo` 过滤本来就不给"宿主墙同批要删的洞口"发第二条 ⇒ 实测 `deletedIds.length === 1`。**换证人**：`layers.opening` **10 → 8**（删）→ **10**（撤销），同时 `depth` 只 +1 —— 没发第二条命令、构件却从画面上一起消失，这才是级联在屏幕上的形状；撤销那一半的凭据（"级联走的要跟着回来"）与删除用同一把尺。（**级联几樘跟着靶子走**：`b772da8` 把靶子钉成几何定序之后恒为左墙，身上三樘洞口 ⇒ 盘上实测 **10 → 7 → 10**，证人形状一字未改，见文末 §五之三。）
   3. **第 10 行「Ctrl+Z 三次」实测 2 发**：第 5 步那发厚度已在第 7 步单独撤过 ⇒ 撤销数 = 材料发数 + 1。判据钉 `undoCount === 2` 与 `undoCombos` 逐字两条，**没写成"若干发"**。
 - **两条只在真窗口才现形的实测纪律**（node 侧永远证不到）：
   - **`<select>` 的方向键要先有焦点**（Electron 44.4.5）：焦点在 `body` 时发 `Down` 谁都不动 —— 静默停在 0，既不报错也不改值。⇒ 第 8 步前 `moveFocus(MATERIAL_SELECT)`，第 10 步发快捷键前把焦点从刚点过的复选框交出去。材料那一发的 depth 预言基线是**撤销之后**那份（`undid1.depth`）；首跑拿撤销前去加，红成"永远差一发"。
   - **写盘报告的键名会静默覆盖终态**：`outReport = {...fin, ...逐步读数}`，同名键后者胜。首跑第 3 步的读数取了裸名 `panelWallId`，把 `fin.panelWallId`（null）盖掉 ⇒ 落盘的账与跑判据的账成了两份，而 29 行照绿。修法 = 逐步读数一律带"第几步"后缀（`panelWallIdAtSelect` / `planDeletedIds`），外加一枚**撞车就在写盘前抛**的守卫。
 - **牙测（控制位亲手，两条都改完就 `cp` + `md5sum` 还原，不碰 git）**：
-  - `STOREY_TAB_HEIGHT_PX` 32 → 40 ⇒ **P3、P7 FAIL / 27 PASS / exit=1**。P3 是布局前提、P7 是墨迹字面量（30744），其余 27 行不受影响 ⇒ 十六步自己走完了，这两行不是空转。
+  - `STOREY_TAB_HEIGHT_PX` 32 → 40 ⇒ **P3、P7 FAIL / 27 PASS / exit=1**。P3 是布局前提、P7 是墨迹字面量（30744），其余 27 行不受影响 ⇒ 十六步自己走完了，这两行不是空转。（**这一发在终树上重测过**：`b772da8` 把探针定序改几何以后，墨迹字面量成了 30742、级联成了 10 → 7 → 10；控制位用**变异 E**（§四 末行，`mutant-e.log`）在同一改动上复跑 ⇒ `exit=1`、红在 P3 与 **P7（新数 30742）** 两格、PASS 28。当年那份是 P3、P7 FAIL / 27 PASS，条数从 29 涨到 30 把 PASS 数抬了一格，判据本身没动。）
   - `storeyTabsOf` 的 label 改字 ⇒ **P1 FAIL / 28 PASS / exit=1**（基线那行吃的是 tab 内容字面量）。
   - **没做的一条要如实登记**：M2 类变异（`selectedWallForPanel` 摘掉 `kind === 'wall'` 过滤、改成取第一面）在真窗口红在 main 第 11b 步的 `waitUntil` **抛**，不落脚本判据行 —— 它的脚本侧凭据要等 `runPropShot` 不再自己抛才有意义。node 侧两条（`handles.test.ts` 第二面墙 + `panel.test.ts` 混选墙 + 洞口）是有牙的，故不为它单开一次跑。
 - **listing 与盘上不符（逐条）**：
@@ -14024,7 +14024,7 @@ git commit -m "feat(scene-2d): 吸附补上轴网交点档，柱心与板角进�
 - **计数账（盘上真话，覆盖上面那条「464 → 476」）**：全量 **482 → 494**，`Test Files` 34 **一字不动**（本任务不新建测试文件）。文件级：`snapping.test.ts` **32 → 44**（净增 12 这件事与正文一致，起点不是 28）、`handles.test.ts` **33 条不变**（正文写 19）、`editing.test.ts` 35 条不变（只改注释）、core **25 文件 / 316 条**一字未动（正文那两处 `24 / 309` 是计划 2 的旧账）。⇒ 正文 Files 表与「交接账」里凡是引用 `.tscheck/t10`（31 文件 / 461 条）的那几段全是**临时工程的账**：本任务按 Task 8 的裁决 T8-1 **放弃那一轨**，Step 1（`cp -a .tscheck/t9 .tscheck/t10`）与 Step 8（"逐字搬回三个文件"）都没执行。
 - **五个真窗口闸门：判据 6/11/21/28/29 一字未改、写死的字面量一个未换、全部 PASS** ⇒ R8 那句"不必改判据"**成立**，且是结构性的（样例房无柱无板 ⇒ 柱心/板角两段循环空转；8 根轴两两求交那 9 枚格点逐枚已被端点/中点占住 ⇒ 交点档进表 **0** 枚）。两处首跑红要按本计划的老规矩分开记：
   1. `--draw-shot` run1 **崩在第 3 步的 `waitUntil`**（10 秒天花板，`exit 1`，无判据打印），不是判据红；复跑 4/4 全绿。同族超时在 Task 5~8 已有记录（`grep -l "10 秒内没等到"` 命中 `dr4/dr7/r7/gate-draw-shot-run6-fallbackprobe/t8D4-edit-shot-run1/t8E-prop-run2~3`）。
-  2. `--prop-shot` run1 **P7 / P20 两条真红**（实测 30747 / `opening` 层 10→7，判据 30744 / 10→8）。按 Step 7 那三步查：`git diff` 里 core 与样例房零改动 ⇒ 排除第 1 步；根因是**探针起点枚举**（第 2 步）—— `propProbe` 挑"第一档改得动且身上有洞口"的墙，谁被挑中由 uuidv7 现建 id 定，run1 挑到 8000 长那面横墙（身上三樘洞口 ⇒ 级联删 3），run2~5 全回到 Task 8 写死判据时那面 6000 长墙。**判据与字面量都没动**（第 3 步没走到）。
+  2. `--prop-shot` run1 **P7 / P20 两条真红**（实测 30747 / `opening` 层 10→7，判据 30744 / 10→8）。按 Step 7 那三步查：`git diff` 里 core 与样例房零改动 ⇒ 排除第 1 步；根因是**探针起点枚举**（第 2 步）—— `propProbe` 挑"第一档改得动且身上有洞口"的墙，谁被挑中由 uuidv7 现建 id 定，run1 挑到 8000 长那面横墙（身上三樘洞口 ⇒ 级联删 3），run2~5 全回到 Task 8 写死判据时那面 6000 长墙。**判据与字面量都没动**（第 3 步没走到）。**⇒ 这一条在 `b772da8` 收掉了**（终审之后，见文末 §五之三）：当时的"重跑即回绿"只是抽到了多数那一面墙，不是修好了。
 - **三处「计划 vs 盘上」，逐条**：
   1. **`absorbedByPoint` 的档位过滤 = 计划漏列的第五处改动**（`snapping.ts:202-206`，只吸收 `endpoint` / `midpoint`）。不改它，交点档会因 `takeBest` **组内先比距离**（`snapping.ts:387-396`：`GROUP` → `distPx` → `PRIORITY` → `ownerId`）吃掉落在墙段内部的**垂足** —— 垂足优先级 2 输给交点 3 反而没意义，spec §6 那张表里"贴到墙上"那一档永远输给一个坐标，R4 当场作废。代价：R4 那句"垂足在具名点旁被吸收"的既有语义从此**只作用在真源点与中点上**，这条新边界由一句注释 + 用例「垂足档压过交点档」+ 变异 **X1**（放开过滤 ⇒ 恰好 1 条红）看着。
   2. **Step 4 落空**：盘上 `handles.test.ts:537` 那条在 Task 8 就已经换过靶子（现题「…第三发被一枚**垂足**接住」），正文引用的那份夹具（`start {x:40,y:-760}`、答案 `(40,-760)` → `(0,-760)`）**在盘上不存在**；几何上也改不动：那套轴只造得出**一枚**交点候选 `(40,0)`，离第三发的裸落点 (0,-800) 约 801mm ⇒ 在 0.1px/mm 那把尺子上是 **80px** ≫ `SNAP_TOL_PX = 8`。**实测**：改动前后 `handles` 都是 33 条全绿 ⇒ 落点没变，无改写对象。⇒ 连带代价：N1 的红名从正文预言的 **5 条变 4 条**，「摘掉交点档 ⇒ 句柄侧也红」这条连带关系**不存在了**（新档的凭据全在本文件内）。判据强度一行未放宽。
@@ -14125,7 +14125,8 @@ Task 8 已展开（正文见上文 Task 8：九条裁决 + 八步 + 九条变异
 | T7 core 补口（派生复核 + 属性/删除命令） | `b2b59f0` + `b6a1d69` + `9ca3d43` + `8a8d2ee` + `bc35ecf` + `e22d700` + `684a4fb` | exit=0，**33 文件 / 439 条**（盘上口径覆盖编写期 406 → 439 那笔） | 15 条改坏 13 条有牙；D22 语义换向（两边都不许写进真源）的代价记在 F1 兜网那一格；评审席两条 Blocking 已修（`684a4fb`） | Spec ✅ —— 逐条见「执行回填（Task 7）」 |
 | T8 楼层切换 + 属性面板 + 删除接屏（`--prop-shot`） | `c820327` … `cb27c50`（棒 A–E 共十笔） | exit=0，**34 文件 / 482 条**（439 → 482） | `pnpm prop-shot` **23 行 PASS**；五闸门条数账当时记为 **6 / 11 / 21 / 28 / 29**（终审三棒之后盘上是 6 / 11 / 22 / 28 / 30，见文末终审节） | M1~M9 改坏表逐条见「执行回填（Task 8）」 |
 | T9 吸附补档（轴网交点 + 柱心/板角进表） | 实现 `e6682a2` + fix 轮 `79b84d3` / `24982a4` / `2a9f9a9` | exit=0，**34 文件 / 494 条**，fix 轮 **494 → 495**（`Test Files` 34 一字不动，净增全在 `snapping.test.ts` 32 → 44、`handles.test.ts` 33 → 34） | N1~N9 + 自补 X1 逐条红名见该节；**交点档对样例房进表 0 枚** ⇒ 五个闸门判据一字不换 | 见「执行回填（Task 9）」（含两处当场改口的错误预言与一处计划漏列的改动） |
-| 终审（Task 1–9 整支：三席 + 三棒 + 控制位） | `5992a97` … `230b924`（代码）+ 文档另提 | exit=0，**35 文件 / 503 条**（+1 文件 / +8 条，净增全在 `scripts/test/shot-baseline.test.mjs`） | 五道闸门**全绿 6 / 11 / 22 / 28 / 30**；三发变异（摘守卫 / 短路 drop / 剪 P19）逐字红名见文末 | 见下节「终审（Task 1–9 整支）执行回填」 |
+| 终审（Task 1–9 整支：三席 + 三棒 + 控制位） | `5992a97` … 收口链（代码，见文末 §七）+ 文档另提 | exit=0，**35 文件 / 508 条**（+1 文件 / +13 条，净增全在 `scripts/test/shot-baseline.test.mjs`） | 五道闸门**全绿 6 / 11 / 22 / 28 / 30**；五发变异（摘面板 `report.ok` 那一支 / `trial-reason` 永不上屏 / 剪 P19 / 摘 ` --prop` / 终树上重测布局 32→40）逐字红名见文末 §四 | 见下节「终审（Task 1–9 整支）执行回填」 |
+| 终审后收口复跑抓出的最后一笔（`propProbe` 靶子定序） | `b772da8`（代码）+ `26832e7`（注释按落盘日志复算改口）+ 文档另提 | exit=0，**35 文件 / 509 条**（508 → 509 全来自 `handles.test.ts` 新增那条，`Test Files` 35 不动） | 五道闸门复跑 **6 / 11 / 22 / 28 / 30 全绿**（`gate-sweep-7-fixed.txt`）；改后靶子连续 8 发逐字相同 + 收口那一发；改前 11 发账 = 10 发挑中 (1027,416)、1 发挑中 (584,87) | 见 §五之三（含新挂的那发 1/8 超时与"exit 码读成判据"那一次同型冒领） |
 
 - T3 的六个实测数（本节原先要的就是这个）：`ops=31`、`structure=20`、`opening=10`、`annotation=1`、`nonBlankPx=30633`（可见那版）/ `31710`（隐藏那版）、`wPx=1427`、`hPx=839`（另一次 865）。
 - 挂账中、当前没人踩的：**T4 收口时一条都没踩到**，所以照旧挂着 —— T2 的三条（property 半自反、`fitStorey` 边界圈含 annotation、`fitStorey`+`buildDrawList` 双算派生）与 T1 的 m3/m4（`mmToPx`/`pxToMm` 不拦非有限、`Viewport` 是裸结构接口），现在全部指向 **T5**（拖拽第一次把屏幕浮点喂回命令入口，非有限与手搓视口在这才可达）与 **T6**；T4 自己新挂的四条写在上面 T4 那节末尾（shuffle 属性的 `ownerId` 平手档 → 终审；`selectedAfterBlank` 与名字 → 下次真动 `DebugReport` 那一格；`probeTarget` 只扫 `polygon` → T5/T6 的闸门作者；`willReadFrequently` → 有实测数字再动）。
@@ -14153,36 +14154,111 @@ Task 8 已展开（正文见上文 Task 8：九条裁决 + 八步 + 九条变异
 ### 二、盘上终账（终审之后的数）
 
 - **五个真窗口闸门判据条数 = `6 / 11 / 22 / 28 / 30`**（Task 9 收口那一份是 6 / 11 / 21 / 28 / 29；`--edit` +1 = 第三棒的"第一发只选中不起拖"，`--prop` +1 = 第 4b 步的 P8b）。写死在 `desktop-shot.mjs:336` 的 `expectedChecksByMode`，加判据必须同时改这张表。
-- **`pnpm verify` exit=0 / 35 文件 / 503 条**（收口前 34 / 495 ⇒ +1 文件 / +8 条，净增全在新增的 `scripts/test/shot-baseline.test.mjs`；`packages/core` 25 文件 / 316 条从头到尾一字未动）。
+- **`pnpm verify` exit=0 / 35 文件 / 508 条**（收口前 34 / 495 ⇒ +1 文件 / +13 条，净增全在新增的 `scripts/test/shot-baseline.test.mjs`：第三棒 8 格 + 复审计席 1.4 逼出的 token 配对 5 格；`packages/core` 25 文件 / 316 条从头到尾一字未动）。**§五之三 那一笔之后是 509 条**（`handles.test.ts` 34 → 35，`Test Files` 35 不动）。
 - **五道收口复跑**（同一份代码、复跑前先 `pnpm --filter @dajia/desktop build`）：`gate-sweep-3.txt` 逐行 `OK shot 6 / pick-shot 11 / edit-shot 22 / draw-shot 28 / prop-shot 30，FAIL 0 ⇒ 五道全绿`。**最后一轮在终树 `230b924` 上复跑（`gate-sweep-5-final.txt`，同一时间戳 2026-09-30T18:55Z）同样五行全绿**，那一轮里 `handlePxAfterClick` 实测 191（判据阈值取 20，与 `handlePxAfterPress` 同源；两次复跑量到 193 / 191）。
+- ⇒ **计划 3 的终账是 §五之三 那一轮**：`b772da8` + `26832e7` 之后 `gate-sweep-7-fixed.txt` 同样五行全绿（6 / 11 / 22 / 28 / 30，FAIL 0），而它之前那一轮（`gate-sweep-6-red.txt`）是 `EXIT1 prop-shot: PASS 28 / 期望 30, FAIL 2` —— 那两发 FAIL 就是 §五之三 收掉的靶子定序缺陷。
 - 闸门复跑**归控制位独占**，三根棒的席位一次都没跑过真窗口闸门（棒 3 的纪律写在 `final-fix3-dispatch.md` §2）；结构账的对账靠 `verify`，不靠闸门。
 
 ### 三、第三棒新生长出来的东西（逐条对得上盘）
 
 1. **DOM 出口派读者**（B2 P1-2）：`domTextOf(win, selector)`（`main/index.ts` 里 `HTMLInputElement` 取 `value`、其余取 `textContent`）+ P6/P8/P17/P18 上屏等式，第 3 步 `wallIdDomAtSelect`/`heightDomAtSelect`/`axisLenDomAtSelect`、第 4 步 `trial4DomReason`、第 10b/12 步 `wallIdDomAfterTwoWalls`/`noWallDomAfterTwoWalls`/`noWallDomAfterClear`。**oracle 是探针不是面板**：`report.axisLenDomAtSelect === String(report.prop?.props?.axisLengthMm ?? '')` —— 面板自己那份数当尺子量不出面板抄错源。
 2. **未捕获异常通道**（B2 P1-1，且是对 B2 原修法的**订正**）：`installErrorCounter` 在页面里挂 `window.addEventListener('error')` 自增 `window.__dajiaUncaught`。第 4b 步照它原文只补四条断言（`ok=false`、`lastError` 空、depth 不动、红字在）**是不够的**：`wallSetThickness` 的 `assertMm` 跑在**命令构造期**第一行（`build` 之外），摘掉守卫那一发是 React 事件处理器里的**裸抛**，根本走不到 `dispatch`，于是四个读数**逐字与守卫挡下时相同**。⇒ P8b 把"未捕获异常增量 == 0"作为第五枚读者。变异 A 实测背书（见下）。
-3. **`shot-baseline.test.mjs`**（B2 P1-4）：8 条 node 侧锚，把闸门里写死的字面量与结构账对进 `verify` —— `31/20/10/1` 对 `buildDrawList(demoHouse())` 现算、两处 `canvasOriginPx?.y === 32` 对 `STOREY_TAB_HEIGHT_PX`、`STAR_EDGE_MM ≥ MIN_WALL_LENGTH_MM × 1.2`、以及**每个模式的判据条数**对 runner 文本里基座行数 + `if (want*)` 块行数。`grabAll(re, want)` 命中数不等于期望就抛 ⇒ 它不吃"抠不出块就跳过"的绿灯。**两份字面量的裁决不变**（闸门与 node 侧刻意独立，合掉要等能分辨两半的读者，本节第 2 条那张表就是那个读者）。
+3. **`shot-baseline.test.mjs`**（B2 P1-4，现 **13 格**）：node 侧锚，把闸门里写死的字面量与结构账对进 `verify` —— `31/20/10/1` 对 `buildDrawList(demoHouse())` 现算、两处 `canvasOriginPx?.y === 32` 对 `STOREY_TAB_HEIGHT_PX`、`STAR_EDGE_MM ≥ MIN_WALL_LENGTH_MM × 1.2`、**每个模式的判据条数**对 runner 文本里基座行数 + `if (want*)` 块行数（以上第三棒的 8 格）；复审计席 1.4 之后再加 5 格：**五个 root script 与 `--pick/--edit/--draw/--prop` 的配对**（各自带且只带自己的 token，且 runner 的 argv 链必须认这个 token；基座那一发 `shot` 必须一个专属 token 都不带）。`grabAll(re, want)` 命中数不等于期望就抛 ⇒ 它不吃"抠不出块就跳过"的绿灯。**两份字面量的裁决不变**（闸门与 node 侧刻意独立，合掉要等能分辨两半的读者，本节第 2 条那张表就是那个读者）。
 4. **edit 段那条判据补齐两半**（B2 P2-4/5，控制位补）：`previewPxAfterClick === 0` 证"没起拖"，`handlePxAfterClick > 20` 证"选中真落到 store"。只留前者，把 `main` 第 1 步整段删掉也照样绿，而下一行 `handlePxAfterPress` 会把第 2 步画的把手记成第 1 步的功劳。
 5. 顺手删掉零读者字面量 `starPxPerMm`。**注释账分三笔**：`859eda1` 四处按盘上改口（画布原点 (0,32) 的归因两处 + 面板 `Number(text)` 的拒收产地两处）；`3969a3f` 三处（runner `:117`「这十四条」→十六、`main/index.ts` 里"脚本既拿它断言 (0,0)"那句 origin 归因改成 `--pick-shot / --prop-shot`、`PlanCanvas.tsx` + `editorStore.ts` 那两处旧 T7 语义换成 D22 落地的真话）；`87df9c0` 一处（runner `:208`「这二十三条」→二十四，基座 6 + 专属 24 = 30）。
 
-### 四、三发变异实测（`mutant-run-3.log` / `mutant-c.log`，全程 cp 备份 + md5 还原，无 git）
+### 四、五发变异实测（`mutant-run-3.log` / `mutant-c.log` / `mutant-d.log` / `mutant-e.log`，全程 cp 备份 + md5 还原，无 git）
 
 | 变异 | 操作 | 实测 |
 |---|---|---|
-| A：摘掉 `wallSetThickness` 的 `assertMm` 浮点守卫（`panels.tsx`） | md5 `9a1e224c…` 备份 → 单点摘除 → 真窗口 `--prop` → cp 还原 ✓ | `exit=1`，**PASS 29 / FAIL 1**，唯一红的是 `FAIL  P8b …`；renderer 逐字 `[renderer] Uncaught TypeError: 墙厚 必须是整数毫米，收到 240.5：浮点坐标须先过 quantizeMm`。**其余 29 行（含 P8 那四条读数）全绿** ⇒ 证伪 B2 原修法的"四件套够用"，证实 P8b 是唯一分得出"守卫挡住"与"守卫被摘"的那格 |
-| B：把 drop 那一支 `{trial !== null && trial.ok === false ? (` 写成 `{false ? (` | 同一备份文件、单点替换 → `--prop` → cp 还原 ✓ | `exit=1`，**PASS 28 / FAIL 2**：`FAIL P8 厚度框打 240.5 不回车：只问不写 …` + `FAIL P8b …` ⇒ 第 4 步与第 4b 步两半都有牙 |
-| C：从 runner 的 `if (wantProp)` 块整条剪掉 P19（`:300-304` 共 5 行） | cp 备份（本轮 md5 `25b373de…`，与 `mutant-run-3.log` 那一份 `ca89380a…` 差在控制位随后动的两笔 runner 注释/判据）→ 剪 → `--prop` → cp 还原 ✓、工作树干净 ✓ | `exit=1`，**PASS 29 / FAIL 0**，逐字红在条数硬闸：`Error: 模式 prop 的判据条数对不上：实到 29 条，应有 30 条（专属判据整段没跑或被剪了一条都不许算过）` ⇒ 剪一条判据不会被算成过，`--prop` 掉回 `shot` 兜底那一型也被同一张表拦住 |
+| A：面板提交通路里 `if (report.ok)` 摘成裸 submit（`panels.tsx`。**不是摘 core 的 `assertMm`** —— 恰恰要留着它，那一发才会以"构造期裸抛"的形态出现） | md5 `9a1e224c…` 备份 → 单点摘除 → 真窗口 `--prop` → cp 还原 ✓（`mutant-run-3.log:3-11`） | `exit=1`，**PASS 29 / FAIL 1**，唯一红的是 `FAIL  P8b …`；renderer 逐字 `[renderer] Uncaught TypeError: 墙厚 必须是整数毫米，收到 240.5：浮点坐标须先过 quantizeMm`。**其余 29 行（含 P8 那四条读数）全绿** ⇒ 证伪 B2 原修法的"四件套够用"，证实 P8b（未捕获异常那一格）是唯一分得出"守卫挡住"与"守卫被摘"的 |
+| B：`trial-reason` 那一块改成**永不上屏**（debug 值照旧，屏幕上没有） | 同一备份文件、单点替换 → `--prop` → cp 还原 ✓（`mutant-run-3.log:12-21`） | `exit=1`，**PASS 28 / FAIL 2**：`FAIL P8 厚度框打 240.5 不回车：只问不写 …` + `FAIL P8b …` ⇒ 第 4 步与第 4b 步的 `trial4DomReason` / `illegalEnterDomReason` 两格实测有牙 |
+| C：从 runner 的 `if (wantProp)` 块整条剪掉 P19（`:300-304` 共 5 行） | cp 备份（本轮 md5 `25b373de…`，与 `mutant-run-3.log:22` 那一份 `ca89380a…` 差在控制位随后动的两笔 runner 注释/判据）→ 剪 → `--prop` → cp 还原 ✓、工作树干净 ✓ | `exit=1`，**PASS 29 / FAIL 0**，逐字红在条数硬闸：`Error: 模式 prop 的判据条数对不上：实到 29 条，应有 30 条（专属判据整段没跑或被剪了一条都不许算过）` ⇒ 这一闸拦的是"**判据被剪而表没改**"那一型 |
+| D：摘掉 root `package.json` 里 `prop-shot` 末尾的 ` --prop`（复审计席 1.4 举的那一型） | cp 备份（md5 `321e4d0b…`）→ 单点替换 → `npx vitest run scripts/test/shot-baseline.test.mjs` → cp 还原 ✓（`mutant-d.log`） | vitest `exit=1`，**只有 `root script "prop-shot" 指向 desktop-shot，且带且只带 --prop` 那一格红**，其余 12 格照过 ⇒ 新增的 token↔script 配对有牙。**同一型下真窗口那道条数闸根本不参与**（`mode` 判成 `'shot'`，`checks.length` 恰好等于表里的 6 ⇒ 六行全 PASS、`exit=0`），所以我原先写在 `desktop-shot.mjs:331-334` 那句"专属 token 掉出去也拦得住"是**冒领**，已按两型分工改写 |
 
-三发跑完 `pnpm verify` exit=0（`mutant-run-3.log` 末行）。变异都发生在收口前的同一份树上，还原后逐字与备份同 md5，未提交任何变异中间态。
+| E：**终树上重测布局那一发**（`STOREY_TAB_HEIGHT_PX` 32 → 40，`panels.tsx:42`）—— 给 §五之三 重测出来的那枚墨迹 30742 补牙 | cp 备份（md5 `9a1e224c…`，与变异 A 那一份同 md5：中间只动过注释之外的零字节）→ 单点替换 → `pnpm build` → 真窗口 `--prop` → cp 还原 ✓、`git status` 只剩文档 ✓（`mutant-e.mjs` / `mutant-e.log`） | `exit=1`，**PASS 28 / FAIL 2**，红在 `P3 画布原点实测 = (0,32)` 与 `P7 …墨迹实测 30742…` 两格，靶子那一行同时漂成 `click=(118,413) 画布 1167×825` ⇒ **新字面量不是"恰好等于"：改布局它一定红**。（Task 8 当年在同一发上量到的是 P3、P7 FAIL / 27 PASS —— 条数从 29 涨到 30，PASS 数跟着涨一格，判据本身没动。） |
+
+**五发的账与限度（如实写，不写成形而上）**：`pnpm verify` exit=0（`mutant-run-3.log` 末行；E 那一发之后控制位又跑一遍，`final-verify2.log` = 35 文件 / 509 条）；变异都发生在同一份树上，还原后逐字与备份同 md5，未提交任何变异中间态。**未获实测背书的三组**（复审计席 §2 尾）：P6 的 `wallIdDomAtSelect`/`heightDomAtSelect`/`axisLenDomAtSelect` 与 P17/P18 的 `no-wall`/`wall-id` 五枚 DOM 式——全目录 `grep -rho "FAIL  P[0-9a-b]*" *.log` 的命中族是 P1/P3/P7/P8/P8b/P20，**没有 P6/P17/P18**（B 那一发只动了 `trial-reason` 一块）。它们的依据是渲染条件本身（`panels.tsx:347-348` 那两行的 `props === null` 分支），形状上写反会红，但盘上没有跑过的证据 ⇒ 记为"待测"，不记为"已证"。
 
 ### 五、正文改口（本轮第二遍）
 
 `fix-doc-refs3.mjs` 按内容锚改 11 处（每处要求命中数写死，不中即不写盘）：`main/index.ts:1492→1498`（×2）、`PlanCanvas.tsx:342→348`、`:1348-1350→1356`、`:1317→1323`、`:1015→1021`、`:1099→1105`、`:1359→1365`、`PlanCanvas.tsx:883/:884→890/:891`、`desktop-shot.mjs:168→175`（**D9 那一行**；第三棒在 runner 里加了行，位移不是均匀的 +4，我按内容逐条重测后订正）、判据条数 `6/11/21/28/29→6/11/22/28/30`、`--edit` 十五条→十六条。改完逐条回读盘上那一行确认语义对得上（`desktop-shot.mjs:172` 曾一度写错成 D6，已改回 `:175`）。
 
+### 五之二、复审计席（scoped re-review，区间 `607b0ad..230b924`）的账与处置
+
+报告 `final-re-review-report.md`（332 行），总裁决 **PASS WITH FINDINGS（0 × P0 / 2 × P1 / 4 × P2）**。审计项 1（判据有没有被放宽）逐条对打了区间内 12 条删除行，**0 × P0** —— 三棒 + 两笔收口确实只加不减；审计项 3（`shot-baseline` 是否自证）判 PASS 并写清了两把牙的分工；审计项 5（产物泄漏 / `typecheck` / `lint:deps`）PASS。逐条处置：
+
+| 席上的号 | 内容 | 处置 |
+|---|---|---|
+| P1（1.4） | `desktop-shot.mjs:331-334` 那段注释**冒领**：它举的"专属 token 从 `package.json` 掉出去 ⇒ 判成 `'shot'` ⇒ 整段没跑还报绿"这一型，条数硬闸恰好**拦不住**（`checks.length` 与表里的 `shot: 6` 相等） | **认，两半都修**：注释按两型分工重写；这一型的机械守卫新落在 `shot-baseline.test.mjs` 的 token↔script 配对 5 格（变异 D 实测：摘 ` --prop` 只有那一格红） |
+| P1（4.2） | 第三棒报告 `final-fix3-report.md` §5 提交表里 `b07f6f6` / `fe18496` 两行的 `+N/-M` 用的是"改动行数合计"，与其余五行（insertions）两种口径 | **记账，不改代码**：报告是 SDD 目录里的一次性产物、随工作区删除；盘上 `git show --numstat` 为准。⇒ 本节的变异表从此只引日志原文与 `文件:行号` |
+| P2（2.1） | `illegalEnterTrialOk` / `illegalEnterTrialInput` 两格**无独立鉴别力**（输入未变 ⇒ 与第 4 步按构造相同；摘守卫时 `predict` 照跑、这两格照绿） | **认，不动**：它们不是缺陷也不是放宽，信息量与 `index.ts:2030` 的增量等待重叠；P8b 的牙在 `illegalEnterUncaughtDelta` / `illegalEnterDepth` / `illegalEnterLastError` 三格，已由变异 A 单独证出 |
+| P2（2.2） | `illegalEnterThickness === 240` 与 P8 的 `thicknessAfterTrial4 === 240` 共用同一个字面量 | **认，不动**：写死字面量是本文件既有口径（`:212-215` 的"实测回填"），独立产地是探针 `prop.props.thicknessMm`；样例房改厚度时两处一起改，这条已在本节 §六 的挂账清单同一族 |
+| P2（4.3） | 报告正文一处 `prop :218` 行号引入时即陈旧（HEAD 已 225） | **仓库侧已收口**（`230b924` 把行号从用例名去掉，`grabAll` 钉命中数为 2）；报告正文随工作区删除 |
+| P2（4.4） | **派发词把变异 A/B 的名目写错了**（我写"摘 `assertMm`"/"短路 drop"，日志原文是"`if (report.ok)` 摘成裸 submit"/"`trial-reason` 永不上屏"） | **认，是我的账**：本节 §四 那两行已按日志逐字改口，并补上"未获实测背书的三组 DOM 式（P6/P17/P18）"这条限度。**同一型第三次**：我从自己的中间摘要复述席位/日志的原话，第三次都被盘上推翻 ⇒ 凡引用日志内容，落笔前重读那几行，不从摘要搬。 |
+
+### 五之三、终审之后收掉的最后一笔：`propProbe` 的靶子改按**几何**定序（代码 `b772da8` + 注释订正 `docs(scene-2d)`）
+
+这一节是计划 3 的最后一个代码缺陷，也是**唯一一个由收口复跑当场抓出来的**。过程里我又踩了一次自己的老坑，先记它：
+
+- **触发**：我上一段话把五闸门复跑写成"sweep exit=0 ⇒ 五道全绿"。盘上 `gate-summary.txt`（现改名 `gate-sweep-6-red.txt`）那一轮是
+  `EXIT1  prop-shot: PASS 28 / 期望 30, FAIL 2`。**我自己的摘要不是原话** —— 同一型第五次（前四次记在 §五之二 与 §四 末），
+  这一次的形态是"把 exit 码读成了判据内容"。复跑日志与总账必须逐行读，不能只读 exit 码。
+- **症状**：红的恰好是 `P7`（选中那一刻的墨迹 30744）与 `P20`（删墙级联掉的 `opening` 条数 10 → 8）两格，其余 28 格照绿；
+  而这两格吃的都是"这一发挑中**哪面墙**"。
+
+**普查（可复算，脚本 `.superpowers/sdd/…/census-prop.mjs`，扫目录里所有含 `prop` 报告的 `.log`）**：改前 11 发完整 `--prop-shot`（3 发变异跑不计）里
+**10 发挑中 clickPx (1027,416) 的 6000 轴长墙**（墨迹 30744、级联 10→8、全绿），**1 发挑中 (584,87) 的 8000 轴长墙**
+（30747、10→7，`t9-prop-shot-run1.log`，红的正是那两格）；同日收口复跑又出现一次同型红，但它的 `.log` 已被后一发覆盖，
+只剩总账那一行 ⇒ 那一发挑中哪面墙是按两格实测值**反推**的，不是日志实证。窗口几何（`wPx×hPx`=1167×833、`pxPerMm`=0.11426282、
+视口原点 =(-1106.65,6645.11)）在这些发里**逐字相同** ⇒ 不是尺寸漂，也不是 `snapPx` 取整漂。
+
+**根因**：`propProbe` 遍历 `doc.byKind('wall')` 取"第一面过六道筛的墙"，而 `byKind` 是 **id 升序**，样例房的 id 每次现建，
+`uuidv7` 自己写明「同毫秒内不保证单调」（`packages/core/src/ids.ts`）⇒ 同毫秒建出的两面改得动的墙谁排前面随进程漂。
+Task 9 的当时诊断（"根因是探针起点枚举…谁被挑中由 uuidv7 现建 id 定"）**是对的**，但它把这一条挂给了计划 4，
+而"复跑 4/4 全绿"只是抽到了多数那一面墙 —— 挂账没踩不等于缺陷不在。
+
+**两条假说是怎么排除的**（都留了盘上证据，不是推理取胜）：
+1. *像素取整*：`pickPxOf`/`uniqueHitOf` 判的是浮点边中点，`propProbe` 之后 `snapPx` 成整数 —— 拿 24 份新建的 `demoHouse` 逐份验
+   整数像素仍唯一命中且赢家正确 ⇒ 取整不是随机源（但**第 3 步的 `panelWallId === prop.wallId` 断言**才是这条的正式护栏：真窗口里
+   取整若换了赢家，红在第 3 步，不会漂到第 10 步）。
+2. *撤销动了选中集*：`PlanCanvas.tsx:826` 那句纪律（undo/redo 都不碰选中集，D7）+ 第 3 步之后画布再没被点过 ⇒ 不成立。
+
+**修法（`packages/scene-2d/src/handles.ts`）**：新增 `wallCornerKey` —— 取轴线两端点毫米、**小角在前**（先比 y 再比 x）比完大角，
+四个数全等才算并列。规则本身**是任意的**，要的只是它**只由文档几何决定**：与 id 无关（id 会漂），与窗口尺寸无关（比的是毫米，不过视口）。
+筛 ①② 先把候选收齐、定序，③④⑤⑥ 在定序之后逐面现问真源；洞口那一发改用 `distanceMm` 升序（同一条纪律：一樘还是另一樘别交给会漂的序）；
+第二面墙复用同一张定序表。四数全等（两面墙躺在同一条轴上）才按 id 收尾，只为"同一文档内也确定"，它换不了靶子。
+
+**TDD 的形状**：`handles.test.ts` 新增夹具 `twoParallelWalls('low-first' | 'high-first')` —— 两面都过六道筛的平行墙（各带一樘点得中的窗），
+几何逐字相同、只差建墙顺序。**为什么是 24 份而不是一份对打**：同毫秒的 id 序是随机的，一份反向文档约有对半概率恰好也挑中同一面墙，
+测不出东西；24 份交替 ⇒ 旧写法要全绿得连掷 12 次同一面。改前红（逐字 `expected '01a0f3d6-203c-765d…' to be '…7dea…'`）、改后绿。
+
+**字面量是同码复跑重测，不是放宽**：靶子稳定成左墙 (113,416) 以后，P7 的墨迹实测 **30742**、P20 的级联实测 **10 → 7 → 10**
+（左墙身上三樘洞口，原靶子两面）。判据形状、条数（30）、`expectedChecksByMode` 那张表一字未动。
+新数有没有牙由**变异 E** 背书（§四 末行）：把 `STOREY_TAB_HEIGHT_PX` 32 改成 40 ⇒ `exit=1`、`PASS 28 / FAIL 2`，
+红的正是 P3（原点）与 **P7（那句"墨迹实测 30742"）**，靶子那一行同时漂成 `click=(118,413) 画布 1167×825`
+⇒ 30742 不是"恰好等于"，布局一改它必红；`cp` 还原后 md5 逐字一致、`git status` 只剩这一笔文档。
+
+**复跑账**：定序改动之后连续 8 发 `--prop-shot` `exit=0` / 30 PASS 且 clickPx·openingPx·墨迹·级联逐字相同；
+**终树五道闸门复跑（`gate-sweep-7-fixed.txt`）= shot 6 / pick 11 / edit 22 / draw 28 / prop 30，FAIL 0 ⇒ 五道全绿**（这一次是逐行读过的）；
+`pnpm verify` exit=0 / **35 文件 / 509 条**（508 → 509 全来自 `handles.test.ts` 那条新用例，`Test Files` 35 不动）。
+
+**新挂账（这一笔不掩盖，交给计划 4 的第一发现场）**：`prop-fix-run1.log` 有 **1/8** 发没跑到判据行，红在第 10 步的
+`waitUntil('撤销完三格读数没逐字回到第 3 步那一份')`（10 秒天花板）。它那行「最后一眼」把现场交得很清楚：
+`depth` 已回到基线 30、`revision` 8、`lastError` null，但 `selectedIds` 与 `panelWallId` 是**另一面墙**（`panelProps.axisLengthMm` = 8000，
+即普查里 (584,87) 那一面），墨迹 30747 也与该墙吻合 ⇒ **真源没问题，是屏幕上的选中集在第 4~10 步之间换了墙**。
+字面量重测之后的 9 发（`prop-fix-run9~16` + `run17`）没有复现这一发，所以它不是新判据的必然结果。
+同族超时在全计划里的账（`grep -c "10 秒内没等到"`）：`dr4` / `dr7` / `r7` / `t9-draw-shot-run1` / `t8D4-edit-shot-run1` /
+`gate-draw-shot-run6-fallbackprobe` / `t8E-prop-run2` / `t8E-prop-run3` / `prop-fix-run1` = **9 发**，跨三道闸门。
+下一步该上的证人（**本轮不做**）：给 `editorStore` 里写 selection 的每一处打一个来源标签，让超时消息能说"是谁把墙换了"，
+而不是只交出换完的结果；在那之前不许把它读成 flaky 而加重试 —— 重试会把它盖成第二型冒领。
+
 ### 六、挂到计划 4 的账（本轮按裁决**不**回头做）
 
-十个手抄 `*Shape` 换 `import type`（B 席 P1-2）；`pressPx`/`clickCanvasPx` 前置那发 `mouseMove` 收成一个 helper（B 席 P1-3 —— 那一发**不惰性**，`PlanCanvas.tsx:795` 的 `window.addEventListener('pointermove')` 会先进吸附通路并写 store，收进本体等于给 pick/draw 两道闸门各凭空加若干发事件，其像素判据是在当前这套序列下量出来的）；`readReportAs<T>` 三份 delegate（B 席 P2-1 的另一半）；材料方向键循环换条件等待（B 席 P2-3，已是"有界必抛"）；HiDPI 糊化（`devicePixelRatio`）；`画不出来：` 那串 m9；`--prop` 里 P7 的 30744 与 P20 的 10→8 两处写死字面量；`PlanCanvas.tsx` 的 `<= 2` 窗口；`insideCanvas`/`intPx`/`snapPx` 三份；`pagePxOf` 抽出；`panel.test.ts` 的 `console.log`；`'endpoint'` 改名；洞口端点/中心；`axisCross ownerId`；O(墙²)；`tsconfig.node.json` 的 `noUncheckedIndexedAccess`。
+十个手抄 `*Shape` 换 `import type`（B 席 P1-2）；`pressPx`/`clickCanvasPx` 前置那发 `mouseMove` 收成一个 helper（B 席 P1-3 —— 那一发**不惰性**，`PlanCanvas.tsx:795` 的 `window.addEventListener('pointermove')` 会先进吸附通路并写 store，收进本体等于给 pick/draw 两道闸门各凭空加若干发事件，其像素判据是在当前这套序列下量出来的）；`readReportAs<T>` 三份 delegate（B 席 P2-1 的另一半）；材料方向键循环换条件等待（B 席 P2-3，已是"有界必抛"）；HiDPI 糊化（`devicePixelRatio`）；`画不出来：` 那串 m9；**`--prop` 第 10 步 `waitUntil('撤销完…')` 那一发的 1/8 超时**（选中集换了墙，证人方案写在 §五之三 末；不许读成 flaky 加 retry）；`PlanCanvas.tsx` 的 `<= 2` 窗口；`insideCanvas`/`intPx`/`snapPx` 三份；`pagePxOf` 抽出；`panel.test.ts` 的 `console.log`；`'endpoint'` 改名；洞口端点/中心；`axisCross ownerId`；O(墙²)；`tsconfig.node.json` 的 `noUncheckedIndexedAccess`。**这张表本轮划掉一条**：原先挂着的"`--prop` 里 P7 的 30744 与 P20 的 10→8 两处写死字面量"已经收了 —— 治的是产地（靶子定序）而不是数值，见 §五之三。
 
 ### 七、收口状态
 
-`main` 分支，终审的代码链 `5992a97` … `230b924`（末尾两笔是控制位收口：`87df9c0` 判据补齐 + `230b924` 用例名去行号），工作树只剩本节这一笔文档提交。本地领先 `origin/main`，**push 由用户本人执行**。计划 3 的 SDD 工作区（`.superpowers/sdd/2026-09-27-dajia-plan3-scene-2d-editor/`）在评审收口后删除，账本 `progress.md` 与全部实测日志在此之前已把结论抄进本节与上面那张「执行日志」表（T1–T6 逐格 + 各 Task 节内的 Step 6 回填）。
+`main` 分支，终审的代码链 `5992a97` … `230b924`（末尾两笔是控制位收口：`87df9c0` 判据补齐 + `230b924` 用例名去行号）之后，复审计席逼出 `2b3b0b0`（注释停止冒领 + token 配对 5 格），收口复跑又当场抓出最后一笔代码缺陷 `b772da8`（`propProbe` 靶子改几何定序，§五之三）与它的注释订正 `26832e7`（普查数按落盘日志复算，不是凭记忆）。
+
+**终树账**：`pnpm verify` exit=0 / 35 文件 / **509 条**；五道闸门 `gate-sweep-7-fixed.txt` = shot 6 / pick 11 / edit 22 / draw 28 / prop 30，FAIL 0 全绿（先 `pnpm --filter @dajia/desktop build` 再跑，逐行读过总账）。工作树只剩本节这一笔文档提交。本地领先 `origin/main`，**push 由用户本人执行**。计划 3 的 SDD 工作区（`.superpowers/sdd/2026-09-27-dajia-plan3-scene-2d-editor/`）在评审收口后删除，账本 `progress.md` 与全部实测日志在此之前已把结论抄进本节与上面那张「执行日志」表（T1–T6 逐格 + 各 Task 节内的 Step 6 回填）。
