@@ -154,9 +154,9 @@ async function readReport(win: BrowserWindow): Promise<ReportShape> {
  * 我们的处理器听的是 pointerdown（而且真实点击还带着 offsetX 与 shift 修饰键）。
  *
  * 坐标换算：探针点是**画布 px**，sendInputEvent 吃**页面 px**，两者差一个实测的画布原点
- * （`canvasOriginPx`）。这里显式加回原点，不假定两套空间重合 —— 今天 origin=(0,0) 时加零
- * 等价于没加，但 Task 8 往画布区挂 StoreyTabs/PropPanel 后布局会变，换算必须在位；
- * "前提今天成立"由闸门的 origin PASS 行断言，而不是由这条路径碰巧不出错来背书。
+ * （`canvasOriginPx`）。这里显式加回原点，不假定两套空间重合 —— Task 8 的三格布局已落地，
+ * 原点是实测的 (0,32)（画布下移的那一栏 tab 高 32），换算吃的就是报告里那份实测 `canvasOriginPx`；
+ * "前提成立"由闸门的 origin PASS 行断言，而不是由这条路径碰巧不出错来背书。
  * 这不是模型几何（角点/沿墙偏移/包围盒一律没碰），是回读通道的坐标空间对齐。
  */
 async function clickCanvasPx(win: BrowserWindow, p: CanvasPx, origin: ViewportPx): Promise<void> {
@@ -245,7 +245,9 @@ async function runPickShot(win: BrowserWindow, path: string): Promise<void> {
     ...cleared,
     ops: before.ops,
     pick: probe,
-    // 换算用的原点随报告一起落盘：脚本既拿它断言 (0,0)，也用它核对换算用的是同一个值。
+    // 换算用的原点随报告一起落盘：脚本既拿它断言实测的 (0,32)（`desktop-shot.mjs` 的 origin 判据行），
+    // 也用它核对换算用的是同一个值。32 那一格是楼层 tab 条高（`panels.tsx` 的 `STOREY_TAB_HEIGHT_PX`），
+    // Task 8 的三格布局把画布下移了一栏 tab，所以原点不再是视口原点 (0,0)。
     canvasOriginPx: origin,
     clickedOwner: picked.selectedIds[0] ?? null,
     // 清空之后 selectedPx 会回到 0，所以"点中时红了多少"必须单独留档，
@@ -386,8 +388,8 @@ function mmOf(report: EditReportShape, pointId: string, label: string): MmShape 
 
 /**
  * 拖拽三件套：探针点的是**画布 px**，sendInputEvent 吃**页面 px**，差一个实测的画布原点。
- * 这里显式加回 origin（与 clickCanvasPx 同一口径），不假定两套空间重合 —— 今天 origin=(0,0)
- * 时加零等价于没加，但 Task 8 挂 StoreyTabs/PropPanel 后布局会变，换算必须在位；"前提今天成立"
+ * 这里显式加回 origin（与 clickCanvasPx 同一口径），不假定两套空间重合 —— Task 8 的三格布局已落地、
+ * 原点是实测的 (0,32)，换算吃的就是报告里那份实测 `canvasOriginPx`；"前提成立"
  * 由 --edit-shot 的 origin PASS 行断言。这不是模型几何（角点/沿墙偏移一律没碰），是回读通道对齐。
  */
 async function pressPx(win: BrowserWindow, p: ClickPoint, origin: ViewportPx): Promise<void> {

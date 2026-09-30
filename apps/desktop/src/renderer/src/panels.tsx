@@ -292,6 +292,9 @@ export function PropPanel(): React.JSX.Element {
   const onThicknessText = (text: string): void => {
     if (wallId === null) return;
     setTyping({ wallId, text });
+    // `Number(text)` 的**拒收产地**不在这里：非法值由 core 构造期守卫（`assertMm` / `positiveMm`）判，
+    // 经 `predict`→`trialCommand` 现问一次真源（输入框那行红字读的就是它），闸门 P8 钉屏幕侧不发
+    // （`desktop-shot.mjs:234-237`）。这与"浮点先过 `quantizeMm` 或被拒"是同一套口径，不是第二套。
     predict('thickness', text, () => wallSetThickness({ wallId, thicknessMm: Number(text) }));
   };
 
@@ -311,6 +314,9 @@ export function PropPanel(): React.JSX.Element {
     // 直接读模块级 `readout` 再 +1：这是事件回调里的自增，一次事件一次调用，不进 React state、不等下一帧。
     publishReadout({ thicknessCommitAttempts: readout.thicknessCommitAttempts + 1 });
     if (wallId === null || props === null || typing === null || typing.wallId !== wallId) return;
+    // 这句 `Number(typing.text)` 与上面 `onThicknessText` 同一口径：拒收产地仍是 core 构造期守卫
+    // （`assertMm` / `positiveMm`，经下面 `predict` 的 `trialCommand` 现问）＋闸门 P8
+    // （`desktop-shot.mjs:234-237`），面板不在自己家里另立第二套判断。
     const value = Number(typing.text);
     if (value === props.thicknessMm) {
       setTyping(null);
