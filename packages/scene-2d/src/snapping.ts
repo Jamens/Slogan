@@ -414,7 +414,7 @@ export function snapFromCursor(
   opts: SnapOptions = {},
 ): SnapResult | null {
   const exclude = opts.excludeMm ?? null;
-  // 六个档位先各造候选、合成一个池子，再统一排序：分开比五趟"谁更近"要把这条判据抄五遍，
+  // 六个档位先各造候选、合成一个池子，再统一排序：分开比六趟"谁更近"要把这条判据抄六遍，
   // 而漏抄的那一遍永远不会红（它只在两档同时命中的那一格才说话）。
   // 池子里留 null 是"这一档没命中"，不是"没有候选点" —— 过滤只发生在下面那一趟循环里。
   const pool: (Ranked | null)[] = [];
