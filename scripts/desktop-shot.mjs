@@ -119,6 +119,9 @@ try {
     checks.push(
       ['探针给出可拖的共享端点（孤端点证不出邻墙）', typeof edit.wallId === 'string' && edit.sharedBy >= 2],
       ['按在把手上即选中那面墙（D5）', report.selectedAfterPress === edit.wallId && report.selectedPxAfterPress > 100],
+      // 「第一发只选中、不起拖」（main 第 1 步那段：把手只从当前选中集生成，空集时 pickHandle 无从命中）
+      // 的唯一见证者是报告里的 `previewPxAfterClick` —— 今天写进报告零读者（终审 B2 P2-4/5）。
+      ['第一发只选中不起拖：临时线一个像素都没有', report.selectedAfterClick === edit.wallId && report.previewPxAfterClick === 0],
       ['把手上屏（只有选中的墙才画把手）', report.handlePxAfterPress > 20],
       ['拖拽中不写真源：depth、revision、坐标三者都不动', report.depthDuringDrag === report.depthAtStart && report.revisionDuringDrag === report.revisionAtStart && report.xDuringDrag === report.xAtStart && report.yDuringDrag === report.yAtStart],
       ['拖拽中临时线上屏（白屏与"只画了图"都过不了）', report.previewPxDuringDrag > 20],
@@ -126,7 +129,7 @@ try {
       // 按下点，上一行照样绿 —— 位置取自 store 的活光标，颜色取自屏幕的实像素，缺一半就是假绿。
       ['拖拽中临时线跟着光标（钉在按下点就红）', report.previewNearMidPx > 0],
       ['松手落点逐字等于探针给的毫米', typeof report.xAfterDrop === 'number' && report.xAfterDrop === edit.targetMm?.x && report.yAfterDrop === edit.targetMm?.y],
-      ['一步拖 = depth +1 且 revision +1（撤销栈知道发生了什么）', report.depthAfterDrop === report.depthAtStart + 1 && report.revisionAfterDrop === report.revisionAtStart + 1],
+      ['一步拖 = depth +1 且 revision +1（撤销栈知道发生了什么）', report.depthAfterDrop === report.depthAtStart + 1 && report.revisionAfterDrop === report.revisionAtStart + 1 && report.dropOutcomeAfterDrop === 'ok'],
       ['松手后临时线不残留、把手仍在', report.previewPxAfterDrop === 0 && report.handlePxAfterDrop > 20],
       ['压扁到锚点被真源拒绝（中文报错，不是没反应）', /轴长|零长/.test(report.lastErrorAfterCrush ?? '') && report.dropOutcomeAfterCrush === 'failed'],
       // 计划 2 转下游 #11 的落地凭据：抛错那发不留任何痕迹 —— 这一条只在真窗口里测得到，
@@ -325,8 +328,8 @@ try {
   // script 里掉出去（`package.json` 那五条是产地），`--prop` 就判不到、一路掉进 'shot' 兜底，
   // `specificFlag` 跟着变 null ⇒ 跑成基本六条那一套、六行全 PASS、`bad === 0`、exit=0，
   // 而操作者以为自己跑的是 `pnpm prop-shot`。**判据整段没跑还报绿**是本仓库最忌讳的一型。
-  // 期望值写死成盘上终账（shot 6 / pick 11 / edit 21 / draw 28 / prop 30）：加判据必须同时改这张表。
-  const expectedChecksByMode = { shot: 6, pick: 11, edit: 21, draw: 28, prop: 30 };
+  // 期望值写死成盘上终账（shot 6 / pick 11 / edit 22 / draw 28 / prop 30）：加判据必须同时改这张表。
+  const expectedChecksByMode = { shot: 6, pick: 11, edit: 22, draw: 28, prop: 30 };
   const expectedChecks = expectedChecksByMode[mode];
   if (checks.length !== expectedChecks) {
     throw new Error(
