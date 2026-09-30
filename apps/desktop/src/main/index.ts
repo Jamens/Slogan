@@ -1793,6 +1793,32 @@ async function readSelectState(
 }
 
 /**
+ * 未捕获异常计数（**通道不是判据**）：面板"先问后发"那三句守卫如果被摘掉，非法值那一发会在
+ * 事件回调里同步抛（`assertMm` 在命令构造期），`dispatch` 压根没跑到 ⇒ 文档一个字都不动。
+ * 光看 `depth`/`revision`/`lastError` 分不出"挡住了"与"裸抛了"，只有这一格能分。
+ * 走 `window.addEventListener('error')`：全仓不引 ErrorBoundary（`PlanCanvas.tsx` 里那处 catch 只管 paint effect），
+ * 事件回调里的裸抛按 DOM 语义冒到 window。这一发由控制位用变异实测它真会动（本棒跑不了闸门）。
+ */
+async function installErrorCounter(win: BrowserWindow): Promise<number> {
+  const js =
+    '(() => { if (typeof window.__dajiaUncaught !== "number") {' +
+    'window.__dajiaUncaught = 0;' +
+    "window.addEventListener('error', () => { window.__dajiaUncaught += 1; }); }" +
+    'return window.__dajiaUncaught; })()';
+  const at = (await win.webContents.executeJavaScript(js)) as number;
+  if (typeof at !== 'number') {
+    throw new Error('未捕获异常计数器没装上（读回来不是 number）⇒ 第 4b 步的判据会绿得没有意义');
+  }
+  return at;
+}
+
+async function readErrorCounter(win: BrowserWindow): Promise<number> {
+  const at = (await win.webContents.executeJavaScript('window.__dajiaUncaught ?? -1')) as number;
+  if (typeof at !== 'number' || at < 0) throw new Error('未捕获异常计数器读不到（探针掉了吗）');
+  return at;
+}
+
+/**
  * 十六步（0…15）：楼层 tab 往返 → 选墙 → 三格属性（含一发被拒）→ P12 同值 → 两次撤销 →
  * 材料 → 承重 → 回到第 3 步读数 → 混选（墙 + 洞口仍开面板、两面墙才关面板）→ 清空重选 →
  * Delete 级联 → 撤销 → tab 往返 → 终态。
@@ -1809,6 +1835,8 @@ async function runPropShot(win: BrowserWindow, out: string): Promise<void> {
   await waitForDebug(win);
   await focusForInput(win);
   await waitForLayoutSettled(win);
+  // 未捕获异常计数器要在**第一次读之前**装上（第 4b 步吃的是它前后的增量，见 `illegalEnterUncaughtDelta`）。
+  const uncaughtAtStart = await installErrorCounter(win);
 
   // 0) 起始读数 + 探针。
   const start = await readPropReport(win, '起始');
@@ -1988,6 +2016,25 @@ async function runPropShot(win: BrowserWindow, out: string): Promise<void> {
   }
   // 红字的上屏对账（终审 B2 P1-2）：`trial4Reason` 吃的是 debug 里的状态量，证不到红字真在屏幕上。
   const trial4DomReason = await domTextOf(win, '[data-dajia="trial-reason"]');
+
+  // 4b) 把那串非法值**真的按一次 Enter**：证明"先问后发"那三句守卫活在真窗口里。
+  //     第 4 步只打字不回车 ⇒ 证的只是 onChange 那一路。提交那一路（`onThicknessCommit`）今天零凭据：
+  //     摘掉 `if (report.ok)` 之后 `assertMm` 在命令构造期同步抛，`dispatch` 没跑到，
+  //     depth / revision / lastError / 真源厚度四项**全部照常**，只有未捕获异常这一格能分。
+  //     到位凭据仍走 `thicknessCommitAttempts`（面板提交通路的到过人计数，守卫之前 +1），不是固定 sleep。
+  const beforeIllegalEnter = await readPropReport(win, '非法值 Enter 之前');
+  const uncaughtBeforeEnter = await readErrorCounter(win);
+  await keyCombo(win, 'Return', []);
+  const illegalEnter = await waitUntil(
+    '第 4b 步的 Enter 没进面板提交通路（提交计数没变大）：240.5 那串字还压在框里？',
+    () => readPropReport(win, '非法值再 Enter'),
+    (r) => r.thicknessCommitAttempts > beforeIllegalEnter.thicknessCommitAttempts,
+  );
+  const illegalUncaught = (await readErrorCounter(win)) - uncaughtBeforeEnter;
+  const illegalDomReason = await domTextOf(win, '[data-dajia="trial-reason"]');
+  const illegalDomValue = await domTextOf(win, THICKNESS_INPUT);
+  // 第 4 步的打字是 Ctrl+A 替换 ⇒ 框里那串 `240.5` 不会污染第 5 步（第 5 步自己会再全选再打），
+  // 这里不额外清理。
 
   // 5) 换成探针给的合法值再 Enter：一发命令、面板读的是真源而不是输入框。
   await typeText(win, String(prop.thicknessTo));
@@ -2354,6 +2401,17 @@ async function runPropShot(win: BrowserWindow, out: string): Promise<void> {
     trial4DomReason,
     depthAfterTrial4: rejected.depth,
     thicknessAfterTrial4: rejected.panelProps?.thicknessMm ?? null,
+    // 第 4b 步：非法值真按一次 Enter（终审 B2 P1-1，键名统一 illegalEnter 前缀防撞车守卫）
+    illegalEnterDepth: illegalEnter.depth,
+    illegalEnterRevision: illegalEnter.revision,
+    illegalEnterLastError: illegalEnter.lastError,
+    illegalEnterThickness: illegalEnter.panelProps?.thicknessMm ?? null,
+    illegalEnterTrialOk: illegalEnter.lastTrial?.ok ?? null,
+    illegalEnterTrialInput: illegalEnter.lastTrial?.input ?? null,
+    illegalEnterUncaughtDelta: illegalUncaught,
+    illegalEnterUncaughtAtStart: uncaughtAtStart,
+    illegalEnterDomReason: illegalDomReason,
+    illegalEnterDomValue: illegalDomValue,
     // 第 5 步：一发命令 + 面板读真源
     depthAfterThickness: thicker.depth,
     revisionAfterThickness: thicker.revision,

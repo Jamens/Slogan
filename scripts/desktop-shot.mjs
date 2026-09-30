@@ -243,6 +243,11 @@ try {
           report.thicknessAfterTrial4 === 240 &&
           // 红字真在屏幕上且与 debug 逐字相同（终审 B2 P1-2）：`trial-reason` 出口今天零读者。
           report.trial4DomReason === report.trial4Reason],
+      ['P8b 非法值真按一次 Enter：守卫挡在屏幕侧 —— 一条命令都没发、lastError 没被写过、未捕获异常 0 发（摘掉守卫那一发是裸抛，只有这一格分得出）、红字与输入框那串字都还在屏幕上',
+        report.illegalEnterDepth === report.baseDepth && report.illegalEnterThickness === 240 &&
+          report.illegalEnterLastError === null && report.illegalEnterUncaughtDelta === 0 &&
+          report.illegalEnterTrialOk === false && report.illegalEnterTrialInput === '240.5' &&
+          report.illegalEnterDomReason === report.trial4Reason && report.illegalEnterDomValue === '240.5'],
       ['P9 换成探针给的第一档合法值回车：恰好一条命令（depth 基线 +1）、面板读回新值 = 真源',
         report.trial5Input === String(prop.thicknessTo) && report.trial5Ok === true &&
           report.depthAfterThickness === report.baseDepth + 1 && report.revisionAfterThickness === 3 &&
@@ -320,8 +325,8 @@ try {
   // script 里掉出去（`package.json` 那五条是产地），`--prop` 就判不到、一路掉进 'shot' 兜底，
   // `specificFlag` 跟着变 null ⇒ 跑成基本六条那一套、六行全 PASS、`bad === 0`、exit=0，
   // 而操作者以为自己跑的是 `pnpm prop-shot`。**判据整段没跑还报绿**是本仓库最忌讳的一型。
-  // 期望值写死成盘上终账（shot 6 / pick 11 / edit 21 / draw 28 / prop 29）：加判据必须同时改这张表。
-  const expectedChecksByMode = { shot: 6, pick: 11, edit: 21, draw: 28, prop: 29 };
+  // 期望值写死成盘上终账（shot 6 / pick 11 / edit 21 / draw 28 / prop 30）：加判据必须同时改这张表。
+  const expectedChecksByMode = { shot: 6, pick: 11, edit: 21, draw: 28, prop: 30 };
   const expectedChecks = expectedChecksByMode[mode];
   if (checks.length !== expectedChecks) {
     throw new Error(
