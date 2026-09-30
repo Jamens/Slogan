@@ -328,11 +328,14 @@ try {
   }
   process.stdout.write(`${JSON.stringify(report)}\n`);
   if (bad > 0) throw new Error(`${String(bad)} 项判据没过`);
-  // 判据条数硬闸（终审屏幕侧 P1）：`mode` 是上面那条 argv 链现推的，专属 token 一旦从 root
-  // script 里掉出去（`package.json` 那五条是产地），`--prop` 就判不到、一路掉进 'shot' 兜底，
-  // `specificFlag` 跟着变 null ⇒ 跑成基本六条那一套、六行全 PASS、`bad === 0`、exit=0，
-  // 而操作者以为自己跑的是 `pnpm prop-shot`。**判据整段没跑还报绿**是本仓库最忌讳的一型。
-  // 期望值写死成盘上终账（shot 6 / pick 11 / edit 22 / draw 28 / prop 30）：加判据必须同时改这张表。
+  // 判据条数硬闸（终审屏幕侧 P1）：期望值写死成盘上终账（shot 6 / pick 11 / edit 22 / draw 28 / prop 30），
+  // 加判据必须同时改这张表。它拦的是**这一型**：专属判据被剪了一条而表没改 —— 实测 `mutant-c.log`
+  // （剪掉 P19 那五行 ⇒ `exit=1`、`PASS 29`、`FAIL 0`，红在这道闸而不是某条判据）。
+  // 它**拦不住**另一型（终审复审计席 1.4 点名，两型不许混着领功）：专属 token 从 root script 里掉出去
+  // （`package.json` 那五条是产地）⇒ 下面那条 argv 链把 `mode` 现推成 `'shot'` ⇒ 跑成基座六条那一套，
+  // 而 `checks.length` 恰好等于表里的 `shot: 6` ⇒ 六行全 PASS、`bad === 0`、`exit=0`，操作者还以为跑的是
+  // `pnpm prop-shot`。那一型由 node 侧 `scripts/test/shot-baseline.test.mjs` 的「token ↔ script 配对」五格钉
+  // （实测 `mutant-d.log`：摘掉 `prop-shot` 尾部的 ` --prop` ⇒ 只有 prop-shot 那一格红，其余 12 格照过）。
   const expectedChecksByMode = { shot: 6, pick: 11, edit: 22, draw: 28, prop: 30 };
   const expectedChecks = expectedChecksByMode[mode];
   if (checks.length !== expectedChecks) {

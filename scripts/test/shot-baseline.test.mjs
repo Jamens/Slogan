@@ -3,6 +3,8 @@
 // desktop-shot.mjs 本体由裸 `node` 跑、进不了 verify（vitest include 不含它），它的字面量今天零凭据：
 // "结构改了而闸门字面量没改"只有人手跑 `pnpm shot` 才知道。本文件把这笔账接进 verify。
 // 抠法一律是"具名判据行的正则 + 恰好命中 N 次"：命中 0 = 判据被删，命中 >1 = 抠错，两种都抛。
+// 终审复审计席 1.4 之后再加一组：五个 root script 与 `--pick/--edit/--draw/--prop` 的**配对**（真窗口那道
+// 条数硬闸管不到"token 从 package.json 掉出去"这一型，牙在这里）。
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { buildDrawList, demoHouse, EMPTY_SELECTION, fitStorey } from '@dajia/scene-2d';
@@ -78,6 +80,39 @@ describe('判据条数硬闸的账进 verify', () => {
       if (block === null) throw new Error(`${flag} 块没切出来（结构变了，抠法要跟着改）`);
       const own = (block[1].match(/^ {6}\[/gm) ?? []).length;
       expect(expected[mode]).toBe(base + own);
+    });
+  }
+});
+
+// 终审复审计席 1.4（P1）逼出来的这一格：runner 里那道条数硬闸拦的是「判据被剪而表没改」，
+// **拦不住**它自己注释里举的那一型 —— 专属 token 从 `package.json` 掉出去 ⇒ 同进程 argv 现推的 `mode`
+// 判成 `'shot'` ⇒ `checks.length` 恰好等于表里的 `shot`，六行全 PASS、exit 0。那一型今天盘上零守卫
+// （CI 只 `pnpm verify`，也不读 `package.json`）。⇒ 机械守卫落在 node 侧：五个 script 各自必须
+// **带且只带**自己的 token，且 runner 的 argv 链必须认这个 token（写了没人认同样判不到模式）。
+describe('闸门模式 token ↔ package.json script 配对', () => {
+  const pkg = JSON.parse(readFileSync(new URL('package.json', root), 'utf8'));
+  const byScript = {
+    shot: null,
+    'pick-shot': '--pick',
+    'edit-shot': '--edit',
+    'draw-shot': '--draw',
+    'prop-shot': '--prop',
+  };
+  const tokens = ['--pick', '--edit', '--draw', '--prop'];
+  for (const [name, token] of Object.entries(byScript)) {
+    it(`root script "${name}" 指向 desktop-shot，且${token === null ? '一个专属 token 都不带' : `带且只带 ${token}`}`, () => {
+      const cmd = pkg.scripts?.[name];
+      if (typeof cmd !== 'string') throw new Error(`package.json 里没有 scripts.${name}（五个闸门之一的产地掉了）`);
+      expect(cmd).toContain('scripts/desktop-shot.mjs');
+      for (const t of tokens) {
+        if (t === token) {
+          expect(cmd.includes(t)).toBe(true);
+          // runner 那条 argv 链必须认这个 token，否则"配对"只存在于 package.json 的一厢情愿里
+          expect(shot.includes(`includes('${t}')`)).toBe(true);
+        } else {
+          expect(cmd.includes(t)).toBe(false);
+        }
+      }
     });
   }
 });
