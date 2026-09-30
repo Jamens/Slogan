@@ -1644,6 +1644,7 @@ interface PropReportShape extends DrawReportShape {
   panelProps: WallPropsShape | null;
   lastTrial: PanelTrialShape | null;
   propsAfterEdit: WallPropsShape | null;
+  thicknessCommitAttempts: number;
   storeyId: string;
   viewport: ViewportShape | null;
   viewportStoreyId: string | null;
@@ -1982,10 +1983,19 @@ async function runPropShot(win: BrowserWindow, out: string): Promise<void> {
   // 6) 同值再来一发（框里还是那串字）：P12 的"改了什么"不许交给撤销栈去背。
   //    预言仍是 ok —— 真源确实收这一发；挡下来的是面板自己那句"要写的值 == 刚读出的值"。
   //    摘掉那道守卫，这一发的 depth 就 +1，判据当场红。
+  //    这一发的**到位凭据是 `thicknessCommitAttempts`（面板提交通路的到过人计数），不是任何判据行**：
+  //    P10 只审"屏幕上不发"，那一发到没到由下面 `waitUntil` 抛 ⇒ 别让下一个人以为报告里那格没人读。
   await typeText(win, String(prop.thicknessTo));
+  // 基线：打字走 onChange/predict、不碰提交计数，所以紧贴 keyCombo 之前读这一眼最短。
+  const beforeEnter = await readPropReport(win, '同值 Enter 之前');
   await keyCombo(win, 'Return', []);
-  await new Promise((resolve) => setTimeout(resolve, 80));
-  const samValue = await readPropReport(win, '同值再 Enter');
+  // 条件等待（不是固定 sleep）：80ms 后裸读一次分不清「P12 守卫挡住了」与「那一发还没到」——
+  // depth/revision 读的是活 store，Enter 没被处理时同样"不动"。这里等的是「这一发确实进了提交通路」。
+  const samValue = await waitUntil(
+    `第 6 步的 Enter 没进面板提交通路（提交计数没变大）：${String(prop.thicknessTo)} 那串字还压在框里？`,
+    () => readPropReport(win, '同值再 Enter'),
+    (r) => r.thicknessCommitAttempts > beforeEnter.thicknessCommitAttempts,
+  );
   const trial6 = samValue.lastTrial;
   if (trial6 === null || trial6.input !== String(prop.thicknessTo) || !trial6.ok) {
     throw new Error(`同值那一发的预言不是 ok/${String(prop.thicknessTo)}：${JSON.stringify(trial6)}`);

@@ -71,6 +71,17 @@ export interface PanelReadout {
   panelProps: WallProps | null;
   propsAfterEdit: WallProps | null;
   lastTrial: PanelTrialReport | null;
+  /**
+   * 「提交通路到过人」的计数器：`onThicknessCommit` 每被调一次（每一发 Enter / blur 事件到达处理函数）就 +1。
+   *
+   * 为什么这一格**不走**上面那套提交后的 `useEffect`（与 `:64` 那段注释的口径相反，那是故意的）：
+   * 它证的正是"事件在**上屏之前**已经到了处理函数"，而 effect 要等下一帧才公布 —— 拿它当到位凭据就
+   * 退化成"等屏幕刷完"，分不清"那一发还没到"与"到了但什么都没改"。同族的先例是
+   * `PlanCanvas.tsx:476` 那句"快捷键的'到过'计数器"（`hotRef`：不进依赖、不进 state、只给报告读）。
+   * 对 StrictMode 的挡法：这里加的是**事件回调里的自增**（一次事件一次调用），不是渲染期赋值 ——
+   * `:64` 禁的是后者（双跑/被丢弃的并发渲染会把没上屏的值公布出去），事件回调不在那条路上。
+   */
+  thicknessCommitAttempts: number;
 }
 
 /** 初值 = "面板还没挂过"，不是面板猜的另一份初值。 */
@@ -80,6 +91,7 @@ let readout: PanelReadout = {
   panelProps: null,
   propsAfterEdit: null,
   lastTrial: null,
+  thicknessCommitAttempts: 0,
 };
 
 function publishReadout(patch: Partial<PanelReadout>): void {
@@ -293,6 +305,11 @@ export function PropPanel(): React.JSX.Element {
    * "改过"与"摸过"。代价：将来若 core 自己挡同值，这三处判断要跟着删，不许留成第二道守卫。
    */
   const onThicknessCommit = (): void => {
+    // 到位凭据（`--prop-shot` 第 6 步的条件等待读这一格）：放在守卫**之前**，因为
+    // `typing === null`（或没选中墙）时 Enter 也算"到了但什么都不做"，计数照样 +1 ⇒
+    // 第 6 步的 `waitUntil` 只等"到没过"这一半，不等"改了什么"（改没改是 P10 那条判据的事）。
+    // 直接读模块级 `readout` 再 +1：这是事件回调里的自增，一次事件一次调用，不进 React state、不等下一帧。
+    publishReadout({ thicknessCommitAttempts: readout.thicknessCommitAttempts + 1 });
     if (wallId === null || props === null || typing === null || typing.wallId !== wallId) return;
     const value = Number(typing.text);
     if (value === props.thicknessMm) {

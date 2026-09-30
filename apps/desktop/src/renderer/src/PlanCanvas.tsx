@@ -196,6 +196,12 @@ export interface DebugReport {
   lastTrial: PanelTrialReport | null;
   /** 最近一次成功提交后的**真源**读数（不是输入框的值）：证"面板读真源"。 */
   propsAfterEdit: WallProps | null;
+  /**
+   * 面板提交通路的"到过人"计数（读 `panelReadout().thicknessCommitAttempts`）：`--prop-shot` 第 6 步
+   * 用它当"那一发 Enter 到没到"的到位凭据，不进 React state、不等下一帧（见 `panels.tsx` 的注释）。
+   * 与上面那五格同一条纪律：值直通 `panelReadout()`，这里一个都不重算。
+   */
+  thicknessCommitAttempts: number;
   // ↓ Task 8 棒 E 的 3 个：`--prop-shot` 第 1、2 步（切层 + P10）的读数口。
   // 这一对不读 `panelReadout()`，读的是 store 自己（视口只住在那里）—— 面板那五格的
   // "不许重算"纪律管不到它，这里也没有第二份算式：`fitStorey` 的答案在写进 store 那一刻就定了。
@@ -970,6 +976,8 @@ export function PlanCanvas(): React.JSX.Element {
         panelProps: panel.panelProps,
         lastTrial: panel.lastTrial,
         propsAfterEdit: panel.propsAfterEdit,
+        // 直通 `panelReadout()`：这一格同样是面板上屏通路公布的账，这里一个都不重算。
+        thicknessCommitAttempts: panel.thicknessCommitAttempts,
         // ↓ Task 8 棒 E 的 3 个。`viewport` 用闭包里那一份（ paint effect 与探针用的就是它，
         // 报告里的视口必须与报告里的像素同源），`storeyId` / `viewportStoreyId` 活读 `s`。
         storeyId: s.storeyId,
