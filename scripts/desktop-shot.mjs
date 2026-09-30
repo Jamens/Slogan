@@ -303,6 +303,19 @@ try {
   }
   process.stdout.write(`${JSON.stringify(report)}\n`);
   if (bad > 0) throw new Error(`${String(bad)} 项判据没过`);
+  // 判据条数硬闸（终审屏幕侧 P1）：`mode` 是上面那条 argv 链现推的，专属 token 一旦从 root
+  // script 里掉出去（`package.json` 那五条是产地），`--prop` 就判不到、一路掉进 'shot' 兜底，
+  // `specificFlag` 跟着变 null ⇒ 跑成基本六条那一套、六行全 PASS、`bad === 0`、exit=0，
+  // 而操作者以为自己跑的是 `pnpm prop-shot`。**判据整段没跑还报绿**是本仓库最忌讳的一型。
+  // 期望值写死成盘上终账（shot 6 / pick 11 / edit 21 / draw 28 / prop 29）：加判据必须同时改这张表。
+  const expectedChecksByMode = { shot: 6, pick: 11, edit: 21, draw: 28, prop: 29 };
+  const expectedChecks = expectedChecksByMode[mode];
+  if (checks.length !== expectedChecks) {
+    throw new Error(
+      `模式 ${mode} 的判据条数对不上：实到 ${String(checks.length)} 条，应有 ${String(expectedChecks)} 条` +
+        `（专属判据整段没跑或被剪了一条都不许算过）`,
+    );
+  }
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
