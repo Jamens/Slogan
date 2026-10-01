@@ -71,8 +71,9 @@
 | `apps/desktop/test/db/journal.test.ts` | 加载 = 最近快照 + 重放其后（快照压在第 3 / 第 5 发的 off-by-one 各一型）、`seq` 可带洞而 `turn` 不可（缺号拒开：中缺与尾缺两位证人）、`schema_version` 三处不符 + `payload.project_id` 别工程 ⇒ 拒开、BIGINT 越界的 `typeof` 读数、`clean_shutdown` 的四种告别方式、`closeProject` 三方对账（不平 ⇒ 抛且不许落 1） | T5 |
 | `apps/desktop/src/main/persist/autosave.ts` | 保存引擎（electron-free）：队列、同 turn 重试、快照触发判定（2000 / 60 秒）、失败上报 | T7 |
 | `apps/desktop/test/unit/autosave.test.ts` | 触发判定与失败路径（注入假钟与假 sink —— 禁令落在 repository 层，引擎的注入点是它自己的接口） | T7 |
-| `apps/desktop/src/main/db/locks.ts` | `acquireLock` / `heartbeat` / `releaseLock` / `lockState`，全部服务端时钟 | T6 |
-| `apps/desktop/test/db/locks.test.ts` | 两个池同工程：第二个拿不到 ⇒ 只读；心跳续期；过期可接管；锁被抢走时心跳受影响行 0 | T6 |
+| `apps/desktop/src/main/db/locks.ts` | `newLockTicket` / `ttlToMicroseconds` / `acquireLock` / `heartbeat` / `releaseLock` / `lockState`，判定全在服务端时钟（`NOW(3)`，文件里不许出现客户机时钟）+ `LOCK_TTL_MS` / `LOCK_HEARTBEAT_INTERVAL_MS` —— **T7 的心跳定时器与 T8 的 IPC 默认值都从这里取，不许各写一份** | T6 |
+| `apps/desktop/test/unit/locks-ticket.test.ts` | 不连库的那一档（**CI 有牙**）：票过 `isEntityId` 且两张不同、owner 的 200 字符尺含恰好放行那一型、`ttlToMicroseconds` 的 0 合法与越界四型、TTL≥3×心跳间隔，外加两条**源码扫描**：`locks.ts` 里禁 `Date.now(` / `new Date(` / `performance.now(` 且 `NOW(3)` 不少于 3 处（P-4 唯一的常驻证人），以及每一发 ``UPDATE `project` `` 都必须跟 `` `id` = ? `` | T6 |
+| `apps/desktop/test/db/locks.test.ts` | 两个池当两台机器（各 `connectionLimit: 2`）：单语句 CAS 六型（幂等重发算 `acquired`、`no-project` 不算 `busy`、锁按工程分）、过期与接管六型（`ttlMs = 0` 写完就不算活、`SELECT SLEEP(0.002)` 跨刻度、两型手搓列各证一支 WHERE、真等接管全链）、心跳六型（过期未接管能复活、只推余额不动票与 owner、删行 ⇒ `lost` 不抛、余额读数按毫秒两型）、解锁五型（三列一起归 NULL、二次 `not-mine`、不动别人）、并发两型（`Promise.all` 恰好一个赢家 + `@@transaction_isolation` 读数）、与写路径互不知情两型（拿锁不动账 / 没拿锁也能 `appendJournal`） | T6 |
 | `packages/core/src/model/transaction.ts` | 加 `get lastPatch(): Patch \| null`（只在成功后更新；抛错时留着上一发，与计划 2 转下游 #11 同一条形状） | T7 |
 | `packages/core/test/transaction.test.ts` | 上面那条 +1 用例（抛错后 `lastPatch` 不许是失败的补丁） | T7 |
 | `apps/desktop/src/main/persist/emergency.ts` | 存盘失败时向 `userData/emergency/` 写 JSON 快照（spec §9 的同步动作） | T7 |
@@ -86,7 +87,7 @@
 | `apps/desktop/src/renderer/src/panels.tsx` | 向导那两栏（输入 + 测试连接 + 分型诊断 + 一键复制）；`STOREY_TAB_HEIGHT_PX = 32` 不许动（闸门原点判据吃它） | T9 |
 | `apps/desktop/src/main/db/diagnostics.ts` | `classifyDbError(err)`：ECONNREFUSED / ER_ACCESS_DENIED_ERROR / ER_BAD_DB_ERROR / PROTOCOL_CONNECTION_LOST / ETIMEDOUT / 未知码 ⇒ 各配文案与下一步 | T9 |
 | `apps/desktop/test/unit/diagnostics.test.ts` | 六个分型 + 「未知码不许说成服务未启动」 | T9 |
-| `apps/desktop/src/main/index.ts` | 加 `--lock-shot` / `--persist-shot` 两分支（现 2579 行；新分支只加不改既有五分支） | T6/T10/T11 |
+| `apps/desktop/src/main/index.ts` | 加 `--lock-shot` / `--persist-shot` 两分支（现 2579 行；新分支只加不改既有五分支） | T10/T11 |
 | `scripts/desktop-shot.mjs` | mode 链 +2（`lock` / `persist`）、`expectedChecksByMode` +2 格、多进程编排（`spawn` + `SIGKILL`） | T10/T11 |
 | `scripts/test/shot-baseline.test.mjs` | 「闸门模式 token ↔ package.json script 配对」表 +2 行；条数账的 `for (const mode of [...])` 名单 +2 | T10/T11 |
 | `docs/install-mysql.md` | spec §13.4 那「一页图文安装说明」：没装 MySQL 的机器下一步做什么（验收 6 的一半） | T9 |
@@ -4629,3 +4630,872 @@ EOF
 | T5-M14 | `storeyIdOf` 改成 `entity.kind === 'storey' ? entity.id : entity.storeyId` | 证人只有两格，且都是**直接读那一列**的：`reconcile.test.ts` 的 `楼层行把 storey_id 写成了自己的 id`（手搓行 ⇒ 期望一条 `differs`，变异后自比相等 ⇒ 得空数组）与 `storeyIdOf：楼层自己就是层 ⇒ null`（`toBeNull` 当场翻脸）。**登记的限度**：本任务的库用例全绿 —— 列由这份规则写、又由同一份规则审，`diffStoreyIdColumn` 是自比，规则本身漂了它看不见（`closeProject 平账` 那一格正是此型）。跨任务的证人是 T4 的 `楼层那一行的 storey_id 是 NULL，别的三类都带着自己的层`（`test/db/repository.test.ts`，它读的是列的实测值，不经过这份规则）：第 ③ 段"合并成一份"把重复消掉了，代价就是这份规则只剩外部证人，所以那一格不许并进来、也不许在本任务里被改写 |
 | T5-M15 | 给 `UPDATE project SET clean_shutdown = 0` 加 `affectedRows === 1` 断言 | `连开两次` 红（第二次打开是 0→0，MySQL 只数真变化的行）。这一发是第 ② 段那条实现纪律的证人，不是待修的 bug |
 | T5-M16 | 把 `loadProject` 的 `beginTransaction` 去掉，三发读改用 `this.pool.query` | 本任务用例**全绿** —— 登记的限度：能证的是"未提交的行不可见"（每发语句各自也是这个读数），不能证"两次读之间被并发写入切碎"，那要并发写者恰好落在两发读中间。事务保留的理由写在第 ② 段：`wasCleanShutdown` 的读与那一发写必须同快照，否则报的是抹完之后的值（`没告别就崩` 那一格读的就是这个先后）。不许因为"这条测不到"就把它当测试专用分支删掉 —— 它是 InnoDB 的标准读法，真读者在 T10 |
+
+
+## Task 6: 工程锁（`locks.ts` —— 服务端时钟的三发 CAS）
+
+**Files:**
+- Create: `apps/desktop/src/main/db/locks.ts`
+- Create: `apps/desktop/test/unit/locks-ticket.test.ts`（不连库：票的形状与那两条尺）
+- Create: `apps/desktop/test/db/locks.test.ts`（连库：两个池抢同一行）
+- Modify: 无（`repository.ts` 与 `locks.ts` 互不知情，第 ⑥ 段写为什么；`main/index.ts` 与 `--lock-shot` 归 T8/T10）
+
+**Interfaces:**
+- Consumes: T2 的 `createDbPool` / `migrate` / `ensureDatabase` / `dropTestDatabase`、T4 的 `PoolOptions.lockWaitTimeoutSeconds`、T4 的 `ProjectRepository.createProject`；core 的 `uuidv7` / `isEntityId` / `EntityId` / `SCHEMA_VERSION`
+- Produces:
+  - `interface LockTicket { readonly projectId: EntityId; readonly token: EntityId; readonly owner: string }`
+  - `newLockTicket(input: { projectId: EntityId; owner: string }): LockTicket`（现调 `uuidv7()` 造票；owner 过两条尺）
+  - `ttlToMicroseconds(ttlMs: number): number`（纯校验 + ×1000；0 合法）
+  - `acquireLock(pool, ticket, ttlMs?): Promise<'acquired' | 'busy' | 'no-project'>`
+  - `heartbeat(pool, ticket, ttlMs?): Promise<'renewed' | 'lost'>`
+  - `releaseLock(pool, ticket): Promise<'released' | 'not-mine'>`
+  - `lockState(pool, projectId, token?): Promise<LockState>`，`interface LockState { exists; held; mine; owner; ttlMsRemaining }`
+  - `LOCK_TTL_MS = 15000`、`LOCK_HEARTBEAT_INTERVAL_MS = 5000`（**T7 的心跳定时器与 T8 的 IPC 默认值从这里取，不许各写一份**）
+
+**① 为什么锁挂在 `project` 行上，不建 `project_lock` 表**：spec §8.2 点名的就是 `project.lock_token`，T2 的 DDL 里三列（`lock_token` / `lock_owner` / `lock_expires_at`）已经建好。第二张表要外键、要多一次 JOIN、还要回答"工程删了锁行归谁"，而挂在本来就要 CAS 的那一行上，这些问题一个都不存在。代价：`SELECT ... FOR UPDATE` 与工程头的读争同一行 —— 但 `appendJournal` 本来就锁这一行（T4），锁与账在同一处串行，比分散在两处更好想。
+
+**② 为什么过期判定一个字都不读客户机时钟（P-4 落地的形状）**：比较用 `NOW(3)`，写入用 `TIMESTAMPADD(MICROSECOND, ?, NOW(3))`，余额用 `TIMESTAMPDIFF(MICROSECOND, NOW(3), lock_expires_at)` —— 三者都在服务端同一条语句里算。两台机器的本地时钟不可比（还多背一层时区），所以 `locks.ts` 里连 `Date.now()` 都不许出现；`uuidv7()` 内部用时钟只造 id，不参与判定。这条口径有一个常驻证人：`locks-ticket.test.ts` 最后一格直接扫 `locks.ts` 的源码文本（与 T3 那条「`storey.ts` 不许留第二份重叠规则」同族判据）。
+
+**③ 为什么"能不能拿"只有一个文本产地**：`HELD_SQL` 是一段导出不必见的模块私有串（``lock_expires_at` IS NOT NULL AND `lock_expires_at` > NOW(3)`），`ACQUIRE_WHERE` 用字符串拼接把它嵌进去。 takeover 条件与活锁读数因此**不可能各漂一半**：把 `>` 改成 `>=` 只有一处可改。为什么取 `>`：`lock_expires_at` 是"余额到这一刻为止"，到点即过期 —— 所以 `ttlMs = 0` 的锁写完就不算活。这一毫秒内的相等边界造不出确定红（要写与读落在同一个 `NOW(3)` 刻度上），所以互补关系靠共享文本保证，不靠用例保证；用例保证的是它两端（`ttlMs = 0` 立刻不算活、活锁不可被抢、`expires_at IS NULL` 那一型算没余额）。
+
+**④ 为什么心跳只认票、不认余额**：`heartbeat` 的 WHERE 是 `id = ? AND lock_token = ?`，不带 `HELD_SQL`。于是"我的锁过期了但还没人接管"时，心跳等于一次少往返的重新 acquire（`'renewed'`，余额复活）；而接管一旦真发生，列上的 token 已经换人，这一发匹配不上 ⇒ `'lost'`。两种形状都由服务端在同一发 UPDATE 里判完，客户机不参与。反过来说：**调用方拿到 `'lost'` 就必须停手**（T7 的 autosave 与 T8 的只读闸门是这句话的读者），因为从这一刻起另一个人正在写同一行账。
+
+**⑤ 为什么判决来自写完之后的服务端读回，而不是 `affectedRows`**：MySQL 的 `affectedRows` 数的是**真发生变化的行**（T5 第 ② 段已经为 `clean_shutdown` 立过同一条纪律）。同一毫秒内用同一张票重发 `acquireLock`，写进去的 `token` / `owner` / `expires_at` 与原来的值逐字节相同 ⇒ `affectedRows` 给 0，而语义上这是 `'acquired'`（幂等），不是 `'busy'`。所以 0 之后补一发读回（`lock_token` 是不是我的票）分家；工程行不存在也从这一发读出来（`'no-project'`，不是 `'busy'`）。`releaseLock` 是唯一不需要读回的：匹配上的行必然要把非 NULL 的三列改成 NULL ⇒ 一定算变化；匹配不上只有"票不是我的"与"根本没上锁"两种，都是 `'not-mine'`。**登记的限度写在 T6-M9**：这条读回的全部可测凭据只有 `no-project` 那一格，"同毫秒重发"撞不出来。
+
+**⑥ 为什么 `appendJournal` 不校验锁**：S1 的威胁模型是「两台机器同时打开同一库」（spec §8.2 原话），不是"对抗自己的代码"。写路径认票会把锁变成 T4 那条事务的第 N 个前置条件，还会让 P-15 那格（外部行锁掐断半途）多一个失败原因混在一起。真正的闸门在调用侧：`'edit'` 意图先 `acquireLock`，拿不到就用 `'read'` 打开（T8），心跳 `'lost'` 之后 autosave 立刻停写并转只读（T7）。所以 `locks.test.ts` 明写两格相反的判据：「没拿锁也能 appendJournal」与「拿锁不动 journal_turn 与四张表」—— 两边都有人证，下一个人就不会以为 `appendJournal` 认票。
+
+- [ ] **Step 1: 先把七件事实测掉（不许写完代码再猜）**
+
+一次性探针写在 SDD 工作区，**绝不落进仓库目录**：`.superpowers/sdd/2026-10-01-dajia-plan4-persistence/probe-lock.mjs`（连库形态照 T4 Step 1：`createRequire(new URL('../../../apps/desktop/package.json', import.meta.url))` 取 `mysql2`，指向 `dajia_test`，跑完 `DROP DATABASE`）。七档各打印一行读数，全部抄进执行回填：
+
+| 档 | 测什么 | 为什么本任务的代码依赖它 |
+|---|---|---|
+| A | `SELECT TIMESTAMPADD(MICROSECOND, ?, NOW(3)) AS at` 绑定 `300000` | 三处写入都用这一形态（函数形态的参数位放 `?` 最直白）。若它不通就换 `DATE_ADD(NOW(3), INTERVAL ? MICROSECOND)`，**两档实测过哪档用哪档，且全文件只用那一档** |
+| B | `TIMESTAMPDIFF(MICROSECOND, NOW(3), <DATETIME(3) 列>)` 的 JS 读数 `typeof` | P-17 开了 `supportBigNumbers`；这里值域只有 ±3.6e9 µs，正常应是 `number`。若实测是 `string`，`lockState` 里的 `Number(...)` 那句就是唯一出口，注释照实写 |
+| C | `(col IS NOT NULL AND col = ?)` 的四个读数：票相等 / 不相等 / 列为 NULL / 绑定值为 SQL NULL | 代码取的是 `=== 1`。若少了 `IS NOT NULL`，`NULL = ?` 给的是 SQL `NULL`（mysql2 回 `null`）—— `Number(null)` 是 0，所以两种写法都"能用"，但只有带守卫的那份读数是 0/1 而不是三态。这一档就是那条注释的凭据 |
+| D | 同一条 UPDATE 连发两次逐字节相同的值，第二次的 `affectedRows` 与 `changedRows` 读数 | 第 ⑤ 段的全部理由。预期 `affectedRows = 0`。`changedRows` 即便存在也**不许依赖**（它来自 info 串的文本解析）；读数照抄进回填 |
+| E | `SELECT SLEEP(0.002)` 的返回值与耗时；期间另一条连接读同一行 | 第 ③ 段那个"跨过 1 毫秒刻度"的用例靠它，不靠 `setTimeout`。SLEEP 是服务端时钟上的真等待，比客户端 sleep 稳 |
+| F | `VARCHAR(200)` 塞 201 个汉字：MySQL 报什么码、strict mode 下是截断还是错 | 我们的前置校验应当在这发之前拦住；报错形态（预期 `1406 Data too long`）写进 owner 那条抛错的注释里，说明"为什么不让 MySQL 去报" |
+| G | `TIMESTAMPADD(MICROSECOND, -1000, NOW(3))` 写进 `lock_expires_at` 之后的读数 | T6-M11 的实测主张：负 TTL **不报错**，它悄悄发一把"写完就过期"的锁（`acquired` 而 `held` false）。这就是校验必须在前置位置的证据 |
+
+Run: `node .superpowers/sdd/2026-10-01-dajia-plan4-persistence/probe-lock.mjs > tmp/t6-probe.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`，七档读数齐全。**任何一档与上面的预期不同 ⇒ 先按实测改代码，再往下走**（与 T4 的 A 档同一条纪律：改的是实现与注释，不许改判据的形状）。
+
+- [ ] **Step 2: 先写不连库的那一档 —— `locks-ticket.test.ts`（CI 有牙）**
+
+`apps/desktop/test/unit/locks-ticket.test.ts`：
+
+```ts
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+import { isEntityId, type EntityId } from '@dajia/core';
+import {
+  LOCK_HEARTBEAT_INTERVAL_MS,
+  LOCK_TTL_MS,
+  newLockTicket,
+  ttlToMicroseconds,
+} from '../../src/main/db/locks';
+
+const PROJECT_ID = '0193aa00-0000-7000-8000-00000000000a' as EntityId;
+
+/** 恰好 200 个字符（MySQL 的 VARCHAR(200) 数的是**字符**不是字节，见 Step 1 的 F 档）。 */
+const OWNER_MAX = 'a'.repeat(200);
+
+describe('锁票：形状与那两条尺', () => {
+  it('token 由 uuidv7 现调：过 isEntityId，两张票不一样', () => {
+    const a = newLockTicket({ projectId: PROJECT_ID, owner: '机器A:1001' });
+    const b = newLockTicket({ projectId: PROJECT_ID, owner: '机器A:1001' });
+    expect(isEntityId(a.token)).toBe(true);
+    expect(a.token).not.toBe(b.token);
+    // owner 相同也必须是两张票：锁的身份靠 token，不靠"谁报的名"。
+    expect(a.owner).toBe(b.owner);
+  });
+
+  it('projectId 形状不对 ⇒ 抛，不发给 MySQL', () => {
+    expect(() => newLockTicket({ projectId: 'nope' as EntityId, owner: 'A' })).toThrow(/projectId/);
+  });
+
+  it('owner 空串 / 纯空白 / 带首尾空白 ⇒ 抛', () => {
+    for (const owner of ['', '   ', ' 机器A ', '机器A ']) {
+      expect(() => newLockTicket({ projectId: PROJECT_ID, owner })).toThrow(/owner/);
+    }
+  });
+
+  it('owner 201 个字符 ⇒ 抛，且文案带着那把尺（200）', () => {
+    expect(() => newLockTicket({ projectId: PROJECT_ID, owner: 'a'.repeat(201) })).toThrow(/200/);
+  });
+
+  it('owner 恰好 200 个字符（含中文）⇒ 放行：尺是 <=200，不是 <200', () => {
+    expect(newLockTicket({ projectId: PROJECT_ID, owner: OWNER_MAX }).owner).toBe(OWNER_MAX);
+    expect(newLockTicket({ projectId: PROJECT_ID, owner: '搭家-机器-A-'.repeat(14) }).owner.length).toBeLessThanOrEqual(200);
+  });
+
+  it('TTL 与心跳间隔那对常量：漏两次心跳才丢锁', () => {
+    // 这一格钉的是口径而不是数字本身：TTL 至少容得下三次心跳的抖动。
+    // 把 LOCK_TTL_MS 改成 6000（小于 3 × 间隔）⇒ 这里红，比线上一到抖动就丢锁好查。
+    expect(LOCK_TTL_MS).toBeGreaterThanOrEqual(3 * LOCK_HEARTBEAT_INTERVAL_MS);
+    expect(LOCK_TTL_MS).toBeGreaterThan(0);
+    expect(LOCK_HEARTBEAT_INTERVAL_MS).toBeGreaterThan(0);
+  });
+
+  it('ttlToMicroseconds：0 合法、15000 换算对、越界四型抛', () => {
+    expect(ttlToMicroseconds(0)).toBe(0);
+    expect(ttlToMicroseconds(15000)).toBe(15000000);
+    for (const bad of [-1, 1.5, Number.NaN, 3_600_001, Number.POSITIVE_INFINITY]) {
+      expect(() => ttlToMicroseconds(bad)).toThrow(/ttlMs/);
+    }
+  });
+
+  it('locks.ts 里不许出现客户机时钟（P-4 唯一的常驻证人）', () => {
+    const src = readFileSync(new URL('../../src/main/db/locks.ts', import.meta.url), 'utf8');
+    for (const forbidden of ['Date.now(', 'new Date(', 'performance.now(']) {
+      expect(src, forbidden).not.toContain(forbidden);
+    }
+    // 所有时间判定都挂在服务端 NOW(3) 上；少一处就说明有一处改成了客户机算的。
+    expect((src.match(/NOW\(3\)/g) ?? []).length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('三发 CAS 都按 id 收口：全文件不许出现不带 `id` 约束的 UPDATE', () => {
+    const src = readFileSync(new URL('../../src/main/db/locks.ts', import.meta.url), 'utf8');
+    const updates = src.match(/UPDATE `project`/g) ?? [];
+    expect(updates.length).toBe(3);
+    // 每一条 UPDATE 后面（到下一条语句之前）都必须出现 `id` = ?，否则就是全库一把锁（T6-M14）。
+    const withoutId = src
+      .split(/(?=UPDATE `project`)/)
+      .filter((chunk) => chunk.startsWith('UPDATE `project`'))
+      .filter((chunk) => !chunk.includes('`id` = ?'));
+    expect(withoutId).toEqual([]);
+  });
+});
+```
+
+Run: `npx vitest run --config vitest.config.ts apps/desktop/test/unit/locks-ticket.test.ts > tmp/t6-ticket.log 2>&1; echo "exit=$?"`
+Expected: `exit=1`，红在**模块解析不到**（`../../src/main/db/locks` 还不存在），不是红在断言。9 格全存在。
+
+- [ ] **Step 3: 写 `locks.ts`**
+
+`apps/desktop/src/main/db/locks.ts`：
+
+```ts
+import { isEntityId, uuidv7, type EntityId } from '@dajia/core';
+import type { Pool } from 'mysql2/promise';
+
+/**
+ * 工程锁（spec §8.2 的 S1 必做项）。三列都挂在 `project` 行上，不建第二张表（口径见计划 T6 第 ① 段）。
+ *
+ * 三条总纪律：
+ * 1. **时间全归服务端**（P-4）：比较用 `NOW(3)`，写入用 `TIMESTAMPADD(MICROSECOND, ?, NOW(3))`，
+ *    余额用 `TIMESTAMPDIFF(MICROSECOND, NOW(3), ...)`。本文件一次都不读客户机时钟 ——
+ *    `locks-ticket.test.ts` 的源码扫描是这条口径唯一的常驻证人。
+ * 2. **单语句 CAS**：不开事务，也不 `getConnection()`。InnoDB 在语句级串行化同一行的写，
+ *    后到的那条等到行锁之后按**已提交的当前版本**重判 WHERE —— 所以"两个池同时 acquire
+ *    恰好一个成功"是驱动与引擎给的，不是我们假设的（`locks.test.ts` 那一格测的就是它）。
+ * 3. **`affectedRows` 只当快路**：MySQL 数的是真变化的行（T5 第 ② 段同一条纪律），
+ *    判决来自写完之后的服务端读回。理由与限度都写在 `decide()` 上。
+ */
+
+/** 默认余额：漏两次心跳（10 秒）才丢锁。T7 的定时器与 T8 的 IPC 默认值都从这里取。 */
+export const LOCK_TTL_MS = 15_000;
+export const LOCK_HEARTBEAT_INTERVAL_MS = 5_000;
+
+/** TTL 的上界：一小时。超过它的值在形状上就像 bug，不像配置。 */
+const TTL_MAX_MS = 3_600_000;
+/** `project.lock_owner` 是 VARCHAR(200)，MySQL 数的是字符。前置校验的文案里就写这个数。 */
+const OWNER_MAX_CHARS = 200;
+
+export interface LockTicket {
+  readonly projectId: EntityId;
+  readonly token: EntityId;
+  /** 给人看的那一个（横幅要直接显示它）：`机器名:pid` 之类的形状由调用方决定，本模块不猜。 */
+  readonly owner: string;
+}
+
+export type AcquireOutcome = 'acquired' | 'busy' | 'no-project';
+export type HeartbeatOutcome = 'renewed' | 'lost';
+export type ReleaseOutcome = 'released' | 'not-mine';
+
+export interface LockState {
+  /** `project` 行在不在：不在时其余三项一律是"没有锁"的形状，不猜。 */
+  readonly exists: boolean;
+  /** 服务端算的：有余额的锁（不看票主是谁）。 */
+  readonly held: boolean;
+  /** `held && lock_token` 是我这张。过期了就不算 mine —— 与 `held` 同一个口径。 */
+  readonly mine: boolean;
+  readonly owner: string | null;
+  /** 服务端算出的余额（毫秒，向下取整）。没锁、没票主、负余额都是 0，不是负数。 */
+  readonly ttlMsRemaining: number;
+}
+
+/**
+ * 「这把锁现在活着」的唯一文本。接管条件靠字符串拼接嵌进来（`ACQUIRE_WHERE`），
+ * 所以两个谓词不可能各漂一半（T6-M3 打的就是另写一份）。取 `>`：`lock_expires_at` 是
+ * "余额到这一刻为止"，到点即过期 ⇒ `ttlMs = 0` 的锁写完就不算活。
+ * 这一毫秒内的相等边界造不出确定红（要写与读落在同一个 `NOW(3)` 刻度上），
+ * 所以互补关系靠共享文本保证，不靠用例保证 —— 用例管的是两端那一对。
+ */
+const HELD_SQL = '`lock_expires_at` IS NOT NULL AND `lock_expires_at` > NOW(3)';
+
+/**
+ * 能不能拿：没人上锁、锁已过期、或那本来就是我的票（幂等重发）—— 三者任一。
+ * `lock_token` IS NULL 那一支看着与 `NOT (HELD)` 重复，其实不重复：
+ * 列被手搓成"票为空而余额在未来"那一型，只有这一支能拿（`locks.test.ts` 有一格）。
+ */
+const ACQUIRE_WHERE =
+  '(`lock_token` IS NULL OR `lock_token` = ? OR NOT (' + HELD_SQL + '))';
+
+/** 校验 + 换算。0 是合法读数（"我要一把写完就过期的锁"），不是测试后门。 */
+export function ttlToMicroseconds(ttlMs: number): number {
+  if (!Number.isSafeInteger(ttlMs) || ttlMs < 0 || ttlMs > TTL_MAX_MS) {
+    throw new RangeError(
+      `ttlMs 必须是 0 到 ${TTL_MAX_MS} 之间的整数毫秒，收到 ${ttlMs}`,
+    );
+  }
+  // 乘 1000 走 MICROSECOND 而不是把秒直接绑进去：DATETIME(3) 对小数秒会舍入，
+  // 整型微秒让 0 与 300 这类值都能按字面意思落进语句。
+  return ttlMs * 1000;
+}
+
+export function newLockTicket(input: {
+  readonly projectId: EntityId;
+  readonly owner: string;
+}): LockTicket {
+  if (!isEntityId(input.projectId)) {
+    throw new RangeError(`projectId 不是 uuidv7 形状，收到 ${JSON.stringify(input.projectId)}`);
+  }
+  const { owner } = input;
+  if (owner === '' || owner !== owner.trim()) {
+    throw new RangeError('owner 不能为空或带首尾空白（它是横幅上直接显示的那一行）');
+  }
+  if (owner.length > OWNER_MAX_CHARS) {
+    // 不许让 MySQL 去报这一发：1406 的文案里没有"哪把尺、多长"（Step 1 的 F 档读它的实际形态）。
+    throw new RangeError(
+      `owner 不能超过 ${OWNER_MAX_CHARS} 个字符（project.lock_owner 是 VARCHAR(200)），收到 ${owner.length}`,
+    );
+  }
+  return { projectId: input.projectId, token: uuidv7(), owner };
+}
+
+function affected(res: unknown): number {
+  return Number((res as { affectedRows?: number }).affectedRows ?? 0);
+}
+
+/**
+ * 写完之后的服务端读回：那一行现在是不是我的票。
+ * 为什么不用 `affectedRows` 当判据 —— 同一毫秒内用同一张票重发，写进去的值逐字节相同
+ * ⇒ `affectedRows` 给 0（Step 1 的 D 档实测），而语义上那是 `acquired` 不是 `busy`。
+ * 登记的限度（T6-M9）：这一型要两条语句真落在同一个 `NOW(3)` 刻度上，本任务造不出确定红；
+ * 能确定打到它的是 `no-project` 那一格。所以这段理由必须留在注释里，不许"简化"成快路。
+ * `lock_token` 为 NULL 时 `lock_token = ?` 得 SQL NULL 而不是 0，所以前面挂 `IS NOT NULL`
+ * （C 档实测）—— 两个读数都取 `=== 1`，不把"未知"读成"是"。
+ */
+async function decide(
+  pool: Pool,
+  projectId: EntityId,
+  token: EntityId,
+): Promise<'mine' | 'other' | 'no-project'> {
+  const [res] = await pool.query(
+    'SELECT (`lock_token` IS NOT NULL AND `lock_token` = ?) AS matched FROM `project` WHERE `id` = ?',
+    [token, projectId],
+  );
+  const row = (res as { matched: number | null }[])[0];
+  if (!row) return 'no-project';
+  return Number(row.matched) === 1 ? 'mine' : 'other';
+}
+
+/**
+ * 拿锁。返回 `'acquired'` 之后，`ticket.token` 就是那一行上的票；
+ * 返回 `'busy'` 时**什么都不必清理** —— 一发没匹配的 UPDATE 不改任何东西。
+ */
+export async function acquireLock(
+  pool: Pool,
+  ticket: LockTicket,
+  ttlMs: number = LOCK_TTL_MS,
+): Promise<AcquireOutcome> {
+  const micros = ttlToMicroseconds(ttlMs);
+  const [res] = await pool.query(
+    'UPDATE `project` SET `lock_token` = ?, `lock_owner` = ?, ' +
+      '`lock_expires_at` = TIMESTAMPADD(MICROSECOND, ?, NOW(3)) ' +
+      'WHERE `id` = ? AND ' +
+      ACQUIRE_WHERE,
+    [ticket.token, ticket.owner, micros, ticket.projectId, ticket.token],
+  );
+  if (affected(res) === 1) return 'acquired';
+  const who = await decide(pool, ticket.projectId, ticket.token);
+  return who === 'mine' ? 'acquired' : who === 'other' ? 'busy' : 'no-project';
+}
+
+/**
+ * 续锁。WHERE 只认票不认余额（口径见计划 T6 第 ④ 段）：过期但还没人接管的锁，
+ * 心跳等于一次少往返的重新 acquire；一旦有人接管，票已经换人 ⇒ `'lost'`。
+ * 工程行没了也返回 `'lost'`（而不是抛）：调用方对"我没锁了"与"工程没了"的动作是同一个 —— 停手。
+ */
+export async function heartbeat(
+  pool: Pool,
+  ticket: LockTicket,
+  ttlMs: number = LOCK_TTL_MS,
+): Promise<HeartbeatOutcome> {
+  const micros = ttlToMicroseconds(ttlMs);
+  const [res] = await pool.query(
+    'UPDATE `project` SET `lock_expires_at` = TIMESTAMPADD(MICROSECOND, ?, NOW(3)) ' +
+      'WHERE `id` = ? AND `lock_token` = ?',
+    [micros, ticket.projectId, ticket.token],
+  );
+  if (affected(res) === 1) return 'renewed';
+  return (await decide(pool, ticket.projectId, ticket.token)) === 'mine' ? 'renewed' : 'lost';
+}
+
+/**
+ * 解锁。只清自己的票：WHERE 带 `lock_token = ?`，接管之后这一发匹配不上 ⇒ `'not-mine'`，
+ * 别人的余额一个字不动（`locks.test.ts` 里那条判据的形状）。
+ * 这一发不需要读回：匹配上的行必然要把三列从非 NULL 改成 NULL ⇒ 一定算"变化"。
+ */
+export async function releaseLock(pool: Pool, ticket: LockTicket): Promise<ReleaseOutcome> {
+  const [res] = await pool.query(
+    'UPDATE `project` SET `lock_token` = NULL, `lock_owner` = NULL, `lock_expires_at` = NULL ' +
+      'WHERE `id` = ? AND `lock_token` = ?',
+    [ticket.projectId, ticket.token],
+  );
+  return affected(res) === 1 ? 'released' : 'not-mine';
+}
+
+/**
+ * 读锁状态（只读，不加锁、不写）。`token` 传 null 就是"我只想知道有没有人拿着，不参与判定"。
+ * 余额在这一发里只做一次 µs→ms 的换算；`locks.test.ts` 另有一格在同一语句里读 `DIV 1000`
+ * —— 两处换算各有各的证人（T6-M10 一次打两个）。
+ */
+export async function lockState(
+  pool: Pool,
+  projectId: EntityId,
+  token: EntityId | null = null,
+): Promise<LockState> {
+  const [res] = await pool.query(
+    'SELECT `lock_owner` AS owner, ' +
+      '(`lock_token` IS NOT NULL AND `lock_token` = ?) AS matched, ' +
+      `(${HELD_SQL}) AS held, ` +
+      'IFNULL(TIMESTAMPDIFF(MICROSECOND, NOW(3), `lock_expires_at`), 0) AS ttl_us ' +
+      'FROM `project` WHERE `id` = ?',
+    [token, projectId],
+  );
+  const row = (
+    res as { owner: string | null; matched: number | null; held: number | null; ttl_us: number | string | null }[]
+  )[0];
+  if (!row) {
+    return { exists: false, held: false, mine: false, owner: null, ttlMsRemaining: 0 };
+  }
+  const held = Number(row.held) === 1;
+  const micros = Number(row.ttl_us);
+  return {
+    exists: true,
+    held,
+    mine: held && Number(row.matched) === 1,
+    owner: row.owner,
+    // 向下取整：宁可报"比真值少一毫秒"，也不报一把已经不活的锁还有余额。
+    ttlMsRemaining: held && Number.isFinite(micros) && micros > 0 ? Math.trunc(micros / 1000) : 0,
+  };
+}
+```
+
+Run: `npx vitest run --config vitest.config.ts apps/desktop/test/unit/locks-ticket.test.ts > tmp/t6-ticket2.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`，**9 格**全绿。`pnpm typecheck` 里 desktop 那一档同步过一次（`locks.ts` 无测试期编译期主张，形状主张在下一档）。
+
+- [ ] **Step 4: 写连库的那一档 —— `locks.test.ts`**
+
+`apps/desktop/test/db/locks.test.ts`：
+
+```ts
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import type { Pool } from 'mysql2/promise';
+import {
+  Document,
+  SCHEMA_VERSION,
+  applyPatch,
+  storeyCreate,
+  uuidv7,
+  type Command,
+  type Entity,
+  type EntityId,
+  type Patch,
+} from '@dajia/core';
+import { createDbPool } from '../../src/main/db/pool';
+import { readMysqlEnv } from '../../src/main/db/env';
+import { dropTestDatabase, ensureDatabase } from '../../src/main/db/database';
+import { migrate } from '../../src/main/db/migrate';
+import { ProjectRepository } from '../../src/main/db/repository';
+import {
+  LOCK_TTL_MS,
+  acquireLock,
+  heartbeat,
+  lockState,
+  newLockTicket,
+  releaseLock,
+  type LockTicket,
+} from '../../src/main/db/locks';
+
+const env = readMysqlEnv();
+// 红线同前两档：库名由本文件写死，不抄 env（env.database 允许是 dajia）。
+const DATABASE = 'dajia_test';
+const PROJECT_ID = '0193aa00-0000-7000-8000-00000000000a' as EntityId;
+const OTHER_PROJECT = '0193aa00-0000-7000-8000-00000000000f' as EntityId;
+
+/** 一格里的两个"机器"。名字只在 owner 文案里出现，不参与判定。 */
+const OWNER_A = '机器A:1001';
+const OWNER_B = '机器B:2002';
+
+let pool: Pool;
+let holderPool: Pool;
+let rivalPool: Pool;
+let repo: ProjectRepository;
+
+async function rows<T>(sql: string, params: unknown[] = []): Promise<T[]> {
+  const [res] = await pool.query(sql, params);
+  return res as T[];
+}
+
+async function count(table: string, where = '', params: unknown[] = []): Promise<number> {
+  const [res] = await pool.query(`SELECT COUNT(*) AS n FROM \`${table}\`${where}`, params);
+  return Number((res as { n: number | string }[])[0]?.n);
+}
+
+/** 手搓坏列用的那一发（返回值是 affectedRows，判据要求它真改到行才算夹具立住了）。 */
+async function exec(sql: string, params: unknown[] = []): Promise<number> {
+  const [res] = await pool.query(sql, params);
+  return Number((res as { affectedRows?: number }).affectedRows ?? 0);
+}
+
+async function clearAll(): Promise<void> {
+  await pool.query('DELETE FROM `project`');
+}
+
+function ticket(owner: string, projectId: EntityId = PROJECT_ID): LockTicket {
+  return newLockTicket({ projectId, owner });
+}
+
+/**
+ * 条件轮询而不是固定 sleep：等的是"服务端说这把锁没余额了"那个**状态**，
+ * 不是 300 毫秒（P-4 的代价：TTL 只能真等，不能拨表）。
+ * 这一处 `performance.now()` 在测试里 —— 第 ② 段那条"产品代码不读客户机时钟"的扫描管的是 `locks.ts`，
+ * 测试要计时总得有表。
+ */
+async function waitUntilNotHeld(projectId: EntityId, token: EntityId, deadlineMs = 5_000): Promise<void> {
+  const started = performance.now();
+  for (;;) {
+    const state = await lockState(pool, projectId, token);
+    if (!state.held) return;
+    if (performance.now() - started > deadlineMs) {
+      throw new TypeError(`等 ${deadlineMs}ms 锁还没过期：${JSON.stringify(state)}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+function step(doc: Document, cmd: Command): { patch: Patch; doc: Document } {
+  const patch = cmd.build(doc);
+  return { patch, doc: applyPatch(doc, patch).doc };
+}
+
+beforeAll(async () => {
+  await dropTestDatabase(env, DATABASE);
+  await ensureDatabase(env, DATABASE);
+  pool = createDbPool({ ...env, database: DATABASE });
+  await migrate(pool, DATABASE);
+  // 两个池 = 两台机器。connectionLimit 用 2 而不是 1：并发那一格要两条连接真并发。
+  // lockWaitTimeoutSeconds 2（不是默认 50 秒）：万一将来有人把 CAS 改成"先 SELECT FOR UPDATE 再 UPDATE"，
+  // 这里 2 秒就炸，而不是让测试看起来像挂死（P-17 那条口径在锁这一档的形状）。
+  holderPool = createDbPool(
+    { ...env, database: DATABASE },
+    { connectionLimit: 2, lockWaitTimeoutSeconds: 2 },
+  );
+  rivalPool = createDbPool(
+    { ...env, database: DATABASE },
+    { connectionLimit: 2, lockWaitTimeoutSeconds: 2 },
+  );
+  repo = new ProjectRepository(pool, PROJECT_ID, 'watcher');
+});
+
+afterAll(async () => {
+  await rivalPool.end();
+  await holderPool.end();
+  await pool.end();
+  await dropTestDatabase(env, DATABASE);
+});
+
+beforeEach(async () => {
+  await clearAll();
+  await repo.createProject({ name: '锁样例工程', schemaVersion: SCHEMA_VERSION });
+});
+
+describe('拿锁（单语句 CAS）', () => {
+  it('没人上锁 ⇒ acquired，三列都有账', async () => {
+    const a = ticket(OWNER_A);
+    expect(await acquireLock(holderPool, a, 60_000)).toBe('acquired');
+    const state = await lockState(pool, PROJECT_ID, a.token);
+    expect(state.exists).toBe(true);
+    expect(state.held).toBe(true);
+    expect(state.mine).toBe(true);
+    expect(state.owner).toBe(OWNER_A);
+    expect(state.ttlMsRemaining).toBeGreaterThan(0);
+    expect(state.ttlMsRemaining).toBeLessThanOrEqual(60_000);
+  });
+
+  it('同一张票再拿一次 ⇒ acquired（幂等，不是 busy）', async () => {
+    const a = ticket(OWNER_A);
+    expect(await acquireLock(holderPool, a, 60_000)).toBe('acquired');
+    expect(await acquireLock(holderPool, a, 60_000)).toBe('acquired');
+    expect((await lockState(pool, PROJECT_ID, a.token)).owner).toBe(OWNER_A);
+  });
+
+  it('别人持着活锁 ⇒ busy，且读得到是谁', async () => {
+    const a = ticket(OWNER_A);
+    const b = ticket(OWNER_B);
+    expect(await acquireLock(holderPool, a, 60_000)).toBe('acquired');
+    expect(await acquireLock(rivalPool, b, 60_000)).toBe('busy');
+    // busy 那一发不许改到任何东西：票、owner、余额都还是 A 的。
+    const state = await lockState(pool, PROJECT_ID, b.token);
+    expect(state.held).toBe(true);
+    expect(state.mine).toBe(false);
+    expect(state.owner).toBe(OWNER_A);
+    expect((await lockState(pool, PROJECT_ID, a.token)).mine).toBe(true);
+  });
+
+  it('工程行不存在 ⇒ no-project，不是 busy', async () => {
+    const ghost = ticket(OWNER_A, uuidv7() as EntityId);
+    expect(await acquireLock(holderPool, ghost, 60_000)).toBe('no-project');
+    expect((await lockState(pool, ghost.projectId, ghost.token)).exists).toBe(false);
+  });
+
+  it('锁按工程分：A 持 P1 不妨碍 B 拿 P2', async () => {
+    const other = new ProjectRepository(pool, OTHER_PROJECT, 'watcher');
+    await other.createProject({ name: '第二个工程', schemaVersion: SCHEMA_VERSION });
+    const a = ticket(OWNER_A, PROJECT_ID);
+    const b = ticket(OWNER_B, OTHER_PROJECT);
+    expect(await acquireLock(holderPool, a, 60_000)).toBe('acquired');
+    expect(await acquireLock(rivalPool, b, 60_000)).toBe('acquired');
+    expect((await lockState(pool, PROJECT_ID, a.token)).owner).toBe(OWNER_A);
+    expect((await lockState(pool, OTHER_PROJECT, b.token)).owner).toBe(OWNER_B);
+  });
+
+  it('解 P1 的锁不动 P2 的锁', async () => {
+    const other = new ProjectRepository(pool, OTHER_PROJECT, 'watcher');
+    await other.createProject({ name: '第二个工程', schemaVersion: SCHEMA_VERSION });
+    const a = ticket(OWNER_A, PROJECT_ID);
+    const b = ticket(OWNER_B, OTHER_PROJECT);
+    await acquireLock(holderPool, a, 60_000);
+    await acquireLock(rivalPool, b, 60_000);
+    expect(await releaseLock(holderPool, a)).toBe('released');
+    expect((await lockState(pool, OTHER_PROJECT, b.token)).held).toBe(true);
+    expect((await lockState(pool, PROJECT_ID, a.token)).held).toBe(false);
+  });
+});
+
+describe('过期与接管（判定全在服务端时钟）', () => {
+  it('ttlMs = 0 的锁写完就不算活（SLEEP 跨过 1 毫秒刻度，不是靠 sleep 撞）', async () => {
+    const a = ticket(OWNER_A);
+    expect(await acquireLock(holderPool, a, 0)).toBe('acquired');
+    await rows<{ s: number }>('SELECT SLEEP(0.002) AS s');
+    const state = await lockState(pool, PROJECT_ID, a.token);
+    expect(state.held).toBe(false);
+    expect(state.mine).toBe(false);
+    expect(state.ttlMsRemaining).toBe(0);
+    // 票还在列上：过期不等于释放。这是第 ④ 段"心跳能复活"的前提。
+    expect((await rows<{ owner: string | null }>('SELECT `lock_owner` AS owner FROM `project` WHERE `id` = ?', [PROJECT_ID]))[0]?.owner).toBe(OWNER_A);
+  });
+
+  it('过期的锁可以被第二个池接管，接管者三列全换成自己的', async () => {
+    const a = ticket(OWNER_A);
+    const b = ticket(OWNER_B);
+    expect(await acquireLock(holderPool, a, 0)).toBe('acquired');
+    await rows<{ s: number }>('SELECT SLEEP(0.002) AS s');
+    expect(await acquireLock(rivalPool, b, 60_000)).toBe('acquired');
+    expect((await lockState(pool, PROJECT_ID, b.token)).mine).toBe(true);
+    expect((await lockState(pool, PROJECT_ID, a.token)).mine).toBe(false);
+    expect((await lockState(pool, PROJECT_ID, null)).owner).toBe(OWNER_B);
+  });
+
+  it('列被手搓成"票为空而余额在未来"⇒ 照样能拿（ACQUIRE_WHERE 那一支的证人）', async () => {
+    const a = ticket(OWNER_A);
+    expect(await acquireLock(holderPool, a, 60_000)).toBe('acquired');
+    expect(
+      await exec('UPDATE `project` SET `lock_token` = NULL, `lock_owner` = NULL WHERE `id` = ?', [
+        PROJECT_ID,
+      ]),
+    ).toBe(1);
+    const b = ticket(OWNER_B);
+    expect(await acquireLock(rivalPool, b, 60_000)).toBe('acquired');
+  });
+
+  it('列被手搓成"票有值而余额为空"⇒ 别人能拿（HELD 的 NULL 分支）', async () => {
+    const a = ticket(OWNER_A);
+    expect(await acquireLock(holderPool, a, 60_000)).toBe('acquired');
+    expect(await exec('UPDATE `project` SET `lock_expires_at` = NULL WHERE `id` = ?', [PROJECT_ID])).toBe(1);
+    const b = ticket(OWNER_B);
+    expect(await acquireLock(rivalPool, b, 60_000)).toBe('acquired');
+    expect((await lockState(pool, PROJECT_ID, b.token)).mine).toBe(true);
+  });
+
+  it('真等接管全链：A 的锁过期 ⇒ B 拿走 ⇒ A 下一次心跳 lost', async () => {
+    const a = ticket(OWNER_A);
+    const b = ticket(OWNER_B);
+    expect(await acquireLock(holderPool, a, 300)).toBe('acquired');
+    expect(await heartbeat(holderPool, a, 300)).toBe('renewed');
+    await waitUntilNotHeld(PROJECT_ID, a.token);
+    expect(await acquireLock(rivalPool, b, 60_000)).toBe('acquired');
+    expect(await heartbeat(holderPool, a, 60_000)).toBe('lost');
+    // A 的 beat 不许动 B 的账（WHERE 带 token 的那一半凭据）。
+    expect((await lockState(pool, PROJECT_ID, b.token)).mine).toBe(true);
+    expect((await lockState(pool, PROJECT_ID, null)).owner).toBe(OWNER_B);
+  });
+
+  it('接管之后原持有者解锁 ⇒ not-mine，且接管者的余额原样还在', async () => {
+    const a = ticket(OWNER_A);
+    const b = ticket(OWNER_B);
+    expect(await acquireLock(holderPool, a, 0)).toBe('acquired');
+    await rows<{ s: number }>('SELECT SLEEP(0.002) AS s');
+    expect(await acquireLock(rivalPool, b, 60_000)).toBe('acquired');
+    expect(await releaseLock(holderPool, a)).toBe('not-mine');
+    const after = await lockState(pool, PROJECT_ID, b.token);
+    expect(after.held).toBe(true);
+    expect(after.mine).toBe(true);
+    expect(after.owner).toBe(OWNER_B);
+    expect(after.ttlMsRemaining).toBeGreaterThan(0);
+  });
+});
+
+describe('心跳', () => {
+  it('活锁 beat ⇒ renewed', async () => {
+    const a = ticket(OWNER_A);
+    await acquireLock(holderPool, a, 60_000);
+    expect(await heartbeat(holderPool, a, 60_000)).toBe('renewed');
+    expect((await lockState(pool, PROJECT_ID, a.token)).held).toBe(true);
+  });
+
+  it('过期但仍是我的票 ⇒ beat 把它复活（第 ④ 段那条口径的证人）', async () => {
+    const a = ticket(OWNER_A);
+    expect(await acquireLock(holderPool, a, 0)).toBe('acquired');
+    await rows<{ s: number }>('SELECT SLEEP(0.002) AS s');
+    expect((await lockState(pool, PROJECT_ID, a.token)).held).toBe(false);
+    expect(await heartbeat(holderPool, a, 60_000)).toBe('renewed');
+    const after = await lockState(pool, PROJECT_ID, a.token);
+    expect(after.held).toBe(true);
+    expect(after.mine).toBe(true);
+    expect(after.ttlMsRemaining).toBeGreaterThan(0);
+  });
+
+  it('心跳只推余额：票与 owner 一个字不动', async () => {
+    const a = ticket(OWNER_A);
+    await acquireLock(holderPool, a, 0);
+    const before = await rows<{ token: string | null; owner: string | null }>(
+      'SELECT `lock_token` AS token, `lock_owner` AS owner FROM `project` WHERE `id` = ?',
+      [PROJECT_ID],
+    );
+    expect(await heartbeat(holderPool, a, 60_000)).toBe('renewed');
+    const after = await rows<{ token: string | null; owner: string | null }>(
+      'SELECT `lock_token` AS token, `lock_owner` AS owner FROM `project` WHERE `id` = ?',
+      [PROJECT_ID],
+    );
+    expect(after[0]).toEqual(before[0]);
+  });
+
+  it('工程行被删 ⇒ lost（不抛）：调用方对两种情况的动作是同一个', async () => {
+    const a = ticket(OWNER_A);
+    await acquireLock(holderPool, a, 60_000);
+    await clearAll();
+    expect(await heartbeat(holderPool, a, 60_000)).toBe('lost');
+  });
+
+  it('余额读数按毫秒：60_000 的锁读回来在 (50_000, 60_000]', async () => {
+    const a = ticket(OWNER_A);
+    await acquireLock(holderPool, a, 60_000);
+    const state = await lockState(pool, PROJECT_ID, a.token);
+    expect(state.ttlMsRemaining).toBeGreaterThan(50_000);
+    expect(state.ttlMsRemaining).toBeLessThanOrEqual(60_000);
+  });
+
+  it('同一语句里算的差值也按毫秒：DIV 1000 的读数落在 (55_000, 60_000]', async () => {
+    const a = ticket(OWNER_A);
+    await acquireLock(holderPool, a, 60_000);
+    const read = await rows<{ ms: number | string }>(
+      'SELECT TIMESTAMPDIFF(MICROSECOND, NOW(3), `lock_expires_at`) DIV 1000 AS ms ' +
+        'FROM `project` WHERE `id` = ?',
+      [PROJECT_ID],
+    );
+    const ms = Number(read[0]?.ms);
+    expect(ms).toBeGreaterThan(55_000);
+    expect(ms).toBeLessThanOrEqual(60_000);
+    // 顺手把"余额是被 TTL 决定的"钉住：改成写死一天，上面两格一起红（T6-M10 的另一半）。
+    expect(ms).toBeLessThanOrEqual(LOCK_TTL_MS * 4);
+  });
+});
+
+describe('解锁', () => {
+  it('release ⇒ released，三列一起归 NULL', async () => {
+    const a = ticket(OWNER_A);
+    await acquireLock(holderPool, a, 60_000);
+    expect(await releaseLock(holderPool, a)).toBe('released');
+    const raw = await rows<{ token: string | null; owner: string | null; expires: string | null }>(
+      'SELECT `lock_token` AS token, `lock_owner` AS owner, `lock_expires_at` AS expires FROM `project` WHERE `id` = ?',
+      [PROJECT_ID],
+    );
+    expect(raw[0]).toEqual({ token: null, owner: null, expires: null });
+    const state = await lockState(pool, PROJECT_ID, a.token);
+    expect(state.held).toBe(false);
+    expect(state.owner).toBe(null);
+    expect(state.ttlMsRemaining).toBe(0);
+  });
+
+  it('没上锁时 release ⇒ not-mine（快路不需要读回的那一型）', async () => {
+    expect(await releaseLock(holderPool, ticket(OWNER_A))).toBe('not-mine');
+  });
+
+  it('release 两次 ⇒ 第二次 not-mine（幂等不许说成 released）', async () => {
+    const a = ticket(OWNER_A);
+    await acquireLock(holderPool, a, 60_000);
+    expect(await releaseLock(holderPool, a)).toBe('released');
+    expect(await releaseLock(holderPool, a)).toBe('not-mine');
+  });
+
+  it('release 之后 beat ⇒ lost', async () => {
+    const a = ticket(OWNER_A);
+    await acquireLock(holderPool, a, 60_000);
+    await releaseLock(holderPool, a);
+    expect(await heartbeat(holderPool, a, 60_000)).toBe('lost');
+  });
+
+  it('release 只解一张票，不动别人的锁', async () => {
+    const a = ticket(OWNER_A);
+    const b = ticket(OWNER_B);
+    await acquireLock(rivalPool, b, 60_000);
+    expect(await releaseLock(holderPool, a)).toBe('not-mine');
+    expect((await lockState(pool, PROJECT_ID, b.token)).mine).toBe(true);
+  });
+});
+
+describe('两个池同时抢（不等时钟）', () => {
+  it('并发 acquire ⇒ 恰好一个 acquired、一个 busy', async () => {
+    const a = ticket(OWNER_A);
+    const b = ticket(OWNER_B);
+    const [ra, rb] = await Promise.all([
+      acquireLock(holderPool, a, 60_000),
+      acquireLock(rivalPool, b, 60_000),
+    ]);
+    expect([ra, rb].sort()).toEqual(['acquired', 'busy']);
+    const winner = ra === 'acquired' ? a : b;
+    const state = await lockState(pool, PROJECT_ID, winner.token);
+    expect(state.mine).toBe(true);
+    expect(state.owner === OWNER_A && state.owner === OWNER_B).toBe(false);
+    // 隔离级别只是这条判据的背景说明，不是判据本身：真并发下的形状由这一格测。
+    const iso = await rows<{ level: string }>('SELECT @@transaction_isolation AS level');
+    process.stdout.write(`[T6] transaction_isolation=${iso[0]?.level ?? '读不到'}\n`);
+  });
+
+  it('赢家释放后输家能拿到（锁没被"赢完就僵住"）', async () => {
+    const a = ticket(OWNER_A);
+    const b = ticket(OWNER_B);
+    const [ra] = await Promise.all([
+      acquireLock(holderPool, a, 60_000),
+      acquireLock(rivalPool, b, 60_000),
+    ]);
+    const winner = ra === 'acquired' ? a : b;
+    const loser = winner === a ? b : a;
+    expect(await releaseLock(holderPool, winner)).toBe('released');
+    expect(await acquireLock(rivalPool, loser, 60_000)).toBe('acquired');
+  });
+});
+
+describe('锁与写路径互不知情（第 ⑥ 段那对相反的判据）', () => {
+  it('拿锁不动账：journal_turn 与四张表一个字不变', async () => {
+    const before = await rows<{ turn: number | string }>(
+      'SELECT `journal_turn` AS turn FROM `project` WHERE `id` = ?',
+      [PROJECT_ID],
+    );
+    const a = ticket(OWNER_A);
+    await acquireLock(holderPool, a, 60_000);
+    await heartbeat(holderPool, a, 60_000);
+    await releaseLock(holderPool, a);
+    const after = await rows<{ turn: number | string }>(
+      'SELECT `journal_turn` AS turn FROM `project` WHERE `id` = ?',
+      [PROJECT_ID],
+    );
+    expect(after[0]?.turn).toBe(before[0]?.turn);
+    expect(await count('command_log')).toBe(0);
+    expect(await count('element')).toBe(0);
+    expect(await count('storey')).toBe(0);
+    expect(await count('snapshot')).toBe(0);
+  });
+
+  it('没拿锁也能 appendJournal ⇒ applied（S1 不建模"对抗自己的代码"）', async () => {
+    const t1 = step(
+      Document.create(PROJECT_ID),
+      storeyCreate({ projectId: PROJECT_ID, index: 0, elevationMm: 0, heightMm: 3000 }),
+    );
+    // 这一格钉的是**现状**：写路径认不认票是一个会被下一个人误改的口径。
+    // 若将来要给 appendJournal 加锁校验，改的是这条判据与计划文本，不许两边都留着。
+    expect(await repo.appendJournal({ turn: 1, patch: t1.patch, doc: t1.doc })).toBe('applied');
+    const state = await lockState(pool, PROJECT_ID, null);
+    expect(state.held).toBe(false);
+    expect((t1.patch.upsert[0] as Entity).kind).toBe('storey');
+  });
+});
+```
+
+Run: `npx vitest run --config vitest.db.config.ts apps/desktop/test/db/locks.test.ts > tmp/t6-locks.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`，**27 格**全绿（六档 describe 各 6/6/6/5/2/2，落盘前按 `^\s*it\(` 在本文本上数过）。两处 `[T6]` 读数（隔离级别）抄进执行回填。若 `并发 acquire` 那一格拿到 `['acquired','acquired']` ⇒ **先停下别改判据**：那说明驱动把两条语句排成了队（`connectionLimit` 或 `pool.query` 的取连接行为），读数抄进回填并把它登记成 T10 的额外凭据要求，node 侧只承认"恰好一个持有者"这一半不变式。
+
+- [ ] **Step 5: 全量复跑与计数**
+
+```bash
+pnpm verify > tmp/t6-verify.log 2>&1; echo "exit=$?"
+sed 's/\x1b\[[0-9;]*m//g' tmp/t6-verify.log | grep -E "^ *(Test Files|Tests) "
+pnpm test:db > tmp/t6-db.log 2>&1; echo "exit=$?"
+sed 's/\x1b\[[0-9;]*m//g' tmp/t6-db.log | grep -E "^ *(Test Files|Tests) |FAIL"
+npx tsc --noEmit -p apps/desktop/tsconfig.test.json > tmp/t6-tsc.log 2>&1; echo "exit=$?"
+```
+
+Expected：`pnpm verify` `exit=0`，`Test Files` 比 T5 的回填值 **+1**（只多 `locks-ticket.test.ts`），`Tests` **+9**；`pnpm test:db` `exit=0`，`Test Files` **+1**、`Tests` **+27**；`tsc` `exit=0`。
+`lint:deps` 照旧静默：`locks.ts` 只 import `@dajia/core` 与 `mysql2/promise`（后者只在类型位上出现，`Pool` 是 type import）。
+
+跑完确认库清干净（命令同 T5 Step 6，**从 `apps/desktop` 目录跑**）。Expected：既没有 `dajia_test` 也没有 `dajia`。
+
+- [ ] **Step 6: 提交（代码棒只提交 src 与 test，`docs/` 归控制位）**
+
+```bash
+git status --porcelain
+git diff
+git add apps/desktop/src/main/db/locks.ts apps/desktop/test/unit/locks-ticket.test.ts \
+  apps/desktop/test/db/locks.test.ts
+git commit -m "$(cat <<'EOF'
+feat(persist): 工程锁 —— 服务端时钟的三发 CAS，判决来自写完后的读回
+
+locks.ts：acquireLock / heartbeat / releaseLock / lockState 全部单语句 CAS，
+过期判定与写入都用 NOW(3) / TIMESTAMPADD / TIMESTAMPDIFF，客户机时钟一次都不读（P-4）。
+affectedRows 只当快路（MySQL 数真变化的行），同毫秒重发与"工程行不存在"都靠读回分家；
+心跳只认票不认余额，接管后原持有者 beat 得 lost、release 得 not-mine。
+两个池抢同一行有格（并发恰好一个赢家），"拿锁不动账"与"没拿锁也能写"两格把
+第 ⑥ 段那条口径钉住 —— appendJournal 不认票，闸门在调用侧（T7/T8）。
+EOF
+)"
+```
+
+---
+
+**Task 6 的改坏验证**（变异棒，`cp` 备份 + md5 还原；**座位不许 `git checkout`/`restore`/`stash`/`reset`/`clean`**）：
+
+用例引用一律用 `it` 的名字，不用"第 N 格"。
+
+| # | 改坏哪里 | 哪一格红、为什么 |
+|---|---|---|
+| T6-M1 | `ACQUIRE_WHERE` 删掉 ``lock_token` IS NULL` 那一支 | 「列被手搓成"票为空而余额在未来"」红（拿到 'busy'，锁僵死）—— 那一支看着与 `NOT (HELD)` 重复，这一发就是它存在的凭据 |
+| T6-M2 | `HELD_SQL` 的 `>` 改成 `>=` | 「ttlMs = 0 的锁写完就不算活」红（SLEEP 2 毫秒之后 `held` 仍 true）。第 ③ 段那对"两端"判据之一 |
+| T6-M3 | 接管条件另写一份 ``lock_expires_at` < NOW(3)`（不再用 `NOT (HELD_SQL)`） | 「列被手搓成"票有值而余额为空"」红：`NOT (NULL < NOW(3))` 是 SQL `NULL` ⇒ WHERE 永假 ⇒ 没人拿得到。**这一发抓的正是"两个产地各漂一半"** |
+| T6-M4 | `ACQUIRE_WHERE` 删掉 ``lock_token` = ?` 那一支 | 「同一张票再拿一次」红（活锁下第二发变 'busy'，幂等出口没了） |
+| T6-M5 | `heartbeat` 的 WHERE 删掉 ``lock_token` = ?`（只按 id） | 「真等接管全链」红（A 被抢走后仍能 'renewed'，还把 B 的余额改成 A 的口径）；「接管之后原持有者解锁」同型 —— 两把 WHERE 少一处就少一层皮 |
+| T6-M6 | `heartbeat` 的 SET 改成 ``lock_expires_at` = `lock_expires_at`` | 「过期但仍是我的票 ⇒ beat 把它复活」红（'renewed' 拿得到而 `held` 回不来）。**注意这一发不会红在"活锁 beat"**：那格只读 `held`，值本来就已经在未来 —— 两条判据各管一头 |
+| T6-M7 | `releaseLock` 只清 `lock_token`，不清 `lock_owner` / `lock_expires_at` | 「release ⇒ released，三列一起归 NULL」红（`raw[0]` 的 toEqual 与 `owner` 读数都还在） |
+| T6-M8 | `releaseLock` 的 WHERE 去掉 token（无条件清三列） | 「release 只解一张票，不动别人的锁」红（拿到 'released' 且 B 的锁没了）—— 这一发是"替别人解锁"那型唯一的证人 |
+| T6-M9 | 删掉 `decide()`，`acquireLock` / `heartbeat` 以 `affectedRows` 为唯一判据 | 「工程行不存在 ⇒ no-project」红（变 'busy'）。**登记的限度**：第 ⑤ 段的"同毫秒重发逐字节相同"造不出确定红（要两条语句落在同一个 `NOW(3)` 刻度上，Step 1 的 D 档只证那台机器上真会给 0）。所以 `decide()` 上面那段理由注释是这条改动的全部防线，不许因为"测不到"就把它当冗余删掉 |
+| T6-M10 | 余额换算漂单位：`lockState` 直接把 µs 当 ms 返回（或 `TIMESTAMPDIFF` 改用 `SECOND`） | 「余额读数按毫秒」红（60_000_000 或 60 都越界）；「同一语句里算的差值」红在另一处（`DIV 1000` 与 JS 的 `/1000` 各有一格，T6-M10 一次打两个） |
+| T6-M11 | `ttlToMicroseconds` 的越界校验删掉 | 「0 合法、15000 换算对、越界四型抛」红。实测主张抄 Step 1 的 G 档：负 TTL **不报错**，它把 `lock_expires_at` 写到过去 ⇒ acquire 返回 'acquired' 而 `held` false（一把发出去就过期的锁），静默歪账 |
+| T6-M12 | `newLockTicket` 的 owner 长度校验删掉 | 「owner 201 个字符 ⇒ 抛，且文案带着那把尺（200）」红：MySQL strict mode 会抛 1406，但文案里没有我们的那把尺（F 档读它的实际形态） |
+| T6-M13 | token 从 `uuidv7()` 换成 `Math.random().toString(36)` 手搓 | 「token 由 uuidv7 现调：过 isEntityId」红。**MySQL 一声不响** —— `CHAR(36) ascii_bin` 塞得下任意 36 字符，只有形状断言看得见这一型 |
+| T6-M14 | 三发 CAS 的 WHERE 去掉 ``id` = ?`（全库一把锁） | 「锁按工程分」与「解 P1 的锁不动 P2 的锁」两格红；`locks-ticket.test.ts` 的源码扫描那一格同时红（它数的是 `UPDATE \`project\`` 后面必须跟 `` `id` = ? ``） |
+| T6-M15 | 把 `HELD` 判定搬到 JS 里（读回 `lock_expires_at` 与 `Date.now()` 比） | `locks-ticket.test.ts` 的「locks.ts 里不许出现客户机时钟」红。这一格是 P-4 那条口径唯一的常驻证人；代价是它扫的是源码文本 —— 与 T3 那条「`storey.ts` 不许留第二份重叠规则」同族，评审按同一标准看 |
+| T6-M16 | 把 `holderPool` 与 `rivalPool` 合成一个池 | 本任务用例**全绿** —— 登记的限度：排队也恰好得到一个赢家一个输家，所以「并发 acquire」证的是"只有一个持有者"这一半不变式，**不是**"真并发下 CAS 安全"那一半。后者的凭据在 T10 的 `--lock-shot`（两个真 electron 进程，P-14 那一笔账），别把这一格当它用完了 |
