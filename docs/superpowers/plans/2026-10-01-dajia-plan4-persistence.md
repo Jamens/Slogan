@@ -69,14 +69,18 @@
 | `apps/desktop/test/db/repository.test.ts` | 三张表 + `storey` 投影逐行对账、`updated_seq` = 该发 `command_log.seq`、`turn` 幂等、跳号回滚、**外部行锁掐断半途 ⇒ 全无账 ⇒ 释放后重发成功**（P-15）、归属 guard、remove 撞空行、重复快照撞唯一键、盘上 `-0`/超安全整数的读数（实测钉死） | T4 |
 | `apps/desktop/test/unit/reconcile.test.ts` | 三对各自的空/少行/多行/字段漂、`-0` 与键序两条口径、报告上限"只列 12 条但把总数说全"、输出顺序确定（**不连库 ⇒ CI 有牙**，第 ⑤ 段把纯函数单拆一个文件的全部理由） | T5 |
 | `apps/desktop/test/db/journal.test.ts` | 加载 = 最近快照 + 重放其后（快照压在第 3 / 第 5 发的 off-by-one 各一型）、`seq` 可带洞而 `turn` 不可（缺号拒开：中缺与尾缺两位证人）、`schema_version` 三处不符 + `payload.project_id` 别工程 ⇒ 拒开、BIGINT 越界的 `typeof` 读数、`clean_shutdown` 的四种告别方式、`closeProject` 三方对账（不平 ⇒ 抛且不许落 1） | T5 |
-| `apps/desktop/src/main/persist/autosave.ts` | 保存引擎（electron-free）：队列、同 turn 重试、快照触发判定（2000 / 60 秒）、失败上报 | T7 |
-| `apps/desktop/test/unit/autosave.test.ts` | 触发判定与失败路径（注入假钟与假 sink —— 禁令落在 repository 层，引擎的注入点是它自己的接口） | T7 |
+| `apps/desktop/src/main/persist/autosave.ts` | 保存引擎（electron-free、fs-free，P-2）：按 turn 串行的队列、两条快照阈值（2000 行 / 连续 60 秒）、同 turn 只抢救一次、心跳报 `lost` 或抛错 ⇒ 停写（`pause`）；三个注入点 `sink` / `timer` / `onEmergency` | T7 |
+| `apps/desktop/test/unit/autosave.test.ts` | **24 格**，不连库：假钟 + 假 sink 把触发判定、重试、停写、flush 的形状钉下来（禁令落在 repository 层，引擎的注入点是它自己的接口） | T7 |
 | `apps/desktop/src/main/db/locks.ts` | `newLockTicket` / `ttlToMicroseconds` / `acquireLock` / `heartbeat` / `releaseLock` / `lockState`，判定全在服务端时钟（`NOW(3)`，文件里不许出现客户机时钟）+ `LOCK_TTL_MS` / `LOCK_HEARTBEAT_INTERVAL_MS` —— **T7 的心跳定时器与 T8 的 IPC 默认值都从这里取，不许各写一份** | T6 |
 | `apps/desktop/test/unit/locks-ticket.test.ts` | 不连库的那一档（**CI 有牙**）：票过 `isEntityId` 且两张不同、owner 的 200 字符尺含恰好放行那一型、`ttlToMicroseconds` 的 0 合法与越界四型、TTL≥3×心跳间隔，外加两条**源码扫描**：`locks.ts` 里禁 `Date.now(` / `new Date(` / `performance.now(` 且 `NOW(3)` 不少于 3 处（P-4 唯一的常驻证人），以及每一发 ``UPDATE `project` `` 都必须跟 `` `id` = ? `` | T6 |
 | `apps/desktop/test/db/locks.test.ts` | 两个池当两台机器（各 `connectionLimit: 2`）：单语句 CAS 六型（幂等重发算 `acquired`、`no-project` 不算 `busy`、锁按工程分）、过期与接管六型（`ttlMs = 0` 写完就不算活、`SELECT SLEEP(0.002)` 跨刻度、两型手搓列各证一支 WHERE、真等接管全链）、心跳六型（过期未接管能复活、只推余额不动票与 owner、删行 ⇒ `lost` 不抛、余额读数按毫秒两型）、解锁五型（三列一起归 NULL、二次 `not-mine`、不动别人）、并发两型（`Promise.all` 恰好一个赢家 + `@@transaction_isolation` 读数）、与写路径互不知情两型（拿锁不动账 / 没拿锁也能 `appendJournal`） | T6 |
 | `packages/core/src/model/transaction.ts` | 加 `get lastPatch(): Patch \| null`（只在成功后更新；抛错时留着上一发，与计划 2 转下游 #11 同一条形状） | T7 |
-| `packages/core/test/transaction.test.ts` | 上面那条 +1 用例（抛错后 `lastPatch` 不许是失败的补丁） | T7 |
-| `apps/desktop/src/main/persist/emergency.ts` | 存盘失败时向 `userData/emergency/` 写 JSON 快照（spec §9 的同步动作） | T7 |
+| `packages/core/test/transaction.test.ts` | 上面那条 **+7 格**：dispatch 正向 / undo 记逆补丁 / redo 正向 / 空栈不刷 / build 抛错停在上一发 / remove 名单 / 连撤 30 发逐发打得回（既有 8 格一字不动） | T7 |
+| `apps/desktop/src/main/persist/describe-error.ts` | `describeError(err)`：`autosave.ts` 与 `emergency.ts` 共同的文案出口，驱动 `err.code` 进文案（不 import electron / `node:fs`） | T7 |
+| `apps/desktop/src/main/persist/emergency.ts` | 存盘失败时向 `userData/emergency/` 写 JSON 快照（spec §9 的同步动作）：唯一碰 `node:fs` 的持久化文件，`userDataDir` 走**参数**不走 `app.getPath`；出口只有 `EmergencyWrite` 一型，失败不抛；裁剪按工程分桶、按文件名里的 turn 排序 | T7 |
+| `apps/desktop/test/unit/emergency.test.ts` | **6 格**（真 `fs`，目录在 `os.tmpdir()`）：文件名两条尺、envelope 七键逐字节、同 turn 覆盖、三型失败一律 `ok:false`、`keep=2` 分桶裁剪、`keep` 的 `>=1` 尺 | T7 |
+| `apps/desktop/test/unit/persist-boundary.test.ts` | **2 格** 源码扫描：`autosave.ts` 里既无 `electron` 也无 `node:fs` 且 `LOCK_HEARTBEAT_INTERVAL_MS` 这个标识符还在；`emergency.ts` 许碰 `fs` 不许碰 `electron`，`describe-error.ts` 两样都不许 —— P-2 与"数值唯一产地"的常驻证人 | T7 |
+| `apps/desktop/test/db/autosave-journal.test.ts` | **7 格**（真库 + 真 `ProjectRepository` 当 sink）：八发连着落 + `loadProject` 还原、undo/redo 各产一发新账、`(turn, doc)` 同源、`already-applied` 不推进计数器、真故障重试且一个 turn 一份抢救件、pause 期间库里一行不许多、flush 补收尾快照与 `stop` | T7 |
 | `apps/desktop/src/main/persist/config-store.ts` | `safeStorage` 加密连接配置（唯一 import electron 的持久化文件） | T9 |
 | `packages/protocol/src/ipc.ts` | 通道从 1 条扩到 `<待实测>` 条 + 每条请求/回包的 zod schema | T8 |
 | `packages/protocol/src/persist-schema.ts` | IPC 契约：连接配置、打开结果、只读决定、保存状态事件 | T8 |
@@ -5499,3 +5503,2219 @@ EOF
 | T6-M14 | 三发 CAS 的 WHERE 去掉 ``id` = ?`（全库一把锁） | 「锁按工程分」与「解 P1 的锁不动 P2 的锁」两格红；`locks-ticket.test.ts` 的源码扫描那一格同时红（它数的是 `UPDATE \`project\`` 后面必须跟 `` `id` = ? ``） |
 | T6-M15 | 把 `HELD` 判定搬到 JS 里（读回 `lock_expires_at` 与 `Date.now()` 比） | `locks-ticket.test.ts` 的「locks.ts 里不许出现客户机时钟」红。这一格是 P-4 那条口径唯一的常驻证人；代价是它扫的是源码文本 —— 与 T3 那条「`storey.ts` 不许留第二份重叠规则」同族，评审按同一标准看 |
 | T6-M16 | 把 `holderPool` 与 `rivalPool` 合成一个池 | 本任务用例**全绿** —— 登记的限度：排队也恰好得到一个赢家一个输家，所以「并发 acquire」证的是"只有一个持有者"这一半不变式，**不是**"真并发下 CAS 安全"那一半。后者的凭据在 T10 的 `--lock-shot`（两个真 electron 进程，P-14 那一笔账），别把这一格当它用完了 |
+
+
+## Task 7: 保存引擎（`autosave.ts` + `emergency.ts` + core 的 `lastPatch`）
+
+**Files:**
+- Modify: `packages/core/src/model/transaction.ts`（加 `lastPatch`，三个赋值点：dispatch / undo / redo）
+- Modify: `packages/core/test/transaction.test.ts`（**+7 格**，既有的 8 格一条不许改，import 那三行照 Step 1 换）
+- Create: `apps/desktop/src/main/persist/autosave.ts`（electron-free、fs-free：队列 + 阈值 + 重试 + 心跳停写）
+- Create: `apps/desktop/src/main/persist/describe-error.ts`（`describeError`：`autosave.ts` 与 `emergency.ts` 共同的文案出口，两个读者 ⇒ 一份规则；不 import electron、不 import fs）
+- Create: `apps/desktop/src/main/persist/emergency.ts`（唯一碰 `node:fs` 的持久化文件；不 import electron）
+- Create: `apps/desktop/test/unit/autosave.test.ts`（**24 格**，不连库：假钟 + 假 sink）
+- Create: `apps/desktop/test/unit/emergency.test.ts`（**6 格**，真 fs，但目录在 `os.tmpdir()`，不落进仓库）
+- Create: `apps/desktop/test/unit/persist-boundary.test.ts`（**2 格**，扫 `persist/**` 的 import 边界：P-2 那条口径的常驻证人）
+- Create: `apps/desktop/test/db/autosave-journal.test.ts`（**7 格**，真库 + 真 `ProjectRepository` 当 sink）
+
+**Interfaces:**
+- Consumes:
+  - T4 的 `import type { JournalEntry, JournalOutcome } from '../db/repository'`（**type-only**：运行时不 load repository，也不把 `mysql2` 的类型链拖进 unit 档）
+  - T4 的 `ProjectRepository.appendJournal(entry)` / `writeSnapshot(turn, doc)` —— 本任务把它们当作 `JournalSink` 的实现体（形状由本任务的 `interface JournalSink` 描述，repository 恰好满足它，两边都不 import 对方）
+  - T6 的 `LOCK_HEARTBEAT_INTERVAL_MS`（心跳间隔唯一的产地；`autosave.ts` 是它的第一个读者）
+  - core 的 `Document` / `Patch` / `EntityId` / `applyPatch` / `affectedIds` / `isEntityId`
+- Produces（T8 接线时**只能**用这些名字，不许另起一套）:
+  - `class Autosave`：`constructor(options: AutosaveOptions)`、`submit(entry: JournalEntry): 'queued' | 'ignored-duplicate'`、`flush(): Promise<SaveStatus>`、`pause(reason: string): void`、`resume(): void`、`stop(): SaveStatus`、`settled(): Promise<void>`、`status(): SaveStatus`
+  - `type AutosavePhase = 'idle' | 'saving' | 'failed' | 'paused' | 'stopped'`
+  - `interface SaveStatus { phase; queuedTurns; lastTurn; snapshotTurn; rowsSinceSnapshot; lastError; pauseReason }`（renderer 的顶部横幅只读这一个形状，别给 UI 再造一套字段）
+  - `interface AutosaveOptions { sink; timer?; snapshotEveryRows?; idleSnapshotMs?; retryDelayMs?; beat?; onStatus?; onEmergency?; fromJournal? }`（**没有心跳间隔旋钮**：那个数只有 T6 的一个产地，能被旋钮覆盖成别的值就等于"数值唯一产地"那句话是假的）
+  - `const SNAPSHOT_EVERY_ROWS = 2000`、`const IDLE_SNAPSHOT_MS = 60_000`、`const RETRY_DELAY_MS = 2_000`
+  - `interface JournalSink`、`interface SaveTimer`、`interface TimerHandle`、`const realTimer: SaveTimer`
+  - `interface EmergencyPayload { projectId; turn; error; doc; patch }`
+  - `writeEmergencySnapshot(userDataDir: string, input: EmergencyInput): EmergencyWrite`（`EmergencyWrite = { ok: true; path: string } | { ok: false; error: string; path: string | null }` —— 失败分支的 `path` 是**尽力算出的**落点：守卫那两刀（词干非 UUIDv7、turn 非法）发生在算路径之前，那两种情形它确实是 `null`，其余失败（底下不是目录、盘写满）都有路径可报，T9 的诊断要把"写到了哪"给用户看。`pruneEmergency(userDataDir, keep): string[]`、`emergencyFileName(projectId, turn)`、`const EMERGENCY_DIR_NAME = 'emergency'`、`const EMERGENCY_KEEP = 20`
+  - core：`TransactionLog` 的 `get lastPatch(): Patch | null`
+
+**① 为什么 `lastPatch` 长在 core，而不是 renderer 每次重算 `cmd.build(doc)`**：`build` 是闭包，它读的是**当时**那份文档；要拿到"刚才那一发到底改了什么"就得把命令对象留着不放（撤销栈顶上那份是 `undoStack` 的，不是"最后一次应用的那一发"，`undo` 之后两者不同）。更要紧的是计划 4 的账本形状：裁决 P-5 说 undo 与 redo **各产出一发新的 `command_log`**，所以持久化侧要的那一发在 `undo()` 里是 `invertPatch(entry.patch, entry.previous)` 的返回值 —— 它只在 `TransactionLog` 内部出现过，外面没人能重算。重算一份是第二份真源（D2b 的同一把尺），留一个 getter 不是。
+
+**② 为什么 `autosave.ts` 既不 import `electron` 也不 import `node:fs`**：裁决 P-2 的口径 —— 能进 node 测试的东西才有人测。三个注入点把外部世界隔开：`sink`（写库）、`timer`（时钟与定时器）、`onEmergency`（落盘）。`emergency.ts` 是本任务唯一碰 `fs` 的文件，它接的是**参数**（`userDataDir: string`），`app.getPath('userData')` 由 T8 的接线递进来。这样 24 格 unit 能测到"60 秒到了没到""重试了几次""停写之后还写不写"，而真窗口那一半归 T8/T11。
+
+**③ 为什么每一发都带整份 `doc`（而不是只在快照时带）**：T4 的 `JournalEntry` 就要求 `{ turn, patch, doc }` —— `doc` 用来核对归属与 `schemaVersion`（那一发是"一份文档不能写进两个工程的账"的守卫）。既然每发都要带，快照那一发就不必单独再问一次。代价登记在这里：IPC 每发传一份整文档，M1.3 尺度（一栋两层房）在几百 KB 级，而引擎**只留最后一发的引用**（`lastDoc`），队列里的按 turn 排队、写完就 `shift()` 掉 —— 主进程不是文档的仓库，内存真源仍在 renderer（P-9）。
+
+**④ 为什么 `already-applied` 不推进 `rowsSinceSnapshot`**：裁决 P-6 把"每 2000 条命令"落成了**行数计数器**，而计数器的语义是"库里比上一份快照多了几行"。`appendJournal` 返回 `already-applied` 意味着这一发**没有新增行**（撞键走 ODKU 那条幂等支路，T4 实测过它的读数），把它算进去会让阈值提前触发 —— 提前不危险，但会让"第 2000 发"这个说法在实现里彻底失去对应物。`db` 档里那一格（「already-applied 由真库的 journal_turn 判出 ⇒ 行数计数器不推进」：第 2 发先由旁路写进库，引擎随后自己投同一发拿到 `already-applied` ⇒ 库里两行而计数器仍是 1 ⇒ 阈值（2）没到 ⇒ 一份快照都不许落）是这个口径的真库凭据，`unit` 档里那一格（「already-applied 不推进 rowsSinceSnapshot」）是它的快版本。
+
+**⑤ 为什么"同一 turn 只写一份快照"由引擎记住，而不是让库兜**：`writeSnapshot` 是**裸 INSERT**（P-16），重复落盘会撞 `uk_project_turn` 当场抛。引擎这边记住 `snapshotTurn`，`trySnapshot` 遇到 `turn <= snapshotTurn` 直接跳过（返回"不需要写"，不是"写失败"）；库那边留着那把牙 —— 而那把牙的实测证人在 **T4** 的 `repository.test.ts`（「同一个 turn 落两份快照 ⇒ 抛」已经钉过 `Duplicate entry` 的原文），T7 的 `db` 档**不重复它**（重复一遍只会让两档各自漂），它证的是引擎这一侧：「引擎递给 `writeSnapshot` 的那一对 (turn, doc) 同源」—— 假 sink 只数调用次数，看不见内容，`(turn, doc)` 差一发型错配只有真编码-真解码往返才抓得到。
+
+**⑥ 为什么心跳**抛错**也按 `'lost'` 处理**：`beat()` 正常返回时 `'renewed'`/`'lost'` 是服务端给的确切答案；抛错意味着**这个问题没有答案**（连接断了、语句超时、锁那一行正在被别的连接改）。两种可能里有一线是"别人已经接管并正在写"，而后果不对称：多弹一次只读横幅只是难看，双线写同一工程是静默覆盖。所以保守停写，并把"按丢锁处理"写进 `lastError` 让用户看得见（横幅文案归 T8）。这条口径的代价登记在下面的"登记的限度"：真库上的锁漂走不是 T7 证的，是 T6 + T10。
+
+**⑦ 为什么每个 turn 只抢救一次**：spec §9 要的是"存盘失败时同步向 `userData` 写 emergency JSON"，不是"每次重试都写一份"。重试是同一份内存状态的反复尝试，写 5 份逐字节相同的 JSON 只会在盘满的那台机器上把失败放大。所以引擎用 `rescuedTurns: Set<number>` 记账：一个 turn 第一次失败就抢救，之后无论重试几次都不再动盘。因为队列是**按 turn 有序、队首失败就停**（`autosave.ts` 类注释的第 2 条纪律，落在 `drain` 的那个 `break` 上），一直失败的队首只会留下**一份**抢救件（`unit` 档「队首一直失败：抢救一次都不许多，队列一条都不许丢」那一格数的是这个：连投 3 发、`failAllAppends` 恒真、把重试钟拨满 10 轮 ⇒ 抢救序列 `[1]`、`appended` 是空、`queuedTurns` 仍是 3）；队首补写成功后换下一发失败，才多一份抢救 —— 那一份对应的是一份**新的**内存状态，正是 spec 要保的东西（同一档「重试成功 ⇒ 队列补齐、phase 回 idle、同一 turn 的抢救不重复」那一格盯的是这条路）。
+
+**⑧ 为什么 `pruneEmergency` 按文件名里的 turn 排序，不按 mtime**：同一次会话里连续两发失败可能落在同一个毫秒刻度上，`writeFileSync` 之后两份文件的 mtime 相同（Windows 的 NTFS 时间戳是 100ns 刻度，Node 拿到的仍是整数纳秒，但 `readdirSync` 的 `stats` 不保证单调）。turn 是这份账本里唯一能保证"新压旧"的键，而它已经在文件名上了。留这一格的凭据是 Step 5 的 `emergency.test.ts` 里「keep=2 时每个工程各留两份最新的，别人的文件一个都不许少」那一格：工程 A 写 5 份、工程 B 写 3 份，`keep=2` ⇒ 删掉 `A-turn-1/2/3` 与 `B-turn-1`，留下 `A-turn-4`/`A-turn-5` 与 `B-turn-2`/`B-turn-3`；目录里混着的 `notes.txt` 与 `bogus-turn-9999.json` 一个都不许少 —— 不认识形状的文件不是我们的财产。
+
+- [ ] **Step 1: 先给 core 补 7 格（红在"没有这个 getter"）**
+
+`packages/core/test/transaction.test.ts` 的 import 那一段整块换成：
+
+```ts
+import { describe, expect, it } from 'vitest';
+import {
+  Document,
+  TransactionLog,
+  affectedIds,
+  applyPatch,
+  uuidv7,
+  type Command,
+  type EntityId,
+  type Patch,
+  type PointEntity,
+  type WallEntity,
+} from '@dajia/core';
+```
+
+（`Patch` 是新加的：下面两格要把 `log.lastPatch` 当 `Patch` 用，strict 下 `Patch | null` 不拆开就用不了。）
+
+在 `describe('TransactionLog', ...)` 里、`命令 build 抛错时不留半条事务记录` 那一格**之后**追加七格。既有八格一个字不许动 —— 它们跟着搬迁走，`lastPatch` 是纯增量：
+
+```ts
+  it('lastPatch：新 log 是 null，dispatch 之后是这一发的正向补丁', () => {
+    const log = seed();
+    expect(log.lastPatch).toBeNull();
+    log.dispatch(movePoint(PID(1), 100, 200));
+    expect(log.lastPatch).toEqual({ upsert: [point(PID(1), 100, 200)], remove: [] });
+  });
+
+  it('lastPatch：undo 记的是**逆补丁**，不是 undoStack 顶上那份原件', () => {
+    const log = seed();
+    log.dispatch(movePoint(PID(1), 100, 200));
+    const beforeUndo = log.document;
+    expect(log.undo()).toBe(true);
+    const patch = log.lastPatch;
+    if (!patch) throw new TypeError('撤销之后 lastPatch 不该是 null');
+    // 形状：撤销那一发把 x 从 100 抬回 0。
+    expect(patch).toEqual({ upsert: [point(PID(1), 0, 0)], remove: [] });
+    // 功能：把它应用到"撤销前"的文档，得到的就是"撤销后"的文档 —— 记的确实是打过的那一发。
+    expect(applyPatch(beforeUndo, patch).doc.canonical()).toBe(log.document.canonical());
+  });
+
+  it('lastPatch：redo 之后又是正向补丁，且与 dispatch 那发逐字相同', () => {
+    const log = seed();
+    log.dispatch(movePoint(PID(1), 100, 200));
+    const forward = log.lastPatch;
+    log.undo();
+    expect(log.redo()).toBe(true);
+    expect(log.lastPatch).toEqual(forward);
+  });
+
+  it('lastPatch：空栈 undo/redo 返回 false 时不刷（没有"成功落地"就没得报）', () => {
+    const log = seed();
+    log.dispatch(movePoint(PID(1), 100, 200));
+    const patch = log.lastPatch;
+    expect(log.undo()).toBe(true);
+    expect(log.undo()).toBe(false);
+    expect(log.lastPatch).toEqual(patch);
+    expect(log.redo()).toBe(true);
+    expect(log.redo()).toBe(false);
+    expect(log.lastPatch).toEqual({ upsert: [point(PID(1), 100, 200)], remove: [] });
+    expect(log.undo()).toBe(false);
+    expect(log.lastPatch).toEqual({ upsert: [point(PID(1), 100, 200)], remove: [] });
+  });
+
+  it('lastPatch：build 抛错之后停在上一发，失败的补丁绝不进账', () => {
+    const log = seed();
+    log.dispatch(movePoint(PID(1), 100, 200));
+    const good = log.lastPatch;
+    const boom: Command = {
+      type: 'wall.delete',
+      build() {
+        throw new TypeError('故意失败');
+      },
+    };
+    expect(() => log.dispatch(boom)).toThrow(/故意失败/);
+    // 上一格的兄弟：那一格管"文档与 depth 没动"，这一格管"持久化侧看不见失败的补丁"。
+    // 若这里改成失败的补丁，autosave 会把一次没发生过的状态变更写进 command_log。
+    expect(log.lastPatch).toEqual(good);
+    expect(log.lastPatch).not.toEqual(null);
+  });
+
+  it('lastPatch：remove 型补丁带着 remove 名单（账本里删墙那一发靠它）', () => {
+    const log = seed();
+    const removeWall: Command = {
+      type: 'wall.delete',
+      build() {
+        return { upsert: [], remove: [PID(3)] };
+      },
+    };
+    log.dispatch(removeWall);
+    const patch = log.lastPatch as Patch;
+    expect(patch.remove).toEqual([PID(3)]);
+    expect(patch.upsert).toEqual([]);
+    expect(affectedIds(patch)).toEqual(new Set([PID(3)]));
+  });
+
+  it('lastPatch：连撤 30 步，每一发的逆补丁都打得回去（S1 验收 2 的持久化侧前置）', () => {
+    const log = seed();
+    for (let i = 0; i < 30; i++) {
+      log.dispatch(movePoint(PID(1), i * 10, i * 20));
+    }
+    for (let i = 0; i < 30; i++) {
+      const before = log.document;
+      expect(log.undo()).toBe(true);
+      const patch = log.lastPatch;
+      if (!patch) throw new TypeError(`撤到第 ${i + 1} 发时 lastPatch 是 null`);
+      expect(affectedIds(patch)).toEqual(new Set([PID(1)]));
+      // 逐发验证"记的就是打过的那一发"：30 发里任何一发记错（比如记成原件而不是逆件）都会在这里红。
+      expect(applyPatch(before, patch).doc.canonical()).toBe(log.document.canonical());
+    }
+  });
+```
+
+Run: `npx vitest run packages/core/test/transaction.test.ts > tmp/t7-core-red.log 2>&1; echo "exit=$?"`
+Expected: `exit=1`，**7 红 8 绿**。红的形态是 `log.lastPatch is not a function`（或属性不存在的编译错），不是红的断言文案 —— 若既有 8 格里有红，说明 import 那块换错了。
+
+- [ ] **Step 2: 实现 `lastPatch`（三处赋值点，绿）**
+
+`packages/core/src/model/transaction.ts` 里，`private lastAffected: Set<EntityId> = new Set();` 之后加字段：
+
+```ts
+  /**
+   * 最近一次**真的打过**的补丁：`dispatch` 记正向、`undo` 记逆向、`redo` 记正向。
+   * 计划 4 的 `command_log` 存的就是这一发（裁决 P-3 的 `{ type, patch }`），
+   * 而 undo/redo 各产出一发新的账（裁决 P-5），所以这一发在外面无法重算：
+   * `invertPatch(entry.patch, entry.previous)` 的两个输入都住在本类内部。
+   * 抛错时它停在上一发 —— `dispatch` 里赋值点在 `applyPatch` 之后，`cmd.build` 抛则一个字都没改，
+   * 把失败的补丁报出去等于让保存引擎把一次没发生过的状态变更写进库。
+   */
+  private lastPatchApplied: Patch | null = null;
+```
+
+`get affected()` 那一档之后加 getter：
+
+```ts
+  /** 最近一次成功落地的补丁；`undo()`/`redo()` 返回 false 时它不动（没打过就没得报）。 */
+  get lastPatch(): Patch | null {
+    return this.lastPatchApplied;
+  }
+```
+
+三个方法体各加一行（其余一字不改）。`dispatch` 末行 `this.lastAffected = affectedIds(patch);` 之后：
+
+```ts
+    this.lastPatchApplied = patch;
+```
+
+`undo` 现在是一行 `this.doc = applyPatch(this.doc, invertPatch(entry.patch, entry.previous)).doc;`，换成先把逆补丁命名下来（**逆补丁必须命名**，否则记进 `lastPatchApplied` 的那份与打出去的那份是两次 `invertPatch` 调用的两个对象 —— 值相同、来源不同，读账的人无从判断哪个是"打过的那一发"）：
+
+```ts
+    const inverse = invertPatch(entry.patch, entry.previous);
+    this.doc = applyPatch(this.doc, inverse).doc;
+    this.redoStack.push(entry);
+    this.lastAffected = affectedIds(entry.patch);
+    this.lastPatchApplied = inverse;
+```
+
+`redo` 末行 `this.lastAffected = affectedIds(entry.patch);` 之后：
+
+```ts
+    this.lastPatchApplied = entry.patch;
+```
+
+Run: `npx vitest run packages/core/test/transaction.test.ts > tmp/t7-core.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`，**15 格**全绿（8 旧 + 7 新）。
+Run: `npx tsc --noEmit -p packages/core/tsconfig.json > tmp/t7-core-tsc.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`。
+
+- [ ] **Step 3: `apps/desktop/test/unit/autosave.test.ts`（24 格，先把引擎的形状钉下来）**
+
+```ts
+import { describe, expect, it } from 'vitest';
+import { Document, type EntityId } from '@dajia/core';
+import { LOCK_HEARTBEAT_INTERVAL_MS } from '../../src/main/db/locks';
+import type { JournalEntry, JournalOutcome } from '../../src/main/db/repository';
+import {
+  Autosave,
+  IDLE_SNAPSHOT_MS,
+  RETRY_DELAY_MS,
+  SNAPSHOT_EVERY_ROWS,
+  type AutosaveOptions,
+  type EmergencyPayload,
+  type JournalSink,
+  type SaveStatus,
+  type SaveTimer,
+  type TimerHandle,
+} from '../../src/main/persist/autosave';
+
+const PROJECT_ID = '0193aa00-0000-7000-8000-0000000000f1' as EntityId;
+const STOREY_ID = '0193aa00-0000-7000-8000-0000000000f2' as EntityId;
+const POINT_ID = '0193aa00-0000-7000-8000-0000000000f3' as EntityId;
+
+/**
+ * 引擎不看文档内容，只看 `doc.projectId`（抢救件要它）与"这一发带的是哪份文档"。
+ * 所以 unit 档全程共用一份 `Document.create(PROJECT_ID)`：省掉造样房的噪音，
+ * 也让 `rescued[i].doc === DOC` 这种引用相等断言写得动。真房子里的账在 db 档。
+ */
+const DOC = Document.create(PROJECT_ID);
+
+function entry(turn: number): JournalEntry {
+  return {
+    turn,
+    patch: {
+      upsert: [{ kind: 'point', id: POINT_ID, storeyId: STOREY_ID, x: turn * 100, y: 0 }],
+      remove: [],
+    },
+    doc: DOC,
+  };
+}
+
+/** 定时器回调是同步触发的，但它kick出来的活是 async 的：跑 20 发微任务足够把链推到挂起点。 */
+async function tick(): Promise<void> {
+  for (let i = 0; i < 20; i++) {
+    await Promise.resolve();
+  }
+}
+
+/**
+ * 假钟：只做两件事 —— 报当前时间、按到点顺序跑回调。
+ * `advance` 里回调新排的定时器若落在同一个窗口内也会被跑到，但 `armIdle()` 排的是
+ * `clock + 60_000`，永远在窗口外 ⇒ 一次 advance 不会把"每 60 秒重试"滚成死循环。
+ */
+class FakeTimer implements SaveTimer {
+  private readonly timers: { id: number; at: number; cb: () => void }[] = [];
+  private nextId = 1;
+  clock = 0;
+
+  now(): number {
+    return this.clock;
+  }
+
+  schedule(cb: () => void, ms: number): TimerHandle {
+    if (!Number.isFinite(ms) || ms < 0) {
+      throw new TypeError(`假钟收到非法延时 ${ms}：定时器不许是负数或 NaN`);
+    }
+    const id = this.nextId++;
+    this.timers.push({ id, at: this.clock + ms, cb });
+    return {
+      cancel: () => {
+        const i = this.timers.findIndex((t) => t.id === id);
+        if (i >= 0) this.timers.splice(i, 1);
+      },
+    };
+  }
+
+  advance(ms: number): void {
+    const target = this.clock + ms;
+    for (;;) {
+      const due = this.timers.filter((t) => t.at <= target).sort((a, b) => a.at - b.at || a.id - b.id)[0];
+      if (!due) break;
+      this.clock = due.at;
+      const i = this.timers.indexOf(due);
+      if (i >= 0) this.timers.splice(i, 1);
+      due.cb();
+    }
+    this.clock = target;
+  }
+
+  pending(): number {
+    return this.timers.length;
+  }
+}
+
+/** 记账型假 sink：谁被调过、按什么顺序、并发度多高、哪些发该抛，全在这里看得见。 */
+class FakeSink implements JournalSink {
+  readonly appended: number[] = [];
+  readonly snapshots: number[] = [];
+  maxInFlight = 0;
+  failAppends = new Set<number>();
+  failAllAppends = false;
+  failSnapshots = new Set<number>();
+  alreadyApplied = new Set<number>();
+  private inFlight = 0;
+  private waiter: (() => void) | null = null;
+  private waiting: Promise<void> | null = null;
+
+  /** 下一次 append 挂起，直到 `release()`。「队列串行」那一格用它测"队列是不是真串行"。 */
+  hold(): void {
+    this.waiting = new Promise<void>((resolve) => {
+      this.waiter = resolve;
+    });
+  }
+
+  release(): void {
+    const resolve = this.waiter;
+    this.waiter = null;
+    this.waiting = null;
+    resolve?.();
+  }
+
+  async appendJournal(entry: JournalEntry): Promise<JournalOutcome> {
+    this.inFlight += 1;
+    this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
+    try {
+      if (this.waiting) await this.waiting;
+      if (this.failAllAppends || this.failAppends.has(entry.turn)) {
+        throw Object.assign(new Error(`模拟库故障 turn ${entry.turn}`), { code: 'ECONNREFUSED' });
+      }
+      this.appended.push(entry.turn);
+      return this.alreadyApplied.has(entry.turn) ? 'already-applied' : 'applied';
+    } finally {
+      this.inFlight -= 1;
+    }
+  }
+
+  async writeSnapshot(turn: number): Promise<void> {
+    if (this.failSnapshots.has(turn)) {
+      throw Object.assign(new Error(`模拟快照失败 turn ${turn}`), { code: 'ER_LOCK_WAIT_TIMEOUT' });
+    }
+    this.snapshots.push(turn);
+  }
+}
+
+function beatSpy(outcome: () => 'renewed' | 'lost' | 'throw') {
+  let count = 0;
+  return {
+    count: (): number => count,
+    beat: async (): Promise<'renewed' | 'lost'> => {
+      count += 1;
+      const answer = outcome();
+      if (answer === 'throw') throw new Error('心跳发不出去');
+      return answer;
+    },
+  };
+}
+
+/** 引擎的异步活全部挂在同一条 `chain` 上（定时器回调也接进这条链），所以 `settled()` 是唯一可靠的等待点。 */
+function harness(options: Partial<AutosaveOptions> = {}) {
+  const sink = new FakeSink();
+  const timer = new FakeTimer();
+  const statuses: SaveStatus[] = [];
+  const rescued: EmergencyPayload[] = [];
+  const engine = new Autosave({
+    sink,
+    timer,
+    onStatus: (status) => statuses.push(status),
+    onEmergency: (payload) => rescued.push(payload),
+    ...options,
+  });
+  return { sink, timer, statuses, rescued, engine };
+}
+
+describe('默认值与入参守卫', () => {
+  it('两个阈值是 spec §8.2 的原话；默认值真生效（1 发不到 2000，60 秒到点补一份）', async () => {
+    expect(SNAPSHOT_EVERY_ROWS).toBe(2000);
+    expect(IDLE_SNAPSHOT_MS).toBe(60_000);
+    const { engine, sink, timer } = harness();
+    expect(timer.pending()).toBe(0); // 没给 beat ⇒ 构造时一个定时器都不排
+    engine.submit(entry(1));
+    await engine.settled();
+    expect(sink.appended).toEqual([1]);
+    expect(sink.snapshots).toEqual([]);
+    timer.advance(IDLE_SNAPSHOT_MS);
+    await engine.settled();
+    expect(sink.snapshots).toEqual([1]);
+    expect(engine.status().phase).toBe('idle');
+  });
+
+  it('三个延时都是正整数尺：0、负数、小数一律构造期抛', () => {
+    // 0 与负数会让阈值判定每发都写或永不写；让它们在构造期响，不等运行期悄悄歪。
+    expect(() => harness({ snapshotEveryRows: 0 })).toThrow(/snapshotEveryRows/);
+    expect(() => harness({ snapshotEveryRows: -3 })).toThrow(/snapshotEveryRows/);
+    expect(() => harness({ snapshotEveryRows: 2.5 })).toThrow(/snapshotEveryRows/);
+    expect(() => harness({ idleSnapshotMs: 0 })).toThrow(/idleSnapshotMs/);
+    expect(() => harness({ retryDelayMs: -1 })).toThrow(/retryDelayMs/);
+  });
+
+  it('submit 的 turn 守卫在投递口：非法 turn 抛，且 sink 一次都没被调', () => {
+    const { engine, sink } = harness();
+    expect(() => engine.submit(entry(0))).toThrow(/turn/);
+    expect(() => engine.submit(entry(1.5))).toThrow(/turn/);
+    expect(() => engine.submit(entry(Number.MAX_SAFE_INTEGER + 1))).toThrow(/turn/);
+    expect(sink.appended).toEqual([]);
+  });
+
+  it('fromJournal 起点按库里的账算：阈值接得上，起点之后的重投不许进队', async () => {
+    const { engine, sink } = harness({
+      snapshotEveryRows: 3,
+      fromJournal: { lastTurn: 11, snapshotTurn: 10, rowsSinceSnapshot: 2 },
+    });
+    expect(engine.status().lastTurn).toBe(11);
+    expect(engine.status().snapshotTurn).toBe(10);
+    expect(engine.status().rowsSinceSnapshot).toBe(2);
+    // 库里已经欠 2 行 ⇒ 下一发就到 3 ⇒ 快照落在 12，不是 13。
+    expect(engine.submit(entry(11))).toBe('ignored-duplicate');
+    engine.submit(entry(12));
+    await engine.settled();
+    expect(sink.snapshots).toEqual([12]);
+    expect(engine.status().rowsSinceSnapshot).toBe(0);
+    expect(() =>
+      new Autosave({
+        sink,
+        timer: new FakeTimer(),
+        fromJournal: { lastTurn: 1, snapshotTurn: null, rowsSinceSnapshot: -1 },
+      }),
+    ).toThrow(/rowsSinceSnapshot/);
+  });
+});
+
+describe('追加：顺序、串行、重复投递', () => {
+  it('三发按投递顺序进 sink，阈值不到就不写快照', async () => {
+    const { engine, sink } = harness({ snapshotEveryRows: 10 });
+    engine.submit(entry(1));
+    engine.submit(entry(2));
+    engine.submit(entry(3));
+    await engine.settled();
+    expect(sink.appended).toEqual([1, 2, 3]);
+    expect(sink.snapshots).toEqual([]);
+    expect(engine.status()).toMatchObject({ phase: 'idle', lastTurn: 3, rowsSinceSnapshot: 3 });
+  });
+
+  it('already-applied 不推进 rowsSinceSnapshot（P-6 那把尺的定义在这里）', async () => {
+    const { engine, sink } = harness({ snapshotEveryRows: 3 });
+    sink.alreadyApplied.add(2);
+    for (const turn of [1, 2, 3]) engine.submit(entry(turn));
+    await engine.settled();
+    // 1 加一行、2 不加、3 加一行 ⇒ 2 行，离阈值 3 还差一发
+    expect(sink.appended).toEqual([1, 2, 3]);
+    expect(sink.snapshots).toEqual([]);
+    expect(engine.status().rowsSinceSnapshot).toBe(2);
+    engine.submit(entry(4));
+    await engine.settled();
+    expect(sink.snapshots).toEqual([4]);
+    expect(engine.status().snapshotTurn).toBe(4);
+  });
+
+  it('队列串行：第一发挂在库里时，第二发不许挤进去', async () => {
+    const { engine, sink } = harness({ snapshotEveryRows: 10 });
+    sink.hold();
+    engine.submit(entry(1));
+    engine.submit(entry(2));
+    await tick();
+    // 挂起期间第二发一次都没试过：并发度 2 的形态是"后发先至"，账上的 turn 序就乱了。
+    expect(sink.appended).toEqual([]);
+    expect(sink.maxInFlight).toBe(1);
+    // `phase` 的五个取值里只有这一格能拍到 `'saving'`：队首真的压在库里、一份都还没落地的那一刻。
+    // 别的格要么已经 `settled()`（`idle`），要么先出错（`failed`），要么先停写（`paused`）。
+    expect(engine.status().phase).toBe('saving');
+    sink.release();
+    await engine.settled();
+    expect(sink.appended).toEqual([1, 2]);
+    expect(sink.maxInFlight).toBe(1);
+  });
+
+  it('重复或回退的 turn ⇒ ignored-duplicate，sink 一次都不许多调', async () => {
+    const { engine, sink } = harness({ snapshotEveryRows: 10, retryDelayMs: 60_000 });
+    engine.submit(entry(1));
+    engine.submit(entry(2));
+    await engine.settled();
+    expect(engine.submit(entry(2))).toBe('ignored-duplicate');
+    expect(engine.submit(entry(1))).toBe('ignored-duplicate');
+    expect(sink.appended).toEqual([1, 2]);
+    // 失败还压在队首的那一发同样"见过"：重投不许在队里堆出两份同 turn。
+    sink.failAppends.add(3);
+    expect(engine.submit(entry(3))).toBe('queued');
+    await engine.settled();
+    expect(engine.submit(entry(3))).toBe('ignored-duplicate');
+    expect(engine.status().queuedTurns).toBe(1);
+  });
+});
+
+describe('快照触发', () => {
+  it('阈值触发：第 N 发落地即快照，计数归零', async () => {
+    const { engine, sink } = harness({ snapshotEveryRows: 3 });
+    engine.submit(entry(1));
+    engine.submit(entry(2));
+    await engine.settled();
+    expect(sink.snapshots).toEqual([]);
+    engine.submit(entry(3));
+    await engine.settled();
+    expect(sink.snapshots).toEqual([3]);
+    expect(engine.status()).toMatchObject({ snapshotTurn: 3, rowsSinceSnapshot: 0 });
+  });
+
+  it('连续 60 秒无编辑 ⇒ 在最后一发上补一份快照', async () => {
+    const { engine, sink, timer } = harness({ snapshotEveryRows: 5 });
+    engine.submit(entry(1));
+    engine.submit(entry(2));
+    await engine.settled();
+    expect(sink.snapshots).toEqual([]);
+    timer.advance(IDLE_SNAPSHOT_MS);
+    await engine.settled();
+    expect(sink.snapshots).toEqual([2]);
+    expect(engine.status().snapshotTurn).toBe(2);
+  });
+
+  it('空闲计时随新编辑重置：60 秒是给"没有新动作"计的，不是给第一发计的', async () => {
+    const { engine, sink, timer } = harness({ snapshotEveryRows: 5 });
+    engine.submit(entry(1));
+    await engine.settled();
+    timer.advance(IDLE_SNAPSHOT_MS - 1);
+    expect(sink.snapshots).toEqual([]);
+    engine.submit(entry(2));
+    await engine.settled();
+    timer.advance(IDLE_SNAPSHOT_MS);
+    await engine.settled();
+    // 重置漂了的话这里会是 [1, 2]：第一发上落一份没意义的快照。
+    expect(sink.snapshots).toEqual([2]);
+  });
+
+  it('没有新行就不许空转：拨满三次 60 秒，writeSnapshot 调用次数仍是 0，定时器也不留着', async () => {
+    const { engine, sink, timer } = harness({ snapshotEveryRows: 3 });
+    for (const turn of [1, 2, 3]) engine.submit(entry(turn));
+    await engine.settled();
+    expect(sink.snapshots).toEqual([3]);
+    for (let i = 0; i < 3; i++) {
+      timer.advance(IDLE_SNAPSHOT_MS);
+      await engine.settled();
+    }
+    expect(sink.snapshots).toEqual([3]);
+    expect(timer.pending()).toBe(0); // 快照已平 ⇒ 空闲定时器该被撤掉，不是留着每 60 秒空敲一次
+  });
+
+  it('同一 turn 只落一份：阈值路径与空闲路径盯上同一发时，后到的那个跳过', async () => {
+    const { engine, sink, timer } = harness({ snapshotEveryRows: 2 });
+    for (const turn of [1, 2, 3]) engine.submit(entry(turn));
+    await engine.settled();
+    expect(sink.snapshots).toEqual([2]); // 阈值只在 2 上落了一份
+    expect(engine.status().rowsSinceSnapshot).toBe(1); // turn 3 欠着
+    timer.advance(IDLE_SNAPSHOT_MS);
+    await engine.settled();
+    expect(sink.snapshots).toEqual([2, 3]); // 空闲把 3 补上
+    timer.advance(IDLE_SNAPSHOT_MS);
+    await engine.settled();
+    expect(sink.snapshots).toEqual([2, 3]); // 再拨一次不许重写 3（库侧那把牙是 T4「同一个 turn 落两份快照 ⇒ 抛」那一格实测过的）
+  });
+});
+
+describe('失败、重试与抢救', () => {
+  it('append 抛 ⇒ failed、欠款留在队首、每 turn 抢救一次、文案带驱动 code', async () => {
+    const E2 = entry(2);
+    const { engine, sink, rescued } = harness({ snapshotEveryRows: 10, retryDelayMs: 30_000 });
+    sink.failAppends.add(2);
+    engine.submit(entry(1));
+    engine.submit(E2);
+    engine.submit(entry(3));
+    await engine.settled();
+    expect(sink.appended).toEqual([1]);
+    const status = engine.status();
+    expect(status.phase).toBe('failed');
+    // 失败那发连着它后面那发都还在队里：turn 有序，后发先至会在账上留洞。
+    expect(status.queuedTurns).toBe(2);
+    expect(status.lastTurn).toBe(1);
+    expect(status.lastError).toContain('ECONNREFUSED');
+    expect(status.lastError).toContain('模拟库故障 turn 2');
+    expect(rescued).toHaveLength(1);
+    expect(rescued[0]?.turn).toBe(2);
+    expect(rescued[0]?.doc).toBe(DOC);
+    expect(rescued[0]?.patch).toBe(E2.patch);
+  });
+
+  it('重试成功 ⇒ 队列补齐、phase 回 idle、同一 turn 的抢救不重复', async () => {
+    const { engine, sink, timer, rescued } = harness({ snapshotEveryRows: 10 });
+    sink.failAppends.add(2);
+    for (const turn of [1, 2, 3]) engine.submit(entry(turn));
+    await engine.settled();
+    expect(rescued).toHaveLength(1);
+    sink.failAppends.delete(2);
+    timer.advance(RETRY_DELAY_MS);
+    await engine.settled();
+    expect(sink.appended).toEqual([1, 2, 3]);
+    expect(engine.status()).toMatchObject({ phase: 'idle', queuedTurns: 0, lastTurn: 3 });
+    expect(rescued).toHaveLength(1); // 重试不是重新写盘（T7 ⑦ 段）
+  });
+
+  it('队首一直失败：抢救一次都不许多，队列一条都不许丢', async () => {
+    const { engine, sink, timer, rescued } = harness({ retryDelayMs: 1_000 });
+    sink.failAllAppends = true;
+    for (const turn of [1, 2, 3]) engine.submit(entry(turn));
+    await engine.settled();
+    for (let i = 0; i < 10; i++) {
+      timer.advance(1_000);
+      await engine.settled();
+    }
+    expect(sink.appended).toEqual([]);
+    expect(engine.status().queuedTurns).toBe(3);
+    // 队首 turn 1 反复失败 ⇒ 只抢救一次。spec §9 的"持续重试"是重试，不是持续写盘。
+    expect(rescued.map((p) => p.turn)).toEqual([1]);
+  });
+
+  it('快照失败不吞日志：那一发已成立，计数不清零，空闲路径负责再试', async () => {
+    const { engine, sink, timer } = harness({ snapshotEveryRows: 3 });
+    sink.failSnapshots.add(3);
+    for (const turn of [1, 2, 3]) engine.submit(entry(turn));
+    await engine.settled();
+    expect(sink.appended).toEqual([1, 2, 3]);
+    expect(sink.snapshots).toEqual([]);
+    const failed = engine.status();
+    expect(failed.phase).toBe('failed');
+    expect(failed.lastError).toContain('快照 turn 3 失败');
+    expect(failed.rowsSinceSnapshot).toBe(3); // 没写成就不清零：清零等于宣布库里有一行快照
+    sink.failSnapshots.delete(3);
+    timer.advance(IDLE_SNAPSHOT_MS);
+    await engine.settled();
+    expect(sink.snapshots).toEqual([3]);
+    expect(engine.status()).toMatchObject({ phase: 'idle', rowsSinceSnapshot: 0 });
+  });
+
+  it('flush 在库不可达时如实报 failed，queuedTurns 不清零（不许假装写完）', async () => {
+    const { engine, sink } = harness();
+    sink.failAllAppends = true;
+    engine.submit(entry(1));
+    await engine.settled();
+    const after = await engine.flush();
+    expect(after.phase).toBe('failed');
+    expect(after.queuedTurns).toBe(1);
+  });
+
+  it('flush 把欠的收尾快照补上，之后的空闲定时器再敲也不重复落', async () => {
+    const { engine, sink, timer } = harness({ snapshotEveryRows: 3 });
+    for (const turn of [1, 2, 3, 4]) engine.submit(entry(turn));
+    await engine.settled();
+    expect(sink.snapshots).toEqual([3]);
+    const after = await engine.flush();
+    expect(sink.snapshots).toEqual([3, 4]);
+    expect(after).toMatchObject({ phase: 'idle', snapshotTurn: 4, rowsSinceSnapshot: 0 });
+    timer.advance(IDLE_SNAPSHOT_MS);
+    await engine.settled();
+    expect(sink.snapshots).toEqual([3, 4]);
+  });
+});
+
+describe('心跳与停写', () => {
+  it('beat 的间隔默认就是 T6 的那一个数：每 LOCK_HEARTBEAT_INTERVAL_MS 一发', async () => {
+    const spy = beatSpy(() => 'renewed');
+    const { engine, timer } = harness({ beat: spy.beat });
+    timer.advance(LOCK_HEARTBEAT_INTERVAL_MS);
+    await engine.settled();
+    expect(spy.count()).toBe(1);
+    timer.advance(LOCK_HEARTBEAT_INTERVAL_MS);
+    await engine.settled();
+    expect(spy.count()).toBe(2);
+    expect(engine.status().phase).toBe('idle');
+  });
+
+  it('beat 报 lost ⇒ paused：后续投递不进 sink、队列留着、重试定时器一起撤', async () => {
+    let answer: 'renewed' | 'lost' = 'renewed';
+    const spy = beatSpy(() => answer);
+    const { engine, sink, timer, statuses } = harness({
+      beat: spy.beat,
+      snapshotEveryRows: 10,
+      retryDelayMs: 500,
+    });
+    sink.failAppends.add(9);
+    engine.submit(entry(9));
+    await engine.settled(); // 失败 ⇒ 重试定时器已排上
+    expect(engine.status().queuedTurns).toBe(1);
+    answer = 'lost';
+    timer.advance(LOCK_HEARTBEAT_INTERVAL_MS);
+    await engine.settled();
+    const paused = engine.status();
+    expect(paused.phase).toBe('paused');
+    expect(paused.pauseReason).toContain('lock');
+    expect(statuses.some((s) => s.phase === 'paused')).toBe(true);
+    engine.submit(entry(10));
+    await engine.settled();
+    expect(sink.appended).toEqual([]); // 停手：T6 第 ④ 段那句"拿到 lost 就必须停手"的落地
+    timer.advance(5_000);
+    await engine.settled();
+    expect(sink.appended).toEqual([]); // 重试定时器也必须被撤掉，不许在停写状态下偷偷写
+    expect(engine.status().queuedTurns).toBe(2);
+    expect(spy.count()).toBe(1); // paused 之后心跳链也停了：停写状态下再问一次锁没有读者
+  });
+
+  it('beat 抛错同样按 lost 停写（问不出去 = 不知道锁还在不在，后果不对称 ⇒ 保守）', async () => {
+    const spy = beatSpy(() => 'throw');
+    const { engine, timer } = harness({ beat: spy.beat });
+    timer.advance(LOCK_HEARTBEAT_INTERVAL_MS);
+    await engine.settled();
+    expect(spy.count()).toBe(1);
+    const status = engine.status();
+    expect(status.phase).toBe('paused');
+    expect(status.lastError).toContain('按丢锁处理');
+    expect(status.lastError).toContain('心跳发不出去');
+  });
+
+  it('resume 之后把停写期间憋着的那一发补上', async () => {
+    let answer: 'renewed' | 'lost' = 'renewed';
+    const spy = beatSpy(() => answer);
+    const { engine, sink, timer } = harness({ beat: spy.beat, snapshotEveryRows: 10 });
+    answer = 'lost';
+    timer.advance(LOCK_HEARTBEAT_INTERVAL_MS);
+    await engine.settled();
+    engine.submit(entry(1));
+    engine.submit(entry(2));
+    await engine.settled();
+    expect(sink.appended).toEqual([]);
+    engine.resume();
+    await engine.settled();
+    expect(sink.appended).toEqual([1, 2]);
+    expect(engine.status()).toMatchObject({ phase: 'idle', queuedTurns: 0, pauseReason: null });
+  });
+
+  it('stop 拆掉所有定时器、报 stopped，欠款非空时说清还剩几发', async () => {
+    const spy = beatSpy(() => 'renewed');
+    const { engine, sink, timer } = harness({ beat: spy.beat, retryDelayMs: 1_000 });
+    sink.failAppends.add(1);
+    engine.submit(entry(1));
+    await engine.settled();
+    const stopped = engine.stop();
+    expect(stopped.phase).toBe('stopped');
+    expect(stopped.lastError).toContain('仍有 1 发未落盘');
+    const beats = spy.count();
+    timer.advance(IDLE_SNAPSHOT_MS * 2);
+    await engine.settled();
+    expect(spy.count()).toBe(beats); // 定时器没拆干净的话这里会涨
+    expect(sink.appended).toEqual([]);
+    expect(() => engine.submit(entry(2))).toThrow(/已 stop/);
+  });
+});
+```
+
+Run: `npx vitest run apps/desktop/test/unit/autosave.test.ts > tmp/t7-autosave-red.log 2>&1; echo "exit=$?"`
+Expected: `exit=1`，红在**模块解析不到**（`../../src/main/persist/autosave` 与它的 `Autosave` / 三个常量还不存在），不是红在断言。24 格全存在（4 + 4 + 5 + 6 + 5）。
+
+- [ ] **Step 4: 写 `apps/desktop/src/main/persist/describe-error.ts` 与 `apps/desktop/src/main/persist/autosave.ts`（绿）**
+
+`describe-error.ts` 先落盘：`autosave.ts` 是它的第一个读者，Step 5 的 `emergency.ts` 是第二个。为什么单独一个文件而不是留在 `autosave.ts` 里再由 `emergency.ts` import 过去：那会让"落盘的那一个"依赖"排队的那一个"，方向是反的（引擎通过钩子认识 fs 侧，fs 侧不该反过来认识引擎）。为什么这一件要共享而**各条 `>=1` 的尺不共享**：`lastError` 与抢救件的 `error` 两个字符串会被 T9 的诊断并排比对，格式必须逐字节同源；而校验文案每条都带着自己那一格的理由（`turn` 那句说的是幂等键，`keep` 那句说的是关掉抢救），把它们合成一个 `requirePositiveInt(label)` 只会把理由稀释成参数。这个取舍写在下一段的注释里。
+
+```ts
+/**
+ * 把"外部世界"的抛错压成一行不带换行的文本。驱动的错误在 `err.code` 上
+ * （ECONNREFUSED / ER_* / ENOTDIR），那一格丢了就查不到根因，所以它必须出现在文案里。
+ * 分型文案（"下一步该做什么"）归 T9 的 `classifyDbError`：这里只保证不丢，不保证好听。
+ * 共享的理由见上一段：`SaveStatus.lastError` 与抢救件的 `error` 是同一条口径的两个读者。
+ */
+export function describeError(err: unknown): string {
+  if (err instanceof Error) {
+    const code = (err as { code?: unknown }).code;
+    return typeof code === 'string'
+      ? `${err.name}(${code}): ${err.message}`
+      : `${err.name}: ${err.message}`;
+  }
+  return `非 Error 抛出：${String(err)}`;
+}
+```
+
+`apps/desktop/src/main/persist/autosave.ts`
+
+```ts
+import type { Document, EntityId, Patch } from '@dajia/core';
+import { LOCK_HEARTBEAT_INTERVAL_MS } from '../db/locks';
+import type { JournalEntry, JournalOutcome } from '../db/repository';
+import { describeError } from './describe-error';
+
+/** spec §8.2 原话之「每 2000 条命令」。计数器是 `rowsSinceSnapshot`，不是 `seq`（裁决 P-6）。 */
+export const SNAPSHOT_EVERY_ROWS = 2000;
+/** spec §8.2 原话之「连续 60 秒无编辑」。两者先到即合并出新 snapshot。 */
+export const IDLE_SNAPSHOT_MS = 60_000;
+/** spec §9 的"持续重试"落成的重试间隔。它是引擎自己的口径，spec 没给数字，改这里要说得出理由。 */
+export const RETRY_DELAY_MS = 2_000;
+
+/**
+ * 时钟与定时器的唯一注入点（裁决 P-2 的口径：能进 node 测试的东西才有人测）。
+ * 把手只许原样交回，不许拆开看 —— 假钟与真钟各自决定内部形状。
+ */
+export interface TimerHandle {
+  readonly cancel: () => void;
+}
+
+export interface SaveTimer {
+  now(): number;
+  schedule(onDue: () => void, ms: number): TimerHandle;
+}
+
+export const realTimer: SaveTimer = {
+  now: () => Date.now(),
+  schedule: (onDue, ms) => {
+    const handle = setTimeout(onDue, ms);
+    return { cancel: () => clearTimeout(handle) };
+  },
+};
+
+export interface JournalSink {
+  appendJournal(entry: JournalEntry): Promise<JournalOutcome>;
+  writeSnapshot(turn: number, doc: Document): Promise<void>;
+}
+
+export interface EmergencyPayload {
+  readonly projectId: EntityId;
+  readonly turn: number;
+  readonly error: string;
+  readonly doc: Document;
+  readonly patch: Patch;
+}
+
+export type AutosavePhase = 'idle' | 'saving' | 'failed' | 'paused' | 'stopped';
+
+/**
+ * UI 能看见的全部事实（T8 的横幅只读这一个形状）。
+ * `lastError` 是**最后一次**失败的原话，成功一发就清空 —— 它同时是红条的显示条件，
+ * 所以"红条一直挂着"这种烦人形态由清空这一句负责消。
+ */
+export interface SaveStatus {
+  readonly phase: AutosavePhase;
+  readonly queuedTurns: number;
+  readonly lastTurn: number | null;
+  readonly snapshotTurn: number | null;
+  readonly rowsSinceSnapshot: number;
+  readonly lastError: string | null;
+  readonly pauseReason: string | null;
+}
+
+export interface AutosaveOptions {
+  readonly sink: JournalSink;
+  readonly timer?: SaveTimer;
+  readonly snapshotEveryRows?: number;
+  readonly idleSnapshotMs?: number;
+  readonly retryDelayMs?: number;
+  /** 与工程锁对话的那一发（T6 的 `heartbeat(pool, ticket)`）；不给就不起心跳循环。 */
+  readonly beat?: () => Promise<'renewed' | 'lost'>;
+  readonly onStatus?: (status: SaveStatus) => void;
+  /** 落盘出口（T8 把它接到 `emergency.ts`）；引擎自己不许碰 fs（裁决 P-2/P-10）。 */
+  readonly onEmergency?: (payload: EmergencyPayload) => void;
+  /**
+   * 从库里读回来的起点（T8 用 `loadProject` 的读数填）：`lastTurn` = `header.journalTurn`、
+   * `snapshotTurn` = `snapshot?.turn ?? null`、`rowsSinceSnapshot` = `journalTurn - (snapshot?.turn ?? 0)`。
+   * 不传 = 新工程从零数。不读这一份起点，"每 2000 条"这句话在重启之后就失守了 —— 阈值会从 0 重数。
+   */
+  readonly fromJournal?: {
+    readonly lastTurn: number;
+    readonly snapshotTurn: number | null;
+    readonly rowsSinceSnapshot: number;
+  };
+}
+
+function requirePositiveInt(value: number, label: string): number {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new TypeError(`${label} 必须是 >=1 的安全整数，收到 ${String(value)}：0 或负数会让判定每发都触发或永不触发`);
+  }
+  return value;
+}
+
+function requireNonNegInt(value: number, label: string): number {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new TypeError(`${label} 必须是 >=0 的安全整数，收到 ${String(value)}`);
+  }
+  return value;
+}
+
+/**
+ * 保存引擎（electron-free、fs-free）：renderer 每发成功后经 IPC 投过来，这里负责
+ * 串行落库、按 spec §8.2 的两条阈值合并快照、失败重试与抢救、以及"锁没了就停手"。
+ *
+ * 三条不可见的纪律，改代码前先读：
+ * 1. **所有异步活都接在同一条 `chain` 上**（含定时器回调）。于是 `settled()` 是唯一的可靠等待点，
+ *    而 `flush()` 与 24 格单测都靠它。`chain` 必须永不 reject —— 它没有 catch 支路，
+ *    一次漏出的 rejection 就是进程级 unhandled rejection。
+ * 2. **队首失败就停**（`drain` 里的 `break`）：turn 有序，后发先至会在账上留洞，
+ *    而缺号在 T5 是"拒开"级别的损坏（尾缺/中缺两位证人）。
+ * 3. **引擎不猜库里的账**：`rowsSinceSnapshot` 的起点由 `fromJournal` 给，之后只按 sink 的
+ *    返回值推进（`already-applied` 不加，T7 ④ 段）。
+ */
+export class Autosave {
+  private readonly sink: JournalSink;
+  private readonly timer: SaveTimer;
+  private readonly snapshotEveryRows: number;
+  private readonly idleSnapshotMs: number;
+  private readonly retryDelayMs: number;
+  private readonly beat: (() => Promise<'renewed' | 'lost'>) | undefined;
+  private readonly onStatus: ((status: SaveStatus) => void) | undefined;
+  private readonly onEmergency: ((payload: EmergencyPayload) => void) | undefined;
+
+  /** 待落库的投递，按 turn 递增。队首失败时它不移动（纪律 2）。 */
+  private readonly pending: JournalEntry[] = [];
+  /** 已经抢救过的 turn（T7 ⑦ 段）：重试不重新写盘。 */
+  private readonly rescuedTurns = new Set<number>();
+  private chain: Promise<void> = Promise.resolve();
+  private pumping = false;
+  /** 停写的原因；null = 允许写。T6 的 `'lost'` 与 T8 的人工只读都落在这里。 */
+  private paused: string | null = null;
+  private stopped = false;
+  /** 投递过的最大 turn（不管落没落库）：重复投递的守卫用它，不是 `landedTurn`。 */
+  private maxSeenTurn: number;
+  /** 已落库的最大 turn。 */
+  private landedTurn: number | null;
+  /** 最后一发落地后的文档：收尾快照与抢救都用它（T7 ③ 段的成本就在这里）。 */
+  private lastDoc: Document | null = null;
+  private snapshotTurn: number | null;
+  private rowsSinceSnapshot: number;
+  private lastError: string | null = null;
+  private idleHandle: TimerHandle | null = null;
+  private retryHandle: TimerHandle | null = null;
+  private beatHandle: TimerHandle | null = null;
+
+  constructor(options: AutosaveOptions) {
+    this.sink = options.sink;
+    this.timer = options.timer ?? realTimer;
+    this.snapshotEveryRows = requirePositiveInt(
+      options.snapshotEveryRows ?? SNAPSHOT_EVERY_ROWS,
+      'snapshotEveryRows',
+    );
+    this.idleSnapshotMs = requirePositiveInt(options.idleSnapshotMs ?? IDLE_SNAPSHOT_MS, 'idleSnapshotMs');
+    this.retryDelayMs = requirePositiveInt(options.retryDelayMs ?? RETRY_DELAY_MS, 'retryDelayMs');
+    this.beat = options.beat;
+    this.onStatus = options.onStatus;
+    this.onEmergency = options.onEmergency;
+    const start = options.fromJournal;
+    if (start) {
+      this.landedTurn = requirePositiveInt(start.lastTurn, 'fromJournal.lastTurn');
+      this.maxSeenTurn = start.lastTurn;
+      this.snapshotTurn = start.snapshotTurn;
+      this.rowsSinceSnapshot = requireNonNegInt(start.rowsSinceSnapshot, 'fromJournal.rowsSinceSnapshot');
+      if (start.snapshotTurn !== null) requirePositiveInt(start.snapshotTurn, 'fromJournal.snapshotTurn');
+    } else {
+      this.landedTurn = null;
+      this.maxSeenTurn = 0;
+      this.snapshotTurn = null;
+      this.rowsSinceSnapshot = 0;
+    }
+    if (this.rowsSinceSnapshot > 0 && this.snapshotTurn !== null && this.landedTurn !== null && this.snapshotTurn > this.landedTurn) {
+      throw new TypeError(
+        `fromJournal 自相矛盾：快照在 turn ${String(this.snapshotTurn)}，却只写到 turn ${String(this.landedTurn)}`,
+      );
+    }
+    if (this.beat) this.scheduleBeat();
+  }
+
+  /** 投递一发（IPC handler 里唯一该调的入口）。返回 `ignored-duplicate` 而不是抛：重放不该打死主进程。 */
+  submit(entry: JournalEntry): 'queued' | 'ignored-duplicate' {
+    if (this.stopped) {
+      throw new Error('Autosave 已 stop()：关掉窗口之后不许再排新的一发（这是接线错误，不是库故障）');
+    }
+    if (!Number.isSafeInteger(entry.turn) || entry.turn < 1) {
+      throw new TypeError(
+        `turn 必须是 >=1 的安全整数，收到 ${String(entry.turn)}：账目的幂等键没有"第 0 发"，也没有小数发`,
+      );
+    }
+    if (entry.turn <= this.maxSeenTurn) {
+      this.lastError = `忽略 turn ${entry.turn}：已经投递到 ${this.maxSeenTurn}，turn 必须严格递增`;
+      this.report();
+      return 'ignored-duplicate';
+    }
+    this.maxSeenTurn = entry.turn;
+    this.pending.push(entry);
+    // 有新活就撤空闲定时器：60 秒的钟是给"没有新编辑"计时的（「空闲计时随新编辑重置」那一格钉的就是它）。
+    this.cancelIdle();
+    this.kick();
+    this.report();
+    return 'queued';
+  }
+
+  /**
+   * 把当前排上的活跑完，再尽力补一份收尾快照。**不等定时器**（T8 自己给它套超时），
+   * 也**不保证写完**：库真不可达时它写不完，那就如实报 `failed` + `queuedTurns`（「flush 在库不可达时如实报 failed」那一格）。
+   */
+  async flush(): Promise<SaveStatus> {
+    await this.settled();
+    for (;;) {
+      if (this.stopped || this.paused !== null) break;
+      const turn = this.landedTurn;
+      const doc = this.lastDoc;
+      if (turn === null || doc === null || !this.needsSnapshot()) break;
+      const before = this.snapshotTurn;
+      await this.trySnapshot(turn, doc);
+      await this.settled();
+      // 没写成（失败或被跳过）就停：原地打转会把 flush 变成又一个重试循环。
+      if (this.snapshotTurn === before) break;
+    }
+    return this.status();
+  }
+
+  pause(reason: string): void {
+    if (this.paused !== null) return;
+    this.paused = reason;
+    this.cancelIdle();
+    this.cancelRetry();
+    this.report();
+  }
+
+  /** T8 重新拿到锁之后调：把停写期间憋着的队列补上，心跳链也接回来。 */
+  resume(): void {
+    if (this.paused === null) return;
+    this.paused = null;
+    this.kick();
+    this.scheduleBeat();
+    this.armIdle();
+    this.report();
+  }
+
+  /**
+   * 拆掉所有定时器。欠款非空时**不抛**（抛了会把关窗流程打断），只在 `lastError` 里说清还剩几发 ——
+   * 那一句是给 T11 的闸门读的：`--persist-shot` 要能看见"关窗前没 flush 干净"这个形状。
+   */
+  stop(): SaveStatus {
+    if (!this.stopped) {
+      this.stopped = true;
+      this.cancelIdle();
+      this.cancelRetry();
+      if (this.beatHandle !== null) {
+        this.beatHandle.cancel();
+        this.beatHandle = null;
+      }
+      if (this.pending.length > 0) {
+        const head = this.pending[0];
+        this.lastError = `stop() 时仍有 ${this.pending.length} 发未落盘（队首 turn ${head ? String(head.turn) : '?'}）：关窗前的 flush 没走完`;
+      }
+      this.report();
+    }
+    return this.status();
+  }
+
+  status(): SaveStatus {
+    const phase: AutosavePhase = this.stopped
+      ? 'stopped'
+      : this.paused !== null
+        ? 'paused'
+        : this.lastError !== null
+          ? 'failed'
+          : this.pending.length > 0
+            ? 'saving'
+            : 'idle';
+    return {
+      phase,
+      queuedTurns: this.pending.length,
+      lastTurn: this.landedTurn,
+      snapshotTurn: this.snapshotTurn,
+      rowsSinceSnapshot: this.rowsSinceSnapshot,
+      lastError: this.lastError,
+      pauseReason: this.paused,
+    };
+  }
+
+  /** 等 `chain` 上的活排空：定时器要先把钟拨到点才会接进链，所以它不等"未来"，只不等"已排上的活"。 */
+  async settled(): Promise<void> {
+    for (;;) {
+      const tail = this.chain;
+      await tail;
+      if (this.chain === tail) return;
+    }
+  }
+
+  private kick(): void {
+    if (this.pumping || this.stopped || this.paused !== null || this.pending.length === 0) return;
+    this.pumping = true;
+    this.chain = this.chain.then(() => this.drain());
+  }
+
+  private async drain(): Promise<void> {
+    try {
+      while (this.pending.length > 0 && this.paused === null && !this.stopped) {
+        const head = this.pending[0];
+        if (!head) break;
+        try {
+          const outcome = await this.sink.appendJournal(head);
+          this.pending.shift();
+          this.landedTurn = head.turn;
+          this.lastDoc = head.doc;
+          if (outcome === 'applied') this.rowsSinceSnapshot += 1;
+          this.lastError = null;
+          this.report();
+          if (this.rowsSinceSnapshot >= this.snapshotEveryRows) {
+            await this.trySnapshot(head.turn, head.doc);
+          }
+        } catch (err) {
+          this.lastError = describeError(err);
+          this.rescue(head);
+          this.report();
+          this.scheduleRetry();
+          break;
+        }
+      }
+    } finally {
+      // `report()` 里的回调若抛错也不能把 `pumping` 卡在 true（那会永久停住队列）。
+      this.pumping = false;
+      if (!this.stopped && this.paused === null) this.armIdle();
+      this.report();
+    }
+  }
+
+  /**
+   * 快照那一发。`turn <= snapshotTurn` 是**跳过**，不是失败（T7 ⑤ 段：引擎的记性防自伤，
+   * 库的 `UNIQUE` 防"将来有人把记性删了"，两边各管一头）。
+   */
+  private async trySnapshot(turn: number, doc: Document): Promise<boolean> {
+    if (this.snapshotTurn !== null && turn <= this.snapshotTurn) return true;
+    try {
+      await this.sink.writeSnapshot(turn, doc);
+      this.snapshotTurn = turn;
+      this.rowsSinceSnapshot = 0;
+      this.lastError = null;
+      this.report();
+      return true;
+    } catch (err) {
+      this.lastError = `快照 turn ${String(turn)} 失败：${describeError(err)}`;
+      this.report();
+      return false;
+    }
+  }
+
+  /** 库里还欠着行数（或上一份快照没写成）才需要排空闲定时器 —— 否则 60 秒就是空转（「没有新行就不许空转」那一格）。 */
+  private needsSnapshot(): boolean {
+    if (this.lastDoc === null || this.landedTurn === null) return false;
+    if (this.rowsSinceSnapshot === 0) return false;
+    return this.snapshotTurn === null || this.landedTurn > this.snapshotTurn;
+  }
+
+  private armIdle(): void {
+    if (this.idleHandle !== null || this.stopped || this.paused !== null) return;
+    if (!this.needsSnapshot()) return;
+    this.idleHandle = this.timer.schedule(() => {
+      this.idleHandle = null;
+      this.chain = this.chain.then(() => this.idleFire());
+    }, this.idleSnapshotMs);
+  }
+
+  private async idleFire(): Promise<void> {
+    const turn = this.landedTurn;
+    const doc = this.lastDoc;
+    if (turn !== null && doc !== null) await this.trySnapshot(turn, doc);
+    // 上一发失败留的队列也顺手推一把：60 秒这一发不只是快照的重试点，也是重试的备用触发。
+    this.kick();
+    // 失败就下个 60 秒再试：spec §9 的"持续重试"落在快照上就是这个形状（「快照失败不吞日志」那一格）。
+    this.armIdle();
+    this.report();
+  }
+
+  private scheduleRetry(): void {
+    if (this.retryHandle !== null || this.stopped || this.paused !== null) return;
+    this.retryHandle = this.timer.schedule(() => {
+      this.retryHandle = null;
+      this.kick();
+    }, this.retryDelayMs);
+  }
+
+  private cancelRetry(): void {
+    if (this.retryHandle === null) return;
+    this.retryHandle.cancel();
+    this.retryHandle = null;
+  }
+
+  private cancelIdle(): void {
+    if (this.idleHandle === null) return;
+    this.idleHandle.cancel();
+    this.idleHandle = null;
+  }
+
+  /**
+   * 一发自续的心跳：跑完一次再排下一次，而不是 `setInterval` —— 停写与停机时"下一次"要能干脆没有。
+   * 间隔的数值产地是 T6 那个常量，这里不抄第二份（P-4/P-14 的账）。`persist-boundary.test.ts` 盯着
+   * `LOCK_HEARTBEAT_INTERVAL_MS` 这个标识符还在不在：漂成字面量 5000 是本文件唯一没人运行时会红的漂法。
+   */
+  private scheduleBeat(): void {
+    if (!this.beat || this.stopped || this.paused !== null) return;
+    this.beatHandle = this.timer.schedule(() => {
+      this.beatHandle = null;
+      this.chain = this.chain.then(() => this.beatOnce());
+    }, LOCK_HEARTBEAT_INTERVAL_MS);
+  }
+
+  private async beatOnce(): Promise<void> {
+    const beat = this.beat;
+    if (!beat || this.stopped || this.paused !== null) return;
+    try {
+      const answer = await beat();
+      if (answer === 'lost') {
+        this.lastError = '心跳报 lost：锁已被别人拿走或已过期';
+        this.pause('lock-lost');
+        return;
+      }
+    } catch (err) {
+      // T7 ⑥ 段：问不出去 = 没有答案。两种可能里有一线是"别人正在写"，后果不对称 ⇒ 保守停写。
+      this.lastError = `心跳调用抛错，按丢锁处理：${describeError(err)}`;
+      this.pause('lock-lost: 心跳调用抛错');
+      return;
+    }
+    this.scheduleBeat();
+  }
+
+  /** 每个 turn 只抢救一次（T7 ⑦ 段）；抢救钩子再炸也不许打断重试循环（spec §9 的同一条）。 */
+  private rescue(entry: JournalEntry): void {
+    if (this.rescuedTurns.has(entry.turn)) return;
+    this.rescuedTurns.add(entry.turn);
+    const hook = this.onEmergency;
+    if (!hook) return;
+    try {
+      hook({
+        projectId: entry.doc.projectId,
+        turn: entry.turn,
+        error: this.lastError ?? '未知故障',
+        doc: entry.doc,
+        patch: entry.patch,
+      });
+    } catch {
+      // 吞掉：这里唯一的正确动作是继续重试，把盘写成功与否由返回值告诉调用方（emergency.ts 就是这么设计的）。
+    }
+  }
+
+  private report(): void {
+    const hook = this.onStatus;
+    if (!hook) return;
+    try {
+      hook(this.status());
+    } catch {
+      // 上报是单向广播，它抛错不能把保存路径带走。
+    }
+  }
+}
+```
+
+Run: `npx vitest run apps/desktop/test/unit/autosave.test.ts > tmp/t7-autosave.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`，**24 格**全绿。
+Run: `npx tsc --noEmit -p apps/desktop/tsconfig.test.json > tmp/t7-tsc.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`。（这一发不是仪式：`harness` 的 `Partial<AutosaveOptions>` 与 `FakeSink implements JournalSink` 两处形状主张只有它能看见。）
+
+若 `队列串行` 那一格红在 `maxInFlight=2`：先确认 `drain` 里那个 `break` 与 `kick` 的 `pumping` 守卫都在，别去改判据 —— 判据要的是"同一时刻库里只有一条在飞"。
+**⑨ 为什么 `writeEmergencySnapshot` 返回结果而不抛，且裁剪失败不改写 `ok`**：spec §9 那条"存盘失败绝不清空内存真源"管的不只是 MySQL —— 抢救这条路上任何一次抛错都会把调用方（T8 的 IPC handler、`flush()` 的收尾、甚至 `before-quit`）打断，而打断的后果正是"屏幕上的东西没了"。所以本文件的公开出口只有一个形状：`EmergencyWrite`，成功带 `path`，失败带 `error` 与**尽力算出的** `path`（守卫就失败时它是 `null`）。同理，`pruneEmergency` 在写完之后跑，它炸了（目录被并发删了、某个文件正被占用）**不能**把这一发谎报成"没抢救成功"：文件已经在盘上，谎报会让调用方以为还得再抢救一次，而 ⑦ 段刚说过同一 turn 只留一份现场。于是裁剪那段单独包一层 `try`，吞掉，只在注释里说明。代价登记在下面：**"裁剪失败时目录会一直涨"这一格没有用例**（要造一个"能写不能删"的目录得动 ACL，Windows 上不可靠），归"登记的限度"。
+
+**⑩ 为什么 `pruneEmergency` 按工程分桶，且认形状用的是"文件名 + `isEntityId`"两条**：`emergency/` 目录是全机共用的（`userData` 属于这个应用，不属于某个工程）。若按全局 turn 排序裁剪，一台开了三个工程的机器会因为工程 B 的 turn 大，把工程 A 唯一的抢救件删掉 —— 而那些恰恰是 A 在这一发上**仅存**的证据。分桶的键就是文件名词干里那枚 projectId，而它能不能当键用由 `isEntityId` 判：认不出的名字（`notes.txt`、用户自己扔进去的 `bogus-turn-9999.json`、词干不是 UUIDv7 的任何形状）一个都不许动 —— 不认识形状的文件不是我们的财产。写侧的 `guardName` 与裁剪侧的识别用的是**同一个** `isEntityId`，所以"能写进去的名字"与"能被认出来的名字"是同一集合，不存在"自己写的文件自己认不出"这种漂法。
+
+**⑪ 为什么 `db` 档还要把 `unit` 证过的形状再走一遍**：因为 `unit` 用的是假 sink，而这一档有四条**只有真库能给**的判据：① `already-applied` 由库里的 `journal_turn` 读数判出，不是我们 return 出来的字符串；② 引擎递给 `writeSnapshot` 的那一对 `(turn, doc)` 在真编码-真解码往返之后仍然同源（假 sink 只数调用次数，看不见内容）；③ 连投八发之后 `command_log.turn` 在真自增与真事务下逐发连着 —— 这条是 T5 那一格「中间缺一发日志 ⇒ 拒开并说"缺号"」的正面凭据；④ 注入的连接故障走的是引擎的重试路径，而抢救钩子接的是**真 `fs`**（`onEmergency → writeEmergencySnapshot` 这条线在 unit 档是数组 push）。另外三格（重放还原、pause 不动库、flush 补收尾）断的都是**引擎与真 repository 之间那条接缝**，接缝红了没人能怪到 `autosave.ts` 或 `repository.ts` 单侧头上。**这一档不重复的两件事**：`uk_project_turn` 会炸（T4 `repository.test.ts` 的「同一个 turn 落两份快照 ⇒ 抛」已经实测过，重复一遍只会让两档各自漂）与"没有快照也能从零重放"（T5 `journal.test.ts` 的「没有快照时全靠重放：五发之后 load 得到同一份文档」）。
+
+- [ ] **Step 5: 写 `apps/desktop/src/main/persist/emergency.ts` + `apps/desktop/test/unit/emergency.test.ts`（6 格）+ `apps/desktop/test/unit/persist-boundary.test.ts`（2 格）**
+
+`apps/desktop/test/unit/emergency.test.ts`
+
+```ts
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { Document, uuidv7, type EntityId } from '@dajia/core';
+import {
+  EMERGENCY_DIR_NAME,
+  EMERGENCY_KEEP,
+  emergencyFileName,
+  pruneEmergency,
+  writeEmergencySnapshot,
+} from '../../src/main/persist/emergency';
+
+const PID_A = uuidv7() as EntityId;
+const PID_B = uuidv7() as EntityId;
+
+// 三个 describe 共用两个临时目录（`dir` 反复写、`dirB` 只给覆盖那一格），
+// 目录由本文件 mkdtempSync 造 ⇒ afterAll 敢整棵删；绝不用仓库里的路径。
+let dir = '';
+let dirB = '';
+
+beforeAll(() => {
+  dir = mkdtempSync(join(tmpdir(), 'dajia-emergency-'));
+  dirB = mkdtempSync(join(tmpdir(), 'dajia-emergency-b-'));
+});
+
+afterAll(() => {
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(dirB, { recursive: true, force: true });
+});
+
+describe('文件名的两条尺', () => {
+  it('正形状是 `${projectId}-turn-${turn}.json`；两个守卫各挡一刀', () => {
+    expect(emergencyFileName(PID_A, 7)).toBe(`${PID_A}-turn-7.json`);
+    // 词干直接进路径：放 `../` 过去等于让调用方指定写到哪一层。
+    expect(() => emergencyFileName('../evil' as EntityId, 1)).toThrow(/UUIDv7/);
+    expect(() => emergencyFileName(PID_A, 0)).toThrow(/安全整数/);
+    expect(() => emergencyFileName(PID_A, 1.5)).toThrow(/安全整数/);
+    expect(() => emergencyFileName(PID_A, Number.MAX_SAFE_INTEGER + 1)).toThrow(/安全整数/);
+  });
+});
+
+describe('写一份抢救件', () => {
+  it('ok:true 且 envelope 七个键逐个对得上，canonical 是字符串且与 doc.canonical() 逐字节相同', () => {
+    const doc = Document.create(PID_A);
+    const write = writeEmergencySnapshot(dir, { projectId: PID_A, turn: 3, error: '连接被掐断', doc });
+    expect(write.ok).toBe(true);
+    if (!write.ok) throw new TypeError('夹具塌了：上一句已经保证 ok');
+    expect(write.path).toBe(join(dir, EMERGENCY_DIR_NAME, `${PID_A}-turn-3.json`));
+    const env = JSON.parse(readFileSync(write.path, 'utf8')) as Record<string, unknown>;
+    expect(Object.keys(env).sort()).toEqual(
+      ['canonical', 'error', 'kind', 'projectId', 'schemaVersion', 'turn', 'writtenAtMs'].sort(),
+    );
+    expect(env.kind).toBe('dajia.emergency.v1');
+    expect(env.projectId).toBe(PID_A);
+    expect(env.turn).toBe(3);
+    // schemaVersion 的产地是文档本身，不是本文件里的常量：写侧不许自己发明版本号。
+    expect(env.schemaVersion).toBe(doc.schemaVersion);
+    expect(env.error).toBe('连接被掐断');
+    // 存字符串而不是存对象：展开成对象就得在 fs 侧再写一份解码，而 core 已经有一份
+    // canonical 规则 —— 一份规则两个读者才是不漂的写法（T3/T5 同一条口径）。
+    expect(typeof env.canonical).toBe('string');
+    expect(env.canonical).toBe(doc.canonical());
+    expect(typeof env.writtenAtMs).toBe('number');
+    expect(env.writtenAtMs).toBeGreaterThan(0);
+  });
+
+  it('同一 turn 再写一份是覆盖，不是第二份（目录里始终一个文件）', () => {
+    const first = writeEmergencySnapshot(dirB, {
+      projectId: PID_A,
+      turn: 9,
+      error: '第一次的错',
+      doc: Document.create(PID_A),
+    });
+    const second = writeEmergencySnapshot(dirB, {
+      projectId: PID_A,
+      turn: 9,
+      error: '第二次的错',
+      doc: Document.create(PID_A),
+    });
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+    if (!second.ok) throw new TypeError('夹具塌了');
+    expect(readdirSync(join(dirB, EMERGENCY_DIR_NAME))).toEqual([`${PID_A}-turn-9.json`]);
+    const env = JSON.parse(readFileSync(second.path, 'utf8')) as { error: string };
+    expect(env.error).toBe('第二次的错');
+  });
+
+  it('文档与工程对不上、id 非法、userDataDir 底下不是目录 ⇒ 一律 ok:false，一个都不抛', () => {
+    // ① 文档签在别的工程上
+    const mismatch = writeEmergencySnapshot(dir, {
+      projectId: PID_A,
+      turn: 4,
+      error: 'x',
+      doc: Document.create(PID_B),
+    });
+    expect(mismatch.ok).toBe(false);
+    if (!mismatch.ok) expect(mismatch.error).toMatch(/工程/);
+    // ② 非法 id：守卫在算路径之前，所以这里连 path 都给不出
+    const bad = writeEmergencySnapshot(dir, {
+      projectId: '../../etc/passwd' as EntityId,
+      turn: 4,
+      error: 'x',
+      doc: Document.create(PID_A),
+    });
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) {
+      expect(bad.path).toBeNull();
+      expect(bad.error).toMatch(/UUIDv7/);
+    }
+    // ③ userDataDir 指向一个普通文件 ⇒ 底下建不出目录
+    const blocker = join(dir, 'blocker');
+    writeFileSync(blocker, '我不是目录\n', 'utf8');
+    const blocked = writeEmergencySnapshot(blocker, {
+      projectId: PID_A,
+      turn: 5,
+      error: 'x',
+      doc: Document.create(PID_A),
+    });
+    expect(blocked.ok).toBe(false);
+    if (!blocked.ok) {
+      expect(blocked.error.length).toBeGreaterThan(0);
+      // path 已经算出来了（守卫已过、失败在 mkdir），这一格把它留着给 T9 的诊断用。
+      expect(blocked.path).toBe(join(blocker, EMERGENCY_DIR_NAME, `${PID_A}-turn-5.json`));
+    }
+    // 三条落点各不同（RangeError / guardName / mkdirSync），分开写是因为它们红法不同：
+    // 前两条红在"抛出了 ok:false 之外的东西"，第三条红在"路径算错了一位"。
+  });
+  // 实测回填待办：第 ③ 条在本机 `err.code` 的具体值（ENOTDIR / EPERM / EACCES 之一）跑完抄进执行回填。
+  // 判据**不加** `/ENOTDIR/` —— 三条或的判据等于没有判据，而这一格盯的是"返回而不抛"。
+});
+
+describe('裁剪（按工程分桶，认不出的不动）', () => {
+  it('keep=2 时每个工程各留两份最新的，别人的文件一个都不许少', () => {
+    const mixed = mkdtempSync(join(tmpdir(), 'dajia-emergency-mixed-'));
+    const target = join(mixed, EMERGENCY_DIR_NAME);
+    mkdirSync(target, { recursive: true });
+    for (const turn of [1, 2, 3, 4, 5]) {
+      const w = writeEmergencySnapshot(mixed, {
+        projectId: PID_A,
+        turn,
+        error: `A 的第 ${turn} 发`,
+        doc: Document.create(PID_A),
+      });
+      expect(w.ok).toBe(true);
+    }
+    for (const turn of [1, 2, 3]) {
+      const w = writeEmergencySnapshot(mixed, {
+        projectId: PID_B,
+        turn,
+        error: `B 的第 ${turn} 发`,
+        doc: Document.create(PID_B),
+      });
+      expect(w.ok).toBe(true);
+    }
+    // 两样野文件：一个连形状都不像，一个像但词干不是 UUIDv7。
+    writeFileSync(join(target, 'notes.txt'), '谁扔的\n', 'utf8');
+    writeFileSync(join(target, 'bogus-turn-9999.json'), '{}\n', 'utf8');
+
+    const removed = pruneEmergency(mixed, 2);
+    expect(removed.sort()).toEqual(
+      [
+        `${PID_A}-turn-1.json`,
+        `${PID_A}-turn-2.json`,
+        `${PID_A}-turn-3.json`,
+        `${PID_B}-turn-1.json`,
+      ].sort(),
+    );
+    expect(readdirSync(target).sort()).toEqual(
+      [
+        'notes.txt',
+        'bogus-turn-9999.json',
+        `${PID_A}-turn-4.json`,
+        `${PID_A}-turn-5.json`,
+        `${PID_B}-turn-2.json`,
+        `${PID_B}-turn-3.json`,
+      ].sort(),
+    );
+    // T7 ⑩ 段的分桶主张：A 有 5 份、B 有 3 份，keep=2 ⇒ B 只少 1 份，
+    // 而那一份不是被 A 的大 turn 挤下来的（全局排序会删掉 B 的两份并留下 A 的两份 + B 的一份）。
+    rmSync(mixed, { recursive: true, force: true });
+  });
+
+  it('keep 必须是 >=1 的安全整数：0 就是关掉抢救，该由调用方不装钩子来表述', () => {
+    expect(() => pruneEmergency(dir, 0)).toThrow(/keep/);
+    expect(() => pruneEmergency(dir, -1)).toThrow(/keep/);
+    expect(() => pruneEmergency(dir, 1.5)).toThrow(/keep/);
+    expect(() => pruneEmergency(dir, Number.NaN)).toThrow(/keep/);
+    // 默认值本身要过得了这一尺：EMERGENCY_KEEP 写成 0 就是"抢救完再删光"，比不抢救更坏。
+    expect(EMERGENCY_KEEP).toBeGreaterThanOrEqual(1);
+    expect(Number.isSafeInteger(EMERGENCY_KEEP)).toBe(true);
+  });
+});
+```
+
+Run: `npx vitest run apps/desktop/test/unit/emergency.test.ts > tmp/t7-emergency-red.log 2>&1; echo "exit=$?"`
+Expected: `exit=1`，红在**模块解析不到**（`Cannot find module '../../src/main/persist/emergency'`）。**6 格**全在（`文件名的两条尺` 1、`写一份抢救件` 3、`裁剪` 2）。
+
+`describe-error.ts` 不在这里建 —— Step 4 已经落盘它（那时它是 `autosave.ts` 的私有读者），本 Step 只是它的**第二个读者**：抢救件的 `error` 与 `SaveStatus.lastError` 会被 T9 的诊断并排比对，格式必须同源。为什么要共享而**各条 `>=1` 的尺不共享**，Step 4 上一段已经答过，别再"顺手合并"一次。
+
+`apps/desktop/src/main/persist/emergency.ts`
+
+```ts
+import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { isEntityId, type Document, type EntityId } from '@dajia/core';
+import { describeError } from './describe-error';
+
+/** 目录名的唯一产地：`userData/emergency`。恢复侧（T8/T9）读同一个名字，不许各拼一份。 */
+export const EMERGENCY_DIR_NAME = 'emergency';
+
+/**
+ * 每个工程各留这么多份（T7 ⑩ 段）。20 是"一晚上的崩溃不至于把盘写满，而真要查问题时
+ * 手里还有二十发现场"这两头的折中；改这个数要说得出理由。
+ */
+export const EMERGENCY_KEEP = 20;
+
+/** envelope 的格式标记：将来换格式的人得能认出旧件，而不是拿新解析器读旧账。 */
+const ENVELOPE_KIND = 'dajia.emergency.v1';
+
+/**
+ * 输入故意比 `EmergencyPayload` 少一个 `patch`：抢救件保的是**整份状态**。
+ * 补丁是增量，靠它恢复得先有一份可信基线 —— 崩溃现场恰恰不保证有基线。
+ * T8 接线时把 payload 整个递过来即可（多余字段不影响结构赋值）。
+ */
+export interface EmergencyInput {
+  readonly projectId: EntityId;
+  readonly turn: number;
+  readonly error: string;
+  readonly doc: Document;
+}
+
+/** T7 ⑨ 段：本文件唯一的出口形状。成功带 path，失败带 error 与尽力算出的 path。 */
+export type EmergencyWrite =
+  | { readonly ok: true; readonly path: string }
+  | { readonly ok: false; readonly error: string; readonly path: string | null };
+
+interface Envelope {
+  readonly kind: typeof ENVELOPE_KIND;
+  readonly projectId: string;
+  readonly turn: number;
+  readonly schemaVersion: number;
+  readonly writtenAtMs: number;
+  readonly error: string;
+  /** `doc.canonical()` 原样一份字符串。恢复侧 `JSON.parse` 它，再 `Document.replaceEntities`。 */
+  readonly canonical: string;
+}
+
+/** 认形状：文件名 + 词干必须是 UUIDv7。写侧守卫与这里用的是同一个 `isEntityId`（T7 ⑩ 段）。 */
+const FILE_RE = /^(.+)-turn-(\d+)\.json$/;
+
+/**
+ * 两条尺都在**算路径之前**。projectId 要直接进文件名词干，`../` 这种串放过去就是
+ * "调用方指定写到哪一层"，而调用方那一侧是 IPC 传来的字符串（T8），不是我们自己人。
+ */
+function guardName(projectId: unknown, turn: unknown): { projectId: EntityId; turn: number } {
+  if (!isEntityId(projectId)) {
+    throw new TypeError(
+      `projectId 必须是 UUIDv7，收到 ${JSON.stringify(projectId)}：这一串直接进文件名词干，认不出就别拼路径`,
+    );
+  }
+  if (!Number.isSafeInteger(turn) || turn < 1) {
+    throw new TypeError(
+      `turn 必须是 >=1 的安全整数，收到 ${String(turn)}：它既是文件名也是裁剪的排序键`,
+    );
+  }
+  return { projectId, turn };
+}
+
+export function emergencyFileName(projectId: EntityId, turn: number): string {
+  const guarded = guardName(projectId, turn);
+  return `${guarded.projectId}-turn-${guarded.turn}.json`;
+}
+
+function emergencyDir(userDataDir: string): string {
+  if (userDataDir === '') {
+    throw new TypeError(
+      'userDataDir 不能是空串：拼出来是相对路径 "emergency"，会写进进程的当前工作目录，' +
+        '打包后的应用里那里可能是安装目录',
+    );
+  }
+  return join(userDataDir, EMERGENCY_DIR_NAME);
+}
+
+/**
+ * 落一份抢救件。**同步**是故意的：调用它的时机是"刚刚失败"，异步版会把这一发交给
+ * 一个可能正在被拆掉的进程（`before-quit` 那一头）。它**不抛**，理由见 T7 ⑨ 段。
+ */
+export function writeEmergencySnapshot(userDataDir: string, input: EmergencyInput): EmergencyWrite {
+  let path: string | null = null;
+  try {
+    const { projectId, turn } = guardName(input.projectId, input.turn);
+    if (input.doc.projectId !== projectId) {
+      throw new RangeError(
+        `抢救件说这是工程 ${projectId}，文档却签在 ${input.doc.projectId}：` +
+          `一份状态不能同时是两个工程的现场`,
+      );
+    }
+    const dir = emergencyDir(userDataDir);
+    path = join(dir, emergencyFileName(projectId, turn));
+    const envelope: Envelope = {
+      kind: ENVELOPE_KIND,
+      projectId,
+      turn,
+      schemaVersion: input.doc.schemaVersion,
+      writtenAtMs: Date.now(),
+      error: input.error,
+      canonical: input.doc.canonical(),
+    };
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path, `${JSON.stringify(envelope, null, 2)}\n`, 'utf8');
+  } catch (err) {
+    return { ok: false, error: describeError(err), path };
+  }
+  // 裁剪单独包一层：文件已经在盘上了，把裁剪失败谎报成"没抢救成功"是双重错 ——
+  // 调用方会再写一份，而 T7 ⑦ 段刚立的规矩是同一 turn 只留一份现场。
+  try {
+    pruneEmergency(userDataDir, EMERGENCY_KEEP);
+  } catch {
+    // 忽略：宁可目录临时多几份，也不谎报写入结果。
+  }
+  return { ok: true, path };
+}
+
+/**
+ * 按工程分桶裁剪，返回**删掉的文件名**（调用方要在日志里说清删了什么，返回值不是装饰）。
+ * 排序键是文件名里的 turn，不是 mtime —— T7 ⑧ 段：同一次会话连发两败可能撞在同一毫秒刻度上。
+ */
+export function pruneEmergency(userDataDir: string, keep: number): string[] {
+  if (!Number.isSafeInteger(keep) || keep < 1) {
+    throw new RangeError(
+      `keep 必须是 >=1 的安全整数，收到 ${String(keep)}：0 等于一份都不留，` +
+        '那是"关掉抢救"，该由调用方不装这个钩子来表述，不该让裁剪悄悄删光',
+    );
+  }
+  const dir = emergencyDir(userDataDir);
+  const byProject = new Map<EntityId, { name: string; turn: number }[]>();
+  for (const name of readdirSync(dir)) {
+    const m = FILE_RE.exec(name);
+    const candidateId = m?.[1];
+    const rawTurn = m?.[2];
+    if (!candidateId || !rawTurn || !isEntityId(candidateId)) continue;
+    const turn = Number(rawTurn);
+    // 长得像但数值不合法（手搓的 turn-99999999999999999999.json）⇒ 不认识，不动。
+    if (!Number.isSafeInteger(turn) || turn < 1) continue;
+    const bucket = byProject.get(candidateId) ?? [];
+    bucket.push({ name, turn });
+    byProject.set(candidateId, bucket);
+  }
+  const removed: string[] = [];
+  for (const bucket of byProject.values()) {
+    if (bucket.length <= keep) continue;
+    // 新的在前；同 turn 的双份（手搓出来的）按名字定序，保证这一发是确定的。
+    bucket.sort((a, b) => b.turn - a.turn || (a.name < b.name ? -1 : 1));
+    for (const item of bucket.slice(keep)) {
+      // 名字来自 readdirSync，不含分隔符 ⇒ join 之后仍在 dir 里，这一发没有路径拼接风险。
+      rmSync(join(dir, item.name), { force: true });
+      removed.push(item.name);
+    }
+  }
+  return removed;
+}
+```
+
+（`import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'` —— 上面代码块用了 `rmSync`，import 行按这四件写，别少抄一件：`noUnusedLocals` 反着也管，多了不用的 import 一样红。）
+
+`apps/desktop/test/unit/persist-boundary.test.ts`
+
+为什么单开一个文件、只有 2 格：这一档盯的不是任何一个函数的行为，而是 **T7 ② 段那条边界本身**（`persist/**` 里谁能认识外部世界）。为什么不靠"import 错了运行时会红"兜：`electron` 在纯 node 下 `require` 出来是一串路径（顶层不炸，只有调 `app.getPath` 才炸，而那一步在 T8 之后），`node:fs` 更是无声通过 —— 于是这条边界若漂开，24 格 unit 会悄悄变成"只有接了 electron 才测得到"的代码，正是 P-2 要避免的形状。`lint:deps` 也管不到它：那个脚本数的是**包与包**之间的边，而 `apps/desktop` 内部谁 import 谁不在它的口径里。同一个理由在 T6 有一个先例（`locks-ticket.test.ts` 里那条「locks.ts 里不许出现客户机时钟」）。**代价照同一标准登记**：扫的是源码文本，注释里出现 `from 'electron'` 会误红 —— 与 T3「不许留第二份重叠规则」那一格同族，评审按同一把尺看。
+
+```ts
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+
+/**
+ * 只扫 `from '…'` 的模块说明符，不扫正文：注释里写"落盘 / fs / electron"是本计划注释的正常写法，
+ * 不该成为红。三条判据各挡一型漂移，别顺手删成一条。
+ */
+function srcOf(relative: string): string {
+  return readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');
+}
+
+const AUTOSAVE = '../../src/main/persist/autosave.ts';
+const EMERGENCY = '../../src/main/persist/emergency.ts';
+const DESCRIBE_ERROR = '../../src/main/persist/describe-error.ts';
+
+describe('persist 档的 import 边界（P-2）', () => {
+  it('autosave.ts 既不 import electron 也不 import node:fs：外部世界只从三条注入通道进来', () => {
+    const src = srcOf(AUTOSAVE);
+    expect(src.includes("from 'electron'")).toBe(false);
+    expect(src.includes("from 'node:fs'")).toBe(false);
+    // 反向判据：三条通道都在。少了任何一条，"注入"就退化成"连库/连盘才能测"，
+    // 而这一格是唯一会注意到那一型退化的地方（退化的文件依然能跑，只是没人测得到）。
+    expect(src.includes('JournalSink')).toBe(true);
+    expect(src.includes('SaveTimer')).toBe(true);
+    expect(src.includes('onEmergency')).toBe(true);
+    // 心跳间隔必须是 T6 那个常量的引用，不是本文件里的第二个数（P-4/P-14 的账）：
+    // 漂成字面量 `5000` 时值一样、行为一样，只有这一句看得见。
+    expect(src.includes('LOCK_HEARTBEAT_INTERVAL_MS')).toBe(true);
+  });
+
+  it('emergency.ts 允许碰 fs 但不许认识 electron；describe-error.ts 两样都不许', () => {
+    const emergency = srcOf(EMERGENCY);
+    // 不对称是有意的：本文件正是 T7 唯一被授权碰盘的那一个（裁决 P-10），
+    // 但它同样不许 import electron —— `app.getPath('userData')` 由 T8 当参数递进来。
+    expect(emergency.includes("from 'node:fs'")).toBe(true);
+    expect(emergency.includes("from 'electron'")).toBe(false);
+    const describeError = srcOf(DESCRIBE_ERROR);
+    expect(describeError.includes("from 'electron'")).toBe(false);
+    expect(describeError.includes("from 'node:fs'")).toBe(false);
+    // 文案出口连 core 都不许要：它必须能在任何一侧独立编译（T9 的诊断档也会 import 它）。
+    expect(describeError.includes("from '@dajia/core'")).toBe(false);
+  });
+});
+```
+
+Run: `npx vitest run apps/desktop/test/unit/persist-boundary.test.ts > tmp/t7-boundary.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`，**2 格**全绿（它没有红-绿两步：Step 4/5 落完盘它就已经成立；先跑它是为了在 `emergency.ts` 还没写时看到 `no such file`，那一步与 `autosave.ts` 一起发生在 Step 4/5 的间隙里，不作为独立步骤要求）。
+
+- [ ] **Step 6: 连库那一档 —— `apps/desktop/test/db/autosave-journal.test.ts`（7 格）**
+
+夹具照 T6 的 `locks.test.ts`：库名由本文件写死、`beforeAll` 自建自清、`beforeEach` 清 `project`（FK 全带 `ON DELETE CASCADE`，级联把四张表一起带走）。与 T6 不同的一层：这一档要的是**真 repository 当 sink**，所以只有一个池 —— 引擎的串行性由引擎保证（unit 档「队列串行」那一格已经证过"同一时刻只有一发在飞"），这里不需要两个池抢同一行。
+
+```ts
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import type { Pool } from 'mysql2/promise';
+import {
+  Document,
+  SCHEMA_VERSION,
+  TransactionLog,
+  applyPatch,
+  storeyCreate,
+  wallCreate,
+  wallSetLoadBearing,
+  type Command,
+  type EntityId,
+  type Patch,
+} from '@dajia/core';
+import { createDbPool } from '../../src/main/db/pool';
+import { readMysqlEnv } from '../../src/main/db/env';
+import { dropTestDatabase, ensureDatabase } from '../../src/main/db/database';
+import { migrate } from '../../src/main/db/migrate';
+import { decodeDocument } from '../../src/main/db/codec';
+import { ProjectRepository, type JournalEntry } from '../../src/main/db/repository';
+import { Autosave, type JournalSink } from '../../src/main/persist/autosave';
+import { EMERGENCY_DIR_NAME, writeEmergencySnapshot } from '../../src/main/persist/emergency';
+
+const env = readMysqlEnv();
+// 红线同前两档：库名由本文件写死，不抄 env（env.database 允许是 dajia）。
+const DATABASE = 'dajia_test';
+const PROJECT_ID = '0193aa00-0000-7000-8000-00000000000c' as EntityId;
+
+let pool: Pool;
+let repo: ProjectRepository;
+let emergencyDir = '';
+
+async function rows<T>(sql: string, params: unknown[] = []): Promise<T[]> {
+  const [res] = await pool.query(sql, params);
+  return res as T[];
+}
+
+async function count(table: string, where = '', params: unknown[] = []): Promise<number> {
+  const [res] = await pool.query(`SELECT COUNT(*) AS n FROM \`${table}\`${where}`, params);
+  return Number((res as { n: number | string }[])[0]?.n);
+}
+
+async function clearAll(): Promise<void> {
+  await pool.query('DELETE FROM `project`');
+}
+
+/**
+ * 条件轮询而不是固定 sleep：这一档等的是**库里的状态**（日志行数、快照份数），
+ * 不是"引擎大概跑完了吧"。真钟 + 真连接下的耗时不可预测（P-4 那一层在测试里的对应物）。
+ * 唯一反着来的一格是 pause 那一格：它要证的是"不发生"，那必须给一个观察窗口（见那里的注释）。
+ */
+async function waitUntil(
+  label: string,
+  probe: () => Promise<boolean>,
+  deadlineMs = 8_000,
+): Promise<void> {
+  const started = performance.now();
+  for (;;) {
+    if (await probe()) return;
+    if (performance.now() - started > deadlineMs) {
+      throw new TypeError(`等 ${deadlineMs}ms 仍不成立：${label}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+function step(doc: Document, cmd: Command): { patch: Patch; doc: Document } {
+  const patch = cmd.build(doc);
+  return { patch, doc: applyPatch(doc, patch).doc };
+}
+
+/** 取补丁里那枚新建实体的 id。写死在这里而不是 `?? 常量`：夹具拿不到实体就是夹具塌了。 */
+function firstUpsertId(patch: Patch, kind: string): EntityId {
+  const entity = patch.upsert.find((e) => e.kind === kind);
+  if (!entity) throw new TypeError(`补丁里没有 ${kind}，夹具塌了：${JSON.stringify(patch.upsert.map((e) => e.kind))}`);
+  return entity.id;
+}
+
+/**
+ * 八发连着写的账：一层、四片墙封一个口、改一发承重、二层、二层一片墙。
+ * 为什么手搓而不是随机：这一档的判据是"快照落在 3 与 6"，它要求 turn 序列与补丁序列都确定；
+ * 随机产量归 core 的属性测试。厚度四片一律 200 —— 同端点异厚度会撞进计划 3 尾判那条 tie-break 限度。
+ */
+function buildEntries(): JournalEntry[] {
+  const base = Document.create(PROJECT_ID);
+  const t1 = step(base, storeyCreate({ projectId: PROJECT_ID, index: 0, elevationMm: 0, heightMm: 3000 }));
+  const lower = firstUpsertId(t1.patch, 'storey');
+  const t2 = step(
+    t1.doc,
+    wallCreate({ storeyId: lower, start: { x: 0, y: 0 }, end: { x: 4000, y: 0 }, thicknessMm: 200, heightMm: 2800 }),
+  );
+  const wallA = firstUpsertId(t2.patch, 'wall');
+  const t3 = step(
+    t2.doc,
+    wallCreate({ storeyId: lower, start: { x: 4000, y: 0 }, end: { x: 4000, y: 3000 }, thicknessMm: 200, heightMm: 2800 }),
+  );
+  const t4 = step(
+    t3.doc,
+    wallCreate({ storeyId: lower, start: { x: 4000, y: 3000 }, end: { x: 0, y: 3000 }, thicknessMm: 200, heightMm: 2800 }),
+  );
+  const t5 = step(
+    t4.doc,
+    wallCreate({ storeyId: lower, start: { x: 0, y: 3000 }, end: { x: 0, y: 0 }, thicknessMm: 200, heightMm: 2800 }),
+  );
+  const t6 = step(t5.doc, wallSetLoadBearing({ wallId: wallA, loadBearing: false }));
+  const t7 = step(t6.doc, storeyCreate({ projectId: PROJECT_ID, index: 1, elevationMm: 3000, heightMm: 3000 }));
+  const upper = firstUpsertId(t7.patch, 'storey');
+  const t8 = step(
+    t7.doc,
+    wallCreate({ storeyId: upper, start: { x: 0, y: 0 }, end: { x: 5000, y: 0 }, thicknessMm: 200, heightMm: 2800 }),
+  );
+  return [t1, t2, t3, t4, t5, t6, t7, t8].map((s, i) => ({ turn: i + 1, patch: s.patch, doc: s.doc }));
+}
+
+/** 取夹具里的第 turn 发。不用 `as`：拿不到那一发就是夹具塌了，抛出来比静默 undefined 好查。 */
+function atTurn(entries: JournalEntry[], turn: number): JournalEntry {
+  const found = entries[turn - 1];
+  if (!found) throw new TypeError(`夹具没有第 ${turn} 发`);
+  return found;
+}
+
+function mkEntries(): JournalEntry[] {
+  const entries = buildEntries();
+  const first = atTurn(entries, 1);
+  const last = atTurn(entries, 8);
+  // 每一发的 doc 必须是**累积到那一发**的状态：appendJournal 拿它核对归属，
+  // writeSnapshot 把它整个编码落盘。写成"八发共用最后一份文档"是最容易被误改的一处。
+  if (last.doc.entities.size <= first.doc.entities.size) {
+    throw new TypeError('夹具塌了：每一发的 doc 应当逐发累积，不是八发共用同一份');
+  }
+  return entries;
+}
+
+/** 只让第 failTurn 发失败 failTimes 次，其余原样交给真 repository。 */
+class FlakySink implements JournalSink {
+  private failed = 0;
+
+  constructor(
+    private readonly inner: JournalSink,
+    private readonly failTurn: number,
+    private readonly failTimes: number,
+  ) {}
+
+  async appendJournal(entry: JournalEntry) {
+    if (entry.turn === this.failTurn && this.failed < this.failTimes) {
+      this.failed += 1;
+      throw Object.assign(new Error('注入的库故障：连接被掐断'), { code: 'ECONNREFUSED' });
+    }
+    return this.inner.appendJournal(entry);
+  }
+
+  writeSnapshot(turn: number, doc: Document): Promise<void> {
+    return this.inner.writeSnapshot(turn, doc);
+  }
+}
+
+beforeAll(async () => {
+  await dropTestDatabase(env, DATABASE);
+  await ensureDatabase(env, DATABASE);
+  pool = createDbPool({ ...env, database: DATABASE });
+  await migrate(pool, DATABASE);
+  repo = new ProjectRepository(pool, PROJECT_ID, 'autosave-db');
+  emergencyDir = mkdtempSync(join(tmpdir(), 'dajia-emergency-db-'));
+});
+
+afterAll(async () => {
+  rmSync(emergencyDir, { recursive: true, force: true });
+  await pool.end();
+  await dropTestDatabase(env, DATABASE);
+});
+
+beforeEach(async () => {
+  await clearAll();
+  await repo.createProject({ name: '保存引擎样例工程', schemaVersion: SCHEMA_VERSION });
+});
+
+// 每一格末尾都有 `engine.stop()`：不拆定时器的引擎会把下一格的 `waitUntil`
+// 推着走（这类"过不了的绿"比红更难查）。没有 try/finally 是故意的 —— 格子里断言失败
+// 时 vitest 本来就报红，而停不掉的定时器会在**下一格**报出更难归因的红。
+
+async function snapshotTurns(): Promise<number[]> {
+  const rs = await rows<{ journal_turn: number | string }>(
+    'SELECT `journal_turn` FROM `snapshot` ORDER BY `journal_turn` ASC',
+  );
+  return rs.map((r) => Number(r.journal_turn));
+}
+
+async function logTurns(): Promise<number[]> {
+  const rs = await rows<{ turn: number | string }>('SELECT `turn` FROM `command_log` ORDER BY `turn` ASC');
+  return rs.map((r) => Number(r.turn));
+}
+
+async function projectTurn(): Promise<number> {
+  const rs = await rows<{ t: number | string }>('SELECT `journal_turn` AS t FROM `project` WHERE `id` = ?', [
+    PROJECT_ID,
+  ]);
+  return Number(rs[0]?.t ?? -1);
+}
+
+describe('引擎接真 repository', () => {
+  it('八发连着落：日志 1..8、阈值快照在 3 与 6、空闲那一份补在 8，loadProject 还原成同一份文档', async () => {
+    const entries = mkEntries();
+    const engine = new Autosave({ sink: repo, snapshotEveryRows: 3, idleSnapshotMs: 40 });
+    for (const entry of entries) engine.submit(entry);
+    await engine.settled();
+    await waitUntil('command_log 八行', async () => (await count('command_log')) === 8);
+    expect(await logTurns()).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    // 不在这里断 `[3, 6]`：40ms 的窗口里空闲那一份可能已经落了，那是一条会自己漂的判据。
+    await waitUntil('空闲补的那一份', async () => (await snapshotTurns()).includes(8));
+    expect(await snapshotTurns()).toEqual([3, 6, 8]);
+    expect(await projectTurn()).toBe(8);
+
+    const loaded = await repo.loadProject('read');
+    expect(loaded.header.journalTurn).toBe(8);
+    expect(loaded.snapshot?.turn).toBe(8);
+    expect(loaded.replayed.rows).toBe(0);
+    expect(loaded.doc.canonical()).toBe(atTurn(entries, 8).doc.canonical());
+    engine.stop();
+  });
+
+  it('undo 与 redo 各产出一发新账（P-5 在真库上的形状），重放仍然停在做过的最后一发', async () => {
+    const entries = mkEntries();
+    const engine = new Autosave({ sink: repo, snapshotEveryRows: 3, idleSnapshotMs: 60_000 });
+    for (const entry of entries.slice(0, 6)) engine.submit(entry);
+    await engine.settled();
+    await waitUntil('前六发', async () => (await count('command_log')) === 6);
+
+    // 事务日志接手：一发新命令、撤销、重做 —— 三发都要成为**新的账**。
+    const wall = atTurn(entries, 2).doc.byKind('wall')[0];
+    if (!wall) throw new TypeError('夹具里没有墙');
+    const log = new TransactionLog(atTurn(entries, 6).doc);
+    log.dispatch(wallSetLoadBearing({ wallId: wall.id, loadBearing: true }));
+    const patchAfter = (turn: number): JournalEntry => {
+      const patch = log.lastPatch;
+      if (!patch) throw new TypeError(`turn ${turn} 拿不到 lastPatch：T7 Step 2 那三处赋值漏了一处`);
+      return { turn, patch, doc: log.document };
+    };
+    engine.submit(patchAfter(7));
+    expect(log.undo()).toBe(true);
+    engine.submit(patchAfter(8));
+    expect(log.redo()).toBe(true);
+    engine.submit(patchAfter(9));
+    await engine.settled();
+    await waitUntil('九发齐', async () => (await count('command_log')) === 9);
+
+    expect(await logTurns()).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    const loaded = await repo.loadProject('read');
+    // 撤销那一发的**逆补丁**也在账上，重放完仍然停在做过的最后一发 —— 这才是"撤销也是一发新记录"。
+    expect(loaded.doc.canonical()).toBe(log.document.canonical());
+    engine.stop();
+  });
+
+  it('引擎递给 writeSnapshot 的那一对 (turn, doc) 同源：turn 2 的行里编码的就是第 2 发之后的文档', async () => {
+    const entries = mkEntries();
+    const engine = new Autosave({ sink: repo, snapshotEveryRows: 2, idleSnapshotMs: 60_000 });
+    for (const entry of entries.slice(0, 4)) engine.submit(entry);
+    await engine.settled();
+    await waitUntil('两份阈值快照', async () => (await count('snapshot')) === 2);
+    expect(await snapshotTurns()).toEqual([2, 4]);
+
+    const rs = await rows<{ seq: number | string; journal_turn: number | string; payload: unknown }>(
+      'SELECT `seq`, `journal_turn`, `payload` FROM `snapshot` ORDER BY `journal_turn` ASC',
+    );
+    for (const r of rs) {
+      const turn = Number(r.journal_turn);
+      const decoded = decodeDocument({ table: 'snapshot', id: String(Number(r.seq)) }, r.payload);
+      const expected = entries[turn - 1];
+      if (!expected) throw new TypeError(`快照行指认 turn ${turn}，夹具没有那一发`);
+      // 这一句盯的是 `trySnapshot(head.turn, head.doc)` 那一对实参。假 sink 只数调用次数，
+      // 看不见内容 —— (turn, doc) 错配（差一发型）只有在这里才红。
+      expect(decoded.canonical()).toBe(expected.doc.canonical());
+      expect(decoded.schemaVersion).toBe(SCHEMA_VERSION);
+    }
+    engine.stop();
+  });
+
+  it('already-applied 由真库的 journal_turn 判出 ⇒ 行数计数器不推进（P-6 那把尺的真库凭据）', async () => {
+    const entries = mkEntries();
+    const engine = new Autosave({ sink: repo, snapshotEveryRows: 2, idleSnapshotMs: 60_000 });
+    engine.submit(atTurn(entries, 1));
+    await engine.settled();
+    await waitUntil('第一发落地', async () => (await count('command_log')) === 1);
+
+    // 另一条路径先把第 2 发写进库（T5 的「重发旧 turn」在写侧的对应物：这里模拟"引擎之外有人补了账"）。
+    const second = atTurn(entries, 2);
+    expect(await repo.appendJournal(second)).toBe('applied');
+    // 引擎随后自己投同一发：库给的是 already-applied，不是新增行。
+    engine.submit(second);
+    await engine.settled();
+    await waitUntil('两行都在库里', async () => (await count('command_log')) === 2);
+
+    const status = engine.status();
+    expect(status.lastTurn).toBe(2);
+    // 关键判据：库里两行，但**新增**只有一行 ⇒ 计数器是 1，不是 2 ⇒ 阈值（2）还没到 ⇒ 不许有快照。
+    expect(status.rowsSinceSnapshot).toBe(1);
+    expect(status.lastError).toBeNull();
+    expect(await count('snapshot')).toBe(0);
+
+    engine.submit(atTurn(entries, 3));
+    await engine.settled();
+    await waitUntil('第三发之后到阈值', async () => (await count('snapshot')) === 1);
+    expect(await snapshotTurns()).toEqual([3]);
+    expect(await logTurns()).toEqual([1, 2, 3]);
+    engine.stop();
+  });
+
+  it('真故障重试：turn 序列仍然连着，且一个 turn 只落一份抢救件（onEmergency 接的是真 fs）', async () => {
+    const entries = mkEntries();
+    const sink = new FlakySink(repo, 4, 2);
+    const rescued: string[] = [];
+    const engine = new Autosave({
+      sink,
+      snapshotEveryRows: 3,
+      idleSnapshotMs: 60_000,
+      retryDelayMs: 25,
+      onEmergency: (payload) => {
+        const w = writeEmergencySnapshot(emergencyDir, {
+          projectId: payload.projectId,
+          turn: payload.turn,
+          error: payload.error,
+          doc: payload.doc,
+        });
+        // 只记路径：ok:false 时上一格那种"逐个断言"会红在 undefined，而这一格盯的是份数与内容。
+        rescued.push(w.ok ? w.path : `FAILED:${w.error}`);
+      },
+    });
+    for (const entry of entries) engine.submit(entry);
+    await waitUntil('注入两次失败之后第八发落地', async () => (await count('command_log')) === 8, 15_000);
+    await engine.settled();
+
+    // 连续、无洞、无重复 —— 这一条是 T5「中间缺一发日志 ⇒ 拒开并说"缺号"」那一格的正面凭据。
+    expect(await logTurns()).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    expect(rescued).toEqual([join(emergencyDir, EMERGENCY_DIR_NAME, `${PROJECT_ID}-turn-4.json`)]);
+    const files = readdirSync(join(emergencyDir, EMERGENCY_DIR_NAME));
+    expect(files).toEqual([`${PROJECT_ID}-turn-4.json`]);
+    const only = files[0];
+    if (!only) throw new TypeError('抢救件不在目录里');
+    const envelope = JSON.parse(readFileSync(join(emergencyDir, EMERGENCY_DIR_NAME, only), 'utf8')) as {
+      error: string;
+      canonical: string;
+      turn: number;
+    };
+    expect(envelope.turn).toBe(4);
+    // 驱动那一格的 code 必须在文案里（`describeError` 存在的全部理由）。
+    expect(envelope.error).toContain('ECONNREFUSED');
+    // 抢救件保的那份状态，就是库里第 4 发之后应有的那份状态。
+    expect(envelope.canonical).toBe(atTurn(entries, 4).doc.canonical());
+    expect(engine.status().lastError).toBeNull();
+    engine.stop();
+  });
+
+  it('pause 期间库里一行都不许多，resume 之后把憋着的补上且 turn 仍然连着', async () => {
+    const entries = mkEntries();
+    const engine = new Autosave({ sink: repo, snapshotEveryRows: 3, idleSnapshotMs: 60_000 });
+    engine.submit(atTurn(entries, 1));
+    await engine.settled();
+    await waitUntil('第一发落地', async () => (await count('command_log')) === 1);
+    const before = await count('command_log');
+    const beforeTurn = await projectTurn();
+
+    engine.pause('lock-lost：T6 说这把锁没余额了');
+    for (const entry of entries.slice(1, 4)) engine.submit(entry);
+    await engine.settled();
+    // 证"不发生"必须给一个观察窗口 —— waitUntil 在这里不适用（要等的状态永不出现）。
+    // 120ms 是宽裕上界：pause 已经撤掉重试与空闲两个定时器（`cancelIdle`/`cancelRetry`），
+    // 没有任何东西会在窗口里敲第二下。
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(await count('command_log')).toBe(before);
+    expect(await projectTurn()).toBe(beforeTurn);
+    expect(await count('snapshot')).toBe(0);
+    const paused = engine.status();
+    expect(paused.phase).toBe('paused');
+    expect(paused.queuedTurns).toBe(3);
+    expect(paused.pauseReason).toBe('lock-lost：T6 说这把锁没余额了');
+
+    engine.resume();
+    await waitUntil('补写到第四发', async () => (await count('command_log')) === 4);
+    await engine.settled();
+    // 补写不是重写：turn 仍然逐发连着，pause 期间那一发都没进过库。
+    expect(await logTurns()).toEqual([1, 2, 3, 4]);
+    expect(await projectTurn()).toBe(4);
+    engine.stop();
+  });
+
+  it('flush 把收尾快照补上、报零欠款；stop 之后 phase 是 stopped（T8 的关窗路径）', async () => {
+    const entries = mkEntries();
+    const engine = new Autosave({ sink: repo, snapshotEveryRows: 3, idleSnapshotMs: 60_000 });
+    for (const entry of entries.slice(0, 5)) engine.submit(entry);
+    await engine.settled();
+    await waitUntil('阈值那一份', async () => (await count('snapshot')) === 1);
+    expect(engine.status().rowsSinceSnapshot).toBe(2);
+    expect(await snapshotTurns()).toEqual([3]);
+
+    const flushed = await engine.flush();
+    expect(flushed.queuedTurns).toBe(0);
+    expect(flushed.snapshotTurn).toBe(5);
+    expect(flushed.rowsSinceSnapshot).toBe(0);
+    expect(flushed.lastError).toBeNull();
+    expect(await snapshotTurns()).toEqual([3, 5]);
+    // 60ms 的观察窗口：`idleSnapshotMs` 是 60 秒，这里等的是"没有第三个定时器来敲"这一件事
+    // —— flush 补完那一份之后 `needsSnapshot()` 已经为假（T7 ⑤ 段那条记性）。
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(await count('snapshot')).toBe(2);
+
+    const stopped = engine.stop();
+    expect(stopped.phase).toBe('stopped');
+    expect(stopped.lastError).toBeNull();
+    const loaded = await repo.loadProject('read');
+    expect(loaded.replayed.rows).toBe(0);
+    expect(loaded.doc.canonical()).toBe(atTurn(entries, 5).doc.canonical());
+  });
+});
+```
+
+Run: `npx vitest run --config vitest.db.config.ts apps/desktop/test/db/autosave-journal.test.ts > tmp/t7-db.log 2>&1; echo "exit=$?"`
+Expected: 先红在 `Cannot find module '../../src/main/persist/autosave'`（Step 4 没落盘时）；Step 4/5 都写完 ⇒ `exit=0`，**7 格**全绿。
+
+三条"红了先查夹具再查判据"的提示，写给下一个动这一档的人：
+
+- 「八发连着落：日志 1..8…」那一格若最终只有 `[3, 6]` 而 `waitUntil` 超时：先确认 `needsSnapshot()` 在第八发之后仍成立 —— 6 那一发把 `rowsSinceSnapshot` 清零，7、8 两发加回 2，成立。若不成立，红的是计数器而不是定时器。
+- 「undo 与 redo 各产出一发新账…」那一格若 `loaded.doc.canonical()` 不等：按 `logTurns` 的读数分家。九发齐而文档不等 ⇒ 逆补丁的形状问题（`TransactionLog.lastPatch` 在本任务 Step 1 的「lastPatch：undo 记的是**逆补丁**…」那一格钉过，回来查 `undo` 的赋值）；九发不齐 ⇒ 去 `tmp/t7-db.log` 里找那句 `journal turn 跳号：盘上记到 X，这发要写 Y`（T4 `repository.ts` 抛的原文）。
+- 「真故障重试：turn 序列仍然连着…」那一格若 `rescued` 长度是 2：`FlakySink` 的 `failed` 计数被写成"按 turn 失败"而不是"按次数失败"了。它要的是第 4 发失败两次、第三次放行。若 `files` 是两份而 `rescued` 一份，那是 `pruneEmergency` 之外的另一条路（同一 turn 覆盖写）被改成了带时间戳的文件名 —— 别那么改，T7 ⑦ 段的份数主张就靠覆盖写成立。
+
+Run: `pnpm test:db > tmp/t7-db-all.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`。这一发是**全套连库档一起跑**（`env` 3 + `migrate` + `database` + `repository` 20 + `journal` + `locks` 27 + `autosave-journal` 7），它盯的是"新加的这一档没把别人的夹具带脏" —— 各档共用同一个 `dajia_test`，且各自 `beforeAll` 建 / `afterAll` 删，两个 `dropTestDatabase` 并发会互相踩。T2 建 `vitest.db.config.ts` 时钉的 `fileParallelism: false` 是这一格能成立的前提，本档是它的第二个证人。
+
+- [ ] **Step 7: 全量复跑与计数**
+
+```bash
+pnpm verify > tmp/t7-verify.log 2>&1; echo "exit=$?"
+sed 's/\x1b\[[0-9;]*m//g' tmp/t7-verify.log | grep -E "^ *(Test Files|Tests) "
+pnpm test:db > tmp/t7-db.log 2>&1; echo "exit=$?"
+sed 's/\x1b\[[0-9;]*m//g' tmp/t7-db.log | grep -E "^ *(Test Files|Tests) |FAIL"
+npx tsc --noEmit -p apps/desktop/tsconfig.test.json > tmp/t7-tsc.log 2>&1; echo "exit=$?"
+git status --porcelain
+```
+
+Expected：
+
+1. `pnpm verify` `exit=0`。`Test Files` 比 T6 的回填值 **+3**（`autosave.test.ts`、`emergency.test.ts`、`persist-boundary.test.ts`；`packages/core/test/transaction.test.ts` 是改不是增），`Tests` **+39** —— 拆开是 core `lastPatch` 7 + autosave 24 + emergency 6 + 边界 2。**若只涨 37**：多半是 `persist-boundary.test.ts` 没被 include 收进来（它落在 `apps/desktop/test/unit/`，T1 改的那条 include 覆盖它）；**若涨 39 而 `Test Files` 只 +2**：说明边界那两格被并进了 `emergency.test.ts`，不要那样留 —— 它盯的是三个文件而不是一个模块的行为。
+2. `pnpm test:db` `exit=0`，`Test Files` **+1**、`Tests` **+7**（T6 的回填值是 `locks` 27 那一档）。这一发必须**全套连库档一起跑**：`autosave-journal.test.ts` 与 `repository/journal/locks` 四档共用同一个 `dajia_test`，各自 `beforeAll` 建 / `afterAll` 删。`vitest.db.config.ts` 里 T1 钉的 `fileParallelism: false` 是这一发能成立的前提（本档是它的第二个证人：第一个证人是 `locks.test.ts`，那时只有一档碰库）。
+3. `npx tsc --noEmit -p apps/desktop/tsconfig.test.json` `exit=0`。这一发不是仪式：`harness` 的 `Partial<AutosaveOptions>`、`FakeSink implements JournalSink`、db 档 `FlakySink implements JournalSink` 三处形状主张只有它能看见 —— **`FlakySink` 少实现 `writeSnapshot` 时只有这里是红的**，vitest 会把它当"少一个方法也没关系"的鸭子类型跑绿。
+4. `lint:deps` 照旧静默，且**它本来也看不见本任务的边界**：那个脚本数的是包与包之间的边，而 `apps/desktop` 内部 `persist/**` 谁 import 谁不在它的口径里。于是 P-2 有两条互补的防线：包外的（`persist` 不许 import `@dajia/scene-2d` 之类）归 `lint:deps`，包内的（不许 import `electron` / `node:fs`）归 `persist-boundary.test.ts`。
+5. `git status --porcelain` 里**不许出现** `emergency/` 目录或任何 `*-turn-<n>.json`：Step 5 的抢救件全写在 `os.tmpdir()` 下并由 `afterAll` 整棵删掉。真出现了就是 `userDataDir` 被写成了仓库路径 —— 那是测试自己的缺陷，先修测试再谈落盘。
+6. 跑完确认库清干净（命令同 T6 Step 5 那一发，**从 `apps/desktop` 目录跑**，`node -e` 按 cwd 解析裸说明符）。Expected：输出里既没有 `dajia_test` 也没有 `dajia`。
+
+---
+
+- [ ] **Step 8: 提交（代码棒只提交 src 与 test，`docs/` 归控制位）**
+
+```bash
+git status --porcelain
+git diff
+git add packages/core/src/model/transaction.ts packages/core/test/transaction.test.ts \
+  apps/desktop/src/main/persist/autosave.ts apps/desktop/src/main/persist/describe-error.ts \
+  apps/desktop/src/main/persist/emergency.ts \
+  apps/desktop/test/unit/autosave.test.ts apps/desktop/test/unit/emergency.test.ts \
+  apps/desktop/test/unit/persist-boundary.test.ts \
+  apps/desktop/test/db/autosave-journal.test.ts
+git commit -m "$(cat <<'EOF'
+feat(persist): 保存引擎 —— 两条阈值、同 turn 一次抢救、锁没了就停手
+
+autosave.ts：electron-free、fs-free（P-2）。队列串行由 pumping + drain 的 break 保证；
+rowsSinceSnapshot 只数 applied 那一型（P-6），already-applied 不推进它；同一 turn 的快照
+由引擎记 snapshotTurn 跳过（P-16 裸 INSERT，重复落盘会撞 uk_project_turn 自伤）。
+60 秒与 2000 行都是同进程两 now() 之差，假钟可注入；心跳间隔只引用 T6 的常量。
+
+emergency.ts：唯一碰 node:fs 的持久化文件，接参数不接 app（P-10）；唯一出口是
+EmergencyWrite，任何一型失败都不抛 —— 抢救这条路上抛错的后果正是 spec §9 禁止的那一件。
+裁剪按工程分桶、按文件名里的 turn 排序、只认 isEntityId 认得出的词干。
+
+core：TransactionLog.lastPatch 让 undo/redo 那一发在持久化侧可见（P-5）；
+persist-boundary.test.ts 是 P-2 与"数值唯一产地"两条主张的常驻证人。
+EOF
+)"
+```
+
+---
+
+**Task 7 的改坏验证**（变异棒，`cp` 备份 + md5 还原；**座位不许 `git checkout`/`restore`/`stash`/`reset`/`clean`**）：
+
+用例引用一律用 `it` 的名字，不用"第 N 格"。跑法同前：改坏一处 → 只跑受影响的档（unit 档 `npx vitest run apps/desktop/test/unit/autosave.test.ts`，db 档加 `--config vitest.db.config.ts`）→ `cp` 还原 → 同码复跑一次确认回到绿。
+
+| # | 改坏哪里 | 哪一格红、为什么 |
+|---|---|---|
+| T7-M1 | `drain` 里 `if (outcome === 'applied') this.rowsSinceSnapshot += 1` 去掉条件（每次投递都算一行） | 「already-applied 不推进 rowsSinceSnapshot（P-6 那把尺的定义在这里）」红（第 2 发就触发快照）；db 档「already-applied 由真库的 journal_turn 判出 ⇒ 行数计数器不推进」同型红。**两档各一个证人是有意的**：unit 证语义，db 证那个读数真的来自库 |
+| T7-M2 | `trySnapshot` 成功分支里 `this.rowsSinceSnapshot = 0` 删掉（写完不清账） | 「阈值触发：第 N 发落地即快照，计数归零」红（下一发立刻又落一份）；「没有新行就不许空转：拨满三次 60 秒…」同型红 —— 计数器不归零就永远"还欠着" |
+| T7-M3 | `trySnapshot` 开头 `turn <= this.snapshotTurn` 那一句去掉（"让库的 UNIQUE 兜"） | 「同一 turn 只落一份：阈值路径与空闲路径盯上同一发时，后到的那个跳过」红（假 sink 数到两次 `writeSnapshot`）。**db 档不红**：`uk_project_turn` 会炸那一型 T4 已实测过，这一发改的是引擎的记性而不是库的牙 —— 正是 T7 ⑤ 段那对分工 |
+| T7-M4 | `rescue` 里 `if (this.rescuedTurns.has(entry.turn)) return;` 删掉 | 「队首一直失败：抢救一次都不许多，队列一条都不许丢」红（连投 3 发全失败 ⇒ 抢救序列变 `[1,1,1]`）；db 档「真故障重试…」的 `rescued` 从 1 份变 2 份 |
+| T7-M5 | `drain` 的 catch 里那个 `break` 删掉（失败后继续跑下一发） | 「append 抛 ⇒ failed、欠款留在队首、每 turn 抢救一次、文案带驱动 code」红 —— 第 2 发越过没落的第 1 发进了库，真库里是 `appendJournal` 抛「journal turn 跳号」。这一发是"队首不移动"那条纪律唯一的牙 |
+| T7-M6 | `kick` 的 `pumping` 守卫去掉（同一时刻允许两条链在飞） | 「队列串行：第一发挂在库里时，第二发不许挤进去」红（`maxInFlight` 变 2）。**db 档不红** —— 登记在下面 |
+| T7-M7 | `submit` 里 `entry.turn <= this.maxSeenTurn` 的守卫去掉 | 「重复或回退的 turn ⇒ ignored-duplicate，sink 一次都不许多调」红（同一发进队两次，`queuedTurns` 变 2）；「fromJournal 起点按库里的账算…」同型红（起点之后的重投进了队） |
+| T7-M8 | 空闲那一发（`idleFire`）不看 `needsSnapshot()` 直接 `trySnapshot` | 「没有新行就不许空转：拨满三次 60 秒，writeSnapshot 调用次数仍是 0，定时器也不留着」红 —— 这一格就是为这一发留的 |
+| T7-M9 | `submit` 里那句 `this.cancelIdle()` 删掉（新编辑不重置空闲钟） | 「空闲计时随新编辑重置：60 秒是给"没有新动作"计的，不是给第一发计的」红（最后一发之后 60 秒不落，而是第一发之后就落）|
+| T7-M10 | `pause` 只置 `paused`，不撤重试/空闲/心跳三个定时器 | 「beat 报 lost ⇒ paused：后续投递不进 sink、队列留着、重试定时器一起撤」红（`spy.count()` 继续涨）；db 档「pause 期间库里一行都不许多…」那 120ms 观察窗口同型红 |
+| T7-M11 | `beatOnce` 的 catch 从"按 lost 停写"改成"记一条 `lastError` 然后继续 `scheduleBeat()`" | 「beat 抛错同样按 lost 停写（问不出去 = 不知道锁还在不在，后果不对称 ⇒ 保守）」红（下一发照样进 sink）—— T7 ⑥ 段那条不对称判断只有这一格守着 |
+| T7-M12 | `flush` 只排干队列就返回，不补收尾快照 | 「flush 把欠的收尾快照补上，之后的空闲定时器再敲也不重复落」红；db 档「flush 把收尾快照补上、报零欠款…」的 `snapshotTurns()` 停在 `[3]` |
+| T7-M13 | `stop()` 只置 `stopped`，不撤心跳定时器 | 「stop 拆掉所有定时器、报 stopped，欠款非空时说清还剩几发」红（`timer.advance(IDLE_SNAPSHOT_MS * 2)` 之后 `spy.count()` 仍涨）|
+| T7-M14 | `describeError` 丢掉 `err.code`（只回 `${err.name}: ${err.message}`） | 「append 抛 ⇒ failed、…、文案带驱动 code」红；db 档「真故障重试…」的 `envelope.error` 不再含 `ECONNREFUSED` —— **两档同时红正是它共享的理由**（T9 的诊断要把这两个字符串并排比） |
+| T7-M15 | `writeEmergencySnapshot` 改成失败即抛（去掉 `EmergencyWrite` 那层包装） | 「文档与工程对不上、id 非法、userDataDir 底下不是目录 ⇒ 一律 ok:false，一个都不抛」红；db 档「真故障重试…」也红，但红在别处：`onEmergency` 里那一抛被引擎吞掉 ⇒ 抢救件**消失**而不是变多 |
+| T7-M16 | `pruneEmergency` 改成全局按 turn 排序（不分工程桶） | 「keep=2 时每个工程各留两份最新的，别人的文件一个都不许少」红（B 少两份）—— T7 ⑩ 段那条分桶主张唯一的证人 |
+| T7-M17 | 裁剪侧认形状从「`FILE_RE` + `isEntityId`」放宽成只看 `FILE_RE` | 「keep=2 时…」红（`bogus-turn-9999.json` 被删）；「正形状是 `${projectId}-turn-${turn}.json`；两个守卫各挡一刀」不红 —— 写侧与认侧同集合这一主张靠两格夹住，少一格就少一半 |
+| T7-M18 | `pruneEmergency` 的排序键从文件名里的 turn 换成 `mtimeMs` | **本任务用例全绿** —— 登记的限度：同一毫秒刻度造不出来（要两份 mtime 相同而 turn 不同）。「keep=2 时…」证的是"新压旧按 turn"，**不证**"mtime 撞刻度会漂"。T7 ⑧ 段那段理由是这一发的全部防线 |
+| T7-M19 | `EMERGENCY_KEEP` 从 20 改成 0 | 「keep 必须是 >=1 的安全整数：0 就是关掉抢救，该由调用方不装钩子来表述」红 —— 那一格里 `expect(EMERGENCY_KEEP).toBeGreaterThanOrEqual(1)` 是唯一注意到"抢救完再删光"比不抢救更坏的地方 |
+| T7-M20 | `guardName` 里 `isEntityId` 那一句删掉（只按 `FILE_RE` 取词干） | 「正形状是…」红（`'../evil'` 不再抛，`path` 里出现 `..`）；「文档与工程对不上…」红在非法 id 那一型；「keep=2 时…」连带红（野名字进了桶）—— 一发打三格，因为写侧守卫与认侧识别本来就是同一个尺 |
+| T7-M21 | `autosave.ts` 顶部加一行 `import { app } from 'electron';`（或把 `LOCK_HEARTBEAT_INTERVAL_MS` 换成字面量 `5000`） | 「autosave.ts 既不 import electron 也不 import node:fs…」红，而**运行不会红**：`electron` 在纯 node 下解析成一串路径，常量值又一模一样。这一发是 P-2 与"数值唯一产地"两条主张唯一的常驻证人；代价是它扫源码文本，注释里写出 `from 'electron'` 会误红 |
+| T7-M22 | core `undo()` 里 `this.lastPatchApplied = inverse` 换成 `entry.patch` | 「lastPatch：undo 记的是**逆补丁**，不是 undoStack 顶上那份原件」红；db 档「undo 与 redo 各产出一发新账…」红在 `loaded.doc.canonical()` —— 撤销那一发写进库的是正向补丁，重放回到撤销**之前** |
+| T7-M23 | `dispatch` 在 `cmd.build(doc)` **之前**就刷 `lastPatchApplied` | 「lastPatch：build 抛错之后停在上一发，失败的补丁绝不进账」红 —— 失败的补丁进账，`command_log` 与抢救件就会记一份根本没发生过的改动 |
+| T7-M24 | `EmergencyPayload` 去掉 `patch` 字段 | `npx tsc --noEmit -p apps/desktop/tsconfig.test.json` 红（「append 抛 ⇒ failed…」里 `rescued[0]?.patch` 那一句取不到），且 T8 接 `writeEmergencySnapshot` 时 `EmergencyInput` 少一件的形状会变 —— 抢救件保整份状态、补丁需要基线，这条分工写在 Step 5 的注释里 |
+
+**Task 7 登记的限度**（写在计划里，是给下一个动这一档的人看的，不是待办）：
+
+1. **真并发不在这里证**。`T7-M6` 那一型只有 unit 档看得见（假 sink 数 `maxInFlight`）；db 档全用单池、单进程，看不见两个进程同时写同一工程。那半边的凭据在 T10 的 `--lock-shot`（两个真 electron 进程抢一把锁）与 T11 的 `--persist-shot`（三进程 + SIGKILL），别把本任务的「队列串行」当它用完了。
+2. **60 秒是假钟**。`IDLE_SNAPSHOT_MS = 60_000` 在 unit 档靠 `FakeTimer.advance` 推进，证的是"到点就落、有新编辑就重置"这条**判定**；真墙钟上 60 秒是否真等得到、进程被杀时那份是否真没落，只有 T11 的真进程证据说了算。
+3. **mtime 那一型造不出红**（`T7-M18`）。所以 `pruneEmergency` 用 turn 排序的理由只存在于注释里。
+4. **裁剪失败会让目录一直涨**，且没有用例：要造一个"写得进去、删不掉"的目录得动 ACL，Windows 上不可靠。Step 5 里那一层单独的 `try`（吞掉裁剪的错）是这一型的唯一防线 —— 它换来的性质是"绝不把已写成的抢救件谎报成没写成"（T7 ⑨ 段）。
+5. **`userDataDir` 底下不是目录时 `err.code` 的具体值未实测**（`ENOTDIR` / `EPERM` / `EACCES` 之一）。判据**故意不加** `/ENOTDIR/`：三条或在一起的判据等于没有判据，而那一格盯的是"返回而不抛"。跑完把实际值抄进执行回填，只作记录。
+6. **db 档「八发连着落：日志 1..8…」那一格那对 `[3, 6, 8]` 依赖一个形状**：八发在同一个同步 `for` 里投完，于是 `submit` 撤了八次空闲钟、`armIdle` 只在队列排空后重新排 —— 40ms 的窗口最早也从第八发落地之后才开始计。若 T8 的接线改成"每发之间 await 一次 IPC"，这一格会漂；那时候要改的是判据（只断 `includes(8)`），**不是**把 `idleSnapshotMs` 调大。
+7. **`pause` 那一格用的是 120ms 观察窗口**（证"不发生"没法用 `waitUntil`）。慢机上这个窗口只会更宽裕（pause 已经把三个定时器都撤了，窗口里没有任何东西会敲第二下），但它是本任务唯一一处"以固定时间当判据"的地方 —— 记在这里，红了先查是不是有人往 `pause` 里漏回了定时器，再怀疑窗口值。
