@@ -226,12 +226,32 @@ describe('合成与报告文案', () => {
     expect(lines[0]).toContain(PID);
   });
 
+  it('给人读的那半行也有归属：PAIR_TEXT / PROBLEM_TEXT 的两句原话真进了文案', () => {
+    // 其余对账用例断的都是 `pair` 的原形标签（`/element↔storey/` 那一族），六句人类文案零证人。
+    // 这一格只补归属，不动任何判据：文案漂了（改字、漏字、整张表换掉）红在这里，而不是红在"没人读得懂"。
+    const rows = flatElementRows().map((r) =>
+      r.id === W1 ? { ...r, entity: { ...wall, thicknessMm: 240 } } : r,
+    );
+    const text = formatMismatches(PID, diffDocAgainstElement(doc, rows));
+    expect(text).toContain('文档（真源）↔ element 投影');
+    expect(text).toContain('同 id 的字段不等');
+    expect(text).toContain('thicknessMm');
+  });
+
   it('输出顺序确定：先按对、再按 id（两份日志要能人肉比对）', () => {
     const extra: WallEntity = { ...wall, id: W2, loadBearing: false };
-    const rows = [...flatElementRows(), { id: W2, storeyId: S1, entity: extra }];
+    // 三对定序里**中间那一支**（`element.storey_id↔payload`）以前从来没进过断言：那两行只造出
+    // document↔element 与 element↔storey 两对，中间那一支删掉也不会有格红。
+    // 现在 W1 这一行的列指到别人的点（P1）上、payload 一个字不动 ⇒ 只有行内自比看得见它。
+    // 定序由名字决定：'.' (0x2E) 排在 '↔' 之前 ⇒ document↔element、element.storey_id↔payload、element↔storey。
+    const rows = [
+      ...flatElementRows().map((r) => (r.id === W1 ? { ...r, storeyId: P1 } : r)),
+      { id: W2, storeyId: S1, entity: extra },
+    ];
     const storeyRows = [...flatStoreyRows(), { id: GHOST, indexNo: 0, elevationMm: 0, heightMm: 3000 }];
     expect(reconcileProjection(doc, rows, storeyRows).map((m) => `${m.pair}|${m.id}`)).toEqual([
       `document↔element|${W2}`,
+      `element.storey_id↔payload|${W1}`,
       `element↔storey|${GHOST}`,
     ]);
   });

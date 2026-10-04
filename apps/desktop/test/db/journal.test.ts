@@ -13,6 +13,7 @@ import {
   type Entity,
   type EntityId,
   type Patch,
+  type WallEntity,
 } from '@dajia/core';
 import { createDbPool } from '../../src/main/db/pool';
 import { readMysqlEnv } from '../../src/main/db/env';
@@ -184,6 +185,20 @@ describe('加载 = 最近快照 + 重放其后的日志', () => {
     const got = await repo.loadProject('edit');
     expect(got.snapshot).toBeNull();
     expect(got.replayed).toEqual({ rows: 5, fromSeq: expect.any(Number), toSeq: expect.any(Number) });
+    // 上面那行只断"是个 Number"⇒ 把 fromSeq/toSeq 对调（或让 fromSeq 记末行）它照样绿。这里补**相对**判据：
+    // 绝不写绝对 seq 数字（P-6 之后 seq 可带洞、每发都在漂，写死等于复制判据），只断端点同向 + 与外部一次
+    // 独立 SELECT 逐值对齐 —— 两次读数来自两条语句，把 fromSeq 记成末行会红在这里。
+    const { fromSeq, toSeq } = got.replayed;
+    if (fromSeq === null || toSeq === null) throw new TypeError('重放了五发，端点不该是 null');
+    expect(fromSeq <= toSeq).toBe(true);
+    const snapTurn = got.snapshot?.turn ?? 0; // 本格没有快照（上面刚断过 null）⇒ 重放覆盖 turn > 0 的全部行
+    const edges = await rows<{ lo: number | string; hi: number | string }>(
+      'SELECT MIN(`seq`) AS lo, MAX(`seq`) AS hi FROM `command_log` WHERE `project_id` = ? AND `turn` > ?',
+      [PROJECT_ID, snapTurn],
+    );
+    const edge = edges[0];
+    if (!edge) throw new TypeError('command_log 一行都没有，端点判据没处对');
+    expect([Number(edge.lo), Number(edge.hi)]).toEqual([fromSeq, toSeq]);
     expect(got.doc.canonical()).toBe(last(house).canonical());
     expect(got.header.journalTurn).toBe(5);
     expect(got.header.name).toBe('读路径样例');
@@ -345,7 +360,8 @@ describe('拒开：盘上账本不该被静默圆回来的那些形状', () => {
 
   /**
    * 上面那一格撞的是 `applyPatch`（remove 撞空行），所以它看不见重放尽头的那道放行证 ——
-   * 实测：删掉 `assertTruthSourceInvariants(doc)`（T5-M10）时 52 格全绿。这里补一发只走那道门的：
+   * 实测：删掉 `assertTruthSourceInvariants(doc)`（T5-M10）时 `journal+repo` 靶全绿（补法落地后才有红相）。
+   * 这里补一发只走那道门的：
    * 补丁本身合法（zod 过、applyPatch 过，改的是自己家的墙 B），坏在引用指向**别人**的实体 id，
    * 只有引用完整性判据看得见它。
    *
@@ -364,12 +380,21 @@ describe('拒开：盘上账本不该被静默圆回来的那些形状', () => {
         PROJECT_ID,
         6,
         'attacker',
-        encodePatch({ upsert: [{ ...wallB, startId: OTHER_PROJECT } as never], remove: [] }),
+        encodePatch({
+          // 显式的 `WallEntity` 形状（原来是 `as never`：它把整个表达式连形状一起打掉，
+          // 而 OTHER_PROJECT 本身就是 EntityId，根本不需要 never）。
+          // "这一发在盘上是脏数据"的语义一点没变：脏在**值**指错工程（startId 指向别人的实体 id），
+          // encodePatch 不校验、zod 也照样过，只有引用完整性那道放行证看得见它。
+          upsert: [{ ...(wallB as WallEntity), startId: OTHER_PROJECT }],
+          remove: [],
+        }),
       ],
     );
     await pool.query('UPDATE `project` SET `journal_turn` = 6 WHERE `id` = ?', [PROJECT_ID]);
     await expect(repo.loadProject('edit')).rejects.toThrow(/墙起点 不存在/);
-    // 拒开不许留下"这里曾打开过"的痕迹：回滚必须把 edit 支那发抹 0 一起带走。
+    // 拒开不许留下"这里曾打开过"的痕迹，靠的是**顺序**而不是回滚：edit 支那发抹 0 排在所有拒开判据之后
+    //（本格的抛点在放行证那一步，抹 0 在它下面），所以拒开天然无痕。
+    // 这一格守的就是这个顺序，它同时是"别把抹 0 提到事务前面"的哨兵 —— 提上来的话这里当场红。
     expect(await cleanShutdown()).toBe(1);
   });
 
@@ -406,10 +431,13 @@ describe('clean_shutdown 与恢复告知', () => {
     expect((await repo.loadProject('edit')).header.wasCleanShutdown).toBe(true);
   });
 
-  it('连开两次：第二次报 false（这一格也是"那条 UPDATE 不许加 affectedRows 断言"的证人）', async () => {
-    // 标题是 brief 原文，照抄不改；但它括号里那句**实测不成立**，记在这里免得下一个人再信一遍：
-    // 给那条 UPDATE 加 `affectedRows === 1` 断言（T5-M15）时 53 格全绿，这一格照样过 ——
+  it('连开两次：第二次报 false（它**不是**"那条 UPDATE 不许加 affectedRows 断言"的证人，理由见下面四行）', async () => {
+    // 标题原先写"这一格也是那条纪律的证人"（brief 原文）—— 实测**不成立**，所以这一发改口只改标题：
+    // 给那条 UPDATE 加 `affectedRows === 1` 断言（T5-M15）时 `journal+repo` 靶全绿，这一格照样过 ——
     // 同一条语句还写 `updated_at = NOW(3)`，重复打开时行确实变了 ⇒ affectedRows 是 1 不是 0。
+    // 但"绿"是**时序运气**而不是证明：`updated_at` 是 DATETIME(3)（001_init.sql:23 ⇒ 毫秒粒度），
+    // 两次打开落在同一毫秒时它不变、头寸又是 0→0 ⇒ 那一发 affectedRows 就是 0，断言当场抛。
+    // 于是全仓没有任何一格能**稳定**抓住那条断言 ⇒ 连绿也别当成证明。
     // 这条判据真正的落脚点在 repository.ts 那段注释里（"押在 updated_at 上的断言"），不在这一格。
     await writeHouse();
     expect((await repo.loadProject('edit')).header.wasCleanShutdown).toBe(true);
@@ -493,7 +521,7 @@ describe('closeProject 的三方对账', () => {
     expect(message).toMatch(new RegExp(house.wallB));
   });
 
-  it('element 少一行 ⇒ 两对同时报（文档与投影、投影的列与正文都失去证人），那个 id 在文案里出现两次以上', async () => {
+  it('element 少一行 ⇒ 只有 document↔element 报它（删一行时"列"与"正文"一起消失，行内自比只剩这一个证人，那个 id 至少出现一次）；"两对同时报"由下面那格认', async () => {
     const house = await writeHouse();
     await repo.loadProject('edit');
     await pool.query('DELETE FROM `element` WHERE `id` = ?', [house.wallB]);
@@ -553,6 +581,18 @@ describe('closeProject 的三方对账', () => {
       /属于工程/,
     );
     expect(await cleanShutdown()).toBe(0);
+  });
+
+  it('project 行本身没了（FK 级联带走投影）⇒ 收尾抛"没有可收尾的账"，不是悄悄报一个平账', async () => {
+    const house = await writeHouse();
+    await repo.loadProject('edit');
+    // 清场用的同一条语句：只删 project 行，element / storey / command_log / snapshot 由 FK 级联带走。
+    await pool.query('DELETE FROM `project` WHERE `id` = ?', [PROJECT_ID]);
+    await expect(repo.closeProject(last(house))).rejects.toThrow(/没有可收尾的账/);
+    // 判据在 closeProject 锁行那一步（SELECT id FROM project ... FOR UPDATE 回 0 行 ⇒ 抛），今天零证人：
+    // 其余收尾用例都留着 project 行。摘掉那一支的话"投影被级联清空 + 文档非空"会改走 document↔element
+    // 的 left-only，同样抛、同样不落 1 ⇒ 只有这一格能区分"没有可收尾的账"与"账对不平"。加格不加判据。
+    expect(await count('element', ' WHERE `project_id` = ?', [PROJECT_ID])).toBe(0);
   });
 
   it('读路径不漏连接：connectionLimit=1 的池上连开两次再收尾都成功（少一次 release 就变成等 1 秒超时）', async () => {

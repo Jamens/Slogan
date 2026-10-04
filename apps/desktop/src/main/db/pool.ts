@@ -50,10 +50,12 @@ export function createDbPool(env: MysqlEnv, opts: PoolOptions = {}): Pool {
     // ①关掉下面这两行（T5-M7pool）：红的是 **T4 那一格**（`typeof` 从 string 变回 number），
     //   journal 那一格反而**不红**：9007199254740993 失精成 2^53，而 2^53 也不是安全整数，
     //   `asSafeInt64` 的第二支照样抛 ⇒ 它测不出配置被关掉（`tmp/t5-mut-T5-M7pool-journal+repo.log`）。
-    // ②只删 `asSafeInt64` 的 string 支（T5-M7 的字面删法）：**53 格全绿**，因为第二支
+    // ②只删 `asSafeInt64` 的 string 支（T5-M7 的字面删法）：**`journal+repo` 靶全绿**，因为第二支
     //   `Number.isSafeInteger` 已经把 string 挡在外面（它不是 number）。要打出这一支得把整个函数
     //   变成 `return Number(raw)`（T5-M7b），那一发才红在 journal 那一格上。
-    // 留这一格不是嫌 brief 啰嗦：它是"配置 + 两道守卫"三者关系唯一的实测记录，摘掉任一条的另一条会顶上来。
+    // 留这一格不是嫌 brief 啰嗦：它是"下面这两行配置 + `asSafeInt64` 的两个分支"互相遮蔽关系唯一的实测记录，
+    // 摘掉任一条另一条会顶上来。口径也钉死（别用裸计数）：配置是**两行**、分支是**两个**，
+    // 不是"两道守卫 / 三道守卫"那种各数各的说法 —— 两种说法都自洽，并排读就会让人以为有人改过函数。
     supportBigNumbers: true,
     bigNumberStrings: false,
   });

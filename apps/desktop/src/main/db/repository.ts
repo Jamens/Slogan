@@ -20,7 +20,9 @@ import {
 // 写这一列（appendJournal）与审这一列（closeProject 的三方对账）必须共用同一份规则，两份一定会漂
 // （同 T3 的 assertNoVerticalOverlap 那条理由）。
 // 代价（T5-M14 登记的限度）：列由这份规则写、又由同一份规则自比，规则自己漂了对账看不见 ⇒
-// 外部证人 = test/db/repository.test.ts 的「楼层那一行的 storey_id 是 NULL」那一格（它直接读列的实测值）。
+// 外部证人 = test/db/repository.test.ts 的「楼层那一行的 `storey_id` 是 NULL，别的三类都带着自己的层」
+// 那一格（它直接读列的实测值）。标题这里照抄逐字全文（含反引号与后半句），
+// 免得引用 grep 不到用例 —— 本档的纪律是"引用用例用 `it()` 名，不用第 N 格"。
 import {
   formatMismatches,
   reconcileProjection,
@@ -377,6 +379,12 @@ export class ProjectRepository {
         }
         doc = decoded;
         snapshot = { seq: snapSeq, turn: snapTurn };
+        // 这一行把快照**列**上的 turn 直接当成"正文已经写到这一发"，而列无法自证：payload 里没有 turn 字段
+        // （codec 只写 projectId / schemaVersion / entities）。上面三条判据管的是版本列、版本正文、工程归属三根轴，
+        // 这根 turn 轴空着 ⇒「列快于正文 ⇒ 静默少重放 ⇒ 交出旧文档」这一型在本发**没有牙**：
+        // 列写 5 而正文只是 turn 3 的终态时，下面那条 `AND turn > replayFrom ORDER BY seq` 会跳过 4、5，
+        // 尾判据与放行证都看不出来（旧文档形状是全对的）。设牙在 T7（`encodeDocument` 增 `journalTurn` +
+        // `writeSnapshot` 校验 + `loadProject` 同形状拒开判据）；本发只登记，不动 codec、不加判据。
         replayFrom = snapTurn;
       } else {
         doc = Document.create(this.projectId, schemaVersion);
@@ -433,10 +441,19 @@ export class ProjectRepository {
       if (intent === 'edit') {
         // 不加 affectedRows 断言。理由不是 brief 那句"重复打开时 0→0 返回 0"（实测它不成立：
         // 同一条 UPDATE 还写 `updated_at = NOW(3)`，头寸没变但行确实变了 ⇒ affectedRows 照样是 1，
-        // T5-M15 加上断言后 53 格全绿，`tmp/t5-mut-T5-M15-journal+repo.log`）。
-        // 成立的那条更简单：这一发本来就不许失败，失败已经由"它抛在事务里、由 catch 回滚"负责；
+        // T5-M15 加上断言后 `journal+repo` 靶全绿，`tmp/t5-mut-T5-M15-journal+repo.log`）。
+        // 但那一次"全绿"是**时序运气**，不是证明：`project.updated_at` 是 DATETIME(3)
+        // （migrations/001_init.sql:23 ⇒ 毫秒粒度），两次打开落在同一毫秒时 `updated_at` 不变、头寸又是 0→0
+        // ⇒ 那一发 affectedRows 就是 0。所以加了断言以后它红不红取决于时钟，全仓没有一格能**稳定**抓住那条断言
+        //（`连开两次` 那一格的绿同理是运气 ⇒ 别把它读成"加了也无害"：加了只会造出一格毫秒级 flaky 的测试）。
+        // 成立的那条更简单：这一发本来就不许失败，失败由"抛在 commit 之前"+ `finally` 里那次 release 兜住
+        // —— 不是由回滚兜住，见下面那两句的顺序账；
         // 拿 affectedRows 当判据只会把语义押在 updated_at 上 —— 哪天它被挪出这条语句，
         // 断言立刻把"重复打开"这条正当路径变成红，而它什么坏东西都没拦住。
+        // 顺序账：这一发抹 0 排在上面所有拒开判据（缺 project 行 / 三处版本 / 缺号 / 尾不落头 / 放行证）之后
+        // ⇒ 拒开天然无痕；`重放出来的文档形状全对、端点指向别人的实体` 那一格守的就是**这个顺序**，
+        // 它同时是"别把抹 0 提到事务前面"的哨兵。loadProject 的回滚在本任务里没有可撤销之物，
+        // 它自己的证人归 T6-M17。
         await conn.query(
           'UPDATE `project` SET `clean_shutdown` = 0, `updated_at` = NOW(3) WHERE `id` = ?',
           [this.projectId],
