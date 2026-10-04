@@ -82,8 +82,8 @@
 | `apps/desktop/test/unit/emergency.test.ts` | **6 格**（真 `fs`，目录在 `os.tmpdir()`）：文件名两条尺、envelope 七键逐字节、同 turn 覆盖、三型失败一律 `ok:false`、`keep=2` 分桶裁剪、`keep` 的 `>=1` 尺 | T7 |
 | `apps/desktop/test/unit/persist-boundary.test.ts` | **2 格** 源码扫描：`autosave.ts` 里既无 `electron` 也无 `node:fs` 且 `LOCK_HEARTBEAT_INTERVAL_MS` 这个标识符还在；`emergency.ts` 许碰 `fs` 不许碰 `electron`，`describe-error.ts` 两样都不许 —— P-2 与"数值唯一产地"的常驻证人 | T7 |
 | `apps/desktop/test/db/autosave-journal.test.ts` | **7 格**（真库 + 真 `ProjectRepository` 当 sink）：八发连着落 + `loadProject` 还原、undo/redo 各产一发新账、`(turn, doc)` 同源、`already-applied` 不推进计数器、真故障重试且一个 turn 一份抢救件、pause 期间库里一行不许多、flush 补收尾快照与 `stop` | T7 |
-| `apps/desktop/src/main/persist/config-store.ts` | `safeStorage` 加密连接配置（唯一 import electron 的持久化文件） | T9 |
-| `packages/protocol/src/ipc.ts` | 通道从 1 条扩到 `<待实测>` 条 + 每条请求/回包的 zod schema | T8 |
+| `apps/desktop/src/main/persist/config-store.ts` | 连接配置的读写盘（`userData/connection.bin`，0600），加解密只认注入进来的 `ByteCipher`；**electron-free**（P-27 改判：原文案"唯一 import electron 的持久化文件"作废，`safeStorage` 适配器住在 `ipc-persist.ts`） | T9 |
+| `packages/protocol/src/ipc.ts` | 通道从 1 条扩到 **5** 条（T8），T9 再扩到 **11** 条 + 每条请求/回包的 zod schema | T8/T9 |
 | `packages/protocol/src/persist-schema.ts` | IPC 契约：连接配置、打开结果、只读决定、保存状态事件 | T8 |
 | `apps/desktop/src/preload/index.ts` | `DajiaApi` 从只有 `ping` 扩成窄接口（逐个方法显式写，不透传 `ipcRenderer`） | T8 |
 | `apps/desktop/src/renderer/src/stores/projectStore.ts` | 连接态、`projectId`、`readOnly`、保存状态、恢复横幅 | T8 |
@@ -92,6 +92,11 @@
 | `apps/desktop/src/renderer/src/panels.tsx` | 向导那两栏（输入 + 测试连接 + 分型诊断 + 一键复制）；`STOREY_TAB_HEIGHT_PX = 32` 不许动（闸门原点判据吃它） | T9 |
 | `apps/desktop/src/main/db/diagnostics.ts` | `classifyDbError(err)`：ECONNREFUSED / ER_ACCESS_DENIED_ERROR / ER_BAD_DB_ERROR / PROTOCOL_CONNECTION_LOST / ETIMEDOUT / 未知码 ⇒ 各配文案与下一步 | T9 |
 | `apps/desktop/test/unit/diagnostics.test.ts` | 六个分型 + 「未知码不许说成服务未启动」 | T9 |
+| `apps/desktop/src/main/db/errors.ts` | `MissingProjectError` —— `'no-project'` 这个码的唯一产地（P-26：是一个类的身份，不是字符串比较），运行时零 import | T9 |
+| `apps/desktop/src/shared/diagnostics-text.ts` | `DIAGNOSTIC_TEXT`：每型 title / detail / next 三段文案的唯一产地；零 import（P-25 的"分型不写文案"的另一半） | T9 |
+| `apps/desktop/src/main/persist/admin.ts` | `ProjectAdmin`：列单 + 新建（两发事务 + `DELETE` 补偿，P-23）+ 试连编排 + `redact` 口令回显防线；electron-free / fs-free / mysql-free | T9 |
+| `apps/desktop/src/main/persist/admin-ports.ts` | `ProjectAdmin` 那三个真端口的实现 + `ensureSchema`（建库 + 迁移，P-37）；从 `ipc-persist.ts` 挪出来的全部理由在 P-38 —— 只有 db 档能吃它 | T9 |
+| `apps/desktop/test/unit/{config-store,admin}.test.ts` + `apps/desktop/test/db/{projects,admin-ports}.test.ts` | 口令盘的形状（真 `fs` + 真 `os.tmpdir()` + 假 cipher）、管理台双档（假把式 14 格 / 真库 6 + 5 格自建自清） | T9 |
 | `apps/desktop/src/main/index.ts` | 加 `--lock-shot` / `--persist-shot` 两分支（现 2579 行；新分支只加不改既有五分支） | T10/T11 |
 | `scripts/desktop-shot.mjs` | mode 链 +2（`lock` / `persist`）、`expectedChecksByMode` +2 格、多进程编排（`spawn` + `SIGKILL`） | T10/T11 |
 | `scripts/test/shot-baseline.test.mjs` | 「闸门模式 token ↔ package.json script 配对」表 +2 行；条数账的 `for (const mode of [...])` 名单 +2 | T10/T11 |
@@ -139,12 +144,12 @@
 
 ---
 
-## 裁决（P-1 … P-17 + 执行期追加的 P-40 … P-67；执行中若与落地的代码冲突，按代码订正并写执行回填。P-18 … P-21 住在 Task 8 的段落、P-27 与 P-33 住在 Task 9 的段落 —— **P-22…P-26 / P-28…P-32 / P-34…P-39 是空号，别再往里填**；那 6 条随各自任务回写时**就地补表**，不把理由复制一份过来）
+## 裁决（P-1 … P-17 + 执行期追加的 P-40 … P-67；执行中若与落地的代码冲突，按代码订正并写执行回填。P-18 … P-21 住在 Task 8 的段落、**P-22 … P-39 住在 Task 9 的段落（2026-10-05 拼接后实测：这 22 个号全部有正文，没有空号了）**；随各自任务回写时**就地补表**，不把理由复制一份过来）
 
 | # | 决定 | 理由 | 已接受的代价 |
 |---|---|---|---|
 | **P-1** | **不新增 `@dajia/persistence` 包**；持久化代码进 `apps/desktop/src/main/{db,persist}/**`，测试进 `apps/desktop/test/{unit,db}/**` | spec §4.1 的包清单是五包 + desktop，§4.3 明写持久化路径落在 main 进程；而"repository 必须能在纯 Node 下测"（§10）由 vitest include 扩一条就能满足，不必为一个包级依赖边新登记 `PACKAGE_DIRS` | `apps/desktop` 从"没有 node 测试"变成有；`vitest.config.ts` / `tsconfig.test.json` / typecheck 三处要跟着动，且**跨包 import 测试助手的口子被打开** ⇒ 立一条纪律：`apps/desktop/test/**` 只许 import `@dajia/core`、`@dajia/protocol` 与自己包内源码，不许 import 别的包的 `test/**`（那是第二份真源的另一种发生方式） |
-| **P-2** | `src/main/db/**` 与 `src/main/persist/**` 禁止 import `electron`，唯一例外 `config-store.ts` | 能进 node 测试的东西才有人测；`app.getPath` / `safeStorage` 用参数注入（`userDataDir`、`crypto` 由调用方递） | `config-store.ts` 在 node 侧零凭据，"配置不明文落盘"这一条只能由真闸门证（T9/T11 各给一格）；`safeStorage` 在无头 CI 上的行为本计划一概不主张 |
+| **P-2** | `src/main/db/**` 与 `src/main/persist/**` 禁止 import `electron`，唯一例外 `config-store.ts` —— **这条例外已被 P-27 收回**：`config-store.ts` 保持 electron-free，`safeStorage` 适配器住 `ipc-persist.ts`，`persist/**` 的白名单因此是空集 | 能进 node 测试的东西才有人测；`app.getPath` / `safeStorage` 用参数注入（`userDataDir`、`crypto` 由调用方递） | `config-store.ts` 在 node 侧零凭据，"配置不明文落盘"这一条只能由真闸门证（T9/T11 各给一格）；`safeStorage` 在无头 CI 上的行为本计划一概不主张 |
 | **P-3** | **`command_log` 存 `{ type, patch }`，不存语义命令** | 命令是不可序列化闭包（`build(doc): Patch` 里全是局部捕获的入参），而 `Patch` 是纯数据且 `applyPatch` 就是它的解释器；`type` 留着给人和 S6 读 | 撤销/重做在库里不是"意图的历史"而是"状态变更的流水"（见 P-5）；S6 要做冲突合并时 `patch` 不够用，得再加一层意图 —— 那是 §14 里明写"届时不重做"的范围外工作 |
 | **P-4** | 所有时间判定交给**服务端时钟**（`NOW(3)` / `CURRENT_TIMESTAMP(3)`），客户端只报 TTL | spec §8.2 的锁是为"两台机器打开同一库"设计的，两台机器的本地时钟不可比；把过期判定写成客户机时间与 `DATETIME` 比较，还得多背一层时区与 DST 的坑 | 单测里"过期"只能靠把 TTL 注入成 300ms 真等，不能用假钟拨表（`autosave` 的 60 秒 idle 不在此列 —— 它比较的是同进程内两个 `now()`，所以可注入假钟） |
 | **P-5** | **追加式流水**：`undo()` 与 `redo()` 各产出一发新的 `command_log` 行 | 加载 = snapshot + 正向重放（§8.2 原话）只需要正向补丁；把撤销也记一行，"重启后得到的文档"与"关进程前的文档"才是同一句话能算出来的 | 库里的行数 ≠ 用户意图数（连按 Ctrl+Z 会写 N 行）；`journal_turn` 因此只保证单调不保证语义紧凑 |
@@ -163,7 +168,7 @@
 
 ### 执行期裁决（P-40 起；Task 1 / Task 2 / Task 3 落码时由控制位追加）
 
-> 编号从 **P-40** 起，因为 P-18…P-39 那一段被预留给了 Task 8 / Task 9 的文本。2026-10-04 用脚本按 `P-(1[89]|2[0-9]|3[0-9])\b` 扫过 `## Task 1` 之后的全文，实数只有 **6 个号真被写过**：P-18、P-19、P-20、P-21（Task 8 的 ①②③④ 段）与 P-27、P-33（Task 9 的段落）；**其余 16 个号从未被任何一条裁决占用**。这条账目订正的依据是"编号看起来有人住"本身就是第二份真源 —— 表若声称 22 条，读它的人会去找 22 条主张。那 6 条的正文住在各自任务段落里，回写时**在本表补行、理由就地引用**，不复制。
+> 编号从 **P-40** 起，因为 P-18…P-39 那一段被预留给了 Task 8 / Task 9 的文本。2026-10-04 那次按 `P-(1[89]|2[0-9]|3[0-9])\b` 扫描的结论（"实数只有 6 个号真被写过，其余 16 个是空号"）**到 2026-10-05 已过期**：Task 9 的文本拼接进本文件之后重扫，`P-18`…`P-39` 这 **22 个号全部有正文** —— Task 8 段（本行以下第一段起）四条：P-18、P-19、P-20、P-21；Task 9 段十八条：P-22…P-39（`P-19` / `P-27` / `P-33` 在 Task 9 段里还被引用，但它们的正文各只有一处产地）。复扫命令留在这里，下一个人不必再猜（行号是 2026-10-05 拼接后的实测：Task 8 起 `8013`、Task 9 起 `11800`，本文件现长 16098 行 —— 文本再长就要跟着改这两个数）：`awk 'NR>=8013 && NR<11800' docs/superpowers/plans/2026-10-01-dajia-plan4-persistence.md | grep -o 'P-[0-9]\+' | sort -u` 与 `awk 'NR>=11800' … | grep -o 'P-[0-9]\+' | sort -u` 各一发。那条教训本身**不改**："编号看起来有人住"本身就是第二份真源 —— 表若声称 22 条而盘上只有 6 条，读它的人会去找那 16 条不存在的主张。这 22 条的正文住在各自任务段落里，回写时**在本表补行、理由就地引用**，不复制。
 
 | # | 决定 | 理由 | 已接受的代价 |
 |---|---|---|---|
@@ -11794,3 +11799,4303 @@ EOF
 ⑬ **跨实体的引用/几何不变式在 `submit` 那一发不查**（t8a ⑩）。过界那一发只走 `documentFromPayload` 的逐实体 validate 与 T4 的归属守卫；整层派生复核的读者仍是 T5 的读盘与 T3 的那一档。T8 不重跑 `assertTruthSourceInvariants`（每发 O(实体数) 的第三次验同一份数据）。
 
 ⑭ **真并发不在这里证**（沿用 T7 限度 1）。本任务的 16 + 20 格全是单进程、单会话、单池。两台机器同时开一个库那一型在 T10 的 `--lock-shot`，进程被 SIGKILL 那一型在 T11。
+
+---
+
+## Task 9: 连接配置、分型诊断与首屏（`config-store.ts` + `diagnostics.ts` + `admin.ts` + 向导面板 + `install-mysql.md`）
+
+**Files:**
+- Modify: `packages/protocol/src/ipc.ts`（`IPC` 从 **5 条到 11 条**：T8 那四条与 `ping` 一字不动，新增 5 条请求 + 1 条事件）
+- Modify: `packages/protocol/src/persist-schema.ts`（**只追加**：连接配置 / 工程列表 / 新建 / 试连那几张表 + 十一个 `parse*` + `UI_COMMAND_EVENT` + `INVOKE_CHANNELS` 扩到 8 条。T8 已写下的每一张表一个字节不动 —— 理由见第 ④ 段）
+- Modify: `packages/protocol/src/index.ts`（**不改**：T8 已经把 `persist-schema` 的出口并进去了，本任务没有新的 protocol 文件）
+- Modify: `packages/protocol/test/persist-schema.test.ts`（**两格改写**：第 7 格名册等式、第 8 格"源码里没有口令"。改写而不是追加的理由见第 ④ 段——那一条判据被 T8 自己在第 ④ 段预告要放宽，放宽必须有形状）
+- Create: `packages/protocol/test/persist-config-schema.test.ts`（**10 格**）
+- Create: `apps/desktop/src/main/db/diagnostics.ts`（`classifyDbError`：六型，**零 import**）
+- Create: `apps/desktop/src/shared/diagnostics-text.ts`（`DIAGNOSTIC_TEXT`：每型的 title / detail / next，**零 import**；为什么不在 `db/` 下 —— 第 ⑤ 段）
+- Modify: `apps/desktop/src/main/db/pool.ts`（`PoolOptions` 加 `connectTimeoutMs?` + 本文件唯一的常量 `CONFIG_TEST_CONNECT_TIMEOUT_MS = 5_000`；**Step 3 落，Step 8 只消费**）
+- Create: `apps/desktop/src/main/db/errors.ts`（`MissingProjectError`，零 import —— `'no-project'` 这个码的唯一产地）
+- Modify: `apps/desktop/src/main/db/repository.ts`（① `loadProject` 缺行那一发 `RangeError` 换成 `MissingProjectError`，**文案逐字保留**；② 新增 `deleteProject()`（补偿用）；③ 新增模块级 `listProjects(pool)`）
+- Create: `apps/desktop/src/main/persist/config-store.ts`（**electron-free**：`node:fs` 读写 `userData/connection.bin`，加解密只认注入进来的 `ByteCipher`；`safeStorage` 本体住在 `ipc-persist.ts` —— 裁决 P-27，见第 ⑦ 段）
+- Create: `apps/desktop/src/main/persist/admin.ts`（`ProjectAdmin` 列单与新建 + `probeConnection` 试连 + `redact` 口令回显防线；electron-free / fs-free / mysql-free）
+- Create: `apps/desktop/src/main/persist/admin-ports.ts`（`ProjectAdmin` 那三个真端口的实现 + `ensureSchema` + `probeOpener`；**electron-free / fs-free / os-free**，P-38 —— 挪出 `ipc-persist.ts` 的全部理由见 t9e 第 ① 段）
+- Modify: `apps/desktop/src/main/persist/session.ts`（**三处：`persistErrorCode` 加一支 `instanceof MissingProjectError`（函数体）+ 两个 `export` 关键字**（P-30：`wrap` 与 `persistErrorCode` 要能被 Step 7 的 `admin.ts` 复用，见 t9d 第 ② 段）。见第 ⑥ 段 —— `ProjectSession` 的十个方法、`PersistPorts` 的八个键、`withTimeout`/`CLOSE_FLUSH_TIMEOUT_MS` 与那两个函数的**函数体**全部一字不动）
+- Modify: `apps/desktop/src/main/ipc-persist.ts`（`dispatch` 五个新 `case` + `loadConfig` 从 `readMysqlEnv()` 换成 `config-store` + `errorCode` 加一支 + `safeStorageCipher` 那八行适配器 + 端口一次性装配（`adminWiring`）—— 本任务唯一新增的 electron 用法，P-27。原预估的"三个新真端口"挪到 `persist/admin-ports.ts`，P-38）
+- Modify: `apps/desktop/src/main/index.ts`（交互分支新增 `attachInteractiveUi`：原生「工程」菜单 + `did-finish-load` 后那一发 `send(UI_COMMAND_EVENT, 'startup')`，函数第一道判据是 `--shot` 早退（P-35）；**五个 shot 分支一字不动**，见第 ③ 段）
+- Modify: `apps/desktop/src/preload/index.ts`（`DajiaApi` 从 5 件到 11 件：5 新请求方法 + `onUiCommand`，T8 实测底座是五件，见 t8c 第 ⑤ 段）
+- Modify: `apps/desktop/src/renderer/src/stores/projectStore.ts`（`ProjectPhase` 加 `'config' | 'list'` + 六个新动作 + 四格新状态；T8 那四个动作与 `computeBanner` 的优先级一字不动）
+- Modify: `apps/desktop/src/renderer/src/panels.tsx`（`ConnectionWizard` + `ProjectPicker`；**`STOREY_TAB_HEIGHT_PX = 32` 与 `VIEW_PAD_PX = 60` 与 `PROP_PANEL_WIDTH_PX = 260` 三个数不许动**）
+- Modify: `apps/desktop/src/renderer/src/App.tsx`（只在 `phase` 是 `'config' | 'list'` 时叠一层，其余一律 `<>{children}{banner}</>`）
+- Create: `apps/desktop/test/unit/diagnostics.test.ts`（**8 格**）
+- Create: `apps/desktop/test/unit/diagnostics-text.test.ts`（**6 格**，含「每个 `next` 逐字出现在 `install-mysql.md`」那一颗牙）
+- Create: `apps/desktop/test/unit/config-store.test.ts`（**10 格**，真 `fs` + 真 `os.tmpdir()` + 假 cipher）
+- Create: `apps/desktop/test/unit/admin.test.ts`（**14 格**，全假把式）
+- Modify: `apps/desktop/test/unit/session.test.ts`（**+4 格** ⇒ 20）
+- Modify: `apps/desktop/test/unit/project-store.test.ts`（**+7 格** ⇒ 18）
+- Modify: `apps/desktop/test/unit/persist-boundary.test.ts`（**+6 格（Step 6 两格、Step 7 一格、Step 8 三格）、1 格注释订正** ⇒ 11）
+- Modify: `apps/desktop/test/unit/ipc-channels.test.ts`（格 1 改一个数、**+2 格** ⇒ 5）
+- Create: `apps/desktop/test/db/projects.test.ts`（**6 格**，真库自建自清）
+- Create: `apps/desktop/test/db/admin-ports.test.ts`（**5 格**，真库自建自清；P-38 那条"新装在打开列表那一发就把库和表建出来"的判据只有这一档能吃）
+- Create: `docs/install-mysql.md`（spec §13.4 那一页图文安装说明；验收 6 的一半）
+
+> **格数与文件数按预估写，落盘后以实测为准并改计划文本**（同 T8 第 ⑥ 段那条教训）：预估 `pnpm test` 从 35 文件 / 509 条变成 **40 文件 / 576 条**（新增 5 个 unit/protocol 测试文件：10 + 8 + 6 + 10 + 14 = 48 格新写，加 session +4、project-store +7、persist-boundary +6、ipc-channels +2 ⇒ 48 + 4 + 7 + 6 + 2 = **67** 格；另有两格是改写不增数）；`pnpm test:db` 从 6 文件变 **8 文件**（`projects.test.ts` 6 格 + `admin-ports.test.ts` 5 格 ⇒ **+11 格**）。admin 那一档的 14 与 projects 那一档的 6 都是 t9d 落盘时订正过的数（原预估 12 与 5），`persist-boundary` 与 `ipc-channels` 的 +6 / +2 是 t9e 落盘时按三步实测格数订正的数（原预估 +4 / +1），算术随它们一起改。
+
+**Interfaces:**
+- Consumes（名字逐字，不许另起一套）:
+  - T1：`readMysqlEnv(env?)` / `interface MysqlEnv { host; port; user; password; database: AllowedDatabase }` / `assertDatabaseName(db)` / `type AllowedDatabase = 'dajia' | 'dajia_test'`
+  - T2：`createDbPool(env, opts?)` / `interface PoolOptions { multipleStatements?; connectionLimit? }`（本任务给它加第三格 `connectTimeoutMs?`）
+  - T4：`class ProjectRepository`（`constructor(pool, projectId, actor)`、`createProject({ name, schemaVersion })`、`appendJournal(entry)`）/ `type JournalEntry { turn; patch; doc }` / `type JournalOutcome = 'applied' | 'already-applied'`
+  - T5：`loadProject(intent)` 里那句缺行抛错的**文案**（换成类不换话）
+  - T6：`LOCK_*` 常量（本任务一个都不新增，锁的口径全在 T6/T8）
+  - T7：`describeError(err)`（`admin.ts` 与 `config-store.ts` 的文案出口；`db/diagnostics.ts` **不许** import 它 —— 第 ⑤ 段）
+  - T8：`IPC` 五条 / `INVOKE_CHANNELS` / `SAVE_STATUS_EVENT` / `PERSIST_ERROR_CODES`（七码，本任务**一个都不改**）/ `type IpcResult<T>` / `SafeCountSchema`（模块私有，同文件内可复用）/ `issueText` / `EntityIdSchema` / `JournalTurnSchema` / `type MysqlEnv`（经 `db/env.ts`）/ `class ProjectSession` / `interface PersistPorts`（八个键）/ `wrap(err, code, prefix)` / `persistErrorCode(err)` / `DajiaApi` 五件（4 请求 + `onSaveStatus`）/ `useProject` 的六格状态与四个动作 / `ProjectBanner { tone; text; closable; reopenable }` / `readDajia()` / `createProjectStore(api, editor?)`
+  - core：`uuidv7()` / `EntityId` / `Document.create(projectId, schemaVersion)` / `TransactionLog`（含 T7 的 `lastPatch`）/ `storeyCreate({ projectId, index, elevationMm, heightMm })` / `SCHEMA_VERSION` / `type Mm`
+- Produces（T10/T11 只能从这里取）:
+  - protocol：`IPC` **11 条**（多出 `configRead` / `configSave` / `configTest` / `projectList` / `projectCreate` / `uiCommand`）、`INVOKE_CHANNELS` **8 条**、`SAVE_STATUS_EVENT` + `UI_COMMAND_EVENT`、`CONNECTION_TEST_KINDS`（7，含 `'ok'`）/ `CONNECTION_ERROR_KINDS`（6，不含 `'ok'`）/ `ConnectionTestKindSchema` / `ConfigStateSchema` + `type ConfigState` / `ConfigDatabaseSchema` + `type ConfigDatabase`（这两个 `type` 别名 Step 1 的代码块里本来就写了，名单此前只抄了 schema 那一半）/ `ConnectionInputSchema` + `type ConnectionInput` / `ConfigRecordSchema` + `type ConfigRecord` / `ConfigSaveRequestSchema` / `ConfigTestRequestSchema` / `ConfigReadRequestSchema` + `type ConfigReadRequest`（两张空表请求之一，与 `ProjectListRequestSchema` 同一条理由）/ `ConfigValueSchema` + `type ConfigValue` / `ConnectionTestValueSchema` + `type ConnectionTestValue` / `ProjectSummarySchema` + `type ProjectSummary` / `ProjectListRequestSchema` / `ProjectListValueSchema` / `ProjectCreateRequestSchema` / `ProjectCreateValueSchema` / `UiCommandSchema` + `type UiCommand`；`parseConnectionInput` / `parseConfigSaveRequest` / `parseConfigTestRequest` / `parseConfigReadRequest` / `parseConfigValue` / `parseConnectionTestValue` / `parseProjectListRequest` / `parseProjectListValue` / `parseProjectCreateRequest` / `parseProjectCreateValue` / `parseUiCommand`（**共 11 发**，t9e 清单第 2 条）
+  - `db/diagnostics.ts`：`type DbErrorKind`（六个字面量，值 == `CONNECTION_ERROR_KINDS`）、`classifyDbError(err: unknown): DbErrorKind`
+  - `src/shared/diagnostics-text.ts`：`type DiagnosticKind = DbErrorKind | 'ok'`、`interface DiagnosticText { readonly title: string; readonly detail: string; readonly next: string }`、`const DIAGNOSTIC_TEXT: Record<DiagnosticKind, DiagnosticText>`、`const DIAGNOSTIC_KIND_LIST: readonly DiagnosticKind[]`（**七元组，`'ok'` 在第一格** —— 它是"这张表有几行"的唯一产地，与 protocol 那两份名单的等式由 `diagnostics-text.test.ts` 第 1 格钉。这里**不另开一个六元组的 `ERROR_KIND_LIST`**：六型名单的产地是 protocol 的 `CONNECTION_ERROR_KINDS`，在 `src/shared` 里再抄一份就是给"两份名单漂开"留位置，而"去掉 `'ok'`"这件事在测试里一行 `filter` 就够（同 P-4/P-14「数值唯一产地」那一族））
+  - `db/errors.ts`：`class MissingProjectError extends Error`（`constructor(projectId: string)` 只用它拼文案 —— **不留字段、零 import、也不给 `code`**，三条理由都在第 ⑥ 段）
+  - `db/pool.ts` 追加：`const CONFIG_TEST_CONNECT_TIMEOUT_MS = 5_000`（**Step 3 落**；唯一读者是 `persist/admin-ports.ts` 的 `probeOpener`，P-34）
+  - `db/repository.ts` 追加：`ProjectRepository.deleteProject(): Promise<void>`、`listProjects(pool: Pool): Promise<ProjectSummary[]>`（模块级，**不是**类方法 —— 第 ② 段）
+  - `persist/config-store.ts`：`const CONFIG_FILE_NAME = 'connection.bin'`、`interface ByteCipher { readonly available: boolean; encrypt(text: string): Uint8Array; decrypt(bytes: Uint8Array): string }`、`class ConfigError extends Error { readonly kind: ConfigErrorKind }` + `type ConfigErrorKind = 'missing' | 'unreadable' | 'unavailable'`（这个 kind 是 main 侧的内部三分法，**不进 protocol** —— 第 ⑦ 段末）、`probeConfig(userDataDir, cipher): ConfigValue`（不抛）、`readConfig(userDataDir, cipher): ConfigRecord`（抛 `ConfigError`）、`writeConfig(userDataDir, cipher, input: ConnectionInput): ConfigValue`、`configToEnv(record: ConfigRecord): MysqlEnv` —— **这个文件运行时不 import electron**（P-27）
+  - `main/ipc-persist.ts` 追加：`const safeStorageCipher: ByteCipher`（那八行适配器住在 P-2 名单里唯一被授权认识 electron 的文件里；它**没有 unit 格**，读者是 T11 的读字节判据 —— 第 ⑦ 段）
+  - `persist/admin.ts`：`class ProjectAdmin`（`constructor(ports: AdminPorts)`、`list(): Promise<ProjectListValue>`、`create(name: string): Promise<ProjectCreateValue>`）、`interface AdminPorts { loadConfig(): MysqlEnv; openCreateDb(env, projectId): Promise<AdminCreateDb>; openListDb(env): Promise<AdminListDb> }`（**只有这三键** —— `newProjectId()` 与 `readonly schemaVersion` 是原预估里多出来的两个注入点，t9d 第 ③ 段 P-31 把它们删了：假的 id 产地会让"回包 id ≠ 仓库绑的 id"那一发绿着过去，而可注入的 `schemaVersion` 允许"建出一个自己的读路径拒开的工程"；`uuidv7` 与 `Document.create` 的默认 `SCHEMA_VERSION` 就是这两样的唯一产地）、`interface AdminCreateDb { readonly repo: CreateRepo; end() }`、`interface CreateRepo { createProject; appendJournal; deleteProject }`、`interface AdminListDb { listProjects(): Promise<ProjectSummary[]>; end(): Promise<void> }`、`probeConnection(env, open: ProbeOpener): Promise<ConnectionTestValue>`、`interface ProbeHandle { ping(): Promise<{ version: string }>; end(): Promise<void> }`、`buildDraftEnv(input: ConnectionInput): MysqlEnv`、`redact(text: string, secrets: readonly string[]): string`、`FIRST_STOREY = { index: 0, elevationMm: 0, heightMm: 3000 } as const`
+  - preload：`DajiaApi = { ping; openProject; submitJournal; closeProject; readConfig; saveConfig; testConnection; listProjects; createProject; onSaveStatus; onUiCommand }`（**11 件**：4 旧 + 5 新请求 + 2 事件订阅）
+  - renderer：`ProjectPhase` 七值（`'off' | 'config' | 'list' | 'opening' | 'open' | 'closed'`）、`useProject` 追加状态格 `config: ConfigValue | null` / `projects: ProjectSummary[] | null` / `test: ConnectionTestValue | null` / `wizardBusy: boolean`，追加动作 `probe()` / `showConfig()` / `showProjects()` / `saveDraft(input)` / `testDraft(input)` / `createProject(name)`、`type WizardField = 'host' | 'port' | 'user' | 'password'`
+
+**①（裁决 P-22）T9 的通道全部走"会话之外"：`ProjectAdmin` 不认识 `ProjectSession`，`ProjectSession` 也不认识它。**
+列一张工程单与新建一个工程，都必须先连上库，但**都不能占住会话**：会话的不变式是"一个窗口 ↔ 一个工程 ↔ 一份锁 ↔ 一条保存链"（T8 第 ⑩ 段），而"用户在看列表还没选"与"用户在填向导还没连上"这两件事恰恰是会话的**反面**。把 `list`/`create` 塞进 `ProjectSession` 会得到第三种 `active` 形状（有连接、无工程、无锁），而 T8 那 16 格有一半判的就是"`active === true` 时 `projectId` 一定不是 null"。
+所以 `persist/admin.ts` 自己开自己关连接（`openCreateDb` / `openListDb` 两个端口，各带 `end()`），一次调用一条连接，用完就掐。代价照登记：连着点三次「刷新列表」就是三条短连接（`connectionLimit: 2`、`end()` 在 `finally`），比会话那条常驻连接啰嗦；换来的是会话的形状只有一种，且 T8 的 16 格一个字节不用改。
+**`config:read` / `config:save` / `config:test` 三条连 `ProjectAdmin` 都不经过**：前两条只碰盘上不碰库（`config-store`），第三条只碰库不碰会话（`probeConnection`）。它们住在 `ipc-persist.ts` 的 `case` 里，各自的依赖从参数递进去 —— 这是"三条通道共用一个外壳"的代价，登记在第 ④ 段末尾的限度里。
+
+**②（裁决 P-23）新建工程 = `project` 行 + **首层作为 journal 的 turn 1**，两发事务，中间失败用 `DELETE` 补偿；`create` 不顺手开会话。**
+为什么不是一发：`project` 行与首层实体不在同一张表，而 T4 的 `appendJournal` 是"一发 turn = 一个事务"（归属预检 → 锁行 → `command_log` → `element` 投影 → `storey` 投影 → 记 turn），把 `INSERT INTO project` 塞进它等于给写路径加一条只有新建工程才走得到的支路，而那条支路的"全无账"证明要重跑 T4 的第 8 格（外部行锁掐断半途）。分两发的形状是：**`createProject` 成功 ⇒ `journal_turn = 0` 且一张账都没有**；这一发之后紧接着 `appendJournal({ turn: 1, patch, doc })` 把首层当作第一发命令落进去（`storey` 投影里那一行 0mm/3000mm 就是它写的）。
+中间失败（首层那一发抛）⇒ **补偿 `deleteProject()`**：`project` 行一删，`element` / `storey` / `command_log` / `snapshot` / `asset` 五张表靠 T2 建好的 `ON DELETE CASCADE` 一起走，盘上不留半个孤儿行；补偿自己又失败才是真麻烦 —— 两支错都拼进 message 并照样抛（列表里会看见一个打不开的鬼工程，那句话会把它点名）。
+为什么 `create` 之后不直接 `session.open()`：那要求会话在"还没有会话"的时候被建出来，也就是把第 ① 段拒掉的那第三种形状从后门放进来。所以 `create` 只回 `{ projectId }`，**顺序由 renderer 负责**：面板拿到 id 之后照旧调 `openProject(projectId)`（T8 第 ⑩ 段"顺序由 renderer 负责"的同族先例是 `reopenAsEdit()`）。代价：两步之间进程被杀 ⇒ 工程已经在库里、只是没人开着，下次列表里看得见、点开即开，无损；这条与补偿一起写进"登记的限度"。
+首层的默认值就是 `FIRST_STOREY` 那三个数（`index: 0` / 标高 0mm / 层高 3000mm），向导上**只给人读不给人填**：`storeyCreate` 自己会查 index 重复与竖向重叠，而"第一层的层高"这种事在 S1 里没有第二个消费者，给一个输入框就是给 T10/T11 多一个可变因素。
+
+**③（闸门安全）向导与列表只在 `phase === 'config' | 'list'` 时渲染，而这两个值只有 main 的交互分支送得进来。**
+五道闸门吃的是 `demoHouse()` 那一屏（画布原点 `(0, 32)`、`--prop` 靶子 `click=(113,416)`、画布 `1167×833`、P7 墨迹 `30742`、P20 级联 `10→7`）。T8 第 ⑧ 段已经立了"横幅零节点"的规矩，T9 要加的是**两块真正的表单 DOM**（四格输入 + 三个按钮 + 一张工程表），任何常驻化都会把 `fitStorey` 量到的尺寸挪走、让全体判据作废。
+所以进入向导/列表的**唯一通路**是 main 发给 renderer 的一发事件：
+- `did-finish-load` 之后 `win.webContents.send(UI_COMMAND_EVENT, 'startup')` —— 只在 `attachInteractiveUi` 体内，而那一发函数的**第一道判据**是 `process.argv.includes('--shot')` 早退；调用点在 `createWindow`（P-35：`app.on('activate')` 会再走一次 `createWindow`，把这两发放进 `whenReady` 的交互分支等于 macOS 重开窗口时没有菜单也没有 startup。盘上现物：交互分支在 `whenReady` 里提前 `return`，五个 shot 分支各走自己的 `run*Shot`）；
+- 原生应用菜单加一个「工程」子菜单（连接设置 / 工程列表），`click` 里发同一发事件的 `'config'` / `'projects'`；菜单只在交互模式建（`shotPath !== null` 时盘上现物已经 `Menu.setApplicationMenu(null)`）。
+闸门环境里既没有菜单也没有 send ⇒ `useProject` 的 `phase` 恒为 `'off'` ⇒ App 渲染 `<>{children}{banner}</>` ⇒ **零节点**，T8 那条 `bannerNodesAtPropGate` 收据原样成立，`expectedChecksByMode` 五个数一个不动。
+被否掉的替代方案（写在这里免得下一个人再走一遍）：**在 store 挂载时自动 `readConfig()`**。它把"这台机器有没有装 MySQL"变成了渲染时机，于是闸门那一屏会出现**两种形状**（装了 ⇒ 列表 DOM；没装 ⇒ 向导 DOM），五道闸门的判据从此按机器绿。这一条是本任务最重要的一条设计约束，它的凭据是 `persist-boundary.test.ts` 的新格（扫 `main/index.ts`：`send(UI_COMMAND_EVENT` 只有**一个**发点，它在 `attachInteractiveUi` 体内，而那一发函数的第一道判据是闸门模式早退 —— 判据形状见 t9e 的 Step 8 ⑤）与 `--prop-shot` 复跑（**Step 10** —— 闸门复跑只能在接线全部落盘之后；Step 7 只写 `admin.ts` 与它的两档测试、Step 8 只动 main 侧，都没有一处常驻 DOM 改动，跑闸门只会重复 T8 已经跑过的那五发）。
+
+**④（裁决 P-24）口令的边界从"一个字节都不许过界"改成"只许走请求方向那一条缝，而且绝不再出来"。**
+T8 第 ④ 段写了三件事：`persist-schema.ts` 里不许出现 `password`；不许出现 `host:` / `port:` / `user` 的影子；以及**预告**——「连接向导必然要把用户敲的口令送进 main（IPC 不经网络，这条本身不破红线），届时必须同时改这一族判据」。这一族判据的放宽由计划的作者在这里定死，不让 implementer 自己决定（同族纪律：闸门判据与写死的字面量永不削弱）。
+放宽后的形状是**两块表**，用一张"按 `export const XSchema =` 切块"的扫描器钉住：
+1. `password`（不分大小写）在整个文件里的命中块名单**逐字等于** `['ConfigRecord', 'ConnectionInput', 'Password']`（块名去掉 `Schema` 后缀；`Password` 是那把私有字段尺自己，见 Step 2 注释里那条"块前的注释属于上一张表"的陷阱）—— 前两张是表：一个是盘上那份密文的明文形状，一个是向导送进来的形状，两个都是**进**的方向；第三张是字段尺，它的命中来自标识符名字，点名它而不是过滤掉它。
+2. 任何名字里带 `Value` 的表都不许命中它。这一条要能红，所以扫描器自己要先被证明会响（`expect` 一份人造的 `XValueSchema` 文本命中，同 T8 第 ⑥ 段 `untypedProtocolImports` 那一族的"先证哨兵"口径）。
+3. `host:` / `port:` / `user` 那三把尺**从判据里删掉**。它们当年保护的是"renderer 连参数的名字都不许知道"，而向导的存在把这句话作废了（面板要回显 host/port/user，否则用户看不见自己填了什么）。接替它的是第 1、2 两块牙，加一句产品事实：**host / port / user 不是秘密，password 才是**。
+真正会漏口令的地方不是 IPC，是**文案**，所以 T9 落三条防线，各有凭据：
+- `ConnectionInput` 里那四个字段全部用**固定字符串**的 zod message（`'主机名不许含空白'` 这种形态），一个都不许把值抄进文案；凭据 = 新文件第 3 格（哨兵串当口令，超长那一抛的 message 里不许出现它）。
+- `admin.ts` 的 `redact(text, secrets)`：所有往外送的 `detail` 文案都过它一遍，把等于口令的子串换成 `•••`。`mysql2` 的 `ER_ACCESS_DENIED_ERROR` 原文只带用户名（`Access denied for user 'root'@'localhost' (using password: YES)`），但**我们不保证下一版驱动**，也不保证用户手写的 `host` 里不会重复口令 —— 所以这条是纵深而不是修 bug。凭据 = `admin.test.ts` 两格：第 12 格（试连失败的 `detail` 里哨兵串不见了）与第 14 格（`redact` 的直尺：多处副本全换、空串跳过、用户名留着、遮蔽串出现）。
+- 回包形状里**没有**能装口令的格子：`ConfigValueSchema` 只有 host/port/user/database，`ConnectionTestValueSchema` 只有 `connected`/`kind`/`serverVersion`/`detail`，而 `detail` 是过 `redact` 的那一份。凭据 = 上面两块牙 + 哨兵格。
+
+**⑤（裁决 P-25）`classifyDbError` 只分型不写文案；文案住在 `src/shared/diagnostics-text.ts`；`db/diagnostics.ts` 与它都不许 import 任何东西。**
+为什么分两家：spec §9 要"分型诊断 + 不同文案与下一步"，而**读者有两处**——向导面板（renderer）与会话失败的横幅（renderer），另外试连那一发（main）也要把同一句话写进 `detail`。把文案表放在 `db/diagnostics.ts` 就等于让 renderer import `src/main/**`，那条方向是 `packages/*/test` 里 dependency-guard 那一族判据明令禁止的，而 `persist-boundary.test.ts` 新加的那一格会当场红。P-19 已经为同样的处境开过第三个目录（`src/shared/document-wire.ts`），这里照它做：**`src/shared` 是谁都能相对 import 的那一层**。
+为什么两家都要零 import：`db/diagnostics.ts` 的全部工作是"读 `err.code` 这个字符串字段然后落到六个字面量之一"，一旦它 import 了 `mysql2` 的类型、`zod`、`describeError` 或 `node:fs`，它就变成了连库文件，而那 8 格就跑在纯 node 档、拿的是人造错误对象。零 import 是一个**可以被扫出来的**主张（第 ⑦ 段那一格），也是这份分型能进 CI 的全部前提。
+`DIAGNOSTIC_TEXT` 的 `next` 那一栏是 `docs/install-mysql.md` 的**逐字被引文**：新格「`DIAGNOSTIC_KIND_LIST` 去掉 `'ok'` 之后剩下的六格，每一格的 `next` 都作为一段出现在文档里」把两边钉死。这条牙存在的理由很实际 —— spec §13.4 选的是"先不签名，配一页图文安装说明"，而验收 6 判的是"一台没装 MySQL 的机器能得到下一步该做什么的可读指引"。文案与文档各写一份，三个月后一定漂，而漂了没人红。
+**spec §9 点名的四型里"端口占用"没有对应的错误码**：客户端永远拿不到 `EADDRINUSE`（那是监听端才有的错）。真实症状是"连上了，但对面说话不像 MySQL" ⇒ `PROTOCOL_CONNECTION_LOST` / `ECONNRESET`，归 `dropped` 那一型，它的文案明写「端口可能被别的程序占用」。这一句要落进 spec 的订正（Step 10 的交接里点名 `docs/superpowers/specs/2026-09-25-dajia-s1-design.md` §9）。
+`ER_NOT_SUPPORTED_AUTH_MODE` 故意并进 `denied`（认证失败与认证插件不支持共用"检查账号与服务端参数"这一个下一步），`EHOSTUNREACH` / `ENETUNREACH` / `ENOTFOUND` / `EAI_AGAIN` 并进 `not-running`（下一步都是"这台机器上的服务与地址"）。这两处合并写在各自的注释里，因为它们让"六型"这个数与计划文件结构表那句「六个分型」保持一致，而代价是这两型的 `detail` 必须把两种处境都说到 —— 说不到就是文案 bug，由 diagnostics-text 的格判。
+
+**⑥（裁决 P-26）`'no-project'` 的产地是一个类，不是一个字符串比较。**
+闭集里那个 `'no-project'` 从 T8 起就挂着（`FailureReplySchema` 必须一次把话说完），而 T8 第 ③ 段明写它的产地在 T9。真正的岔路只有一处：T5 的 `loadProject` 在 `project` 查无此号时抛的那一发。改法是在 `db/errors.ts` 里放一个零 import 的 `class MissingProjectError extends Error`，把 T5 那句文案**逐字搬进它的构造函数**，然后 `persistErrorCode` 加一支 `instanceof` 认它。
+它**不留 `projectId` 字段**：`constructor(projectId: string)` 只是拼文案的原料，拼完就丢。理由与 P-15「不许为测试留钩子」同族 —— 一个没人读的 public 字段是给下一个编辑者的谜题（"它大概是留给谁用的？"），而此刻唯一的读者 `wrap` 只认 `instanceof` 与 `message`。真要它（T10/T11 若想把失败按工程分组）就回来加字段**并同时**加一个读者与一格判据；反过来先留着字段、 later 再找读者，是这一族最常见的死代码来源。
+为什么不用"给错误加一个 `code = 'no-project'` 字段"就完事：`persistErrorCode` 的现有规则是**有 string `code` ⇒ `'db'`**（mysql2 的错误一律带 `code`），给它自己也塞一个 `code` 就等于让自家错误冒领驱动错误的形状，下一版规则一改就会把"工程不存在"归成"查服务"。`instanceof` 那一支写在**默认之前**，`db/**` 之外没人需要认识这个类。
+为什么它必须住在 `db/**` 而不是 `persist/**`：抛它的是 `repository.ts`（T5），认它的是 `session.ts`（T8）—— 两个目录都要能 import 它，而 `persist/**` import `db/**` 的东西会让会话认识存储层。**零 import** 因此不是洁癖：它保证了这个类是两边唯一都能安全共用的那种文件。
+顺带交代**没**改的那一发：`closeProject` 里还有一句 `工程 ${id} 不在库里：没有可收尾的账`（T5 第 ④ 段），它继续是 `RangeError` ⇒ `'reconcile'` ⇒ 停手。那一句的处境是"会话开着开着行没了"，此刻唯一正确的建议是"这份账先别再动"，而不是"去建个工程"。**这是有意的不对称**，写进第 ⑧ 段的限度。
+
+**⑦（裁决 P-27）`config-store.ts` 保持 electron-free；`safeStorageCipher` 适配器住在 `ipc-persist.ts`。**
+T8 在 `persist-boundary.test.ts` 那一格（electron 名单逐字 `['index.ts', 'ipc-persist.ts']`）的注释里预告过：「T9 要在 `persist/config-store.ts` 里 import `safeStorage` 时，必须同时改这一格」。**裁决是不改**，理由是三条实在的：
+- 那 10 格要在**纯 node** 里 import 这个文件。`electron` 包在非 Electron 进程里 `require` 出来是一串路径（T7 的 `persist-boundary` 引言已经写过这件事），于是 `import { safeStorage } from 'electron'` 具名拿到的是 `undefined` —— 顶层不炸，但 `available: safeStorage.isEncryptionAvailable()` 这种"写在常量初始化里"的形态会在 **import 的那一刻**炸，而那 10 格连一个 `it` 都还没跑。把适配器搬进本来就被授权 import electron 的那个文件，这条风险直接归零，而不是靠"记得写成惰性的"。
+- `persist/**` 的 electron 白名单因此**继续是空集**。`['index.ts', 'ipc-persist.ts']` 那个名单一旦要长出"例外"，它就得从等式变成等式加一列理由，而"这一族边界漂了会红"这件事的全部价值就在等式没有例外。
+- `safeStorageCipher` 与 `app.getPath('userData')` 是**同一处装配**：T7 已经立了「`userDataDir` 由调用方当参数递进来」这条先例（`emergency.ts` 的注释就写着），口令文件的目录与加密器属于同一批"外部世界"，分两处装配只会让 `ipc-persist.ts` 的端口表更难读。
+代价照登记：`config-store.ts` 从此拿不到"真加密"这件事的任何证据 —— 那 10 格判的是"写盘必须经过 cipher、读盘必须经过 cipher、不可用时必须拒存"这三条**形状**，加密本身仍只由 T11 的 `--persist-shot` 读字节来证（P-13 同一条判据）。这条限度与"没有 unit 格的那个适配器"是同一件事的两面，Step 10 的限度表里合并登记。
+
+`safeStorage` 走 `ByteCipher`（三格：`available` / `encrypt` / `decrypt`）而不是直接调，只有一个理由：`available === false` 那一支在真机上测不到（这台 Windows 机器上 DPAPI 是可用的），而它恰好是本任务最要紧的一条安全判据。所以：
+- 测试用**假 cipher**（可注入的 `available`，`encrypt/decrypt` 就是带前缀的 base64 往返）+ **真 `fs`**（目录在 `os.tmpdir()`，形状照 T7 `emergency.test.ts` 那 6 格）⇒ 落盘、读盘、目录、坏字节四件事判的是真的，只有加密是假的。
+- 真的 `safeStorageCipher` 是一个八行的惰性适配器，它**没有 unit 格**（P-15 不许为测试在产品代码留钩子，而"为了可测把 `available` 做成可写全局"就是那种钩子），它的读者是 T11 的 `--persist-shot`：那一发要断"盘上那个文件的字节里搜不到明文口令"（P-13 同一条读字节判据）。这条限度现在就登记，不许拿"10 格全绿"冒充它被证过。
+- `available === false` ⇒ `writeConfig` 抛 `ConfigError('unavailable')`，**绝不落明文**。这是产品决定：宁可这台机器配不上连接，也不把口令写在盘上等人来读。`probeConfig` 在这种情况下仍要返回 `encryptionAvailable: false`，让向导能说这句人话。
+- `probeConfig` 与 `readConfig` 是**两个出口、一份文件**：前者不抛、回 `ConfigValue`（`'unset' | 'ready' | 'unreadable'`），因为"没配"是首屏要显示的常态；后者抛，因为会话拿不到能用的参数就是异常，而 T8 的 `wrap(err, 'not-configured', …)` 已经在那儿等着它。这一对形状正是 T8 第 ③ 段注释里预告的"区分没配与解不开"。
+- `unavailable` 这个 `ConfigError.kind` **不进** protocol：它是 main 侧的内部三分法，屏幕看到的是 `ConfigValue.encryptionAvailable` 与一句 `message`。少一个跨边界的名字就少一次对账。
+
+**⑧ 数据库名不在向导里：`ConfigDatabaseSchema = z.enum(['dajia'])`。**
+`dajia_test` 只属于 `pnpm test:db` 的环境变量通路（T1 的 `readMysqlEnv` 与 `assertDatabaseName` 那一族），把它做成屏幕上的一格等于给用户一个"能把生产应用指向测试库"的按钮，而那个库会被 T2/T4/T5 的自建自清删掉。所以规则写在 **schema** 而不是代码常量里：哪天有人要放开它，必须同时改 `ConfigDatabaseSchema`、新文件第 4 格（钉 `options.length === 1`）与 `config-store.test.ts` 里"落盘那一份的 database 只能是 `dajia`"那一格。**改一个 enum 会让三格红**，这就是把决定变成护栏的做法。
+`configToEnv(record)` 里那句 `database: assertDatabaseName(record.database)` 是第二次把关（T1 的白名单仍然生效），不是冗余：前者管线上形状，后者管存储层。
+
+**⑨ `listProjects` 是模块级函数而不是 `ProjectRepository` 的类方法。**
+那个类的构造参数是 `(pool, projectId, actor)` —— 它的每一次查询都带 `WHERE project_id = ?`，这是 T4 归属守卫的形状。而列表恰好相反：它要的就是**别的工程**的行。把它做成方法会读成"这个工程的所有工程"，而 `WHERE` 一句都不能有。所以它是 `repository.ts` 里的模块级 `listProjects(pool)`，`SELECT` 里点名六列（`id`, `name`, `schema_version`, `journal_turn`, `updated_at`, `lock_owner`），排序 `ORDER BY updated_at DESC`，并且**不加分页** —— S1 一台机器上的工程数量级是十，登记进限度。
+`locked` 那一格从 `lock_owner IS NOT NULL` 得到，但它的语义要说清楚：**它不等于"还活着"**（T6 的过期判定靠 `lock_expires_at` 与服务端时钟，不在这里比）。面板那句话写「上次没正常结束，或别人正开着」，两个处境共用一个记号，因为它们的下一步动作相同：都是"打开它，让 T6 的 CAS 去裁决"。
+
+- [ ] **Step 1: protocol —— `IPC` 到 11 条 + 配置/列表/试连那几张表**
+
+`packages/protocol/src/ipc.ts` 整体替换（`ping`、`IpcChannel`、`isIpcChannel` 三个出口一字不动；T8 那五条的名字与值一个字不动）：
+
+```ts
+export const IPC = {
+  ping: 'dajia:ping',
+  // 以下四条归计划 4（T8）。命名口径：`dajia:<域>:<动作或事件>`。
+  // `saveStatus` 是这条表里唯一的事件通道（main → renderer，没有请求方向），
+  // 它不进 `INVOKE_CHANNELS` 那张名册 —— 名册只管需要注册 handler 的那三条。
+  projectOpen: 'dajia:project:open',
+  projectClose: 'dajia:project:close',
+  journalSubmit: 'dajia:journal:submit',
+  saveStatus: 'dajia:save:status',
+  // 以下六条归计划 4（T9）。`uiCommand` 是第二条事件通道（main → renderer），
+  // 它是向导与工程列表的**唯一入口**（第 ③ 段：闸门里没有菜单也没有 send ⇒ 零节点）。
+  // 剩下五条都是请求方向 ⇒ 全部进 `INVOKE_CHANNELS`。
+  configRead: 'dajia:config:read',
+  configSave: 'dajia:config:save',
+  configTest: 'dajia:config:test',
+  projectList: 'dajia:project:list',
+  projectCreate: 'dajia:project:create',
+  uiCommand: 'dajia:ui:command',
+} as const;
+
+export type IpcChannel = (typeof IPC)[keyof typeof IPC];
+
+export function isIpcChannel(value: unknown): value is IpcChannel {
+  return typeof value === 'string' && Object.values(IPC).includes(value as IpcChannel);
+}
+```
+
+`packages/protocol/src/persist-schema.ts`：**在文件末尾追加**下面这一块。追加而不是重写整个文件的理由要说一句 —— T8 那十张表里有八张被 `session.test.ts` / `ipc-channels.test.ts` / T11 的闸门按名字吃着，重写一遍等于把那三个文件的靶子重新摆一次位置，而"计划文本与盘上现物对不上"这件事的代价在计划 3 已经付过一次。import 列表同步补 `UiCommandSchema` 用不到的名字（本块**不需要新的 import**：`EntityIdSchema` / `JournalTurnSchema` / `SafeCountSchema` / `issueText` / `IPC` / `z` 全在文件里已经在了）。
+
+```ts
+// —— T9：连接配置、工程列表、新建、试连（第 ④ 段：口令只出现在下面两张表里）——
+//
+// 这一行原本写着那个四字段尺的名字，结果被切块扫描器**抓了一次**：块前的注释属于上一张表，
+// 于是它把 T8 的 `SaveStatus` 那一块标成了"含口令"（第 8 格当场红）。这条陷阱留在注释里，
+// 因为下一个人在这个文件里加注释时一定会再踩一次。
+
+/**
+ * 主机名：1–253 字符且不含空白。为什么 `max(253)`：那是 DNS 全名的长度上限（RFC 1035），
+ * 而 MySQL 的 `host` 也可能是 IP —— 253 对 IPv4 与 IPv6 都够。
+ * 不校验"是不是合法 DNS 名"：那会把 `localhost`、`127.0.0.1`、`db.internal` 之外
+ * 一切合法写法（`HOST\\INSTANCE` 那种 Windows 写法）挡在外面，而拒绝合法输入比接受一次
+ * 连不上更糟。**IPv6 方括号写法未验证**，登记进限度。
+ */
+const HostSchema = z
+  .string()
+  .min(1, '主机名不能为空')
+  .max(253, '主机名太长')
+  .refine((v) => !/\s/.test(v), '主机名不许含空白');
+
+/** 1–65535 的整数端口。请求与回包共用这一把尺（回包方向是 `PortSchema.nullable()`）。 */
+const PortSchema = z
+  .number()
+  .int('端口必须是整数')
+  .min(1, '端口必须大于 0')
+  .max(65_535, '端口不能超过 65535');
+
+/** MySQL 的用户名上限是 32（`mysql.user` 的 `User` 列）。空串不合法：没有匿名登录这回事。 */
+const UserSchema = z.string().min(1, '用户名不能为空').max(32, '用户名太长');
+
+/**
+ * 口令**允许空串**：本机 `root` 无口令是 MySQL 在 Windows 上的常见装完形状，
+ * 拒空串等于把人挡在自己机器外面。`max(255)` 抄的是服务端 `authentication_string` 的尺，
+ * 不是我们的规则。
+ * 三条 message 全是**固定字符串**：zod 的默认 `too_big` 文案会带上收到的长度（不是值），
+ * 而自定义 refine 常手滑把值抄进文案 —— 第 ④ 段那条防线判的就是这件事，别在这里破。
+ */
+const PasswordSchema = z.string().max(255, '口令太长');
+
+/** 向导填的四个字段。它是**唯一**带口令键的请求形状（第 ④ 段第 1 条牙；注释里别说出那个字段名，见上面那段陷阱）。 */
+export const ConnectionInputSchema = z.strictObject({
+  host: HostSchema,
+  port: PortSchema,
+  user: UserSchema,
+  password: PasswordSchema,
+});
+export type ConnectionInput = z.output<typeof ConnectionInputSchema>;
+
+/**
+ * 库名只有 `dajia` 一个合法值（第 ⑧ 段）。写进 schema 而不是代码常量，是为了让
+ * "哪天放开它"必须过三格：这一张的 `options.length === 1`、`config-store` 落盘那一份、
+ * 以及 `test/db/projects.test.ts` 里那条"建出来的行在 `dajia` 库"。
+ */
+export const ConfigDatabaseSchema = z.enum(['dajia']);
+export type ConfigDatabase = z.output<typeof ConfigDatabaseSchema>;
+
+/**
+ * 盘上那份密文的**明文形状**（第 ④ 段的两块牙之一）。它等于 `ConnectionInput` + `database`，
+ * 这里手写五格而不用 `ConnectionInputSchema.extend(...)`：`.extend` 之后还严不严（catchall
+ * 是不是仍为 `never`）在 zod 4.6.5 上没实测过，而多带一键过界这件事恰是要判的。
+ * 四把尺仍然只有一个产地（上面那四个 `const`），所以这不是复制规则。
+ */
+export const ConfigRecordSchema = z.strictObject({
+  host: HostSchema,
+  port: PortSchema,
+  user: UserSchema,
+  password: PasswordSchema,
+  database: ConfigDatabaseSchema,
+});
+export type ConfigRecord = z.output<typeof ConfigRecordSchema>;
+
+export const ConfigSaveRequestSchema = z.strictObject({ connection: ConnectionInputSchema });
+export type ConfigSaveRequest = z.output<typeof ConfigSaveRequestSchema>;
+
+/** 试连吃的形状与保存**完全相同**，但是另一张表：两者不同步是刻意的（见下面那段注释）。 */
+export const ConfigTestRequestSchema = z.strictObject({ connection: ConnectionInputSchema });
+export type ConfigTestRequest = z.output<typeof ConfigTestRequestSchema>;
+
+/**
+ * 读配置请求是一张**空表**，与 `ProjectListRequestSchema` 同一条理由（下面那段）：
+ * `ipc-persist.ts` 的 `dispatch` 对每条通道都先 `parseXRequest(channel, args)`，
+ * 省掉它就得给 `configRead` 开一个特例，而"每条通道都过自己的请求表"这句话就不再是全称命题。
+ * 它同时是"哪天要加参数（比如强制重读）必须先过这张表"的那道门（`{ force: true }` ⇒ 拒）。
+ */
+export const ConfigReadRequestSchema = z.strictObject({});
+export type ConfigReadRequest = z.output<typeof ConfigReadRequestSchema>;
+
+/** 首屏与保存之后回的那一份。`state` 三值，口令不在里面（一个能装它的格子都没有）。 */
+export const ConfigStateSchema = z.enum(['unset', 'ready', 'unreadable']);
+export type ConfigState = z.output<typeof ConfigStateSchema>;
+
+export const ConfigValueSchema = z
+  .strictObject({
+    state: ConfigStateSchema,
+    /** `safeStorage.isEncryptionAvailable()` 的读数。false ⇒ 向导要把"这台机器存不了口令"说出来。 */
+    encryptionAvailable: z.boolean(),
+    host: z.string().nullable(),
+    port: PortSchema.nullable(),
+    user: z.string().nullable(),
+    database: ConfigDatabaseSchema.nullable(),
+  })
+  .refine(
+    (v) => (v.state === 'ready') === (v.host !== null),
+    'state 与回显读数必须同向：ready 才有一套参数，unset/unreadable 一个都不许留',
+  );
+export type ConfigValue = z.output<typeof ConfigValueSchema>;
+
+/**
+ * 七型名单（`'ok'` + 六个错误型）**分两张表**写死而不是 `CONNECTION_TEST_KINDS.slice(1)`：
+ * `z.enum` 收一个 spread 出来的 `string[]` 在 4.6.5 上是没实测过的形状，而 T8 已经为
+ * `z.enum(PERSIST_ERROR_CODES)` 留了同一条 `<待实测>`。两份字面量一致由新文件第 8 格钉住。
+ * 它与 `PERSIST_ERROR_CODES` **不是一张表**，也不该是：`kind` 说"连不上是因为什么"（给向导看），
+ * `code` 说"这一发失败之后该做什么"（给横幅看）。拿 `code` 当 `kind` 会把 `'db'` 说成
+ * "服务未启动"，而那正是 spec §9 要求分开来的东西。
+ */
+export const CONNECTION_TEST_KINDS = [
+  'ok',
+  'not-running',
+  'denied',
+  'no-database',
+  'dropped',
+  'timeout',
+  'unknown',
+] as const;
+export const CONNECTION_ERROR_KINDS = [
+  'not-running',
+  'denied',
+  'no-database',
+  'dropped',
+  'timeout',
+  'unknown',
+] as const;
+export const ConnectionTestKindSchema = z.enum([
+  'ok',
+  'not-running',
+  'denied',
+  'no-database',
+  'dropped',
+  'timeout',
+  'unknown',
+]);
+export type ConnectionTestKind = z.output<typeof ConnectionTestKindSchema>;
+
+export const ConnectionTestValueSchema = z
+  .strictObject({
+    connected: z.boolean(),
+    kind: ConnectionTestKindSchema,
+    /** 只有连上才有。它是 `SELECT VERSION()` 的原样读数，也是"这台机器的 MySQL 是 8.0.45"这件事的证人。 */
+    serverVersion: z.string().nullable(),
+    /** `DIAGNOSTIC_TEXT[kind].detail` +（失败时）过 `redact` 的原文。见第 ④ 段三条防线。 */
+    detail: z.string(),
+  })
+  .refine((v) => v.connected === (v.kind === 'ok'), 'connected 与 kind 必须同向');
+export type ConnectionTestValue = z.output<typeof ConnectionTestValueSchema>;
+
+/** 工程列表的一行。六格每格都有读者，一格外挂都不许有。 */
+export const ProjectSummarySchema = z.strictObject({
+  projectId: EntityIdSchema,
+  name: z.string().min(1),
+  /** 面板按它给"这份工程不是这个程序能读的"那句预警（S1 没有迁移路径，点开只会得到 T5 的拒开）。 */
+  schemaVersion: SafeCountSchema,
+  journalTurn: JournalTurnSchema,
+  /** `DATETIME(3)` 按 `dateStrings: true` 原样读回的字符串。不做任何客户端换算（P-4 同一条口径）。 */
+  updatedAt: z.string(),
+  /** `lock_owner IS NOT NULL` 的读数。它**不等于**"还活着"，见第 ⑨ 段。 */
+  locked: z.boolean(),
+});
+export type ProjectSummary = z.output<typeof ProjectSummarySchema>;
+
+/**
+ * 列表请求是一张**空表**。为什么不省：`ipc-persist.ts` 的 `dispatch` 对每条通道都先
+ * `parseXRequest(channel, args)`，空表让 `projectList` 走同一条路而不需要特例；
+ * 而它同时是"谁哪天想给列表加个过滤参数，必须先过这张表"的那道门（`{ filter: 'x' }` ⇒ 拒）。
+ */
+export const ProjectListRequestSchema = z.strictObject({});
+export type ProjectListRequest = z.output<typeof ProjectListRequestSchema>;
+
+export const ProjectListValueSchema = z.strictObject({ projects: z.array(ProjectSummarySchema) });
+export type ProjectListValue = z.output<typeof ProjectListValueSchema>;
+
+/**
+ * 工程名的尺与 T4 `createProject` 里那三行是**镜像**（1..200、不许首尾空白、非空）。
+ * 两份规则一定会漂 —— 这是本任务唯一一次故意留两份，理由是两处的下一步动作不同：
+ * 边界这一发回 `'bad-request'`（用户改一下就能过），存储层那一发是 `RangeError` ⇒ `'reconcile'`
+ * （停手，因为那是我们自己把两把尺写漂了）。漂了会不会没人红：会 ——
+ * `test/db/projects.test.ts` 第 3 格从边界递 200/201 两种长度，让存储层那一发也必须表态。
+ */
+const ProjectNameSchema = z
+  .string()
+  .min(1, '工程名不能为空')
+  .max(200, '工程名不能超过 200 个字符')
+  .refine((v) => v === v.trim(), '工程名不许带首尾空白');
+
+export const ProjectCreateRequestSchema = z.strictObject({ name: ProjectNameSchema });
+export type ProjectCreateRequest = z.output<typeof ProjectCreateRequestSchema>;
+
+/** `create` 只回 id：开会话那一发由 renderer 接着发（第 ② 段末）。 */
+export const ProjectCreateValueSchema = z.strictObject({ projectId: EntityIdSchema });
+export type ProjectCreateValue = z.output<typeof ProjectCreateValueSchema>;
+
+/**
+ * main 递给屏幕的三个"该显示哪一层"。它是一条**请求方向之外**的事件，
+ * 值只有一个名字，所以在这里闭集列全：加第四个值必须同时改 `panels.tsx` 那一支与
+ * `ipc-channels.test.ts` 新加的第 4 格。
+ */
+export const UiCommandSchema = z.enum(['startup', 'config', 'projects']);
+export type UiCommand = z.output<typeof UiCommandSchema>;
+
+// —— T9 的解析出口：照 T8 那一族的样子，每个具名函数一句人话 ——
+
+export function parseConnectionInput(where: string, value: unknown): ConnectionInput {
+  const r = ConnectionInputSchema.safeParse(value);
+  if (!r.success) fail(where, '连接参数', r.error);
+  return r.data;
+}
+
+export function parseConfigSaveRequest(where: string, value: unknown): ConfigSaveRequest {
+  const r = ConfigSaveRequestSchema.safeParse(value);
+  if (!r.success) fail(where, '保存连接配置的请求', r.error);
+  return r.data;
+}
+
+export function parseConfigTestRequest(where: string, value: unknown): ConfigTestRequest {
+  const r = ConfigTestRequestSchema.safeParse(value);
+  if (!r.success) fail(where, '试连的请求', r.error);
+  return r.data;
+}
+
+/** 空表那一发的出口：它唯一的作用是让学生 `dispatch` 那条全称命题成立（见 `ConfigReadRequestSchema` 的注释）。 */
+export function parseConfigReadRequest(where: string, value: unknown): ConfigReadRequest {
+  const r = ConfigReadRequestSchema.safeParse(value);
+  if (!r.success) fail(where, '读连接配置的请求', r.error);
+  return r.data;
+}
+
+/** `config:read` 与 `config:save` 共用这一份（第 ② 段：回的是同一种读数）。 */
+export function parseConfigValue(where: string, value: unknown): ConfigValue {
+  const r = ConfigValueSchema.safeParse(value);
+  if (!r.success) fail(where, '连接配置的回包', r.error);
+  return r.data;
+}
+
+export function parseConnectionTestValue(where: string, value: unknown): ConnectionTestValue {
+  const r = ConnectionTestValueSchema.safeParse(value);
+  if (!r.success) fail(where, '试连的回包', r.error);
+  return r.data;
+}
+
+export function parseProjectListRequest(where: string, value: unknown): ProjectListRequest {
+  const r = ProjectListRequestSchema.safeParse(value);
+  if (!r.success) fail(where, '工程列表的请求', r.error);
+  return r.data;
+}
+
+export function parseProjectListValue(where: string, value: unknown): ProjectListValue {
+  const r = ProjectListValueSchema.safeParse(value);
+  if (!r.success) fail(where, '工程列表的回包', r.error);
+  return r.data;
+}
+
+export function parseProjectCreateRequest(where: string, value: unknown): ProjectCreateRequest {
+  const r = ProjectCreateRequestSchema.safeParse(value);
+  if (!r.success) fail(where, '新建工程的请求', r.error);
+  return r.data;
+}
+
+export function parseProjectCreateValue(where: string, value: unknown): ProjectCreateValue {
+  const r = ProjectCreateValueSchema.safeParse(value);
+  if (!r.success) fail(where, '新建工程的回包', r.error);
+  return r.data;
+}
+
+export function parseUiCommand(where: string, value: unknown): UiCommand {
+  const r = UiCommandSchema.safeParse(value);
+  if (!r.success) fail(where, '界面指令', r.error);
+  return r.data;
+}
+
+// —— 名册：把 T8 那三条扩成八条（第 7 格改写就判这件事） ————————
+
+/**
+ * 八条请求通道。**这里加一条而 `ipc-persist.ts` 不写 `case`，`ipc-channels.test.ts` 当场红** ——
+ * 那张名单是注册与扫描的同一份，口径沿用 T8。
+ * `ProjectListRequestSchema` 是空表，但它的通道仍然要注册：空的是参数，不是通道。
+ */
+export const INVOKE_CHANNELS: readonly IpcChannel[] = [
+  IPC.projectOpen,
+  IPC.journalSubmit,
+  IPC.projectClose,
+  IPC.configRead,
+  IPC.configSave,
+  IPC.configTest,
+  IPC.projectList,
+  IPC.projectCreate,
+];
+
+/** 事件方向两条，都不许进上面的名册（它们没有请求方向，注册成 handler 是自己调自己）。 */
+export const SAVE_STATUS_EVENT: IpcChannel = IPC.saveStatus;
+export const UI_COMMAND_EVENT: IpcChannel = IPC.uiCommand;
+```
+
+> `<待实测>`：本块新用到四样东西，T3–T8 都没实测过 ——（a）`.refine(fn, string)` **挂在 `strictObject` 上**（T8 只挂在本包那把 `SafeCountSchema` 这种 `z.number()` 上）；（b）`z.enum(['dajia'])` 单元素；（c）`z.strictObject({})` 空表；（d）`ConfigDatabaseSchema.options` 取值 —— T3 那几处只把 `z.enum(内联数组)` 当判据用过，**没读过 `.options`**（v4 里这个名字还在不在要实测，不在就改成 `Object.values` 那类的替代写法并同步第 4 格）。四样各有一格判它（新文件第 5、4、9、4 格），实测不符就按盘上现物订正计划文本，别改判据。另外 `.min(1, '主机名不能为空')` 这种"规则 + 文案"两参数写法在 T3 的 `z.string().min(1)` 上是单参数的，**带 message 的那一版没测过** —— 若 4.6.5 只认 `{ error: '…' }` 对象写法，就把这一族全部改成 `{ error: '…' }` 并让第 3 格（哨兵不回显）继续成立；执行时把实测结论回填这一格。
+
+- [ ] **Step 2: protocol 的用例 —— 新文件 10 格 + T8 那两格改写**
+
+`packages/protocol/test/persist-config-schema.test.ts`（10 格）
+
+```ts
+import { describe, expect, it } from 'vitest';
+import {
+  CONNECTION_ERROR_KINDS,
+  CONNECTION_TEST_KINDS,
+  ConfigDatabaseSchema,
+  ConfigReadRequestSchema,
+  ConfigSaveRequestSchema,
+  ConfigTestRequestSchema,
+  ConfigValueSchema,
+  ConnectionInputSchema,
+  ConnectionTestValueSchema,
+  INVOKE_CHANNELS,
+  IPC,
+  PERSIST_ERROR_CODES,
+  ProjectCreateRequestSchema,
+  ProjectListRequestSchema,
+  ProjectSummarySchema,
+  SAVE_STATUS_EVENT,
+  UI_COMMAND_EVENT,
+  UiCommandSchema,
+  parseConfigReadRequest,
+  parseConfigValue,
+  parseConnectionInput,
+  parseProjectListRequest,
+  parseUiCommand,
+} from '../src/persist-schema';
+
+/**
+ * 哨兵口令。它**不是**任何真实凭据（spec §12 那台机器上的真口令一个字节都不进仓库），
+ * 它存在的唯一目的是被断言"绝不出现在回包与文案里"（第 ④ 段三条防线的凭据）。
+ */
+const SENTINEL = 'SUP3R-SENTINEL-9';
+
+function input(over: Partial<Record<'host' | 'port' | 'user' | 'password', unknown>> = {}) {
+  return { host: '127.0.0.1', port: 3306, user: 'root', password: SENTINEL, ...over };
+}
+
+describe('T9：连接参数的形状', () => {
+  it('1 格：四个字段齐了才放行，缺任一格、多任一键都拒；空口令放行', () => {
+    expect(ConnectionInputSchema.safeParse(input()).success).toBe(true);
+    // 空口令是 Windows 上 root 的常见装完形状（第 ④ 段注释），拒它等于把人挡在自己机器外面。
+    expect(ConnectionInputSchema.safeParse(input({ password: '' })).success).toBe(true);
+    for (const key of ['host', 'port', 'user', 'password'] as const) {
+      const missing = { ...input() } as Record<string, unknown>;
+      delete missing[key];
+      expect(ConnectionInputSchema.safeParse(missing).success).toBe(false);
+    }
+    // 多一键：`database` 不在这里，它是 `ConfigRecord` 的事（第 ⑧ 段）。
+    expect(ConnectionInputSchema.safeParse({ ...input(), database: 'dajia' }).success).toBe(false);
+    // `null` 与 `undefined` 不等价：口令缺省必须是"没填"，不是"空"。这一发判的是 optional 没被顺手写出来。
+    expect(ConnectionInputSchema.safeParse({ ...input(), password: undefined }).success).toBe(false);
+  });
+
+  it('2 格：长度与空白的尺各就各位（253/254、32/33、0/1/65535/65536、1.5）', () => {
+    expect(ConnectionInputSchema.safeParse(input({ host: 'h'.repeat(253) })).success).toBe(true);
+    expect(ConnectionInputSchema.safeParse(input({ host: 'h'.repeat(254) })).success).toBe(false);
+    expect(ConnectionInputSchema.safeParse(input({ host: 'a b' })).success).toBe(false);
+    expect(ConnectionInputSchema.safeParse(input({ host: ' ' })).success).toBe(false);
+    expect(ConnectionInputSchema.safeParse(input({ user: 'u'.repeat(32) })).success).toBe(true);
+    expect(ConnectionInputSchema.safeParse(input({ user: 'u'.repeat(33) })).success).toBe(false);
+    expect(ConnectionInputSchema.safeParse(input({ user: '' })).success).toBe(false);
+    for (const bad of [0, -1, 65_536, 1.5, '3306', null]) {
+      expect(ConnectionInputSchema.safeParse(input({ port: bad })).success).toBe(false);
+    }
+    expect(ConnectionInputSchema.safeParse(input({ port: 65_535 })).success).toBe(true);
+    expect(ConnectionInputSchema.safeParse(input({ port: 1 })).success).toBe(true);
+  });
+
+  it('3 格：文案里不许出现口令与用户名（哨兵跑过三条失败通路）', () => {
+    // (a) 超长口令那一抛
+    const long = 'x'.repeat(256);
+    let msgA = '';
+    try {
+      parseConnectionInput(IPC.configSave, input({ password: long }));
+    } catch (err) {
+      msgA = String(err);
+    }
+    expect(msgA).toContain('口令太长');
+    expect(msgA).not.toContain(long);
+    expect(msgA).not.toContain(SENTINEL);
+    // (b) 含空白的主机名那一抛：文案里有字段名，没有值
+    let msgB = '';
+    try {
+      parseConnectionInput(IPC.configSave, input({ host: 'db host' }));
+    } catch (err) {
+      msgB = String(err);
+    }
+    expect(msgB).toContain('主机名不许含空白');
+    expect(msgB).not.toContain('db host');
+    // (c) 外层请求多带一个 `password` 键：`strictObject` 拒的时候只会点出**键名**，
+    // 不许把值带出来（这一发的价值就在于它是 `fail()` 那条通用文案，不是我们手写的）。
+    let msgC = '';
+    try {
+      parseConfigSaveRequest(IPC.configSave, { connection: input(), password: SENTINEL });
+    } catch (err) {
+      msgC = String(err);
+    }
+    expect(msgC).toContain('解不开保存连接配置的请求');
+    expect(msgC).not.toContain(SENTINEL);
+    // 反向证一句：`SENTINEL` 确实是被送进去的那个值，否则上面三句 not.toContain 是空转。
+    expect(input().password).toBe(SENTINEL);
+  });
+
+  it('4 格：库名只有 `dajia`；`dajia_test` 与空串都拒（第 ⑧ 段那道门槛）', () => {
+    expect(ConfigDatabaseSchema.options.length).toBe(1);
+    expect(ConfigDatabaseSchema.safeParse('dajia').success).toBe(true);
+    for (const bad of ['dajia_test', 'mysql', 'DAJIA', '', 'dajia ']) {
+      expect(ConfigDatabaseSchema.safeParse(bad).success).toBe(false);
+    }
+  });
+
+  it('5 格：`state` 与回显读数同向；带 `password` 的回包一律拒', () => {
+    const ready = {
+      state: 'ready',
+      encryptionAvailable: true,
+      host: '127.0.0.1',
+      port: 3306,
+      user: 'root',
+      database: 'dajia',
+    };
+    expect(ConfigValueSchema.safeParse(ready).success).toBe(true);
+    const unset = { ...ready, state: 'unset', host: null, port: null, user: null, database: null };
+    expect(ConfigValueSchema.safeParse(unset).success).toBe(true);
+    // `.refine` 那一发要能红：`state` 说没配而读数还留着，面板就会把上一台机器的参数当真。
+    expect(ConfigValueSchema.safeParse({ ...ready, state: 'unset' }).success).toBe(false);
+    expect(ConfigValueSchema.safeParse({ ...unset, host: '127.0.0.1' }).success).toBe(false);
+    // 回包方向的口令格子一个都不许存在（第 ④ 段第 2 块牙在这里有一发独立的）。
+    expect(ConfigValueSchema.safeParse({ ...ready, password: SENTINEL }).success).toBe(false);
+    // `encryptionAvailable` 不许省：少了它，"存不了口令"那句话就没有读数来源。
+    const noFlag = { ...unset } as Record<string, unknown>;
+    delete noFlag.encryptionAvailable;
+    expect(ConfigValueSchema.safeParse(noFlag).success).toBe(false);
+  });
+
+  it('6 格：`connected` 与 `kind` 同向；七型各过，第八种拼法拒', () => {
+    const ok = { connected: true, kind: 'ok', serverVersion: '8.0.45', detail: '连上了' };
+    expect(ConnectionTestValueSchema.safeParse(ok).success).toBe(true);
+    for (const kind of CONNECTION_ERROR_KINDS) {
+      expect(
+        ConnectionTestValueSchema.safeParse({
+          connected: false,
+          kind,
+          serverVersion: null,
+          detail: `诊断：${kind}`,
+        }).success,
+      ).toBe(true);
+    }
+    // 两个方向的反例：这一发不判就等于允许"连不上但报 ok"那种自相矛盾的回包上屏。
+    expect(ConnectionTestValueSchema.safeParse({ ...ok, kind: 'denied' }).success).toBe(false);
+    expect(
+      ConnectionTestValueSchema.safeParse({ ...ok, connected: false, kind: 'ok' }).success,
+    ).toBe(false);
+    expect(
+      ConnectionTestValueSchema.safeParse({
+        connected: false,
+        kind: 'timeout',
+        serverVersion: null,
+      }).success,
+    ).toBe(false); // 缺 detail：诊断说出来却没有那句话 = 屏幕上一个空气泡
+    expect(
+      ConnectionTestValueSchema.safeParse({
+        connected: false,
+        kind: 'not_runing',
+        serverVersion: null,
+        detail: 'x',
+      }).success,
+    ).toBe(false);
+    // `'db'` 是错误**码**不是**型**：拿它当 kind 会把"查服务"这个建议配到所有连不上的处境上。
+    expect(
+      ConnectionTestValueSchema.safeParse({
+        connected: false,
+        kind: 'db',
+        serverVersion: null,
+        detail: 'x',
+      }).success,
+    ).toBe(false);
+  });
+
+  it('7 格：列表那六格逐个少一格都拒，`locked` 只认真布尔（真库给 0/1 时在过界那一发红）', () => {
+    const row = {
+      projectId: '01932f6a-7c1e-7000-8000-000000000001',
+      name: '样例房',
+      schemaVersion: 1,
+      journalTurn: 7,
+      updatedAt: '2026-10-04 01:12:33.512',
+      locked: false,
+    };
+    expect(ProjectSummarySchema.safeParse(row).success).toBe(true);
+    const keys = Object.keys(row);
+    // 逐格删一遍：`locked` 也在名单里（少一格 ⇒ 面板上"没锁"永远为真，那种 bug 不会有人报）。
+    for (const key of keys) {
+      const missing = { ...row } as Record<string, unknown>;
+      delete missing[key];
+      expect(ProjectSummarySchema.safeParse(missing).success).toBe(false);
+    }
+    // `SELECT lock_owner IS NOT NULL` 在 mysql2 里回来的是 1/0。忘了 CAST 就是这一格红，
+    // 而不是面板上"没锁"永远为真。
+    for (const bad of [0, 1, 'true', null]) {
+      expect(ProjectSummarySchema.safeParse({ ...row, locked: bad }).success).toBe(false);
+    }
+    expect(ProjectSummarySchema.safeParse({ ...row, locked: true }).success).toBe(true);
+    expect(ProjectSummarySchema.safeParse({ ...row, journalTurn: 2 ** 53 }).success).toBe(false);
+    expect(ProjectSummarySchema.safeParse({ ...row, name: '' }).success).toBe(false);
+    // `updatedAt` 是字符串不是 Date：`dateStrings: true`（T2）没生效时这里红。
+    expect(ProjectSummarySchema.safeParse({ ...row, updatedAt: new Date(0) }).success).toBe(false);
+  });
+
+  it('8 格：两份 kind 名单对账（`slice(1)` 必须逐字等于错误型名单），且与错误码**不相交**', () => {
+    expect([...CONNECTION_TEST_KINDS].slice(1)).toEqual([...CONNECTION_ERROR_KINDS]);
+    expect(CONNECTION_TEST_KINDS[0]).toBe('ok');
+    expect(CONNECTION_ERROR_KINDS.length).toBe(6);
+    expect(new Set(CONNECTION_ERROR_KINDS).size).toBe(6);
+    // 两张表只共享'ok' 之外的一个名字都不许有。这一句才是"别把它们合成一张"的真正护栏：
+    // 混用的后果见上面那段注释（把 'db' 这个"下一步"配上"连不上是因为什么"这份读数）。
+    const shared = CONNECTION_ERROR_KINDS.filter((k) =>
+      (PERSIST_ERROR_CODES as readonly string[]).includes(k),
+    );
+    expect(shared).toEqual([]);
+  });
+
+  it('9 格：界面指令闭集三值；两张空表请求（列表与读配置）多一个键就拒', () => {
+    for (const v of ['startup', 'config', 'projects']) {
+      expect(UiCommandSchema.safeParse(v).success).toBe(true);
+    }
+    for (const bad of ['shutdown', 'startup ', '', null, 1]) {
+      expect(() => parseUiCommand(IPC.uiCommand, bad)).toThrow(/界面指令/);
+    }
+    expect(ProjectListRequestSchema.safeParse({}).success).toBe(true);
+    expect(ProjectListRequestSchema.safeParse(undefined).success).toBe(false);
+    expect(() => parseProjectListRequest(IPC.projectList, { filter: 'x' })).toThrow(/工程列表的请求/);
+    // `config:read` 的同一条空表（上面那张表的注释里写着为什么不省）：两张表分别判，
+    // 是因为"只加了一张表、忘了第二张"正是这一格要抓住的那一型漂移。
+    expect(ConfigReadRequestSchema.safeParse({}).success).toBe(true);
+    expect(ConfigReadRequestSchema.safeParse(undefined).success).toBe(false);
+    expect(() => parseConfigReadRequest(IPC.configRead, { force: true })).toThrow(
+      /读连接配置的请求/,
+    );
+  });
+
+  it('10 格：新建工程的名字尺 + 五个新 parse 沿用 T8 那一族文案形状', () => {
+    expect(ProjectCreateRequestSchema.safeParse({ name: '样例房' }).success).toBe(true);
+    expect(ProjectCreateRequestSchema.safeParse({ name: '  两面墙  ' }).success).toBe(false);
+    expect(ProjectCreateRequestSchema.safeParse({ name: 'x'.repeat(200) }).success).toBe(true);
+    expect(ProjectCreateRequestSchema.safeParse({ name: 'x'.repeat(201) }).success).toBe(false);
+    // 保存与试连两条通道吃同一份 `ConnectionInput`，但表是两张：一张表加字段不会带着另一张漂。
+    expect(ConfigSaveRequestSchema.safeParse({ connection: input() }).success).toBe(true);
+    expect(ConfigTestRequestSchema.safeParse(input()).success).toBe(false);
+    // 文案口径（同 T8 第 9 格）：`<通道名> 解不开<那一句>：<点号路径>: …`
+    expect(() => parseConfigValue(IPC.configRead, { state: 'ready' })).toThrow(
+      /^dajia:config:read 解不开连接配置的回包：/,
+    );
+    // `parseConnectionInput` 验的是**里面那一层**，所以点号路径从 `password` 起头（不带 `connection.`）；
+    // 外层那一条走 `parseConfigSaveRequest`，两发各证一层，别让"路径少一段"这件事没人判。
+    expect(() => parseConnectionInput(IPC.configSave, input({ password: 42 }))).toThrow(
+      /^dajia:config:save 解不开连接参数：password: /,
+    );
+    expect(() => parseConfigSaveRequest(IPC.configSave, { connection: input({ port: '3306' }) })).toThrow(
+      /connection\.port: /,
+    );
+  });
+});
+```
+
+`packages/protocol/test/persist-schema.test.ts`：**改写第 7、8 格**（其余八格与三条 `describe` 一字不动）。
+
+第 7 格整体替换为：
+
+```ts
+  it('名册八条 + 事件两条 == IPC 里除 ping 的全部（漏登记即红）', () => {
+    // T9 把三条扩成八条。等式的形状一个字没改，只是名单长了 —— 这正是它存在的目的：
+    // 新加一条通道而忘了登记，红的就是这一格而不是某个 case 的编译器。
+    expect([...INVOKE_CHANNELS].sort()).toEqual(
+      [
+        IPC.journalSubmit,
+        IPC.projectClose,
+        IPC.projectOpen,
+        IPC.configRead,
+        IPC.configSave,
+        IPC.configTest,
+        IPC.projectList,
+        IPC.projectCreate,
+      ].sort(),
+    );
+    expect(INVOKE_CHANNELS.length).toBe(8);
+    const covered = [...INVOKE_CHANNELS, SAVE_STATUS_EVENT, UI_COMMAND_EVENT].sort();
+    expect(covered).toEqual(Object.values(IPC).filter((c) => c !== IPC.ping).sort());
+    // 两条事件都不许混进名册（它们没有请求方向，被注册成 handler 是自己调自己）。
+    expect(INVOKE_CHANNELS.includes(SAVE_STATUS_EVENT)).toBe(false);
+    expect(INVOKE_CHANNELS.includes(UI_COMMAND_EVENT)).toBe(false);
+  });
+```
+
+第 8 格整体替换为（这就是第 ④ 段说的那次"有形状的放宽"）：
+
+```ts
+  it('`password` 只许出现在两张进方向的表里；任何回包表都不许有它（第 ④ 段）', () => {
+    // 按 `const XSchema =` 切块，一块一张尺（`export` 可选：四把私有字段尺 `Host` / `Port` /
+    // `User` / `Password` 必须各自成块，否则它们会被上一张表的块吸收 —— 那会把 SaveStatus
+    // 那一块标成"含 password"，因为 `PasswordSchema` 这个标识符本身就含这个词。这一刀是实测出来的。）
+    // 为什么不再拿整文件一把尺判：T8 那一版判的是"这个文件里一个连接参数都不许出现"，
+    // 而向导把这句话作废了（第 ④ 段），剩下的判据必须能回答"口令有没有从回包方向漏出去"。
+    const parts = SCHEMA_SRC.split(/\n(?=(?:export )?const \w+Schema\b)/);
+    const nameOf = (block: string): string | null =>
+      /^(?:export )?const (\w+)Schema\b/.exec(block)?.[1] ?? null;
+    const named = parts
+      .map((p) => [nameOf(p), p] as const)
+      .filter((e): e is [string, string] => e[0] !== null);
+
+    // 先证扫描器自己会响（这一族判据最怕的形状是"名单为空所以全绿"）：
+    const fake = 'export const FooValueSchema = z.strictObject({ password: z.string() });\n';
+    expect(nameOf(fake)).toBe('FooValue');
+    expect(/password/i.test(fake)).toBe(true);
+    expect(named.length).toBeGreaterThanOrEqual(28); // 表少了就是切块切错了，别让改动悄悄通过
+
+    const withPassword = named
+      .filter(([, block]) => /password/i.test(block))
+      .map(([n]) => n)
+      .sort();
+    // `Password` 是那把私有字段尺自己：它的名字含这个词，命中是名字的自指，不是形状。
+    // 点名它而不是过滤掉它，是为了别让下一个人以为扫描器漏了一张表。
+    expect(withPassword).toEqual(['ConfigRecord', 'ConnectionInput', 'Password']);
+
+    const values = named.filter(([n]) => n.endsWith('Value'));
+    expect(values.length).toBeGreaterThanOrEqual(7); // Open/Submit/Close/Config/ConnectionTest/List/Create
+    for (const [name, block] of values) {
+      expect(/password/i.test(block)).toBe(false);
+      expect(name).toBeTruthy(); // 逐格都真判过，不是空循环
+    }
+  });
+```
+
+Run: `npx vitest run packages/protocol/test/persist-config-schema.test.ts packages/protocol/test/persist-schema.test.ts > tmp/t9-schema.log 2>&1; echo "exit=$?"`
+Expected：先红（追加块还没写）⇒ 写完后 **exit=0**，`persist-config-schema.test.ts` **10 格**、`persist-schema.test.ts` **10 格**（格数不变，两格换了判据）。
+
+再量一次 `pnpm typecheck`（protocol 那一段）：`cd packages/protocol && npx tsc --noEmit -p tsconfig.json > ../../tmp/t9-tsc-protocol.log 2>&1; echo "exit=$?"`，Expected `exit=0`。这一档最容易红的三处先写在这里：（a）`.refine` 挂到 `strictObject` 上之后 `z.output` 推出来的还是那个对象类型（若退化成 `unknown`，第 5 格的 `ConfigValue` 会在**新文件的 import 处**红）；（b）`ConfigDatabaseSchema.options` 的元组类型；（c）`nameOf` 那个可选链 —— `apps/desktop` 没开 `noUncheckedIndexedAccess`，protocol 包开了什么**要按盘上现物读一遍 tsconfig 再定**，别照本计划的写法硬补 `!`。
+
+Commit（控制位执行，只提这两个文件 + 两个测试文件）：`pnpm protocol: test 绿之后再提`。
+
+> 本任务的后续 Step 3–10（`diagnostics` / `config-store` / `admin` / `repository` + `session` / `ipc-persist` + 菜单 / `panels` + `App` / `test:db` 与文档 / 复跑与提交 / 变异表 / 登记的限度）写在 `chunk-t9b.md`…`chunk-t9g.md`，拼接顺序与 T8 一致。Step 8 = main 侧接线（`ipc-persist.ts` + `persist/admin-ports.ts` + preload + `main/index.ts` 的菜单与那一发 startup + 两档源码扫），Step 9 = 屏幕侧（`projectStore.ts` + `panels.tsx` + `App.tsx` + 七格），Step 10 = 复跑五道闸门 + 变异复验 + 三张总表 + 提交切分。
+
+---
+
+- [ ] **Step 3: 分型的产地 —— `db/diagnostics.ts`（零 import）+ `src/shared/diagnostics-text.ts`（零 import）+ 14 格**
+
+`apps/desktop/src/main/db/diagnostics.ts`（新建）
+
+```ts
+/**
+ * MySQL 连接失败的**分型**。六个值，一个都不多（计划文件结构表那句「六个分型」就是这个数）。
+ *
+ * 这一族为什么零 import：它的全部工作是"读 `err.code` 这一个字符串字段，然后落到六个字面量
+ * 之一"。一旦它 import 了 `mysql2` 的类型、`zod`、`describeError` 或 `node:fs`，它就变成连库
+ * 文件，而那 8 格就跑在纯 node 档、吃的是人造错误对象（第 ⑤ 段）。零 import 是一个能被
+ * `persist-boundary.test.ts` 扫出来的主张，也是这份分型能进 CI 的全部前提。
+ *
+ * 六个字面量与 protocol 的 `CONNECTION_ERROR_KINDS`、`src/shared/diagnostics-text.ts` 的键
+ * 是**三份同一名单**：对账判据住在测试里（`diagnostics.test.ts` 第 7 格、
+ * `diagnostics-text.test.ts` 第 5 格），不在源码里 —— 因为源码那边一旦 import 就破上面那条。
+ */
+export type DbErrorKind =
+  | 'not-running'
+  | 'denied'
+  | 'no-database'
+  | 'dropped'
+  | 'timeout'
+  | 'unknown';
+
+/**
+ * 只认 `err.code`（mysql2 的错误对象都带它），**不读 message**：
+ * message 是会改措辞的人话，拿正则去读它等于把判据建在最不稳的东西上；
+ * 而 `ER_ACCESS_DENIED_ERROR` 那种原文里也带 `Access denied` 的字符串，正则与字段会给出两个答案。
+ * 这一条的凭据是 `diagnostics.test.ts` 第 4 格（人造一个 message 里写着 ECONNREFUSED、
+ * 但没有 `code` 的错误 ⇒ 必须 `unknown`）。
+ */
+export function classifyDbError(err: unknown): DbErrorKind {
+  const code =
+    typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined;
+  if (typeof code !== 'string') return 'unknown';
+  switch (code) {
+    // 「连不上」这一族：没人监听、主机名解析不到、路由不通。下一步动作都是"看这台服务与这个地址"，
+    // 所以四码一型（第 ⑤ 段登记的合并，代价是 detail 必须把两种处境都说到）。
+    case 'ECONNREFUSED':
+    case 'ENOTFOUND':
+    case 'EAI_AGAIN':
+    case 'EHOSTUNREACH':
+    case 'ENETUNREACH':
+      return 'not-running';
+    // 认证这一族：口令错，或者服务端插件与驱动对不上。两处的下一步都是"账号与服务端参数"。
+    case 'ER_ACCESS_DENIED_ERROR':
+    case 'ER_NOT_SUPPORTED_AUTH_MODE':
+      return 'denied';
+    case 'ER_BAD_DB_ERROR':
+      return 'no-database';
+    // 连上了又被断开。spec §9 点名的"端口占用"就落在这里：客户端永远拿不到 EADDRINUSE
+    // （那是监听端才有的错），真实症状是"对面说话不像 MySQL"。第 ⑤ 段末登记为 spec 订正候选。
+    case 'PROTOCOL_CONNECTION_LOST':
+    case 'ECONNRESET':
+    case 'EPIPE':
+      return 'dropped';
+    case 'ETIMEDOUT':
+      return 'timeout';
+    default:
+      // 不许在这里"归个类算了"。第 ③ 段（t8a）给闭集去掉 'unknown' 的理由在文案这一族同样成立：
+      // 留一个"看起来像"的默认型，就等于允许哪天把没查清的东西说成"服务未启动"。
+      return 'unknown';
+  }
+}
+```
+
+`apps/desktop/src/shared/diagnostics-text.ts`（新建）
+
+```ts
+/**
+ * 分型的**文案**。它住在第三个目录（同 `document-wire.ts`，第 ⑤ 段）而不是 `db/diagnostics.ts`，
+ * 因为读者有两处屏幕（向导面板、失败横幅）加一处 main（试连回包的 `detail`），而 renderer
+ * import `src/main/**` 是 dependency-guard 明令禁止的方向。
+ * 它零 import：一张纯数据的表，任何函数都不该住在这里（`redact` 在 `persist/admin.ts`，
+ * 因为那是"送出去之前"的动作而不是文案）。
+ */
+export type DiagnosticKind =
+  | 'ok'
+  | 'not-running'
+  | 'denied'
+  | 'no-database'
+  | 'dropped'
+  | 'timeout'
+  | 'unknown';
+
+export interface DiagnosticText {
+  /** 一行标题。面板把它放在诊断卡的第一行。 */
+  readonly title: string;
+  /** 发生了什么。`admin.ts` 把它与过 `redact` 的原文拼成回包里的 `detail`。 */
+  readonly detail: string;
+  /** 下一步做什么。这一句同时是 `docs/install-mysql.md` 的**逐字被引文**（第 6 格判）。 */
+  readonly next: string;
+}
+
+/**
+ * 七值名单（`'ok'` 在最前）。它与 `db/diagnostics.ts` 里那六个字面量、protocol 的
+ * `CONNECTION_ERROR_KINDS` 是同一件事的三个产地，对账全在测试里 —— 这里给测试一个可扫的数组，
+ * 免得判据去 `Object.keys` 一个 `Record`（`Record` 的键在运行时不保证顺序，也不保证齐全）。
+ */
+export const DIAGNOSTIC_KIND_LIST: readonly DiagnosticKind[] = [
+  'ok',
+  'not-running',
+  'denied',
+  'no-database',
+  'dropped',
+  'timeout',
+  'unknown',
+];
+
+export const DIAGNOSTIC_TEXT: Record<DiagnosticKind, DiagnosticText> = {
+  ok: {
+    title: '连上了',
+    detail: '这台 MySQL 应答正常。',
+    next: '保存配置，然后在工程列表里新建或打开一个工程。',
+  },
+  'not-running': {
+    title: '连不上这个地址',
+    detail: '没有程序在听这个端口（服务没启动），或者主机名解析不到、路由不通。',
+    next: '先确认服务已经启动，再确认主机名和端口填的是同一台机器上那一套。',
+  },
+  denied: {
+    title: '认证失败',
+    detail: '用户名或口令不对，也可能是服务端的认证插件不被驱动支持。',
+    next: '按安装说明的「认证失败」一节三步排查：用户名、口令、认证插件。',
+  },
+  'no-database': {
+    title: '库不存在',
+    detail: '连上了服务器，但那个库还没建。',
+    next: '按安装说明的「库不存在」一节建库建表，`pnpm db:sql` 可以导出建表语句。',
+  },
+  dropped: {
+    title: '连上了又被断开',
+    detail: '端口能连上，但对面说的话不像 MySQL。',
+    next: '先看 3306 端口被哪个程序占用；不是 MySQL 就改端口，是 MySQL 就是服务中途重启了。',
+  },
+  timeout: {
+    title: '等回应等超时',
+    detail: '连不上也没被拒绝，一直到超时。',
+    next: '先改用 127.0.0.1 试一次；还不行就去看安装说明「连不上但超时」一节的防火墙那一头。',
+  },
+  unknown: {
+    title: '这一条我们没认出来',
+    detail: '收到的错误码不在已知的种类里，不猜原因。',
+    next: '点「一键复制诊断」把原文贴出来查，或按原文里的错误码搜索。',
+  },
+};
+```
+
+> **`unknown` 那一行的 `next` 里不许出现"服务"两个字**（第 ⑤ 段与 t8a 第 ③ 段同一条纪律：没查清的东西不能说成某个已知的下一步）。凭据 = `diagnostics-text.test.ts` 第 3 格。
+
+`apps/desktop/src/main/db/pool.ts`（**本任务的回改**：给试连一个上限，否则"连不上"这件事要等 10 秒才说出来）
+
+`PoolOptions` 加一格、`createDbPool` 里透传一格、文件顶部加一个常量。三处各写全文：
+
+```ts
+/**
+ * 试连那一发的握手上限（毫秒）。它为什么住在这里而不是向导面板或 `ipc-persist.ts`：
+ * 只有这个文件认识 mysql2 的 `connectTimeout` 这个名字，而"超时"这件事必须与"报 `timeout` 那一型"
+ * 是同一个决定 —— 数值散到调用方就会漂（同 T6 `LOCK_TTL_MS` 那一条"数值唯一产地"的口径）。
+ * 凭据：`diagnostics.test.ts` 第 8 格扫本文件。
+ */
+export const CONFIG_TEST_CONNECT_TIMEOUT_MS = 5_000;
+
+export interface PoolOptions {
+  readonly multipleStatements?: boolean;
+  readonly connectionLimit?: number;
+  /**
+   * 只对**新建连接**的握手阶段生效（mysql2 的 `connectTimeout`）。已经在跑的会话连接不受它管 ——
+   * 会话那一侧的超时是 T6 的心跳与 T7 的重试在管，两件事不许混。
+   * 不传时用的是驱动自己的默认握手超时 —— **那个数随 mysql2 版本变，本计划不把它写成判据**（盘上现物：`node_modules/mysql2`
+   * 此刻还没装，T1 只登记过 3.24.x 这个版本下限）。传 5000 只有一个目的：把"连不上"这句话的上限收回我们手里，
+   * 用户点「测试连接」不该盯着空白等一个由驱动版本决定的数。
+   */
+  readonly connectTimeoutMs?: number;
+}
+```
+
+`createDbPool` 的返回对象里补一行（其余字段一字不动，包括 T4 补的 `supportBigNumbers` / `bigNumberStrings`）：
+
+```ts
+    connectTimeout: opts.connectTimeoutMs,
+```
+
+> `<待实测>`：`connectTimeout` 这个键名在 mysql2 3.24.x 的 `PoolOptions` 上**没实测过**（T2 那次只用过 `connectionLimit` / `charset` / `multipleStatements` / `dateStrings` / `namedPlaceholders`）。若类型上没有这个键（TS 报错）或它其实叫 `connectTimeout`以外的名字，就按盘上现物订正这一行与 `diagnostics.ts` 的 `ETIMEDOUT` 那一支的注释，并把实测结论回填这里 —— **别为了让它绿而把 `connectTimeoutMs` 变成死参数**（第 8 格判的就是它必须交到 mysql2 手上）。
+
+`apps/desktop/test/unit/diagnostics.test.ts`（新建，8 格）
+
+```ts
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+import { CONNECTION_ERROR_KINDS } from '@dajia/protocol';
+import { DIAGNOSTIC_TEXT } from '../../src/shared/diagnostics-text';
+import { classifyDbError } from '../../src/main/db/diagnostics';
+
+const HERE = fileURLToPath(new URL('.', import.meta.url));
+const POOL_SRC = readFileSync(`${HERE}../../src/main/db/pool.ts`, 'utf8');
+
+/** 人造一个 mysql2 形状的错误：只有 `code` 与一句人话。 */
+function dbErr(code: unknown, message = 'boom'): Error & { code: unknown } {
+  return Object.assign(new Error(message), { code });
+}
+
+describe('classifyDbError：只认 code，且只落到六个值', () => {
+  it('1 格：spec §9 点名的四型各归各处', () => {
+    expect(classifyDbError(dbErr('ECONNREFUSED'))).toBe('not-running'); // 服务未启动
+    expect(classifyDbError(dbErr('ER_ACCESS_DENIED_ERROR'))).toBe('denied'); // 认证失败
+    expect(classifyDbError(dbErr('ER_BAD_DB_ERROR'))).toBe('no-database'); // 库不存在
+    expect(classifyDbError(dbErr('PROTOCOL_CONNECTION_LOST'))).toBe('dropped'); // 端口占用那一型
+    expect(classifyDbError(dbErr('ETIMEDOUT'))).toBe('timeout');
+  });
+
+  it('2 格：合并进同型的别名各有一发（别名漂了就是分型白做）', () => {
+    for (const code of ['ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH']) {
+      expect(classifyDbError(dbErr(code))).toBe('not-running');
+    }
+    for (const code of ['ECONNRESET', 'EPIPE']) {
+      expect(classifyDbError(dbErr(code))).toBe('dropped');
+    }
+    expect(classifyDbError(dbErr('ER_NOT_SUPPORTED_AUTH_MODE'))).toBe('denied');
+  });
+
+  it('3 格：认不出来的码一律 unknown，包括长得像的', () => {
+    for (const code of ['ER_NO_SUCH_TABLE', 'EACCES', 'UNKNOWN', '', 'econnrefused', 'DB']) {
+      expect(classifyDbError(dbErr(code))).toBe('unknown');
+    }
+    // `econnrefused` 小写也拒：这一族的判据是精确名字，不是"看起来像"。（大小写放宽过一次的话，
+    // 下一个人就会连着放宽前缀匹配，那时候 `'ECONNREFUSED-ish'` 也算连不上。）
+  });
+
+  it('4 格：message 里写着错误码不算 —— 分类只读 `code` 字段', () => {
+    const noCode = new Error('connect ECONNREFUSED 127.0.0.1:3306');
+    expect(classifyDbError(noCode)).toBe('unknown');
+    expect(noCode.message).toContain('ECONNREFUSED'); // 反向证一句：正则去读 message 的话会绿在这一发上
+  });
+
+  it('5 格：`code` 的类型不对一律 unknown（数字 1045 是 mysql 的错误号，不是我们的名字）', () => {
+    for (const code of [1045, null, undefined, {}, ['ECONNREFUSED']]) {
+      expect(classifyDbError(dbErr(code))).toBe('unknown');
+    }
+  });
+
+  it('6 格：`err` 本身不是对象时不抛', () => {
+    for (const err of ['ECONNREFUSED', 1, true, null, undefined, Symbol('x')]) {
+      expect(classifyDbError(err)).toBe('unknown');
+    }
+  });
+
+  it('7 格：三份名单是同一件事（`DbErrorKind` 的六个值 == protocol 的六型 == 文案表的六键）', () => {
+    expect([...CONNECTION_ERROR_KINDS].sort()).toEqual(
+      ['denied', 'dropped', 'no-database', 'not-running', 'timeout', 'unknown'].sort(),
+    );
+    const textKeys = Object.keys(DIAGNOSTIC_TEXT).filter((k) => k !== 'ok').sort();
+    expect(textKeys).toEqual([...CONNECTION_ERROR_KINDS].sort());
+  });
+
+  it('8 格：试连的超时数值只有一个产地，而且真的交到了 mysql2 手上', () => {
+    // 源码扫（同 T6「`NOW(3)` 不少于 3 处」那一族的口径）：这一格不判行为，判的是
+    // "5000 这个数字有没有第二个写法"与"`connectTimeoutMs` 是不是死参数"。
+    expect(POOL_SRC).toMatch(/export const CONFIG_TEST_CONNECT_TIMEOUT_MS = 5_000;/);
+    expect(POOL_SRC).toMatch(/connectTimeout: opts\.connectTimeoutMs,/);
+    expect(POOL_SRC.match(/connectTimeoutMs/g)?.length).toBeGreaterThanOrEqual(2);
+    expect(POOL_SRC).not.toMatch(/connectTimeout:\s*\d/); // 不许在透传那一行写死数字
+    expect(POOL_SRC).not.toMatch(/setTimeout|Date\.now\(/); // 本任务不许在这里引入客户机时钟（P-4 同条）
+  });
+});
+```
+
+`apps/desktop/test/unit/diagnostics-text.test.ts`（新建，6 格）
+
+```ts
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+import { CONNECTION_ERROR_KINDS } from '@dajia/protocol';
+import { DIAGNOSTIC_KIND_LIST, DIAGNOSTIC_TEXT } from '../../src/shared/diagnostics-text';
+import { classifyDbError } from '../../src/main/db/diagnostics';
+
+const HERE = fileURLToPath(new URL('.', import.meta.url));
+// unit/ → test/ → desktop/ → apps/ → 仓库根
+const DOC = readFileSync(`${HERE}../../../../docs/install-mysql.md`, 'utf8');
+
+const ERROR_KINDS = DIAGNOSTIC_KIND_LIST.filter((k) => k !== 'ok');
+
+describe('诊断文案：分型必须各说各话，且每句话都落到文档里', () => {
+  it('1 格：七型齐、三段齐，一段都不许是空话', () => {
+    expect([...DIAGNOSTIC_KIND_LIST].sort()).toEqual(
+      [
+        'denied',
+        'dropped',
+        'no-database',
+        'not-running',
+        'ok',
+        'timeout',
+        'unknown',
+      ].sort(),
+    );
+    expect(DIAGNOSTIC_KIND_LIST[0]).toBe('ok');
+    for (const kind of DIAGNOSTIC_KIND_LIST) {
+      const t = DIAGNOSTIC_TEXT[kind];
+      // `title.length > 0` 那种判据不够：一句 'x' 也算有。三段的尺各定一个下限，
+      // 短到没法照着做的"下一步"不是下一步。
+      expect(t.title.length).toBeGreaterThanOrEqual(3);
+      expect(t.detail.length).toBeGreaterThanOrEqual(8);
+      expect(t.next.length).toBeGreaterThanOrEqual(12);
+    }
+  });
+
+  it('2 格：六型的 `next` 互不相同（两句一样就等于白分型）', () => {
+    const nexts = ERROR_KINDS.map((k) => DIAGNOSTIC_TEXT[k].next);
+    expect(nexts.length).toBe(6);
+    expect(new Set(nexts).size).toBe(6);
+  });
+
+  it('3 格：没认出来那一型不许说成"服务"或"没装"（第 ⑤ 段那条红线）', () => {
+    const unknown = DIAGNOSTIC_TEXT.unknown;
+    const all = `${unknown.title} ${unknown.detail} ${unknown.next}`;
+    expect(all).not.toMatch(/服务/);
+    expect(all).not.toMatch(/没装|未安装|启动/);
+    expect(all).toContain('原文'); // 它必须给出一条能照着做的动作，而不是"不知道"
+  });
+
+  it('4 格：spec §9 点名的处境各有名字（含那个没有错误码可对的"端口占用"）', () => {
+    expect(DIAGNOSTIC_TEXT.dropped.next).toContain('占用'); // 第 ⑤ 段末：客户端拿不到 EADDRINUSE
+    expect(DIAGNOSTIC_TEXT.dropped.detail).toContain('不像 MySQL');
+    expect(DIAGNOSTIC_TEXT['not-running'].detail).toContain('没有程序在听');
+    expect(DIAGNOSTIC_TEXT.timeout.next).toContain('127.0.0.1'); // 超时那一型的下一步必须比"查网络"具体
+    expect(DIAGNOSTIC_TEXT.denied.next).toContain('口令');
+    expect(DIAGNOSTIC_TEXT['no-database'].next).toContain('建库');
+    // 两句"不许串话"：认证失败的建议里不许让人去重启服务，库不存在的建议里不许提口令。
+    expect(DIAGNOSTIC_TEXT.denied.next).not.toMatch(/启动|重启/);
+    expect(DIAGNOSTIC_TEXT['no-database'].next).not.toContain('口令');
+  });
+
+  it('5 格：三份名单逐字相同，且分类器真能把六型全打出来（覆盖全，不是六个常量各写一遍）', () => {
+    expect([...ERROR_KINDS].sort()).toEqual([...CONNECTION_ERROR_KINDS].sort());
+    const samples: Record<string, unknown> = {
+      'not-running': 'ECONNREFUSED',
+      denied: 'ER_ACCESS_DENIED_ERROR',
+      'no-database': 'ER_BAD_DB_ERROR',
+      dropped: 'PROTOCOL_CONNECTION_LOST',
+      timeout: 'ETIMEDOUT',
+      unknown: 'ER_SOMETHING_NEW',
+    };
+    const hit = Object.values(samples).map((code) =>
+      classifyDbError(Object.assign(new Error('x'), { code })),
+    );
+    expect([...new Set(hit)].sort()).toEqual([...CONNECTION_ERROR_KINDS].sort());
+    // 反向一句：样本里没有第七型 `'ok'` —— `'ok'` 是"连上了"，不是分类结果。
+    expect(hit).not.toContain('ok');
+  });
+
+  it('6 格：每一型的 `next` 都逐字出现在 docs/install-mysql.md 里（验收 6 的那颗牙）', () => {
+    expect(DOC.length).toBeGreaterThan(600); // 别让一份空壳文档过掉这一格
+    for (const kind of ERROR_KINDS) {
+      expect(DOC).toContain(DIAGNOSTIC_TEXT[kind].next);
+    }
+    // 文档里必须给"下一步"三个字留一个读者：安装、启动、账号、库、端口、防火墙六件事各有小节。
+    for (const word of ['安装', '启动', '口令', '建库', '端口', '防火墙']) {
+      expect(DOC).toContain(word);
+    }
+  });
+});
+```
+
+Run: `npx vitest run apps/desktop/test/unit/diagnostics.test.ts apps/desktop/test/unit/diagnostics-text.test.ts > tmp/t9-diag.log 2>&1; echo "exit=$?"`
+Expected：**Step 4 之前这一发必然红**，而且只许红在第 6 格（`docs/install-mysql.md` 还不存在 ⇒ `readFileSync` 抛 `ENOENT`，整格红）。这一发同时是"文件名与相对路径写对了"的证明：如果红在**读文件之前**的 import 上，那是 `../../src/shared/diagnostics-text` 那条相对路径写错，不是文档没写 —— 两种红长得一样，先把栈读完整再动手。
+
+- [ ] **Step 4: `docs/install-mysql.md` —— 让六句话都有落点，让验收 6 有一半能判**
+
+这份文档不是"给运维看的参考"，它是 `DIAGNOSTIC_TEXT[kind].next` 那六句话的**答案正文**。所以它的结构按分型走，一节一型，标题用面板上的原话（用户看到的是面板，不是我们的类型名）。
+
+新建 `docs/install-mysql.md`：
+
+````markdown
+# 装好 MySQL，让搭家连上它
+
+搭家把工程存在**本机的 MySQL 8** 里（不是云端，也不是文件）。这台机器上还没装过 MySQL 的话，
+照这一页做完就能连上；已经装过但连不上，直接跳到最后那张「按面板上的话找小节」的表。
+
+> 这一页只在 Windows 上实测过。别的系统上步骤类似（服务名与防火墙入口不同），
+> 遇到的错误原文都能在最后一张表里找到对应小节。
+
+## 1. 装
+
+1. 到 MySQL 官网下载 **MySQL 8.x 的 Windows 安装包**（`mysql-installer-community`）。
+2. 选 `Server only` 也够用；带 Workbench 的话顺手能看表。
+3. 安装向导会让你**设 root 口令**。那个口令就是你之后填进搭家向导的那一个，
+   忘了就只能改（见「认证失败」一节）。
+4. 网络那一屏选默认：绑定 `127.0.0.1`、端口 `3306`、开机自启。
+
+装完打开「服务」(`services.mysc`) 看一眼：应该有一条 `MySQL80`（或你起的名字），状态「正在运行」。
+
+## 2. 建库建表
+
+搭家用一个独立的库 `dajia`，不碰你已有的别的库。建它需要跑一次程序里的迁移；
+手敲 SQL 的话，先导出语句：
+
+```bash
+pnpm db:sql
+```
+
+把打印出来的内容按顺序执行（`mysql` 命令行客户端没进 PATH 就用 Workbench 的查询窗口贴进去）。
+它做的事：建 `_migration` / `project` / `element` / `storey` / `command_log` / `snapshot` / `asset` 七张表。
+重复执行是安全的（全是 `IF NOT EXISTS`）。
+
+测试用的库叫 `dajia_test`，由 `pnpm test:db` 自己建自己删，**不需要你手动建，也不要把手头工程存在它里面**。
+
+## 3. 在搭家里填连接
+
+菜单栏「工程 → 连接设置」，填四格：主机名、端口、用户名、口令。
+
+- 本机自己用：`127.0.0.1` / `3306` / `root` / 你安装时设的那个口令。
+- 口令存进磁盘之前会用系统的安全存储（Windows 的 DPAPI）加密，**不明文落盘**。
+- 如果提示「这台机器的安全存储不可用」，那一台机器就先别存，每次启动重填；
+  我们不会为了让你省事把口令写成明文。
+
+填完点「测试连接」。它只读一下版本号，不写任何东西。
+
+## 4. 按面板上的话找小节
+
+下面每一段引的是面板上那句「下一步」的原文，一条一个字都不许改
+（`apps/desktop/test/unit/diagnostics-text.test.ts` 第 6 格逐字对账；改文案必须同时改这里）。
+
+### 连不上这个地址
+
+> 先确认服务已经启动，再确认主机名和端口填的是同一台机器上那一套。
+
+- 「服务」里那条 MySQL 是不是「正在运行」；不是就右键启动。
+- 主机名是不是拼错了：本机就写 `127.0.0.1`，写机器名要靠 DNS 解析，解析不到也是这一型。
+- 端口是不是被安装向导改过（不是 3306）。
+
+### 认证失败
+
+> 按安装说明的「认证失败」一节三步排查：用户名、口令、认证插件。
+
+1. 用户名：本机默认是 `root`，注意别连着输入了空格。
+2. 口令：忘了就改 —— 用安装向导重新配置一次 Server，或者以服务身份重启后按官方流程重设。
+3. 认证插件：MySQL 8 默认 `caching_sha2_password`。如果报的是 `ER_NOT_SUPPORTED_AUTH_MODE`，
+   说明这个账号用的插件与驱动对不上，把该账号改成 `mysql_native_password` 再试
+   （只改这一个账号，不要改服务的全局默认）。
+
+### 库不存在
+
+> 按安装说明的「库不存在」一节建库建表，`pnpm db:sql` 可以导出建表语句。
+
+回到第 2 节，跑 `pnpm db:sql` 把语句执行一遍。这一型的错误码是 `ER_BAD_DB_ERROR`，
+意思是**连上了服务器，只是那个库还没建**——不要重装 MySQL，也不要改口令。
+
+### 连上了又被断开
+
+> 先看 3306 端口被哪个程序占用；不是 MySQL 就改端口，是 MySQL 就是服务中途重启了。
+
+这一型对应的症状是"能连上，但对面说的话不像 MySQL"。查一下是谁在听 3306：
+
+```
+netstat -ano | findstr :3306
+tasklist /FI "PID eq <上面那个 PID>"
+```
+
+- 不是 MySQL 进程 ⇒ 端口被别的程序占了。要么停掉它，要么把 MySQL 换到别的端口，
+  向导里填那个新端口。
+- 是 MySQL 进程 ⇒ 服务在你点「测试连接」之后重启过（或崩了）。看服务的事件日志。
+
+> 说明：面板上不会出现「端口被占用」这种原话，因为客户端拿不到 `EADDRINUSE`（那是监听端的错）。
+> 这一型就是它的客户端视图。
+
+### 等回应等超时
+
+> 先改用 127.0.0.1 试一次；还不行就去看安装说明「连不上但超时」一节的防火墙那一头。
+
+- 填的是别的机器？先在这台机器上按第 1 节装一个本机实例，把远程那一步晚点再做。
+- Windows Defender 防火墙 / 公司网络的出站规则会**悄悄丢包**：被拒（`ECONNREFUSED`）与超时
+  是两件事，超时多半就是丢包。
+- 我们的试连上限是 5 秒（`CONFIG_TEST_CONNECT_TIMEOUT_MS`）。超过 5 秒没结果就报这一型，
+  不会让你白等。
+
+### 这一条我们没认出来
+
+> 点「一键复制诊断」把原文贴出来查，或按原文里的错误码搜索。
+
+这一型**故意不说原因**。把原文带上（它不含口令）：错误码是 `ER_*` 的一律是服务端报的，
+按官方错误表查；是 `E*` 的一律是系统网络层的，按 Node 的错误表查。
+
+## 5. 装好之后
+
+菜单「工程 → 新建工程」起个名字，搭家会建一个工程并放好第一层（标高 0mm、层高 3000mm）。
+之后所有改动都是即时保存：每发命令进流水，攒够了或你停手 60 秒再合并一次快照。
+
+MySQL 一直开着就行。如果哪天它停了，屏幕上会出现一条红横幅 —— **你画的东西还在内存里**，
+先把服务启动再点重试，别急着关窗口。
+````
+
+Run: `npx vitest run apps/desktop/test/unit/diagnostics.test.ts apps/desktop/test/unit/diagnostics-text.test.ts > tmp/t9-diag.log 2>&1; echo "exit=$?"`
+Expected：**exit=0**，`diagnostics.test.ts` **8 格**、`diagnostics-text.test.ts` **6 格**。
+
+再量一次「逐字对账真的会响」——这一步**不许省**，因为第 6 格最怕的形状是"文档里恰好把六句话都写了一遍但读的是另一份文件"：
+
+```bash
+cp docs/install-mysql.md tmp/install-mysql.md.bak
+```
+
+用编辑工具把「库不存在」那一节的引文里 `pnpm db:sql` 改成 `pnpm dbsql`（只改这一处），复跑：
+
+```bash
+npx vitest run apps/desktop/test/unit/diagnostics-text.test.ts > tmp/t9-diag-mutant.log 2>&1; echo "exit=$?"
+```
+
+Expected：`exit` 非 0，且红在第 6 格、红的那一型是 `no-database`。然后**用 `cp` 还原**（不许 `git checkout`）、再复跑一次上面那条 `npx vitest run`，Expected `exit=0`，并把两次读数写进回填：`变异前 exit=0 / 变异中 exit=<值> / 还原后 exit=<值>`。
+
+> 文档里有两处**故意不许被逐字对账**：`## 4` 那六句引文之外，正文里还有一句「按安装说明的『认证失败』一节三步排查」在讲自己 —— 它同时出现在文案与文档里，是对账最容易误绿的地方（引文段落把文案自己抄进去就"永远对上了"）。第 6 格吃的是 `DOC` 全文，所以这句话确实**自指**了一次。防线是把 `## 4` 的每一节写成**引用块**：`expect(DOC).toContain(...)` 不区分引用块与正文，所以真正的牙在**变异复跑**那一步——它证明改文案正文会让对应那一格红。这一条登记进 Task 9 的限度（Step 10 末尾那一族）：「第 6 格对全文件判，文案与文档相互引用 ⇒ 单靠这一格不能证『文档独立成了』；已用变异复跑补一次」。
+
+Commit：`git add apps/desktop/src/main/db/diagnostics.ts apps/desktop/src/main/db/pool.ts apps/desktop/src/shared/diagnostics-text.ts apps/desktop/test/unit/diagnostics.test.ts apps/desktop/test/unit/diagnostics-text.test.ts docs/install-mysql.md` + 计划文本（控制位提交，见 t9g 的 Step 10 那一族提交切分）。
+
+---
+
+- [ ] **Step 5: 一个类、一处回改、一支 `instanceof` —— 把 `'no-project'` 从"字符串比较"变成"身份"**
+
+**① `apps/desktop/src/main/db/errors.ts`（新建，运行时零 import）**
+
+```ts
+/**
+ * `'no-project'` 这个码的**唯一产地**（第 ⑥ 段）。
+ *
+ * 为什么是一个类而不是一个 `code` 字段：`persistErrorCode` 的现有规则是"有 string `code` ⇒ `'db'`"
+ * （mysql2 抛的东西一律带 `code`，那条规则的全部用途就是把"驱动说的错"归给"查服务"）。
+ * 给自家错误也塞一个 `code`，等于让它冒领驱动错误的形状 —— 下一版规则一改，
+ * "这个工程不存在"就会被归成"服务没起来"，而那是两条不同的下一步。
+ *
+ * 为什么零 import：抛它的是 `db/repository.ts`（T5），认它的是 `persist/session.ts`（T8）。
+ * 两个目录都要能 import 它，而 `persist/**` 一旦因为别的原因认识 `db/**` 就连了方向；
+ * 只有"运行时谁都不认识"的文件能同时住在两边。它连 `@dajia/core` 的 `EntityId` 都只用 `string`
+ * 表达：带上一行模块导入就不算零 import 了 —— 哪怕写成 `import type`（编译后确实被抹掉），
+ * 那条判据扫的是源码里还留着模块说明符这件事（`persist-boundary.test.ts` 第 7 格），
+ * 而这一发的调用者只有 `repository.ts` 一处，它传的本来就是 `this.projectId`。
+ *
+ * 为什么**不留字段**：`projectId` 拼进文案就丢了。一个没人读的 public 字段是给下一个编辑者的谜题
+ * （"这大概是留给谁用的？"），而此刻唯一的读者 `wrap` 只认 `instanceof` 与 `message`（同 P-15
+ * 那条"不许为测试留钩子"）。真要它，就回来加字段**并同时**加一个读者与一格判据。
+ */
+export class MissingProjectError extends Error {
+  constructor(projectId: string) {
+    // 这一句是 T5 的 `loadProject` 原话，**逐字**搬过来（换类不换话）。
+    // 它的旧证人在连库那一档：`test/db/repository.test.ts` 里「工程不在库里 ⇒ 拒开，且文案点名它」
+    // 那一格判的是 `/工程 ${PROJECT_ID} 不在库里/` —— 它不需要改写，也正因为不需要改写，
+    // 它是这一处改动唯一"老判据仍然会红"的证据。
+    super(
+      `工程 ${projectId} 不在库里：要么它从没建过，要么它已经被删；不能凭空开一份文档当它是读来的`,
+    );
+    this.name = 'MissingProjectError';
+  }
+}
+```
+
+**② `apps/desktop/src/main/db/repository.ts` 四处回改**
+
+**改动 1 —— import 加一行**（T5 已有的那两行 `from '@dajia/protocol'` / `from './env'` 一字不动）：
+
+```ts
+import { MissingProjectError } from './errors';
+```
+
+同时把 `@dajia/protocol` 那一行的成员补两个名字（**改现有那行，不加第二行** —— 同文件两行 import 同一个模块说明符是这一族文件里唯一的例外写法，别开这个先例）：
+
+```ts
+import { JournalTurnSchema, ProjectSummarySchema, type ProjectSummary } from '@dajia/protocol';
+```
+
+> `<待实测>`：`repository.ts` 里 protocol 那行 import 现在具体列了哪几个名字，以盘上现物为准。补 `ProjectSummarySchema` 与 `type ProjectSummary` 两个成员即可，别把 T4/T5 已有的成员换成"顺手整理"后的写法。
+
+**改动 2 —— `loadProject` 缺行那一发**（唯一一处，`if (!project)` 那个块）：
+
+```ts
+      const project = (projectRows as ProjectRow[])[0];
+      if (!project) {
+        throw new MissingProjectError(this.projectId);
+      }
+```
+
+原来那一发是 `throw new RangeError(\`工程 ${this.projectId} 不在库里：…\`)`，文案搬进构造函数，**一个字符都不改**。除此之外 `loadProject` 一个字节不动 —— 尤其不许顺手把 `schema_version` 那一发与 `snapshot` 那两发也换成类（它们是"盘上有账但对不上"，正解就是 `'reconcile'`）。
+
+**改动 3 —— 类里新增 `deleteProject()`，紧贴在 `createProject` 之后**（两者是补偿的一对，隔开放就看不出配了）：
+
+```ts
+  /**
+   * 补偿用（第 ② 段）：删掉自己那一行，`element` / `storey` / `command_log` / `snapshot` / `asset`
+   * 五张子表靠 T2 建好的 `ON DELETE CASCADE` 一起走。
+   * **删不到也算成功** —— 补偿的语义是"确保没有"，不是"确认刚才有"。拿 `affectedRows` 抛会把
+   * "另一条链已经先删过"报成故障，而那一刻真正该做的是继续往下走（同 T4 对 `affectedRows` 的那条纪律：
+   * 判决不来自它）。
+   * 不做 `journal_turn === 0` 的前置检查：这一发要能删掉半建成（turn 1 已落）与建成但没人开过的工程，
+   * 一个都不该留 —— 留着哪一个都会在列表里变成一个点不开的小图标。
+   */
+  async deleteProject(): Promise<void> {
+    await this.pool.query('DELETE FROM `project` WHERE `id` = ?', [this.projectId]);
+  }
+```
+
+**改动 4 —— 模块级 `listProjects(pool)`，放在类定义之后**（第 ⑨ 段：它不是类方法，因为那个类每次查询都带 `WHERE project_id = ?`，而列表要的正是别的工程的行）：
+
+```ts
+/** `listProjects` 的一行读数。列名按 SQL 原样写，与 T4/T5 那几把 row 尺同一个风格。 */
+interface ProjectListRow {
+  readonly id: string;
+  readonly name: string;
+  readonly schema_version: unknown;
+  readonly journal_turn: unknown;
+  readonly updated_at: string;
+  readonly locked: unknown;
+}
+
+/**
+ * 0/1 的读数。**不写 `Boolean(...)`**：`Boolean('0')` 是 `true`，
+ * 而"字符串 0 被说成真"正是列表把没锁的工程说成锁着的那条路。
+ * 形状一变（驱动哪天回 `true`/`null`）就拒读而不是猜 —— 列表里那个锁记号的唯一读者
+ * 是"打开它，让 T6 去裁决"那个按钮，猜错不会伤人，但撒谎会。
+ *
+ * 登记的限度：这一发的抛在 unit 里测不到（它是模块私有，而库里这一列只可能给 0/1）。
+ * 它的价值是**封路**：把"哪天驱动换个形状就把没锁的说成锁着"这条路变成一次红，
+ * 而不是一次静默的误报。真凭据在 `test/db/projects.test.ts`（锁着/没锁着两行各种）。
+ */
+function toBit(raw: unknown, label: string): boolean {
+  if (raw === 1 || raw === 0) return raw === 1;
+  throw new RangeError(`${label} 的读数 ${String(raw)} 不是 0/1，拒读`);
+}
+
+function summaryFromRow(row: ProjectListRow): ProjectSummary {
+  return ProjectSummarySchema.parse({
+    projectId: row.id,
+    name: row.name,
+    // 两把 `asSafeInt64` 都在（T5 的私有函数，同一个文件里第二个读者）：
+    // `schema_version` 是 INT 不会越界，但把"越界怎么办"这件事写成第二份 `Number(...)`
+    // 才是这一族真正的漂移源。`journal_turn` 是 BIGINT，越界是设计里就有的处境（P-17），
+    // 那一发由 `test/db/projects.test.ts` 第 6 格用一行 `journal_turn = 9007199254740993` 逼出来。
+    schemaVersion: asSafeInt64(row.schema_version, 'project.schema_version'),
+    journalTurn: asSafeInt64(row.journal_turn, `project ${row.id} 的 journal_turn`),
+    // `dateStrings: true` ⇒ 这里拿到的是 `'2026-10-04 11:22:33.444'` 这样的**服务端**原话。
+    // 不做任何换算、不格式化（P-4）：面板上那句"上次改动"读的就是库里那句话。
+    updatedAt: row.updated_at,
+    locked: toBit(row.locked, '`lock_owner` IS NOT NULL'),
+  });
+}
+
+/**
+ * 工程列表。六列点名（`SELECT *` 会把 `lock_token` 与 `clean_shutdown` 也拖过来，
+ * 而那两个字段一个不该过界、一个此刻没有读者）—— 这条与 T8 第 ④ 段"格子要有读者"同一条尺。
+ *
+ * 排序 `ORDER BY updated_at DESC, id ASC`：第二把 `id` 是**故意的**稳定针。同毫秒保存两个工程
+ * （`DATETIME(3)` 会撞）时，没有它就有"两次刷新顺序不同"，而 T10/T11 的截图判据要吃这个列表。
+ *
+ * 不分页（第 ⑨ 段：S1 一台机器上的工程数量级是十）。这条限度登记在 Step 10 的表里。
+ * 这里也**不开事务、不加 `FOR UPDATE`**：列表是一次读，锁的事由点开之后的会话裁决。
+ */
+export async function listProjects(pool: Pool): Promise<ProjectSummary[]> {
+  const [rows] = await pool.query(
+    'SELECT `id`, `name`, `schema_version`, `journal_turn`, `updated_at`, (`lock_owner` IS NOT NULL) AS `locked` ' +
+      'FROM `project` ORDER BY `updated_at` DESC, `id` ASC',
+  );
+  return (rows as ProjectListRow[]).map(summaryFromRow);
+}
+```
+
+> 出口即验：`ProjectSummarySchema.parse` 是这一族文件的既有写法（T4 的 `appendJournal` 第一行就是 `JournalTurnSchema.parse(entry.turn)`）。它的价值在"`projectId` 不是合法 uuid ⇒ 这条列表整体拒出"，而不是"面板少画一行"。
+
+**③（裁决 P-28）`persist/session.ts` 只改一个函数体**
+
+`persistErrorCode` 整体替换（其余一切 —— `ProjectSession` 的十个方法、`PersistPorts` 的八个键、`withTimeout`、`wrap`、`CLOSE_FLUSH_TIMEOUT_MS` —— 一字不动）：
+
+> **一处后来加的例外**（t9d 第 ② 段 P-30）：本任务的 Step 7 要把 `wrap` 与 `persistErrorCode` 复用给 `persist/admin.ts`，所以这两个名字各加一个 `export` 关键字 —— **函数体一字不动**，只是从私有变成可导入。这一格之所以不在这里就写进上面那句话：它是 Step 7 落盘时才需要的改动，本 Step 若先加 `export`，`noUnusedLocals` 不管导出、于是 tsc 照绿，但"改动只有一处"这句回填话就说不干净了。Step 7 的 Files 行按"三处：一个函数体 + 两个 `export`"落账（t9a 已按这条订正）。
+
+```ts
+function persistErrorCode(err: unknown): PersistErrorCode {
+  // T9 第 ⑥ 段：自家那一发"工程不在库里"必须先认 —— 它有身份、没有 `code`，
+  // 走到下面那行会被读成 `'reconcile'`，屏幕上就会说"这份账坏了先别再动"，
+  // 而真相是"这个工程不存在，去新建一个"。两条下一步是相反的。
+  if (err instanceof MissingProjectError) return 'no-project';
+  const code = typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined;
+  return typeof code === 'string' && code.length > 0 ? 'db' : 'reconcile';
+}
+```
+
+import 加一行（这是本文件**第一条**来自 `db/**` 的运行时 import —— T8 那两条都是 `import type`；第 ⑥ 段说清了为什么这一条必须是运行时：`instanceof` 要拿类本体比，类型比不上）：
+
+```ts
+import { MissingProjectError } from '../db/errors';
+```
+
+**为什么不顺手把端口改成"能递出 `'no-project'`"**（P-28 的另一半，写给下一个想"修好它"的人）：T6 的 `acquireLock` 本来就知道那一型 —— 它的返回值里有 `'no-project'`，而 T8 的 `acquire` 端口把它压成了 `null`（`PersistPorts` 的注释就写着"`null` = 没拿到（`'busy'` 或 `'no-project'`）"）。把这条信息从端口里救出来要动 `DbHandle`/`acquire` 的签名，而 T8 那 16 格有一半判的就是这个签名。**代价照登记**：一个不存在的工程会走满 `open()` 的前三段（配 → 连 → 试锁）才在第四段得到 `'no-project'`，多花两发 SQL。换来的是"这个工程不存在"这件事**只有一个产地**（读路径那一发），而 busy/no-project 分家不会在两处各判一次、漂开一次。
+
+- [ ] **Step 5 续：`apps/desktop/test/unit/session.test.ts` 追加 4 格（16 ⇒ 20）**
+
+改动两处：顶部 import 加一行 `import { MissingProjectError } from '../../src/main/db/errors';`；文件末尾追加下面那个 `describe`。**原有 16 格与夹具（`harness` / `opened` / `FakeRepo.loadThrows` / `closeThrows`）一字不动** —— 这四格全部走现成的注入点，这正是 P-15 要的形状：不改产品代码去迁就测试。
+
+```ts
+describe('T9 的分型补格：no-project 有身份，不对称有证人', () => {
+  it('17. 缺行那一发 ⇒ no-project，屏幕上说的是 T5 的原话，且会话拆干净', async () => {
+    const ctx = harness();
+    ctx.repo.loadThrows = new MissingProjectError(PID);
+    const err = await ctx.session.open(PID).then(() => null).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SessionError);
+    expect((err as SessionError).code).toBe('no-project');
+    // 文案逐字：`wrap` 只会前置"读不出这份工程：MissingProjectError: "，不许改写后半句。
+    expect((err as SessionError).message).toContain(
+      `工程 ${PID} 不在库里：要么它从没建过，要么它已经被删；不能凭空开一份文档当它是读来的`,
+    );
+    expect(ctx.calls).toContain('release');
+    expect(ctx.calls).toContain('end');
+    expect(ctx.session.active).toBe(false);
+  });
+
+  it('18. 同一发位置的三种错各归各码：新支路只吃这一型，其余照旧', async () => {
+    const missing = harness();
+    missing.repo.loadThrows = new MissingProjectError(PID);
+    await expect(missing.session.open(PID)).rejects.toMatchObject({ code: 'no-project' });
+
+    // 带 `code` 的一律 `'db'`（"查服务"），哪怕它长得像我们自己的错。
+    const driver = harness();
+    driver.repo.loadThrows = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+    await expect(driver.session.open(PID)).rejects.toMatchObject({ code: 'db' });
+
+    // 不带 `code` 的自家抛仍是 `'reconcile'`（"先别再写"）：这一格是"新支路没有把别的日子也接管走"的证人。
+    const ours = harness();
+    ours.repo.loadThrows = new RangeError('snapshot 行 7 的 schema_version 是 2，工程头记的是 1');
+    await expect(ours.session.open(PID)).rejects.toMatchObject({ code: 'reconcile' });
+  });
+
+  it('19. MissingProjectError 只有身份与文案：不给 code 字段，也不留 projectId 字段', () => {
+    const err = new MissingProjectError(PID);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe('MissingProjectError');
+    // 第一条是 P-26 的正面：它不许冒领 mysql2 错误的形状（有 `code` ⇒ 会被归成 `'db'`）。
+    expect((err as { code?: unknown }).code).toBeUndefined();
+    // 第二条是"不留字段"的证人：哪天有人加回来，这一格红，逼他同时写出那个读者。
+    expect((err as { projectId?: unknown }).projectId).toBeUndefined();
+  });
+
+  it('20. 有意不对称：close 里那句"不在库里：没有可收尾的账"仍是 reconcile', async () => {
+    const ctx = await opened();
+    // T5 的 `closeProject` 缺行那一发**故意不换类**：此刻会话开着、账在动，
+    // 唯一正确的建议是"这份账先别再动"，而不是"去建个工程"（第 ⑥ 段末）。
+    ctx.repo.closeThrows = new RangeError(`工程 ${PID} 不在库里：没有可收尾的账`);
+    await expect(ctx.session.close(closeReq(PID, DOC, 'graceful'))).rejects.toMatchObject({
+      code: 'reconcile',
+    });
+    expect(ctx.session.active).toBe(false);
+  });
+});
+```
+
+Run: `npx vitest run apps/desktop/test/unit/session.test.ts > tmp/t9-step5.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`，`session.test.ts` **20 格**（16 + 4）。再跑 `npx tsc --noEmit -p apps/desktop/tsconfig.test.json > tmp/t9-step5-tsc.log 2>&1; echo "exit=$?"` —— 这一发还抓得住一件运行抓不到的事：`'no-project'` 不在 `PersistErrorCode` 闭集里的话，`return 'no-project'` 是类型错而不是运行错。
+
+**本步的变异靶**（编号并入 Step 10 的总表；`cp` 备份 + md5 校验还原，绝不 `git checkout`）：
+
+| 编号 | 变异 | 预计红在哪 |
+|---|---|---|
+| T9-M9 | 把 `instanceof` 那一支挪到 `code` 判断**之后** | 格 17 / 格 18 第一发（变 `'reconcile'`）—— 顺序就是这条裁决的全部内容 |
+| T9-M10 | 给 `MissingProjectError` 加 `readonly code = 'no-project'` 并删掉 `instanceof` 支 | 格 19 第一条红；而**格 17 会照样绿** —— 这一对就是"看绿不足以证明按规矩改的"的证人 |
+| T9-M11 | `loadProject` 换类时顺手把文案改成"这个工程不存在，请新建" | 格 17 的 `toContain` 红 + 连库档 T5 那一格红（两个产地） |
+| T9-M12 | `closeProject` 缺行那一发也换成 `MissingProjectError` | 格 20 红（变 `'no-project'`）—— 有意不对称被抹平的时刻 |
+| T9-M13 | `deleteProject` 加 `if (affectedRows === 0) throw` | 连库档 `projects.test.ts` **第 4 格**（t9d 的补偿语义格：级联真带走的三张表 + 重复删应当静默成功）红 —— 本条的凭据在 t9d，不在本块 |
+| T9-M14 | `listProjects` 的 SQL 补一句 `WHERE project_id = ?`（"顺手复用归属守卫"） | 连库档列表格红（列表变空）—— 第 ⑨ 段那条"它要的就是别的工程的行" |
+
+---
+
+- [ ] **Step 6: `apps/desktop/src/main/persist/config-store.ts` —— 口令只以密文的形式存在于盘上**
+
+**① 产品代码（新建；`node:fs` + `node:path`，**运行时不 import electron**，P-27）**
+
+```ts
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  ConfigDatabaseSchema,
+  ConfigRecordSchema,
+  type ConfigRecord,
+  type ConfigState,
+  type ConfigValue,
+  type ConnectionInput,
+} from '@dajia/protocol';
+import { assertDatabaseName } from '../db/db-safety';
+import type { MysqlEnv } from '../db/env';
+
+/** 盘上那个文件的名字。它是 `userData` 目录里唯一属于我们的凭据件（抢救件在另一个目录，T7）。 */
+export const CONFIG_FILE_NAME = 'connection.bin';
+
+/**
+ * 加解密的全部接口。三格，一个都不多 —— 尤其**没有**"算法/密钥/路径"这类旋钮：
+ * 那等于把"用系统密钥环"这个决定重新打开一次。
+ * `available` 必须是**读数**而不是方法：`writeConfig` 要在使用它之前先看一眼，
+ * 而"看一眼"与"试一下再 catch"是两种形状（后者会把"加密器坏了"与"口令太长"混成同一个 catch）。
+ */
+export interface ByteCipher {
+  readonly available: boolean;
+  encrypt(text: string): Uint8Array;
+  decrypt(bytes: Uint8Array): string;
+}
+
+export type ConfigErrorKind = 'missing' | 'unreadable' | 'unavailable';
+
+/**
+ * 配置读不出来的三种处境。`kind` 是 main 侧的内部三分法，**不进 protocol**（第 ⑦ 段末）：
+ * 屏幕看到的是 `ConfigValue.state` 那一格三值，以及这一发的 `message`。
+ *
+ * 为什么文案里没有底层错误的原文（裁决 P-29，与 `admin.ts` 的 `detail` 相反）：
+ * 这一整份文件就是密文，解密器抛的时候很常见地把**它吃进去的字节**抄进 message，
+ * 而我们无法保证那些字节与口令没有重叠的形状（`safeStorage` 哪天换个包装就是未知）。
+ * 试连的原文有诊断价值（`kind` 要从里面认），这一发的价值只有"重填一次" —— 不需要原话就能定的下一步，
+ * 就别带上可能含密文的东西。凭据 = `config-store.test.ts` 第 6 格（假 cipher 抛的 message 里种 SENTINEL，
+ * 两处出口都不许把它带出来）。
+ */
+export class ConfigError extends Error {
+  constructor(
+    readonly kind: ConfigErrorKind,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ConfigError';
+  }
+}
+
+const MISSING_TEXT = (path: string) =>
+  `还没有连接配置：在「工程 → 连接设置」里填一次并保存（配置文件位置：${path}）`;
+const UNAVAILABLE_TEXT = (path: string) =>
+  `这台机器的系统加密不可用（safeStorage 起不来）：为了不把口令明文写在盘上，` +
+  `这里拒绝保存也拒绝使用（${path}）`;
+const UNREADABLE_TEXT = (path: string) =>
+  `连接配置读不出来 —— 文件坏了，或换过机器/换过 Windows 用户导致系统密钥变了。` +
+  `在「工程 → 连接设置」里重填一次即可（${path}）`;
+
+const TEXT_BY_KIND: Record<ConfigErrorKind, (path: string) => string> = {
+  missing: MISSING_TEXT,
+  unavailable: UNAVAILABLE_TEXT,
+  unreadable: UNREADABLE_TEXT,
+};
+
+function configPath(userDataDir: string): string {
+  return join(userDataDir, CONFIG_FILE_NAME);
+}
+
+/**
+ * 一次读，两种出口共用（第 ⑦ 段"两个出口、一份文件"的字面形状）。
+ * 分成 `probeConfig` 与 `readConfig` 两份各读一遍文件是**错的**：那会得到两个事实
+ * （probe 说 `ready` 而 read 抛），而屏幕上刚显示"已配置"的那一格立刻在下一发变成错误。
+ *
+ * 三种失败的**先后**也是判据（`missing` 先于 `unavailable`）：文件根本不存在时，
+ * 加密器可用与否都不相干 —— 那句该说的话是"还没配"，不是"这台机器存不了口令"。
+ * 反过来（先查 available）会让一台没配过的空机器上的首屏说成"加密不可用"，
+ * 而那是一个此刻根本不是问题的问题。
+ */
+type Read =
+  | { readonly ok: true; readonly record: ConfigRecord }
+  | { readonly ok: false; readonly reason: ConfigErrorKind };
+
+function attempt(userDataDir: string, cipher: ByteCipher): Read {
+  const path = configPath(userDataDir);
+  if (!existsSync(path)) return { ok: false, reason: 'missing' };
+  if (!cipher.available) return { ok: false, reason: 'unavailable' };
+  let text: string;
+  try {
+    text = cipher.decrypt(readFileSync(path));
+  } catch {
+    return { ok: false, reason: 'unreadable' };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return { ok: false, reason: 'unreadable' };
+  }
+  const r = ConfigRecordSchema.safeParse(parsed);
+  if (!r.success) return { ok: false, reason: 'unreadable' };
+  return { ok: true, record: r.data };
+}
+
+/** 未配与读不出来都回"四个回显格全 null"：`ConfigValueSchema` 那条 refine 判的就是这件事同向。 */
+function blankValue(state: ConfigState, cipher: ByteCipher): ConfigValue {
+  return {
+    state,
+    encryptionAvailable: cipher.available,
+    host: null,
+    port: null,
+    user: null,
+    database: null,
+  };
+}
+
+/**
+ * 首屏与保存之后回的那一份：**永不抛**。"没配"是首屏要显示的常态，
+ * 而会话拿不到能用的参数才是异常 —— 那一半归 `readConfig`（它的抛经 T8 的
+ * `wrap(err, 'not-configured', …)` 变成横幅上那句人话）。
+ */
+export function probeConfig(userDataDir: string, cipher: ByteCipher): ConfigValue {
+  const r = attempt(userDataDir, cipher);
+  if (!r.ok) return blankValue(r.reason === 'missing' ? 'unset' : 'unreadable', cipher);
+  return {
+    state: 'ready',
+    encryptionAvailable: cipher.available,
+    // 回显四格，口令不在其列：这份东西要进屏幕、进日志、进截图判据，
+    // 而它唯一的用途是让用户看见自己填了什么。
+    host: r.record.host,
+    port: r.record.port,
+    user: r.record.user,
+    database: r.record.database,
+  };
+}
+
+/** 会话与试连用的那一份：抛，且带 `ConfigErrorKind` 让 main 能说清是哪一种。 */
+export function readConfig(userDataDir: string, cipher: ByteCipher): ConfigRecord {
+  const r = attempt(userDataDir, cipher);
+  if (r.ok) return r.record;
+  throw new ConfigError(r.reason, TEXT_BY_KIND[r.reason](configPath(userDataDir)));
+}
+
+/**
+ * 保存。返回 `probeConfig(...)` 而不是 `void`：**写完立刻以读的那条路验一遍** ——
+ * 于是"存进去了"这句话的证据是"读得回来"，而不是"我以为 writeFileSync 成功了"。
+ * 也正因为如此，向导上那句"已保存"永远与回显同源。
+ */
+export function writeConfig(
+  userDataDir: string,
+  cipher: ByteCipher,
+  input: ConnectionInput,
+): ConfigValue {
+  if (!cipher.available) {
+    // 产品决定（第 ⑦ 段）：宁可这台机器配不上连接，也不把口令写在盘上等人来读。
+    // 这一支**在任何 fs 调用之前**：不许 mkdir、不许写、更不许把已有那份覆盖成明文。
+    throw new ConfigError('unavailable', UNAVAILABLE_TEXT(configPath(userDataDir)));
+  }
+  // 库名不在向导里（第 ⑧ 段）：它的唯一产地是 `ConfigDatabaseSchema` 的第一格，
+  // 而新文件第 4 格钉住那个 enum 只有一个值。这里写 `ConfigDatabaseSchema.options[0]`
+  // 而不是 `'dajia'`，是为了让"哪天放开它"必须过 schema 那一格而不是这个字符串。
+  const record = ConfigRecordSchema.parse({
+    ...input,
+    database: ConfigDatabaseSchema.options[0],
+  });
+  const path = configPath(userDataDir);
+  // `userData` 目录在首屏时可能还不存在（Electron 建它是在 app ready 之后，而我们这一发
+  // 可能跑在装配路径更早的地方）。ENOENT 不是"用户填错了"，所以这里补目录而不是抛。
+  if (!existsSync(userDataDir)) mkdirSync(userDataDir, { recursive: true });
+  writeFileSync(path, cipher.encrypt(JSON.stringify(record)), { mode: 0o600 });
+  return probeConfig(userDataDir, cipher);
+}
+
+/**
+ * 存储层的第二次把关（第 ⑧ 段末）：`ConfigDatabaseSchema` 管线上形状，
+ * `assertDatabaseName`（T1 的白名单）管"这个东西真要拿去连库了没有"。
+ * 两句都不是冗余：前者会随协议漂，后者会随库名策略漂，漂开的那一刻这里抛，而不是连到 `dajia_test` 上写。
+ */
+export function configToEnv(record: ConfigRecord): MysqlEnv {
+  return {
+    host: record.host,
+    port: record.port,
+    user: record.user,
+    password: record.password,
+    database: assertDatabaseName(record.database),
+  };
+}
+```
+
+> 三处写在代码里的纪律，评审最容易在这里说"顺手简化"：
+> ① `mode: 0o600` 在 **Windows 上无效**（NTFS 看 ACL，不看 POSIX 位）。它留着是给 Linux 上的读者用的，而**这台机器上的保护其实是 DPAPI** —— 这条限度进 Step 10 的表，别拿"文件权限 600"当口令安全的一半理由。
+> ② 不做 tmp+rename 的原子写。写这个文件的时机只有向导点「保存」，一次一台机器一个用户；半写的后果是下一次 `unreadable`，而那一句人话已经存在并给出正确的下一步。加了 rename 就多一个要命名的临时件，而 T7 的抢救件目录已经证明"多一个件名就多一次对账"。
+> ③ `writeConfig` 里**没有**"先探一份旧配置"的读。旧文件被就地覆盖是刻意的：备份旧口令等于把它留在盘上第二次。
+
+**② `apps/desktop/test/unit/config-store.test.ts`（新建，10 格：真 `fs` + 真 `os.tmpdir()` + 假 cipher）**
+
+```ts
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { ConfigRecordSchema, type ConfigRecord, type ConnectionInput } from '@dajia/protocol';
+import {
+  CONFIG_FILE_NAME,
+  ConfigError,
+  configToEnv,
+  probeConfig,
+  readConfig,
+  writeConfig,
+  type ByteCipher,
+} from '../../src/main/persist/config-store';
+
+/** 哨兵串：它必须出现在"读回来的 record"里，又必须不出现在盘上、回显与任何 message 里。 */
+const SENTINEL = 'SUP3R-SENTINEL-9';
+
+const INPUT: ConnectionInput = {
+  host: '127.0.0.1',
+  port: 3306,
+  user: 'root',
+  password: SENTINEL,
+};
+
+/**
+ * 假 cipher：base64 往返 + 一个**显式前缀**。
+ * 前缀不是为了安全（base64 谁都解得开），是为了让"写盘有没有经过 cipher"这一件事
+ * 在字节上可见 —— 少了它，`writeFileSync(path, JSON.stringify(record))` 这种破口
+ * 在这一族判据里会全绿（因为读得回来、也没有 SENTINEL 之外的差异）。
+ */
+class FakeCipher implements ByteCipher {
+  readonly calls: string[] = [];
+  available = true;
+  /** 让 decrypt 抛，且抛的 message 里带着 SENTINEL（P-29 的靶子）。 */
+  decryptThrows = false;
+
+  encrypt(text: string): Uint8Array {
+    this.calls.push('encrypt');
+    return new TextEncoder().encode(`ENC::${Buffer.from(text, 'utf8').toString('base64')}`);
+  }
+
+  decrypt(bytes: Uint8Array): string {
+    this.calls.push('decrypt');
+    if (this.decryptThrows) throw new Error(`bad ciphertext near ${SENTINEL}`);
+    const text = new TextDecoder().decode(bytes);
+    if (!text.startsWith('ENC::')) throw new Error('不是这个 cipher 写的那份东西');
+    return Buffer.from(text.slice('ENC::'.length), 'base64').toString('utf8');
+  }
+}
+
+let dir = '';
+let cipher: FakeCipher;
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'dajia-config-'));
+  cipher = new FakeCipher();
+});
+
+afterEach(() => {
+  rmSync(dir, { recursive: true, force: true });
+});
+
+/** 盘上那份文件的**当前路径**（三格共用：拼法只许有一处，与产品代码同一个常量）。 */
+const target = () => join(dir, CONFIG_FILE_NAME);
+
+/** 盘上那份文件的原始字节（latin1 读出，好让"搜子串"判的是字节而不是解码后的形状）。 */
+function rawBytes(): string {
+  return readFileSync(target()).toString('latin1');
+}
+
+/** 人造一份"看起来像我们写的、内容却不对"的文件：格 7 的三个样本走这条路，不借 cipher。 */
+function plant(text: string): void {
+  writeFileSync(target(), Buffer.from(`ENC::${Buffer.from(text, 'utf8').toString('base64')}`, 'latin1'));
+}
+```
+
+```ts
+describe('probeConfig：首屏的三种形状', () => {
+  it('1. 没配 ⇒ unset、四个回显格全 null、不抛，且盘上确实没有那个文件', () => {
+    expect(probeConfig(dir, cipher)).toEqual({
+      state: 'unset',
+      encryptionAvailable: true,
+      host: null,
+      port: null,
+      user: null,
+      database: null,
+    });
+    expect(existsSync(target())).toBe(false);
+    // 反向：这一发除了"文件在不在"以外什么都不该做（cipher 一次都没被用）。
+    expect(cipher.calls).toEqual([]);
+  });
+
+  it('2. 没配时 readConfig 抛 ConfigError(missing)，文案里点出文件位置', () => {
+    let caught: unknown;
+    try {
+      readConfig(dir, cipher);
+      expect.unreachable('未配置时 readConfig 必须抛');
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ConfigError);
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as ConfigError).kind).toBe('missing');
+    expect((caught as Error).message).toContain(CONFIG_FILE_NAME);
+    expect((caught as Error).message).toContain(dir);
+  });
+
+  it('3. 写→读同源：writeConfig 的回显逐字等于输入，readConfig 的 record 连 SENTINEL 都读得回来', () => {
+    const value = writeConfig(dir, cipher, INPUT);
+    // 这里的 `'dajia'` 是**故意的字面量**（第 ⑧ 段点名的那一格）：产品代码取的是 enum 的第一格，
+    // 这一格钉的是"落盘那一份的库名只能是 dajia"。两边同源（都写 `options[0]`）就等于没钉。
+    expect(value).toEqual({
+      state: 'ready',
+      encryptionAvailable: true,
+      host: INPUT.host,
+      port: INPUT.port,
+      user: INPUT.user,
+      database: 'dajia',
+    });
+    // "已保存"那句话的证据是读得回来，不是 writeFileSync 返回了。
+    expect(readConfig(dir, cipher)).toEqual({ ...INPUT, database: 'dajia' });
+  });
+});
+
+describe('落盘形状：经过 cipher 是唯一的写法', () => {
+  it('4. 文件以 ENC:: 开头、目录里只有一个文件、字节里搜不到 SENTINEL 也搜不到 password 这个键名', () => {
+    writeConfig(dir, cipher, INPUT);
+    expect(rawBytes().startsWith('ENC::')).toBe(true);
+    expect(rawBytes()).not.toContain(SENTINEL);
+    expect(rawBytes().toLowerCase()).not.toContain('password');
+    expect(readdirSync(dir)).toEqual([CONFIG_FILE_NAME]);
+    // 返回的那一份来自 probeConfig ⇒ 写之后确实又按读的路径走了一遍 cipher。
+    expect(cipher.calls).toEqual(['encrypt', 'decrypt']);
+  });
+
+  it('5. available=false ⇒ 拒存：不动旧文件、也不新建；probe 仍回显、read 抛 unavailable', () => {
+    writeConfig(dir, cipher, INPUT); // 先来一份能用的
+    const before = rawBytes();
+    cipher.available = false;
+    expect(() => writeConfig(dir, cipher, INPUT)).toThrow(ConfigError);
+    // 旧那份一字未变（不许把"加密不可用"过成"降级成明文重写一遍"）。
+    expect(rawBytes()).toBe(before);
+    // 文件在但读不了 ⇒ unreadable。不是 missing —— 那句谎话会叫一个已经填过的人去重填，
+    // 却说不出"你机器上的系统密钥变了"这件正在发生的事。
+    expect(probeConfig(dir, cipher)).toEqual({
+      state: 'unreadable',
+      encryptionAvailable: false,
+      host: null,
+      port: null,
+      user: null,
+      database: null,
+    });
+    // 一台全新机器（目录里没文件）+ 加密不可用 ⇒ 说的仍是"还没配"：missing 先于 unavailable。
+    expect(probeConfig(join(dir, 'no-such-dir'), cipher).state).toBe('unset');
+    let caught: unknown;
+    try {
+      readConfig(dir, cipher);
+      expect.unreachable();
+    } catch (err) {
+      caught = err;
+    }
+    expect((caught as ConfigError).kind).toBe('unavailable');
+  });
+});
+
+describe('坏内容：一句 unreadable，绝不返回半个 record', () => {
+  it('6. decrypt 抛 ⇒ probe 回 unreadable 而不抛；两处出口的文案都不许带出 SENTINEL（P-29）', () => {
+    writeConfig(dir, cipher, INPUT);
+    cipher.decryptThrows = true;
+    expect(probeConfig(dir, cipher).state).toBe('unreadable');
+    let caught: unknown;
+    try {
+      readConfig(dir, cipher);
+      expect.unreachable();
+    } catch (err) {
+      caught = err;
+    }
+    expect((caught as ConfigError).kind).toBe('unreadable');
+    expect((caught as Error).message).not.toContain(SENTINEL);
+    expect(JSON.stringify(probeConfig(dir, cipher))).not.toContain(SENTINEL);
+  });
+
+  it('7. 不是 JSON / 少一格 / 库名不在 enum 里 ⇒ 三样全归 unreadable，readConfig 一个 record 都不返回', () => {
+    const samples: readonly string[] = [
+      '这不是 JSON',
+      JSON.stringify({ host: 'h', port: 3306, user: 'u' }),
+      JSON.stringify({ host: 'h', port: 3306, user: 'u', password: 'p', database: 'dajia_test' }),
+    ];
+    for (const text of samples) {
+      plant(text);
+      expect(probeConfig(dir, cipher).state).toBe('unreadable');
+      let caught: unknown;
+      try {
+        readConfig(dir, cipher);
+        expect.unreachable();
+      } catch (err) {
+        caught = err;
+      }
+      expect((caught as ConfigError).kind).toBe('unreadable');
+    }
+    // 第三样专门钉第 ⑧ 段：连手写盘文件都进不来 `dajia_test`（那是 `test:db` 的通路，不是屏幕的通路）。
+    expect(JSON.stringify(probeConfig(dir, cipher))).not.toContain('"dajia_test"');
+  });
+
+  it('8. configToEnv 四格透传，库名再过一次 T1 白名单（白名单**外**的名字必须抛）', () => {
+    writeConfig(dir, cipher, INPUT);
+    const record = readConfig(dir, cipher);
+    expect(configToEnv(record)).toEqual({ ...INPUT, database: 'dajia' });
+    // 为什么这里不能用 `dajia_test`：`assertDatabaseName` 的白名单**包含** `dajia_test`
+    // （T1 那两条授权库名），拿它当靶子这一发不会抛 —— 那是一颗哑牙。
+    // 这一格要判的是"第二次把关还活着"，所以必须用一个两个产地都不认的名字。
+    expect(() => configToEnv({ ...record, database: 'mysql' as unknown as ConfigRecord['database'] })).toThrow(
+      RangeError,
+    );
+    // 而 schema 那一道的证据在上面第 7 格（`dajia_test` 归 unreadable）。两道门各有各的靶子。
+    expect(ConfigRecordSchema.safeParse({ ...record, database: 'mysql' }).success).toBe(false);
+  });
+});
+
+describe('位置与形状', () => {
+  it('9. userDataDir 还不存在时 writeConfig 不抛（补目录），并留下一份且仅一份文件', () => {
+    const fresh = join(dir, 'Application Data'); // `dir` 由 beforeEach 建好，这一层子目录不存在
+    expect(existsSync(fresh)).toBe(false);
+    expect(writeConfig(fresh, cipher, INPUT).state).toBe('ready');
+    expect(readdirSync(fresh)).toEqual([CONFIG_FILE_NAME]);
+    // `afterEach` 递归删 `dir`，所以这一发不留垃圾；但产品代码里的 `mkdirSync(recursive)` 必须真跑过。
+    expect(cipher.calls).toEqual(['encrypt', 'decrypt']);
+  });
+
+  it('10. 回显形状里没有能装口令的格子：六个键，逐字', () => {
+    writeConfig(dir, cipher, INPUT);
+    expect(Object.keys(probeConfig(dir, cipher)).sort()).toEqual([
+      'database',
+      'encryptionAvailable',
+      'host',
+      'port',
+      'state',
+      'user',
+    ]);
+    expect(JSON.stringify(probeConfig(dir, cipher))).not.toContain(SENTINEL);
+    expect(JSON.stringify(writeConfig(dir, cipher, { ...INPUT, host: 'localhost' }))).not.toContain(SENTINEL);
+  });
+});
+```
+
+> **`<待实测>` 两件**（落盘时必须实测并把读数写回执行回填，别改判据）：
+> ① `ConfigDatabaseSchema.options[0]` 在 zod 4.6.5 上是否就是 `'dajia'`（`.options` 是 4.x 的形状，T8 已为 `z.enum(...).options` 留过同一条待实测）。若拿到 `undefined`，`ConfigRecordSchema.parse` 会当场抛 ⇒ 红在格 3，按盘上现物订正**取值写法**（换成 `ConfigDatabaseSchema.enum.dajia` 之类实测存在的形态），**不放开 enum、也不放开那 10 格的任何判据**。
+> ② `attempt` 里 `cipher.decrypt(readFileSync(path))` 递出去的是 `Buffer`（`Uint8Array` 的子类，类型上过）；`ByteCipher.decrypt(bytes: Uint8Array)` 在假 cipher 里靠 `TextDecoder` 工作，而**真的** `safeStorageCipher` 必须 `Buffer.from(bytes)` 再交给 `safeStorage.decryptString` —— 后者收 `Buffer`，给它一个"普通 `Uint8Array`"是类型过、运行不过的形状（`encryptString` 返回 Buffer，所以出去那一向不会犯）。这条实测归 Step 8 的那八行（`ipc-persist.ts` 里的 `safeStorageCipher`），本步的 10 格判不到它 —— 现在就登记，别等 T11 的读字节那一发才发现。
+
+- [ ] **Step 6 续：`apps/desktop/test/unit/persist-boundary.test.ts` —— +2 格、1 格注释订正（5 ⇒ 7）**
+
+**订正的那一格是 T8 的「`src/main/**` 里认识 electron 的名单逐字等于 `[index.ts, ipc-persist.ts]`」—— 判据一字不动，只改注释**（P-27 落了它预告过的那个岔路，而答案是"不改名单"）：
+
+```ts
+  it('src/main/** 里认识 electron 的名单逐字等于 [index.ts, ipc-persist.ts]', () => {
+    const hit = tsUnder(MAIN_ROOT).filter((rel) =>
+      readFileSync(join(MAIN_ROOT, rel), 'utf8').includes("from 'electron'"),
+    );
+    // T8 的注释预告过「T9 要在 persist/config-store.ts 里 import safeStorage 时，必须同时改这一格」。
+    // T9 的裁决是**不改**（P-27）：`safeStorageCipher` 适配器住在本名单里已有的 `ipc-persist.ts`，
+    // `config-store.ts` 保持 electron-free。于是这一格同时成了那条裁决的证人 ——
+    // 有人把 `safeStorage` 搬进 `persist/**` 的那天，红的不是"例外没登记"，而是这个等式。
+    // `persist/**` 的 electron 白名单因此**继续是空集**（P-2 的原话，没有加列）。
+    expect(hit).toEqual(['index.ts', 'ipc-persist.ts']);
+  });
+```
+
+**新加的两格**（追加在文件末尾；`node:fs` 的 import 成员 `readFileSync` 已在，不需要新增 import 语句）：
+
+```ts
+const CONFIG_STORE = '../../src/main/persist/config-store.ts';
+const ZERO_IMPORT_FILES = [
+  '../../src/main/db/errors.ts',
+  '../../src/main/db/diagnostics.ts',
+  '../../src/shared/diagnostics-text.ts',
+];
+
+describe('T9 的 import 边界', () => {
+  it('6. config-store.ts 碰 fs、不碰 electron，加解密只从 cipher 进来', () => {
+    const src = srcOf(CONFIG_STORE);
+    expect(src.includes("from 'node:fs'")).toBe(true);
+    // P-27：那 10 格要在纯 node 里 import 这个文件。一旦它顶层 import electron，
+    // `electron` 在非 Electron 进程里 require 出来是一串路径（T7 引言写过的盘上事实），
+    // 具名拿到 undefined ⇒ "在 it 跑起来之前就炸"，而那 10 格会变成一档没人知道为什么红的文件。
+    expect(src.includes("from 'electron'")).toBe(false);
+    // `require(` 那一刀挡的是"绕开 import 的第二个后门"（`const { safeStorage } = require('electron')`
+    // 在上面那条判据下会静默通过）。注释里可以写 safeStorage 这个名字，判据只认这两种形态。
+    expect(src.includes('require(')).toBe(false);
+    // 正控制：注入通道确实在用。少任何一条，"外部世界只从 cipher 进来"就退化成一句注释。
+    expect(src.includes('cipher.available')).toBe(true);
+    expect(src.includes('cipher.encrypt')).toBe(true);
+    expect(src.includes('cipher.decrypt')).toBe(true);
+    // 目录与文件名都从参数与常量来：`app.getPath` 由调用方递（T7 `emergency.ts` 立的先例）。
+    expect(src.includes('app.getPath')).toBe(false);
+  });
+
+  it('7. 三个零 import 文件：errors / diagnostics / diagnostics-text 谁都不认识', () => {
+    // 这一条是 P-25 与 P-26 的常驻证人，而不是一句自我表扬：
+    // 那 14 格（`diagnostics.test.ts` 8 + `diagnostics-text.test.ts` 6）跑在纯 node 档、
+    // 拿的是人造错误对象，前提就是这三个文件不许因为哪天"顺手 import 了 describeError / zod / mysql2 类型"
+    // 而变成连库文件。`import type` 也算破 —— 判据扫的是 `from '`（与 T7 那一族同一个代价：
+    // 注释里出现完整的 import 句会误红，已按同一条限度登记）。
+    for (const rel of ZERO_IMPORT_FILES) {
+      const src = srcOf(rel);
+      expect(src.includes("from '")).toBe(false);
+    }
+    // 反向：三个文件都不是空壳（"零 import"最怕的是"零内容"）。
+    expect(srcOf(ZERO_IMPORT_FILES[0]).length).toBeGreaterThan(200);
+    expect(srcOf(ZERO_IMPORT_FILES[1]).length).toBeGreaterThan(200);
+    expect(srcOf(ZERO_IMPORT_FILES[2]).length).toBeGreaterThan(200);
+  });
+});
+```
+
+> **本步只到 7 格**：T9 声明的第三格（扫 `main/index.ts`，判 `UI_COMMAND_EVENT` 的每一处 `send` 都在 `shotPath === null` 那一段之内，第 ③ 段那条闸门安全的主张）必须等 `index.ts` 的菜单与那一发 `send` 落盘之后才存在 —— 它写在 `chunk-t9e.md` 的接线步，落完是 **8 格**。别让席位在本步"顺手补齐"，那会造出一格扫不到任何东西的假证人。
+>
+> **这一族扫描的代价，本步再登记一次**（与 T7 引言、T8 第 ⑥ 段同一条尺）：`persist-boundary.test.ts` 判的是源码文本，所以**产品文件的注释里不许原样写出被禁的那串**。本步有两处会踩：
+> ① 第 6 格禁 `app.getPath` —— `config-store.ts` 的注释要写"目录由调用方递进来"，不要写那个方法的完整名字（点号加驼峰那一串）。
+> ② 第 7 格禁 `from '`（模块说明符的样子）—— `errors.ts` / `diagnostics.ts` / `diagnostics-text.ts` 三个文件的注释里不许出现任何完整的 import 例句。上面那三份现文已经按这条尺避开了；下一位编辑者若要在注释里解释"为什么不用 `import type`"，参照本文件 Step 5 ① 的写法：说"模块说明符"，别拼出那个样子。
+> 这两条不是洁癖，是这一族唯一可用的判据形态（AST 解析要把 typescript 装进 devDeps，T8 第 ⑥ 段已经否过一次）。
+
+Run: `npx vitest run apps/desktop/test/unit/config-store.test.ts apps/desktop/test/unit/persist-boundary.test.ts > tmp/t9-step6.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`，`config-store.test.ts` **10 格**、`persist-boundary.test.ts` **7 格**（T7 的 2 + T8 的 3 + 本步 2）。
+再跑 `npx tsc --noEmit -p apps/desktop/tsconfig.test.json > tmp/t9-step6-tsc.log 2>&1; echo "exit=$?"`（`ConfigDatabase` 那个 branded 值经 `configToEnv` 交进 `MysqlEnv.database` 是这一发才判得动的：运行时它俩同值，类型上一个是 `'dajia'`、一个是 `'dajia' | 'dajia_test'`）。
+
+**本步的变异靶**（并入 Step 10 总表）：
+
+| 编号 | 变异 | 预计红在哪 |
+|---|---|---|
+| T9-M15 | `writeConfig` 直接 `writeFileSync(path, JSON.stringify(record))`（绕过 cipher） | 格 4 的 `ENC::` 前缀 + `not.toContain('password')` 双红 —— 这一格存在的唯一理由就是这个形状 |
+| T9-M16 | `available === false` 时改成"照样存，存明文，并在文案里提醒用户" | 格 5（旧字节变了 / 新文件出现）—— 产品决定的对立面 |
+| T9-M17 | `probeConfig` 把 `catch` 缩窄成"只 catch 解密抛"（让 schema 不合规直接抛给调用方） | 格 7 第一句（"probe 永不抛"）—— 首屏会因为一个坏文件白屏 |
+| T9-M18 | `unreadable` / `unavailable` 的文案插 `describeError(err)` | 格 6 的 `not.toContain(SENTINEL)`（P-29 那颗牙） |
+| T9-M19 | `ConfigValue` 回显多带一格 `password: null` | 格 10 的六键等式 + protocol 新文件那格（双侧红，正是两侧各有一道门的意思） |
+| T9-M20 | `configToEnv` 去掉 `assertDatabaseName`（"schema 已经管过了"） | 格 8 第二句（人造 `dajia_test` 的 record 直过界） |
+| T9-M21 | `attempt` 里把 `missing` 与 `unavailable` 的先后反过来 | 格 5 最后一句 + 全新机器那一发（首屏会说成"加密不可用"） |
+
+> **编号预留**：Step 1–4 的靶（协议表、两块牙、分型、文档）在 t9a / t9b 里没有预编号，落 Step 10 总表时按步骤顺序补 **T9-M1…T9-M8**；若 Step 1–4 的靶多于八个，本块起的 M9…M21 整体后移，**表内相对顺序不变**（同 T7/T8 的写法：靶的编号只在表里成立，计划文本引用编号时引用的是那一行内容，不是数字）。
+
+---
+
+**本块的落点**：`apps/desktop/src/main/persist/admin.ts`（新建）+ `apps/desktop/test/unit/admin.test.ts`（新建，**14 格**）+ `apps/desktop/test/db/projects.test.ts`（新建，**6 格**）+ `apps/desktop/test/unit/persist-boundary.test.ts`（**+1 格 ⇒ 8**）+ `session.ts` 两个 `export` 关键字。
+
+---
+
+**① 这一块要证的产品事实只有一句：列表与新建是"会话之外"的两发，它们用完就掐连接，且新建出来的是**一个真的能打开的工程**。**
+
+口径 ①（P-22）已经决定了形状：`ProjectAdmin` 不认识 `ProjectSession`，自己开自己关。口径 ②（P-23）决定了 `create` 的两发与那一发补偿。所以本块的价值不在"又写了三个方法"，而在**把 P-23 从一段话变成一条能在真库里跑出读数的账**：`create` 之后 `project.journal_turn` 必须是 1、`storey` 投影里必须有首层那一行、`snapshot` 必须**是空**、而 `loadProject('read')` 必须能把这份"零快照 + 一发日志"的工程原样读回来。
+
+最后那一条是本块最重要的一格。`create` 不写快照是 P-23 的直接后果（`writeSnapshot` 与 `appendJournal` 故意不在同一事务，T4 第 ⑦ 段），而 T5 的 `loadProject` 对"没有快照"这一支的处理是 `doc = Document.create(...)` 然后从 `replayFrom = 0` 起重放，尾判是 `prevTurn !== journalTurn ⇒ 拒开`。这条链在 unit 档里谁也证不了谁：`admin.test.ts` 用的是假 repo（它不知道投影），`repository.test.ts` 的读路径格子是**手工造**的那两发 turn（它不知道 `create`）。只有连库档把两端接起来 —— 如果首层那一发的 turn 写错了（比如 `turn: 0`），`appendJournal` 会走幂等出口静默返回 `'already-applied'`，**任何 unit 格都不会红**，而这一格会红在 `storey` 计数上。
+
+**②（裁决 P-30）`wrap` 与 `persistErrorCode` 导出，不在 `admin.ts` 里重写第二份。**
+
+会话之外的通道同样要分码：`loadConfig` 抛 ⇒ `'not-configured'`，连库抛 ⇒ `'db'`，自家尺抛 ⇒ `'reconcile'`。这三条规则此刻**已经写在** `session.ts` 里，`admin.ts` 再写一份会得到两个产地，而它们漂移的方向是最坏的那一种 —— `errorCode`（`ipc-persist.ts`）对没被包过的抛默认给 `'internal'`，于是"服务没起"会被说成"我们拼错了包"，而 `'internal'` 的下一步动作是"人来查"（③ 段那条），用户对着一个没启动的 MySQL 看不出任何事。
+
+代价说清楚：`session.ts` 的改动从 t9a Files 行那句"只改一个函数体"变成**三处**（`persistErrorCode` 的函数体 + 两个 `export` 关键字）。这三处都不改行为，`session.test.ts` 那 20 格（t9c 之后）一字不动，`persist-boundary.test.ts` 对 `session.ts` 的扫描判据也不动（它扫的是 electron / `node:fs` / `node:os` / mysql2 与四条 `this.ports.*`，与导出无关）。反过来，`admin.ts` import `session.ts` 会不会"认识会话"：它认识的是 `SessionError` 这个**码的载体**与两个纯函数，`ProjectSession` 这个类一个字都没提 —— 与口径 ① 的边界不冲突，那句话说的是"不要共享会话的状态机"。
+
+`SessionError` 这个名字在此刻确实兼管会话之外的失败。改名（`PersistError`）会把 T8 已落盘的 16 格与 `ipc-persist.ts` 一起拖进本任务，而收益是一个更准的名词 —— **不改**，并在 `admin.ts` 的顶部注释里写明这件事（名字的历史来源与此刻的职责分开了，这要在盘上看得到）。
+
+**③（裁决 P-31）`AdminPorts` 三键：`uuidv7()` 与 `schema_version` 不进端口表。**
+
+t9a 的 Produces 行原本给 `AdminPorts` 写了五个键。这里删两个，三条理由：
+
+- **`newProjectId()` 是一个只能变坏的注入点。** 端口给假 id 之后，"回包的 `projectId` 与仓库绑的 `projectId` 不是同一个"这一型 bug 反而**测不出来**：假 id 是固定串，两处都拿它，绿。直接 `uuidv7()` 之后，格 6 判的是"三个号同源"（`openCreateDb` 收到的、回包给的、`entry.doc.projectId` 里的），这是假 id 永远给不出来的判据。先例就在 T8：`newLockTicket` **不在** `PersistPorts` 里，拼票是 `ipc-persist.ts` 的事，会话只认拿到手的那张票（t8b 的 `PersistPorts` 注释明写）。同一个理由管同一个位置。
+- **`readonly schemaVersion` 违反的是本计划反复用同一把尺的那条纪律**（P-4 / P-14 / T7 的"心跳间隔不设旋钮"）：一个可覆盖的注入点会让"唯一产地"那句话变成假的。更糟的是这里有一个具体的坏形状 —— 读路径 `loadProject` 拿 `@dajia/core` 的 `SCHEMA_VERSION` 对账（T5 第 ④ 段那句"这份程序只认 X"），如果建工程的 `schemaVersion` 从端口进来，装配处写错一个数就得到"建出来之后自己的读路径拒开"的工程，而这个 bug 只有连库档能看见。
+- **最紧的形式是让那份文档自己带这个数。** `Document.create(projectId)` 的默认参数就是 `SCHEMA_VERSION`（盘上现物 `packages/core/src/model/document.ts:44`），所以 `createProject({ name, schemaVersion: entry.doc.schemaVersion })` 写的就是"这一发要落的那份文档"身上的数 —— 产地一个，读者两个。P-15（不许为测试在产品代码里留钩子）也往同一边压。
+
+被否掉的第三种写法顺带记在这里：`database: ConfigDatabaseSchema.options[0]`（`buildDraftEnv` 里）。它比字面量更"同源"，但那个 `.options` 形状是 t9c 已经登记过的 `<待实测>`，而**产品代码里拿到 `undefined` 不会红** —— 它会拨一条 `database: undefined` 的连接，比测试红一格贵得多。所以产品代码用字面量 `'dajia'`，同源那条对账交给格 12（测试里 `.options` 拿到 `undefined` 会当场红，那一发不伤任何运行中的东西）。这条区分与 T7 的 `LOCK_HEARTBEAT_INTERVAL_MS` 相反（那里产品代码引用常量），差别在**引用是否可能静默失败**：常量引用不会，`zod` 的 `.options` 会。
+
+**④ `admin.ts` 的边界：electron-free / fs-free / os-free / mysql2-free，且它自己不做 parse。**
+
+口径 ⑦（P-27）把 fs 与 electron 都留在了 `ipc-persist.ts`，`admin.ts` 因此只认三样东西：`AdminPorts`（注入的外部世界）、`@dajia/core`（真源，值 import：`Document` / `TransactionLog` / `storeyCreate` / `uuidv7`）、以及三个自家纯函数文件（`../db/diagnostics` 的 `classifyDbError`、`../db/env` 的 `type MysqlEnv`、`../../shared/diagnostics-text` 的 `DIAGNOSTIC_TEXT`）+ `./describe-error` + `./session` 的码与包装。protocol 在这里**只有类型**（`ConnectionInput` / `ConnectionTestValue` / `ProjectCreateValue` / `ProjectListValue` / `ProjectSummary`）：parse 是边界那一发的事（T8 第 ② 段：入站验请求、出站验值都在 `dispatch`），`admin` 拼一份没验过的回包不算错，但"验一次"这件事必须有唯一一个读者。
+
+`import type { JournalEntry, JournalOutcome } from '../db/repository'` 是**类型**导入 —— `repository.ts` 顶部有 `import type { Pool } from 'mysql2/promise'`，具名值导入会把那个模块真的加载进来，而这 14 格跑在纯 node 档。先例同样是 T7：`autosave.ts` 写的是 `import type { JournalEntry, JournalOutcome } from '../db/repository';`。
+
+这一族的常驻证人就是本块新增的 `persist-boundary.test.ts` 格 8。
+
+---
+
+- [ ] **Step 7 ①: `apps/desktop/src/main/persist/admin.ts`**
+
+```ts
+import { Document, TransactionLog, storeyCreate, uuidv7, type EntityId } from '@dajia/core';
+import type {
+  ConnectionInput,
+  ConnectionTestValue,
+  ProjectCreateValue,
+  ProjectListValue,
+  ProjectSummary,
+} from '@dajia/protocol';
+import { classifyDbError } from '../db/diagnostics';
+import type { MysqlEnv } from '../db/env';
+import type { JournalEntry, JournalOutcome } from '../db/repository';
+import { DIAGNOSTIC_TEXT } from '../../shared/diagnostics-text';
+import { describeError } from './describe-error';
+// 第 ② 段：`wrap` 与 `persistErrorCode` 是 T8 现物，本块只是把它们导出（P-30）。
+// 这里**不**具名 `SessionError` —— `admin.ts` 一个地方都不引用那个类名，引用了就是 `noUnusedLocals` 的红。
+import { persistErrorCode, wrap } from './session';
+
+/**
+ * 会话之外的两发：列工程、建工程，外加一次试连。
+ *
+ * 它**不**认识 `ProjectSession`（裁决 P-22）：会话的不变式是"一个窗口 ↔ 一个工程 ↔ 一份锁 ↔
+ * 一份保存链"，而"用户还在看列表"与"用户还在填向导"恰恰是它的反面。所以这个文件自己开连接、
+ * 自己关连接，一次调用一条（口径 ① 登记的那笔代价：连着点三次刷新就是三条短连接）。
+ *
+ * 它也不认识 fs、electron、os、mysql2（第 ④ 段）。外部世界只从 `AdminPorts` 那三条注入通道进来 ——
+ * 常驻证人在 `persist-boundary.test.ts`。
+ */
+
+/**
+ * 新建工程的默认首层（口径 ② 末）。这三个数是**给屏幕看的**（向导里那一行只读输入框），
+ * 所以它必须是导出的：面板要显示的数与 `appendJournal` 落进投影的数是同一个，
+ * 而 `test/db/projects.test.ts` 第 1 格会在投影那一侧读出同样的三个数。
+ * S1 里没有第二个消费者会改它们：`storeyCreate` 自己查 index 重复与竖向重叠。
+ */
+export const FIRST_STOREY = { index: 0, elevationMm: 0, heightMm: 3000 } as const;
+
+/** 遮蔽串。三个 `•` 而不是 `***`：`***` 在 SQL 里有语义，读日志的人会先往语句那边想。 */
+const MASK = '•••';
+
+/**
+ * 把可能带着口令的文本压掉（口径 ④ 三条防线的第二条）。
+ *
+ * 为什么需要它：`mysql2` 的 `ER_ACCESS_DENIED_ERROR` 原文只带用户名，但驱动下一版带什么没人保证，
+ * 而用户手写的 `host` 里也可能重复口令。**这是纵深，不是修 bug** —— 判它的格（`admin.test.ts` 第 12 格的
+ * `detail` 与第 14 格的 `redact` 直尺）也照这个尺度写：判"哨兵串不见了"，不判"文案读起来顺"。
+ *
+ * 两个刻意的形状：
+ * ① 空串跳过。`replaceAll('')` 会在每个字符之间插一个遮蔽串，把整句话拆成 `•••a•••b•••`，
+ *    而"空口令"本来就没有要遮蔽的东西（`ConnectionPasswordSchema` 的 `min(1)` 在边界挡第一道，
+ *    这一发管的是第二个读者的输入不受那张表保护）。
+ * ② 不去重排序。多个 secret 里若一个包含另一个，先换哪个都不会泄漏（两者都被换掉），
+ *    所以这里不留一个"按长度排序"的额外规则 —— 它需要的理由比它保护的处境多。
+ *
+ * 代价照登记（本块的限度 ②）：口令短到会吃掉文案里正常的字母（一位口令 `'a'` ⇒ 所有 `a` 变 `•••`）。
+ * 方向是**过度遮蔽**而不是泄漏，这是安全边上允许的那种错。
+ */
+export function redact(text: string, secrets: readonly string[]): string {
+  let out = text;
+  for (const secret of new Set(secrets)) {
+    if (secret.length > 0) out = out.replaceAll(secret, MASK);
+  }
+  return out;
+}
+
+/**
+ * 向导里那四格草稿拼成一份能拨号的参数（**不落盘**：落盘走 `config-store.writeConfig`）。
+ *
+ * `database` 是字面量 `'dajia'`，不是从 `ConnectionInput` 里取的（⑧ 段：数据库名不进向导），
+ * 也不是 `ConfigDatabaseSchema.options[0]`（第 ③ 段末：那个 `.options` 在产品代码里拿到
+ * `undefined` 不红，只会拨一条 `database: undefined` 的连接）。同源那条对账由
+ * `admin.test.ts` 第 14 格钉：`ConfigDatabaseSchema.options` 必须逐字等于 `['dajia']`，
+ * 而 `buildDraftEnv(...).database` 必须等于它的第一个读数。
+ */
+export function buildDraftEnv(input: ConnectionInput): MysqlEnv {
+  return {
+    host: input.host,
+    port: input.port,
+    user: input.user,
+    password: input.password,
+    database: 'dajia',
+  };
+}
+
+/** 试连的把手：`ping()` 是那一发 `SELECT VERSION()`，`end()` 只掐这一条连接。 */
+export interface ProbeHandle {
+  ping(): Promise<{ version: string }>;
+  end(): Promise<void>;
+}
+export type ProbeOpener = (env: MysqlEnv) => Promise<ProbeHandle>;
+
+/**
+ * 一次试连：连上、问版本、掐掉。**它自己不抛**（口径 ⑤：分型与文案同源，读者两处）。
+ *
+ * `detail` = 文案表的 `detail` + 一个空格 + 过 `redact` 的原文。为什么把原文也带上：
+ * `'unknown'` 那一型的存在理由就是"没查清的东西不许说成查清了"，而 `next` 那句人话背后
+ * 必须有可查的读数；`describeError` 会把 `err.code` 写进去（T7 那一族共享口径的第二个读者）。
+ * 为什么 `ok` 分支不带原文：没有原文可带，而 `serverVersion` 才是那一发的读数（逐字原样，不加工）。
+ *
+ * `end()` 在 `finally` 里且失败吞掉：这一发的结论已经定了（`return` 的值在 `finally` 之前就选好了），
+ * 而一条没掐掉的连接比"日志里多一行"贵得多 —— 试连按钮是可以连点的。
+ */
+export async function probeConnection(env: MysqlEnv, open: ProbeOpener): Promise<ConnectionTestValue> {
+  let handle: ProbeHandle | null = null;
+  try {
+    handle = await open(env);
+    const { version } = await handle.ping();
+    return {
+      connected: true,
+      kind: 'ok',
+      serverVersion: version,
+      detail: DIAGNOSTIC_TEXT.ok.detail,
+    };
+  } catch (err) {
+    const kind = classifyDbError(err);
+    return {
+      connected: false,
+      kind,
+      serverVersion: null,
+      detail: `${DIAGNOSTIC_TEXT[kind].detail} ${redact(describeError(err), [env.password])}`,
+    };
+  } finally {
+    try {
+      await handle?.end();
+    } catch (err) {
+      console.error(`[dajia] 试连的连接没关掉：${describeError(err)}`);
+    }
+  }
+}
+
+/** 会话之外的通道看得见的仓库。`ProjectRepository` 恰好满足它，两边都不 import 对方的类（T7 的 `JournalSink` 同族做法）。 */
+export interface CreateRepo {
+  createProject(input: { readonly name: string; readonly schemaVersion: number }): Promise<void>;
+  appendJournal(entry: JournalEntry): Promise<JournalOutcome>;
+  deleteProject(): Promise<void>;
+}
+
+export interface AdminCreateDb {
+  readonly repo: CreateRepo;
+  end(): Promise<void>;
+}
+
+/**
+ * 列表那条连接。它递出来的是**方法**而不是 `raw` 把手，与 T8 的 `DbHandle` 故意不同：
+ * `DbHandle` 需要 `raw` 是因为 `acquire(db, …)` 要把同一个连接原样拿回去认票，
+ * 而这里没有任何第二发要用那条连接 —— 能给一个不透明的 `unknown` 就不给一个能被拆开的洞（P-15）。
+ */
+export interface AdminListDb {
+  listProjects(): Promise<ProjectSummary[]>;
+  end(): Promise<void>;
+}
+
+/**
+ * 管理通道的全部外部依赖（第 ③ 段：三键，没有第四键）。
+ * `loadConfig` 与 `PersistPorts` 里那个同名同形状 —— 同一条"没配好就抛，抛 ⇒ `'not-configured'` 且不建连接"。
+ */
+export interface AdminPorts {
+  loadConfig(): MysqlEnv;
+  openCreateDb(env: MysqlEnv, projectId: EntityId): Promise<AdminCreateDb>;
+  openListDb(env: MysqlEnv): Promise<AdminListDb>;
+}
+
+/**
+ * 首层 = journal 的 turn 1（口径 ②）。文档在这里造出来，`schema_version` 因此只有
+ * `Document.create` 的默认参数一个产地：写进 `project.schema_version` 的那个数就是这份文档
+ * 自己带的数，而读路径拿来对账的是同一个 core 常量（第 ③ 段第二条）。
+ *
+ * `lastPatch === null` 那一支在 dispatch 成功之后不可达（T7 第 ① 段的三个赋值点之一就在 dispatch 末尾），
+ * 它留在这里是因为 strict 下 `Patch | null` 不拆开就用不了 —— 而"不可达"这件事本身要写得让人看得见。
+ * 它抛的是 `RangeError`，逃出 `create` 之后到边界是 `'internal'`：那正确，因为那一刻一个字节都没写过库，
+ * 唯一的可能形状是我们的夹具坏了。
+ */
+function firstStoreyTurn(projectId: EntityId): JournalEntry {
+  const log = new TransactionLog(Document.create(projectId));
+  log.dispatch(
+    storeyCreate({
+      projectId,
+      index: FIRST_STOREY.index,
+      elevationMm: FIRST_STOREY.elevationMm,
+      heightMm: FIRST_STOREY.heightMm,
+    }),
+  );
+  const patch = log.lastPatch;
+  if (patch === null) {
+    throw new RangeError('刚 dispatch 成功的一发拿不到补丁：首层那一发的账没拼出来，一个字节都没写进库');
+  }
+  return { turn: 1, patch, doc: log.document };
+}
+
+export class ProjectAdmin {
+  constructor(private readonly ports: AdminPorts) {}
+
+  /** 两发共用的前置：读配置。抛 ⇒ 定码 `'not-configured'`，且**不建连接**（与 `open` 第一步同一条口径）。 */
+  private env(): MysqlEnv {
+    try {
+      return this.ports.loadConfig();
+    } catch (err) {
+      throw wrap(err, 'not-configured', '连接配置读不出来');
+    }
+  }
+
+  /**
+   * 拆卸的唯一出口：**先拿到结论再拆**。两处调用点都在 `finally` 里，
+   * 而 `finally` 里抛出去的错误会顶掉 `try` 的返回值或原始异常 —— 那一刻用户丢的是真因。
+   * 口径同 `session.teardown`（"解锁与关池的失败只记不抛"）：锁会自己过期，池留在进程手里等退出。
+   */
+  private static async close(handle: { end(): Promise<void> }): Promise<void> {
+    try {
+      await handle.end();
+    } catch (err) {
+      console.error(`[dajia] 管理通道的连接没关掉：${describeError(err)}`);
+    }
+  }
+
+  /** 工程列表。一次调用一条连接，用完就掐（P-22 的那笔代价）。 */
+  async list(): Promise<ProjectListValue> {
+    const env = this.env();
+    let db: AdminListDb;
+    try {
+      db = await this.ports.openListDb(env);
+    } catch (err) {
+      // 前缀逐字照 `session.open` 的第二步：同一个处境在两个文件里得到同一句话。
+      throw wrap(err, 'db', '连不上库');
+    }
+    try {
+      return { projects: await db.listProjects() };
+    } catch (err) {
+      // 这里是 `persistErrorCode(err)` 而不是固定 `'db'`：`listProjects` 里那两把尺
+      // （`asSafeInt64` 与 `toBit`）抛的是没有 `code` 的 `RangeError`，说的是"盘上的读数不对"，
+      // 下一步动作与"服务没起"完全不同（③ 段那条闭集纪律）。
+      throw wrap(err, persistErrorCode(err), '工程列表读不出来');
+    } finally {
+      await ProjectAdmin.close(db);
+    }
+  }
+
+  /**
+   * 新建工程 = `project` 行 + 首层作为 turn 1，两发（口径 ② / P-23）。
+   * **不顺手开会话**：那要求"还没有会话的时候先把会话造出来"，也就是把 P-22 拒掉的第三种形状从后门放回来。
+   * 回包只有 `{ projectId }`，打开它由 renderer 接着发（`openProject`），与 `reopenAsEdit()` 同族先例。
+   */
+  async create(name: string): Promise<ProjectCreateValue> {
+    const env = this.env();
+    // id 在开连接之前就有：`openCreateDb(env, projectId)` 递的是同一个，于是"仓库绑的工程"
+    // 与"回给屏幕的工程"是同一个号（第 ③ 段删掉 `newProjectId()` 端口的直接收益）。
+    const projectId = uuidv7();
+    const entry = firstStoreyTurn(projectId);
+    let db: AdminCreateDb;
+    try {
+      db = await this.ports.openCreateDb(env, projectId);
+    } catch (err) {
+      throw wrap(err, 'db', '连不上库');
+    }
+    try {
+      try {
+        await db.repo.createProject({ name, schemaVersion: entry.doc.schemaVersion });
+      } catch (err) {
+        // 第一发就坏 ⇒ **没有**补偿：此刻 `project` 行没有（`INSERT` 要么成要么没），
+        // 调 `deleteProject()` 只是多一次往返，还会把"补偿"这个词用在不需它的地方。
+        // `createProject` 里的尺与边界那张表是镜像的两份（⑤ 段），漂开时这一发得到 `'reconcile'`。
+        throw wrap(err, persistErrorCode(err), '工程行没建出来');
+      }
+      try {
+        await db.repo.appendJournal(entry);
+      } catch (err) {
+        const first = describeError(err);
+        try {
+          // 行一删，`element` / `storey` / `command_log` / `snapshot` / `asset` 五张子表
+          // 靠 T2 建好的 `ON DELETE CASCADE` 一起走。级联这件事的凭据在连库档第 4 格。
+          await db.repo.deleteProject();
+        } catch (compErr) {
+          // 两支错**都**拼进 message 并照样抛：只报后一支，查的人看见的是"删不掉"，
+          // 而真正坏的是首层那一发；只报前一支，库里就留下一个没人知道的鬼工程。
+          throw wrap(
+            err,
+            persistErrorCode(err),
+            `首层那一发失败（${first}），补偿删除也没成（${describeError(compErr)}）：` +
+              `库里会留一个只有 project 行、打不开的工程，列表里看得见它`,
+          );
+        }
+        throw wrap(err, persistErrorCode(err), '首层那一发失败，工程行已按补偿删掉');
+      }
+      return { projectId };
+    } finally {
+      await ProjectAdmin.close(db);
+    }
+  }
+}
+```
+
+> **`persistErrorCode` 在 `create` 里的三次使用，一次 `wrap(err, 'db', …)`**：这是本块唯一要自问"是不是抄过头"的地方。`openCreateDb` 那一发固定 `'db'` 是**故意的**（Step 8 之后这句要重读一遍：端口现在除了拨号失败，还会因 `ensureSchema` 的建库/迁移那一抛而出错 —— 结论不变，理由换了。`createDbPool` 不拨号，参数错在 `assertDatabaseName` 那一级，而 `env` 是 `loadConfig` 已经过了白名单的那一份；建库与迁移那两抛里，`migrate` 的"迁移正文被改过"是 `RangeError`，按 t8c 第 ② 段那句话同样落进 `'db'` 这一档，池装配那一抛端口自己已经定成 `'internal'`，不需要在这里第二次分码）。剩下三发都按事实分码。反过来若把 `openCreateDb` 也换成 `persistErrorCode(err)`，一条 `actor` 长度写错的抛会被说成 `'reconcile'`——那是我们自己把尺写漂了，而那一刻用户还没得到任何"别写"的理由。这一句写在这里因为下一个编辑者一定会问"为什么这一处不一样"。
+
+---
+
+- [ ] **Step 7 ②: `apps/desktop/src/main/persist/session.ts` —— 两个 `export` 关键字（P-30）**
+
+`t9c` 的 Step 5 ③ 已经把那个文件改成"`persistErrorCode` 整体替换 + 一行 `MissingProjectError` 的 import"。本块**只再动两个词的开头**，函数体与方法一律不碰：
+
+```ts
+export function persistErrorCode(err: unknown): PersistErrorCode {
+  // ...t9c Step 5 ③ 那五行一字不动（含新加的 `instanceof MissingProjectError` 那一支）
+}
+
+export function wrap(err: unknown, code: PersistErrorCode, prefix: string): SessionError {
+  return err instanceof SessionError ? err : new SessionError(code, `${prefix}：${describeError(err)}`);
+}
+```
+
+同时**订正 `chunk-t9a.md` 的 Files 行**与 **`chunk-t9c.md` Step 5 ③ 那句"其余一切一字不动"**（两处都写在本块末尾的「块间接缝的订正」清单里，落盘时一并改）：`session.ts` 的改动是"三处：一个函数体 + 两个 `export`"，而不是"只改一个函数体"。`SessionError` 与 `ProjectSession` 的 `export` 是 T8 现物，本块不动。
+
+Run（先红后绿；这一发同时验 t9c 的 Step 5 有没有落干净）：
+
+```bash
+npx tsc --noEmit -p apps/desktop/tsconfig.test.json > tmp/t9d-tsc.log 2>&1; echo "exit=$?"
+```
+
+Expected: 写完 ① 与 ② 之前红在两条 —— `Cannot find module '.../persist/admin' 与（如果先写了 ① 再补 ②）`./session' has no exported member 'wrap'`。两份都得是**模块/成员找不到**，不是类型不匹配：后者意味着 `AdminPorts` 与 `ProjectRepository` 的真实形状没对上，那是要改 ① 而不是改测试的时刻。
+
+---
+
+- [ ] **Step 7 ③: `apps/desktop/test/unit/admin.test.ts` —— 14 格，全假把式**
+
+形状照 `session.test.ts`（T8）那一族：`harness(over)` 返回 `{ calls, admin, captured }`，`calls` 是一串带读数的字符串，`over.*Throws` 是唯一的人造失败通道。`describeError` 与 `SessionError` 经由 `session.ts` 间接吃 `autosave.ts` / `db/locks.ts`，那条链 T8 落盘时已被 16 格跑通过 —— 本文件不引入新的依赖风险。
+
+```ts
+import { describe, expect, it, vi } from 'vitest';
+import { SCHEMA_VERSION, isEntityId, type EntityId } from '@dajia/core';
+import { ConfigDatabaseSchema, type ConnectionInput, type ProjectSummary } from '@dajia/protocol';
+import type { JournalEntry, JournalOutcome } from '../../src/main/db/repository';
+import type { MysqlEnv } from '../../src/main/db/env';
+import { classifyDbError } from '../../src/main/db/diagnostics';
+import { DIAGNOSTIC_TEXT } from '../../src/shared/diagnostics-text';
+import {
+  FIRST_STOREY,
+  ProjectAdmin,
+  buildDraftEnv,
+  probeConnection,
+  redact,
+  type AdminCreateDb,
+  type AdminListDb,
+  type AdminPorts,
+  type CreateRepo,
+  type ProbeHandle,
+} from '../../src/main/persist/admin';
+import { SessionError } from '../../src/main/persist/session';
+
+/** 哨兵串：本文件唯一被允许出现在断言里的"口令长相"。它绝不出现在任何期望文案之外（④ 段）。 */
+const SECRET = 'SENTINEL-口令-不许回显';
+/** 遮蔽串的**字面量**（不是从 `admin.ts` import 的：那个 `MASK` 是产品私有，导出它就等于给测试开一个产品专用的洞，P-15）。 */
+const MASK_TXT = '•••';
+const ENV: MysqlEnv = {
+  host: 'example.invalid',
+  port: 3306,
+  user: 'root',
+  password: SECRET,
+  database: 'dajia',
+};
+
+const SUMMARY: ProjectSummary = {
+  projectId: '0193aa00-0000-7000-8000-00000000000a' as EntityId,
+  name: '样例房',
+  schemaVersion: SCHEMA_VERSION,
+  journalTurn: 3,
+  updatedAt: '2026-10-04 03:21:55.120',
+  locked: false,
+};
+
+const DRAFT: ConnectionInput = {
+  host: 'db.internal',
+  port: 3307,
+  user: 'dajia',
+  password: SECRET,
+};
+
+interface Over {
+  loadConfigThrows?: Error;
+  openCreateDbThrows?: Error;
+  openListDbThrows?: Error;
+  createProjectThrows?: Error;
+  appendJournalThrows?: Error;
+  deleteProjectThrows?: Error;
+  listProjectsThrows?: Error;
+  endThrows?: Error;
+  projects?: ProjectSummary[];
+}
+
+function harness(over: Over = {}) {
+  const calls: string[] = [];
+  const captured: { entry: JournalEntry | null; created: { name: string; schemaVersion: number } | null } = {
+    entry: null,
+    created: null,
+  };
+  const repo: CreateRepo = {
+    async createProject(input) {
+      calls.push(`createProject:${input.name}:${input.schemaVersion}`);
+      captured.created = { name: input.name, schemaVersion: input.schemaVersion };
+      if (over.createProjectThrows) throw over.createProjectThrows;
+    },
+    async appendJournal(entry): Promise<JournalOutcome> {
+      calls.push(`appendJournal:${entry.turn}:${entry.doc.projectId}`);
+      captured.entry = entry;
+      if (over.appendJournalThrows) throw over.appendJournalThrows;
+      return 'applied';
+    },
+    async deleteProject() {
+      calls.push('deleteProject');
+      if (over.deleteProjectThrows) throw over.deleteProjectThrows;
+    },
+  };
+  const end = async (): Promise<void> => {
+    calls.push('end');
+    if (over.endThrows) throw over.endThrows;
+  };
+  const createDb: AdminCreateDb = { repo, end };
+  const listDb: AdminListDb = {
+    listProjects: async () => {
+      calls.push('listProjects');
+      if (over.listProjectsThrows) throw over.listProjectsThrows;
+      return over.projects ?? [SUMMARY];
+    },
+    end,
+  };
+  const ports: AdminPorts = {
+    loadConfig() {
+      calls.push('loadConfig');
+      if (over.loadConfigThrows) throw over.loadConfigThrows;
+      return ENV;
+    },
+    async openCreateDb(env, projectId) {
+      calls.push(`openCreateDb:${env.host}:${projectId}`);
+      if (over.openCreateDbThrows) throw over.openCreateDbThrows;
+      return createDb;
+    },
+    async openListDb(env) {
+      calls.push(`openListDb:${env.host}`);
+      if (over.openListDbThrows) throw over.openListDbThrows;
+      return listDb;
+    },
+  };
+  return { calls, captured, admin: new ProjectAdmin(ports) };
+}
+
+/** mysql2 那一族错误的形状：带 string `code` ⇒ 分码走 `'db'`。 */
+function dbError(code: string): Error {
+  return Object.assign(new Error(`boom ${code}`), { code });
+}
+
+describe('ProjectAdmin.list', () => {
+  it('1 格：成功 = 回包形状 + 四步调用序列，一条连接用完就掐', async () => {
+    const { calls, admin } = harness();
+    await expect(admin.list()).resolves.toEqual({ projects: [SUMMARY] });
+    expect(calls).toEqual(['loadConfig', 'openListDb:example.invalid', 'listProjects', 'end']);
+  });
+
+  it('2 格：`loadConfig` 抛 ⇒ not-configured，且后面一步都不许发生', async () => {
+    const { calls, admin } = harness({ loadConfigThrows: new Error('没配') });
+    const err = await admin.list().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SessionError);
+    expect((err as SessionError).code).toBe('not-configured');
+    expect(calls).toEqual(['loadConfig']);
+  });
+
+  it('3 格：`openListDb` 抛 ⇒ db 且没有 end（没拿到手的东西不拆）', async () => {
+    const { calls, admin } = harness({ openListDbThrows: dbError('ECONNREFUSED') });
+    const err = await admin.list().catch((e: unknown) => e);
+    expect((err as SessionError).code).toBe('db');
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain('连不上库');
+    expect(calls).toEqual(['loadConfig', 'openListDb:example.invalid']);
+  });
+
+  it('4 格：`listProjects` 的两级分码 —— 带 code 走 db，不带走 reconcile，两种都得掐连接', async () => {
+    const a = harness({ listProjectsThrows: dbError('PROTOCOL_CONNECTION_LOST') });
+    const errA = await a.admin.list().catch((e: unknown) => e);
+    expect((errA as SessionError).code).toBe('db');
+    expect((errA as Error).message).toContain('PROTOCOL_CONNECTION_LOST');
+
+    const b = harness({ listProjectsThrows: new RangeError('journal_turn 超出安全整数范围') });
+    const errB = await b.admin.list().catch((e: unknown) => e);
+    expect((errB as SessionError).code).toBe('reconcile');
+    expect((errB as Error).message).toContain('工程列表读不出来');
+    // 正控制：两发都走完了 finally 里的拆卸。少了它，"结论先落地再拆"这件事没有证人。
+    expect(a.calls).toContain('end');
+    expect(b.calls).toContain('end');
+  });
+
+  it('5 格：`end()` 抛被吞掉，列表照原样返回，且 stdout 留了一句', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { admin } = harness({ endThrows: dbError('ER_INTERNAL_ERROR') });
+    try {
+      await expect(admin.list()).resolves.toEqual({ projects: [SUMMARY] });
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy.mock.calls[0]?.[0]).toContain('连接没关掉');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe('ProjectAdmin.create', () => {
+  it('6 格：成功 = 两发的形状（createProject 的参数来自那份 doc + turn 1 的首层补丁）', async () => {
+    const { calls, captured, admin } = harness();
+    await admin.create('联排测试房');
+    expect(captured.created).toEqual({ name: '联排测试房', schemaVersion: SCHEMA_VERSION });
+    const entry = captured.entry;
+    if (!entry) throw new TypeError('appendJournal 没被调，首层那一发的账没落');
+    expect(entry.turn).toBe(1);
+    expect(entry.patch.remove).toEqual([]);
+    expect(entry.patch.upsert).toHaveLength(1);
+    // 三个数是投影里读的 literals（本文件的独立证人），不是 `FIRST_STOREY` 的引用。
+    expect(entry.patch.upsert[0]).toMatchObject({
+      kind: 'storey',
+      index: 0,
+      elevationMm: 0,
+      heightMm: 3000,
+      projectId: entry.doc.projectId,
+    });
+    expect(entry.doc.byKind('storey')).toHaveLength(1);
+    expect(calls).toEqual([
+      'loadConfig',
+      `openCreateDb:example.invalid:${entry.doc.projectId}`,
+      'createProject:联排测试房:1',
+      `appendJournal:1:${entry.doc.projectId}`,
+      'end',
+    ]);
+  });
+
+  it('7 格：三个号同源 —— 回包的、仓库绑的、那份文档的 projectId 是同一个 uuidv7', async () => {
+    const { captured, admin } = harness();
+    const value = await admin.create('同源');
+    expect(isEntityId(value.projectId)).toBe(true);
+    expect(value.projectId).toBe(captured.entry?.doc.projectId);
+    // 反向对照：假 id 的注入点会让这一发变哑（第 ③ 段第一条理由的凭据）。
+    expect(Object.keys(value)).toEqual(['projectId']);
+  });
+
+  it('8 格：首层那一发失败 ⇒ 补偿跑，抛的是首层的码，不是补偿的', async () => {
+    const { calls, captured, admin } = harness({ appendJournalThrows: dbError('ECONNRESET') });
+    const err = await admin.create('半途').catch((e: unknown) => e);
+    expect((err as SessionError).code).toBe('db');
+    expect((err as Error).message).toContain('首层那一发失败，工程行已按补偿删掉');
+    // 序列用"步骤名"判，不拼 id：`captured.entry` 在假 repo 抛之前就被记下，
+    // 所以这里能拿到那两个号 —— 上一版的写法是从 `calls[1]` 里 split 出 id，
+    // 那等于让判据依赖自己的字符串格式（改一个冒号就整格假红）。
+    expect(calls.map((c) => c.split(':')[0])).toEqual([
+      'loadConfig',
+      'openCreateDb',
+      'createProject',
+      'appendJournal',
+      'deleteProject',
+      'end',
+    ]);
+    expect(captured.entry?.turn).toBe(1);
+  });
+
+  it('9 格：补偿也失败 ⇒ 两支原文都在 message 里，码仍是首层那一发的', async () => {
+    const { calls, admin } = harness({
+      appendJournalThrows: new RangeError('FIRST-SENTINEL 跳号'),
+      deleteProjectThrows: new Error('COMP-SENTINEL 删不动'),
+    });
+    const err = await admin.create('鬼工程').catch((e: unknown) => e);
+    expect((err as SessionError).code).toBe('reconcile');
+    const msg = (err as Error).message;
+    expect(msg).toContain('FIRST-SENTINEL');
+    expect(msg).toContain('COMP-SENTINEL');
+    expect(msg).toContain('列表里看得见它');
+    expect(calls.map((c) => c.split(':')[0])).toEqual([
+      'loadConfig',
+      'openCreateDb',
+      'createProject',
+      'appendJournal',
+      'deleteProject',
+      'end',
+    ]);
+  });
+
+  it('10 格：`createProject` 抛 ⇒ 没有 appendJournal、也没有 deleteProject、更没有回包', async () => {
+    // 抛的形状用存储层那把尺的原话（⑤ 段的镜像关系），名字本身是短名：
+    // 201 个字符在边界那张表就被拒了（'bad-request'），走到这一发时唯一的可能形状是"尺漂了"。
+    const { calls, captured, admin } = harness({
+      createProjectThrows: new RangeError('工程名不能超过 200 个字符（project.name 是 VARCHAR(200)），收到 201'),
+    });
+    const err = await admin.create('半途而废').catch((e: unknown) => e);
+    expect((err as SessionError).code).toBe('reconcile');
+    expect(calls.filter((c) => c.startsWith('appendJournal'))).toEqual([]);
+    expect(calls).not.toContain('deleteProject');
+    expect(captured.created).not.toBeNull();
+    expect(calls).toContain('end');
+  });
+});
+
+describe('probeConnection / redact / buildDraftEnv', () => {
+  it('11 格：试连成功 = ok 的形状、版本原样、连接照掐', async () => {
+    const calls: string[] = [];
+    const handle: ProbeHandle = {
+      async ping() {
+        calls.push('ping');
+        return { version: '8.0.45' };
+      },
+      async end() {
+        calls.push('end');
+      },
+    };
+    const value = await probeConnection(ENV, async () => {
+      calls.push('open');
+      return handle;
+    });
+    expect(value).toEqual({
+      connected: true,
+      kind: 'ok',
+      serverVersion: '8.0.45',
+      detail: DIAGNOSTIC_TEXT.ok.detail,
+    });
+    expect(calls).toEqual(['open', 'ping', 'end']);
+  });
+
+  it('12 格：试连失败六型逐一对齐 classifyDbError，detail = 文案 + 过 redact 的原文', async () => {
+    const samples: Record<string, string> = {
+      'not-running': 'ECONNREFUSED',
+      denied: 'ER_ACCESS_DENIED_ERROR',
+      'no-database': 'ER_BAD_DB_ERROR',
+      dropped: 'PROTOCOL_CONNECTION_LOST',
+      timeout: 'ETIMEDOUT',
+    };
+    for (const code of Object.values(samples)) {
+      const calls: string[] = [];
+      const value = await probeConnection(ENV, async () => {
+        calls.push('open');
+        throw dbError(code);
+      });
+      const kind = classifyDbError(dbError(code));
+      expect(value.connected).toBe(false);
+      expect(value.kind).toBe(kind);
+      expect(value.serverVersion).toBeNull();
+      expect(value.detail.startsWith(DIAGNOSTIC_TEXT[kind].detail)).toBe(true);
+      expect(value.detail).toContain(code);
+      // ④ 段三条防线的第二颗牙：哨兵口令绝不从 `detail` 出去。
+      expect(value.detail).not.toContain(SECRET);
+      // 这一发的 `open` 自己抛，句柄压根没存在过，所以 `end` 不该出现在名单里。
+      // 它判的是"没有句柄时不去掐"，**不判**"失败也要掐" —— 后者的证人只有第 11 格（成功路）
+      // 与第 13 格（`open` 成了、`ping` 抛）。把这三格读成一格会得出"M27 有三重保护"的假结论。
+      expect(calls).toEqual(['open']);
+    }
+    // 第六型没人被漏过：`unknown` 走 `ER_SOMETHING_NEW`，`redact` 之后仍要说得出 code。
+    const unknownValue = await probeConnection(ENV, async () => {
+      throw dbError('ER_SOMETHING_NEW');
+    });
+    expect(unknownValue.kind).toBe('unknown');
+    expect(unknownValue.detail).toContain('ER_SOMETHING_NEW');
+  });
+
+  it('13 格：`open` 成了、`ping` 抛 ⇒ 连接照样掐（T9-M27 在这一格才有证人）', async () => {
+    const calls: string[] = [];
+    const handle: ProbeHandle = {
+      async ping() {
+        calls.push('ping');
+        throw dbError('PROTOCOL_CONNECTION_LOST');
+      },
+      async end() {
+        calls.push('end');
+      },
+    };
+    const value = await probeConnection(ENV, async () => {
+      calls.push('open');
+      return handle;
+    });
+    expect(value.connected).toBe(false);
+    expect(value.kind).toBe('dropped');
+    expect(calls).toEqual(['open', 'ping', 'end']);
+  });
+
+  it('14 格：`redact` 的四把尺 + `buildDraftEnv` 的同源 + `FIRST_STOREY` 的三个数', () => {
+    // 多处副本全换；名单里第二个 secret 不在文本里时也不许出事。
+    expect(redact(`${SECRET} 与 ${SECRET}`, [SECRET, '另一串'])).toBe(`${MASK_TXT} 与 ${MASK_TXT}`);
+    // 空串跳过、空名单原样（第 ② 段形状 ①）：`'Z'` 是个不在文本里的正常 secret。
+    expect(redact('Access denied', [])).toBe('Access denied');
+    expect(redact('Access denied', ['', 'Z'])).toBe('Access denied');
+    // 真驱动原文（口径 ④ 点名的那一发）里用户名留着、口令那一位不许出现。
+    // 三条断言各挡一种错，缺一条就少一种假绿：只写"用户名留着"挡不住口令没换（本块初稿就是这样，
+    // 而且它把 `'root'` 自己喂进了 secret 名单，于是断言与实现互相矛盾、必红）；
+    // 只写"口令不见了"会把"名单里根本没传口令"也一起绿。
+    const raw = `Access denied for user 'root'@'localhost'（用的口令是 ${SECRET}）`;
+    const masked = redact(raw, [SECRET]);
+    expect(masked).toContain("'root'@'localhost'");
+    expect(masked).not.toContain(SECRET);
+    expect(masked).toContain(MASK_TXT);
+    // 同源：enum 只有一个读数，且草稿用的就是它。
+    expect(ConfigDatabaseSchema.options).toEqual(['dajia']);
+    expect(buildDraftEnv(DRAFT)).toEqual({
+      host: 'db.internal',
+      port: 3307,
+      user: 'dajia',
+      password: SECRET,
+      database: 'dajia',
+    });
+    expect(buildDraftEnv(DRAFT).database).toBe(ConfigDatabaseSchema.options[0]);
+    // 三个数在这一格钉死（连库档第 1 格在投影那一侧读同样的三个数）。
+    expect(FIRST_STOREY).toEqual({ index: 0, elevationMm: 0, heightMm: 3000 });
+  });
+});
+```
+
+> `MASK_TXT` 是本文件顶部的一个私有常量：`const MASK_TXT = '•••';`。**它不是第二个产地** —— 生产代码里那个 `MASK` 是本文件的私有常量，测试碰不到它，而这一格判的是"换出来的样子是那三个字"，把 `'•••'` 写成 `redact(...)` 的引用会得到"实现改什么测试都跟着绿"的假证人（T8 第 ⑥ 段 `untypedProtocolImports` 那一条"先证哨兵"口径的反面：这里要哨兵自己响）。记得 `import { MASK }` **不许**出现（`admin.ts` 没导出它，导出了就等于给了产品代码一个测试专用的洞，P-15）。
+
+Run:
+
+```bash
+npx vitest run apps/desktop/test/unit/admin.test.ts > tmp/t9-admin.log 2>&1; echo "exit=$?"
+npx tsc --noEmit -p apps/desktop/tsconfig.test.json > tmp/t9d-tsc2.log 2>&1; echo "exit=$?"
+```
+
+Expected: `exit=0`、**14 格**（上面三个 `describe` 分 5 + 5 + 4 = 14；Files 行原先预估 12，本块按落盘现物改成 14）。差的这两格各有其名：一是第 14 格，`redact` 的尺 + `buildDraftEnv` 的同源 + `FIRST_STOREY` 的三个数在草稿里是并进第 12 格尾部的，写开来才发现一个 `it` 里混两件事（异步试连与纯函数）会让红的判据说不清是谁的；二是第 13 格，自审时才发现原第 12 格那句 `expect(calls).toEqual(['open'])` 在"掐连接"这条判据上**是空的** —— 那一发的 `open` 自己抛，句柄从未存在，`finally` 里的 `handle?.end()` 本来就走不到，把那句 `end()` 删掉（T9-M27）这一格照样绿。补的第 13 格让 `open` 成功、`ping` 抛，才是 M27 的证人。**格数与标题以实测为准并把两个数写进回填；计划数与实测数不一致时改计划文本**（T8 第 ⑥ 段那条教训，同一条）。
+
+> 红-绿两步：这一档在 `admin.ts` 落盘之前跑，必须红在 `Cannot find module '.../persist/admin'`（整文件 import 红，一格都起不来）。如果红在**别的**模块（比如 `../../src/shared/diagnostics-text`），那是本块 Step 3 的文件还没落盘或相对路径写错 —— 两种红长得一样，先把栈读完整再动手（t9b 的 Step 4 末尾同一条提醒）。
+
+---
+
+- [ ] **Step 7 ④: `apps/desktop/test/unit/persist-boundary.test.ts` 追加第 8 格（7 ⇒ 8）**
+
+判据形状照 T8 那一格（session.ts）与 t9c 的格 6（config-store.ts）： banned 四条 + 正向控制若干。**前两格与 t9c 那两格一字不动**，本文件此刻的名单是：T7 的 2 + T8 的 3 + t9c 的 2 = 7，加这一格 = **8**。
+
+```ts
+// —— Step 7 追加的第 8 格 ——
+
+it('admin.ts 既不碰 electron / node:fs / node:os，也不 import mysql2', () => {
+  const src = srcOf(ADMIN);
+  for (const banned of ["from 'electron'", "from 'node:fs'", "from 'node:os'", "from 'mysql2"]) {
+    expect(src.includes(banned)).toBe(false);
+  }
+  // 正控制：三条注入通道都在。这一族扫描最怕的形状是"文件被搬空了外部依赖，于是全绿"。
+  expect(src.includes('this.ports.loadConfig')).toBe(true);
+  expect(src.includes('this.ports.openCreateDb')).toBe(true);
+  expect(src.includes('this.ports.openListDb')).toBe(true);
+  // `import type` 与值导入的区别在这一格成立：`repository.ts` 顶部有 mysql2 的类型导入，
+  // 具名值导入会把那个模块真加载进纯 node 档 —— 上面第四条 banned 同时挡住了那两种写法。
+  expect(src.includes('firstStoreyTurn')).toBe(true);
+});
+```
+
+顶部常量补一行 `const ADMIN = '../../src/main/persist/admin.ts';`（放在 `SESSION` 那一族旁边）。
+
+**这一格吃的是 t9c 已经登记过的代价**（⑦ 段末：注释里出现完整的模块说明符会误红），所以 `admin.ts` 的注释里**不许**写出 `from 'node:fs'` 这一族的原样句子 —— 上面那份实现文本已经避开了（它说"具名值导入"与"模块说明符"，不拼出那个样子）。
+
+Run: `npx vitest run apps/desktop/test/unit/persist-boundary.test.ts > tmp/t9-boundary2.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`、**8 格**。t9e 会再加一格（扫 `main/index.ts`：`send(UI_COMMAND_EVENT` 的唯一发点在 `attachInteractiveUi` 体内，而那道早退判据在它的发点之前 —— 判据形状见 t9e 的 Step 8 ⑤）⇒ 9；`chunk-t9a.md` 的 Files 行按 9 收（本块末尾清单第 3 条）。
+
+---
+
+- [ ] **Step 7 ⑤: `apps/desktop/test/db/projects.test.ts` —— 6 格，真库自建自清**
+
+夹具形状照 `repository.test.ts`（T4 第 ⑥ 段）而非 unit 档：真 `createDbPool`、库名**写死 `dajia_test`、不抄 env**（同一条红线，注释也照抄那一句的理由），`beforeAll` 走 drop → ensure → migrate，`afterAll` 再 drop，`beforeEach` 只删 `project` 行靠 CASCADE 级联。
+
+`AdminPorts` 的三条在这里由本文件自己装配（`ipc-persist.ts` 那份是 electron 侧的，且 t9e 才存在）—— 这一发同时是"端口的形状没有隐藏要求"的证明：如果一个端口方法在装配时需要 `app.getPath` 之类的东西，本文件就装不出来。
+
+```ts
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import type { Pool } from 'mysql2/promise';
+import { SCHEMA_VERSION, isEntityId } from '@dajia/core';
+import { ProjectCreateRequestSchema } from '@dajia/protocol';
+import { createDbPool } from '../../src/main/db/pool';
+import { readMysqlEnv } from '../../src/main/db/env';
+import { dropTestDatabase, ensureDatabase } from '../../src/main/db/database';
+import { migrate } from '../../src/main/db/migrate';
+import { ProjectRepository, listProjects } from '../../src/main/db/repository';
+import { ProjectAdmin, type AdminPorts } from '../../src/main/persist/admin';
+
+const env = readMysqlEnv();
+// 红线：库名由本文件写死，**不抄 env**。`env.database` 允许是 `dajia`
+// —— 那是应用运行时的合法取值，测试照抄它就把用户的真工程库当试验田，且一句错都不报。
+const DATABASE = 'dajia_test';
+/** 与 `createDbPool` 的默认 4 不同是有意的：管理通道一次用一条，池留 2 足够，也把"用完就掐"这件事摆在读得见的地方。 */
+const ADMIN_OPTS = { connectionLimit: 2 } as const;
+
+let pool: Pool;
+const adminPorts: AdminPorts = {
+  loadConfig: () => ({ ...env, database: DATABASE }),
+  async openCreateDb(e, projectId) {
+    const p = createDbPool(e, ADMIN_OPTS);
+    return { repo: new ProjectRepository(p, projectId, 'tester'), end: () => p.end() };
+  },
+  async openListDb(e) {
+    const p = createDbPool(e, ADMIN_OPTS);
+    return { listProjects: () => listProjects(p), end: () => p.end() };
+  },
+};
+const admin = new ProjectAdmin(adminPorts);
+
+async function rows<T>(sql: string, params: unknown[] = []): Promise<T[]> {
+  const [res] = await pool.query(sql, params);
+  return res as T[];
+}
+
+async function count(table: string, where = '', params: unknown[] = []): Promise<number> {
+  const [res] = await pool.query(`SELECT COUNT(*) AS n FROM \`${table}\`${where}`, params);
+  return Number((res as { n: number | string }[])[0]?.n);
+}
+
+async function clearAll(): Promise<void> {
+  await pool.query('DELETE FROM `project`');
+}
+
+beforeAll(async () => {
+  await dropTestDatabase(env, DATABASE);
+  await ensureDatabase(env, DATABASE);
+  pool = createDbPool({ ...env, database: DATABASE });
+  await migrate(pool, DATABASE);
+});
+
+afterAll(async () => {
+  await pool.end();
+  await dropTestDatabase(env, DATABASE);
+});
+
+beforeEach(clearAll);
+
+describe('ProjectAdmin 连库档：新建的两发真的落进投影', () => {
+  it('1 格：create 之后六张表各自的读数（journal_turn=1、首层进投影、**快照为空**）', async () => {
+    const { projectId } = await admin.create('联排测试房');
+    const head = await rows<{
+      name: string;
+      schema_version: number;
+      journal_turn: number;
+      clean_shutdown: number;
+    }>('SELECT `name`, `schema_version`, `journal_turn`, `clean_shutdown` FROM `project` WHERE `id` = ?', [
+      projectId,
+    ]);
+    expect(head).toHaveLength(1);
+    expect(head[0]).toEqual({ name: '联排测试房', schema_version: SCHEMA_VERSION, journal_turn: 1, clean_shutdown: 1 });
+    // 首层在投影里的三个数：与 `FIRST_STOREY` 的 literals 同源，但这一发读的是**盘上**的数。
+    expect(await rows('SELECT `index_no`, `elevation_mm`, `height_mm` FROM `storey` WHERE `project_id` = ?', [projectId])).toEqual([
+      { index_no: 0, elevation_mm: 0, height_mm: 3000 },
+    ]);
+    // 楼层自己就是层，`element.storey_id` 对它为空（P-7 的投影形状）。
+    expect(await rows<{ storey_id: string | null }>('SELECT `storey_id` FROM `element` WHERE `project_id` = ?', [projectId])).toEqual([
+      { storey_id: null },
+    ]);
+    expect(await count('command_log', ' WHERE `project_id` = ?', [projectId])).toBe(1);
+    // P-23 的直接后果：新建不带快照。这一格是"零快照"唯一的落盘证据。
+    expect(await count('snapshot', ' WHERE `project_id` = ?', [projectId])).toBe(0);
+  });
+
+  it('2 格：create 出来的工程能被读路径以 read 打开（零快照 + 一发日志重放到尾）', async () => {
+    const { projectId } = await admin.create('能打开的工程');
+    const loaded = await new ProjectRepository(pool, projectId, 'tester').loadProject('read');
+    expect(loaded.header.projectId).toBe(projectId);
+    expect(loaded.header.journalTurn).toBe(1);
+    expect(loaded.header.wasCleanShutdown).toBe(true);
+    expect(loaded.snapshot).toBeNull();
+    expect(loaded.replayed.rows).toBe(1);
+    expect(loaded.doc.projectId).toBe(projectId);
+    expect(loaded.doc.byKind('storey')).toHaveLength(1);
+    // 这一发同时是"turn 写错会静默绿"那一型的证人：`appendJournal` 对 `turn <= journal_turn`
+    // 回 'already-applied' 而不抛，所以 turn 写成 0 时 unit 档全绿、日志一行都不写，
+    // 而这里的 `replayed.rows` 与 `doc.byKind('storey')` 两处同时红。
+  });
+
+  it('3 格：200/201 两把尺各自表态（边界 bad-request 与存储层 reconcile），且 201 一行都不写', async () => {
+    expect(ProjectCreateRequestSchema.safeParse({ name: '甲'.repeat(200) }).success).toBe(true);
+    expect(ProjectCreateRequestSchema.safeParse({ name: '甲'.repeat(201) }).success).toBe(false);
+
+    const err = await admin.create('甲'.repeat(201)).catch((e: unknown) => e);
+    expect((err as { code?: string }).code).toBe('reconcile');
+    // 第一发就坏 ⇒ 库里没有孤儿行，也没有补偿那一次往返（unit 格 10 的正控制在这一侧重复一次，
+    // 因为这里的"没有"是查出来的，不是调用序列里读出来的）。
+    expect(await count('project')).toBe(0);
+
+    const ok = await admin.create('甲'.repeat(200));
+    expect(isEntityId(ok.projectId)).toBe(true);
+    expect(await count('project')).toBe(1);
+  });
+
+  it('4 格：deleteProject 的补偿语义 —— 级联真的带走的三张表 + 删不到也算成功', async () => {
+    const { projectId } = await admin.create('待删的工程');
+    // 判据只数 create 真的写过行的那三张子表：snapshot 与 asset 此刻恒空，
+    // 拿它们当级联证据是假牙（一个本来就 0 的行数不会因 CASCADE 变）。
+    expect(await count('element', ' WHERE `project_id` = ?', [projectId])).toBe(1);
+    expect(await count('storey', ' WHERE `project_id` = ?', [projectId])).toBe(1);
+    expect(await count('command_log', ' WHERE `project_id` = ?', [projectId])).toBe(1);
+
+    await new ProjectRepository(pool, projectId, 'tester').deleteProject();
+    expect(await count('project')).toBe(0);
+    for (const table of ['element', 'storey', 'command_log']) {
+      expect(await count(table, ' WHERE `project_id` = ?', [projectId])).toBe(0);
+    }
+    // 重复补偿必须静默成功（T9-M13 的证人：加一句 `affectedRows === 0 ⇒ throw` 就把
+    // "首层失败之后先删再抛"变成"首层失败之后再抛一次别的错"，真因被顶掉）。
+    await expect(new ProjectRepository(pool, projectId, 'tester').deleteProject()).resolves.toBeUndefined();
+  });
+
+  it('5 格：listProjects 的六列读数、locked 两行与 `updated_at DESC, id ASC` 的排序', async () => {
+    const a = (await admin.create('甲工程')).projectId;
+    const b = (await admin.create('乙工程')).projectId;
+    await pool.query('UPDATE `project` SET `lock_owner` = ? WHERE `id` = ?', ['DESKTOP-X:1234', b]);
+    // 排序**不许**靠 create 的毫秒差：两次 create 落在同一毫秒时顺序由 `id ASC` 决定，
+    // 那是 uuidv7 的时间序，与"最近改过在前"这条产品口径相反。所以手写 `updated_at` 把两发分开。
+    await pool.query('UPDATE `project` SET `updated_at` = ? WHERE `id` = ?', ['2020-01-01 00:00:00.000', a]);
+    await pool.query('UPDATE `project` SET `updated_at` = ? WHERE `id` = ?', ['2020-01-02 00:00:00.000', b]);
+
+    const listed = await listProjects(pool);
+    expect(listed.map((p) => p.projectId)).toEqual([b, a]);
+    expect(listed[1]).toEqual({
+      projectId: a,
+      name: '甲工程',
+      schemaVersion: SCHEMA_VERSION,
+      journalTurn: 1,
+      updatedAt: '2020-01-01 00:00:00.000',
+      locked: false,
+    });
+    expect(listed[0].locked).toBe(true);
+    // 同秒那一发由 `id ASC` 破平：uuidv7 里 a < b（先造的 id 小），所以顺序反过来。
+    await pool.query('UPDATE `project` SET `updated_at` = ? ORDER BY `id` ASC LIMIT 2', ['2021-05-05 05:05:05.005']);
+    expect((await listProjects(pool)).map((p) => p.projectId)).toEqual([a, b]);
+  });
+
+  it('6 格：越界的 journal_turn 让整发列表抛，而不是悄悄报一个数（`asSafeInt64` 在 list 路径上的证人）', async () => {
+    const { projectId } = await admin.create('越界的账');
+    await pool.query('UPDATE `project` SET `journal_turn` = ? WHERE `id` = ?', ['9007199254740993', projectId]);
+    const err = await listProjects(pool).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toContain('超出 JS 安全整数范围');
+    // 反向控制：改回安全读数，同一发连接、同一个函数又能列 —— 红的是那一格，不是这条链路。
+    // 少了这一句，"整发抛"也可以是连接被那一发 UPDATE 打断造成的假绿。
+    await pool.query('UPDATE `project` SET `journal_turn` = 1 WHERE `id` = ?', [projectId]);
+    await expect(listProjects(pool)).resolves.toHaveLength(1);
+  });
+});
+```
+
+> **`<待实测>` 四件**（连库档跑通时把读数写进执行回填，别改判据）：
+> ① `'甲'.repeat(200)` 真的能存进 `VARCHAR(200)` —— utf8mb4 的 VARCHAR 长度按**字符**算，所以 200 个汉字应当收得下。若实测反了（MySQL 把它按字节拒了），格 3 会红在 `create` 那一发：那时**改夹具的字符**（换成 ASCII 的 `'x'`）而**不动两把尺的镜像关系**，并把实测的报错原文写进回填。
+> ② `UPDATE \`project\` SET \`updated_at\` = ?` 递字符串 `'2020-01-01 00:00:00.000'`：`dateStrings: true` 之下读回来的形状（`YYYY-MM-DD HH:mm:ss.SSS`）是 T2/T5 已经吃过的那一种，这一格把它钉成 `toEqual` 里的字面量。若某台机器的 MySQL 8 回读成 `'2020-01-01 00:00:00.000000'` 之类的形状，红的是 `listed[1]` 那一发 `toEqual` —— 按盘上现物订正**字面量**，不许把 `updatedAt` 改成 `expect.any(String)`（那正好取消这一格唯一的价值：它是"边界原样递字符串"的证人）。
+> ③ 那一条 `UPDATE ... ORDER BY \`id\` ASC LIMIT 2`：MySQL 允许带 ORDER BY/LIMIT 的 UPDATE（T6 的 CAS 三发里也吃过同族语法），但这一发是**测试夹具**，不在生产路径上。若被拒（`ER_WRONG_VALUE_COUNT` 或严格模式的新说法），改成两条分开的 `UPDATE ... WHERE id = ?`，判据不动。
+> ④ `journal_turn = '9007199254740993'`（字符串参数进 BIGINT 列）在 MySQL 侧的转换与 mysql2 的回读形状 —— T4 Step 1 的 D 档已经实测过**读**侧（`SELECT 9007199254740993 AS big` 回 string），这里是写侧。若参数被当成 0（驱动把 BigInt-字符串塞错），格 6 会红在"改回 1 之后又能列"那一发的 `toHaveLength(1)` 之前，先读完整报错。
+
+Run:
+
+```bash
+node -e "console.log(process.env.DAJIA_MYSQL_DATABASE)"
+npx vitest run --config vitest.db.config.ts apps/desktop/test/db/projects.test.ts > tmp/t9-projects.log 2>&1; echo "exit=$?"
+```
+
+Expected: 先打印库名（**只打印库名，绝不回显口令**）。`exit=0`、**6 格**。这一档需要 `dajia_test` 可用（授权只在 M1.3 闸门那一台机器、那两个库名之内）。若 `admin.ts` 还没落盘，红在 `Cannot find module '.../persist/admin'`；若红在建库权限或 `ECONNREFUSED`，那是环境没起 —— **不许把这一档的失败写成计划的失败**，按 T4 第 ⑥ 段同一口径：查清环境再跑，判据一字不动。
+
+---
+
+**⑤ 本块的变异靶（编号接 t9c 的 M21 之后；靶的编号只在 Step 10 的总表里成立，正文引用的是那一行内容）**
+
+| ID | 变异 | 唯一会红的判据 |
+| --- | --- | --- |
+| T9-M22 | `redact` 里去掉"空串跳过"那一句 | `admin.test.ts` 格 14 的 `redact('Access denied', ['', 'Z'])` 红：整句被插成 `•••A•••…` |
+| T9-M23 | `list()` 的 `persistErrorCode(err)` 换成固定 `'internal'` | 格 4 两级分码红（'db'/'reconcile' 都变 'internal'）—— 正是第 ② 段说的那个漂移方向 |
+| T9-M24 | `create` 的首层失败那一支不补偿（去掉 `deleteProject()`） | 格 8 的调用序列少一个 `deleteProject`；连库档看级联的格 4 不受影响（它判的是存储层，补偿的读者只有这一格） |
+| T9-M25 | 补偿失败那一支改成吞掉补偿的错、只抛首层的 | 格 9 的 `toContain('COMP-SENTINEL')` 红 —— 库里那个鬼工程就没名没人了 |
+| T9-M26 | `createProject` 抛那一支也顺手 `deleteProject()` | 格 10 的 `expect(calls).not.toContain('deleteProject')` 红（多一次无意义往返，且把"补偿"用在不需要它的地方） |
+| T9-M27 | `probeConnection` 的 `finally` 去掉 `end()` | **格 13 是这一发的唯一证人**（`open` 成功、`ping` 抛 ⇒ `calls` 少一个 `end`）；格 11 在成功路上也少一个 `end`，两条都红。格 12 **不红** —— 那一发的 `open` 自己抛，句柄不存在，`handle?.end()` 本来就走不到（这正是本块把格 12 的标题从"且每型都掐"改成实话的原因）。一次试连挂一条连接，而按钮可以连点。 |
+| T9-M28 | `ProjectAdmin.close` 改成不吞、往上抛 | 格 5 红：`list()` 的 `resolves.toEqual` 变成 reject —— "结论先落地再拆"这条顺序的唯一证人 |
+| T9-M29 | `firstStoreyTurn` 的 `turn: 1` 改成 `0` | **两档同时红**，这是本块最要紧的一条：格 6 的序列红（`appendJournal:0:…`），而连库档格 1 的 `storey` 读数与格 2 的 `replayed.rows` 一起红（`appendJournal` 走幂等出口静默返回，日志一行都不写）。unit 档单独绿过去的可能性正是 M29 存在的全部理由。 |
+| T9-M30 | `buildDraftEnv` 的 `database` 换成 `'dajia_test'` | 格 14 的 `buildDraftEnv(DRAFT).database` 那两条同源断言红（把线上应用指向测试库的那一发） |
+| T9-M31 | `db/repository.ts` 的 `listProjects` 去掉 `ORDER BY … , \`id\` ASC` | 连库档格 5 的"同秒两行"那一发红（顺序变回 `[b, a]`）。靶在 t9c 落的文件里，证人只有本块有 —— 拼接时把这条挪进总表并在 t9c 的表里留一句指针 |
+| T9-M13（t9c） | `deleteProject` 加 `if (affectedRows === 0) throw` | 连库档格 4 的"重复补偿应当静默成功"那一发红 —— t9c 已经记过这一发，本块就是它预告的那个凭据 |
+
+---
+
+**⑥ 本块登记的限度（进 Step 10 的总表，别在这里就当它们被证过了）**
+
+① 14 格全用假 repo：`ON DELETE CASCADE` 真的级联、两发之间进程被杀留下鬼工程这两件事**只有连库档能证**，而连库档只在 M1.3 闸门那台机器上跑。CI 上这一族的覆盖面是形状，不是账本 —— 这是本计划一贯的双通道口径，不是 T9 新引入的。
+
+② `redact` 是子串替换，不是词法分析：口令短到会吃掉文案里正常的字母。方向是过度遮蔽，不是泄漏，判据不许反过来写（"不许误伤"会把这条防线拆掉）。
+
+③ `probeConnection` 对 `ping()` 返回的空串版本原样递出：`ConnectionTestValueSchema` 的 `serverVersion: z.string().nullable()` 不拦 `''`。真机 `SELECT VERSION()` 不可能回空，故不加校验（加了就是把"不可能"当成"已验证"）。面板显示空白版本时用户仍看得见 `connected: true`。
+
+④ 试连**测的是应用库**：`buildDraftEnv` 永远拼 `'dajia'`，所以一个只有服务器活着、库还没建的人按「测试连接」会得到 `no-database` 那一型（`detail` 说"连上了，但那个库还没建"，`next` 给建库步骤）。这是 ⑧ 段那条决定（数据库名不进向导）的直接后果，不是 bug。
+
+⑤ `list`/`create` 各开一条短连接、`end()` 失败只记不抛：那一发之后连接可能留到进程结束（mysql2 没有强杀池的手段）。代价与 P-22 同一笔，本块只是它的第二处落点。
+
+⑥ 鬼工程（首层失败且补偿也失败留下的那一行 `project`）**在 S1 里没有删除入口**：`deleteProject` 的唯一读者是补偿，屏幕上没有"删工程"这个动作。message 会点名它（M25 的判据），但清掉它要人手进 MySQL —— 这一条进「人工验证，本计划不打勾的项」那一章，本计划不假装 UI 覆盖了它。
+
+⑦ `listProjects` 不加分页（⑨ 段），`ProjectAdmin.list()` 每次读全表。S1 一台机器上的数量级是十。
+
+---
+
+**⑦ 块间接缝的订正清单（本块写的时候发现的、必须回头改前块的 —— **以下 7 条已全部落盘到 `chunk-t9a.md` / `chunk-t9c.md`，拼接时不需要再执行，只核对**）**
+
+1. `chunk-t9a.md` Files 行：`test/db/projects.test.ts`（**5 格** ⇒ **6 格**）；`test/unit/persist-boundary.test.ts`（**+3 格、1 格改写 ⇒ 8** ⇒ **+4 格、1 格注释订正 ⇒ 9**）；`apps/desktop/src/main/persist/session.ts` 那句"只改一个函数体" ⇒ "三处：`persistErrorCode` 的函数体 + 两个 `export`（P-30）"。
+2. `chunk-t9a.md` Produces 行 `persist/admin.ts` 那一条：`interface AdminPorts { loadConfig(); openCreateDb(env, projectId); openListDb(env); newProjectId(); readonly schemaVersion }` ⇒ `{ loadConfig(); openCreateDb(env, projectId); openListDb(env) }`，并把 `create(name)` 的返回与 `uuidv7` / `SCHEMA_VERSION` 的来源写成第 ③ 段那句（P-31）。
+3. `chunk-t9a.md` 格数预估那句的算术：新增格数为 `10 + 8 + 6 + 10 + 14 = 48`（admin 12 ⇒ 14），加 session +4、project-store +7、persist-boundary +4、ipc-channels +1 ⇒ `pnpm test` 从 35 文件 / 509 条变 **40 文件 / 573 条**；`pnpm test:db` 6 文件 ⇒ **7 文件 / +6 格**。原文那句写的是 571，两处按本块实测数订正（口径不变：以落盘实测为准再改一次）。
+4. `chunk-t9a.md` ③ 段末尾那句「与 `--prop-shot` 复跑（Step 7）」⇒ **Step 10**：闸门复跑只能在接线全部落盘之后（Step 7 与 Step 8 都没有常驻 DOM 改动，跑闸门只会重复 T8 已经跑过的那五发）。**同一次订正里把 Task 9 的步数拆开**：Step 8 = main 侧接线、Step 9 = 屏幕侧、Step 10 = 复跑 + 三张总表 + 提交，故 t9a/t9b/t9c/t9d 里所有"Step 8 的限度表 / 总表 / 交接 / 提交切分"改指 Step 10，只有 t9c 那句"safeStorageCipher 的实测归 Step 9"反过来改成 Step 8（它落在 main 侧那一档）。
+5. `chunk-t9c.md` Step 5 ③ 那句"其余一切 —— … `wrap` … 一字不动" ⇒ 补一句"`wrap` 与 `persistErrorCode` 各加一个 `export`（本任务 Step 7 的 P-30），函数体不动"。
+6. `chunk-t9c.md` 第 129 行 `listProjects` 注释那句「那一发由 `test/db/projects.test.ts` 第 **4** 格用一行 `journal_turn = 9007199254740993` 逼出来」⇒ **第 6 格**。（落盘前核对：本块初稿把这条写成"前块写的是第 3 格"，那是我对 t9c 记忆的错账 —— 磁盘上的原文是第 4 格，而第 4 格在本块是 `deleteProject` 的补偿语义格。两种数都指向错的那一发，故订正照做，只是理由换了一个：**格序以本块落盘的 6 格为准**，第 3 格是 200/201 两把尺、第 4 格是级联与重复删、第 6 格才是越界那一发。）
+7. `chunk-t9c.md` 的变异表补一条指针：T9-M13 的凭据在 `test/db/projects.test.ts` 第 4 格（本块 M13 那一行）。
+
+> 这份清单本身是**判据级**的：前 6 条不改任何一条测试的字面量判据，只改格数、格号与端口形状。第 2 条改的是产品接口（两个注入点被删），它的凭据是本块的格 6 / 格 7 与 P-31 那三条理由。
+
+---
+
+**Step 7 的交接（给 t9e）**：`AdminPorts` 三键就是 `ipc-persist.ts` 那份装配的靶 —— 它要写 `loadConfig: () => configToEnv(readConfig(userDataDir, safeStorageCipher))`、`openCreateDb` / `openListDb` 各建一条 `createDbPool(e, { connectionLimit: 2 })`，并把 `openProbe` 那条连接带上 `connectTimeoutMs: CONFIG_TEST_CONNECT_TIMEOUT_MS`（`db/pool.ts` 的第三格选项在本块**没有**落盘，归 t9e，与那八行适配器一起）。`ProjectAdmin` 与 `probeConnection` 的实例在 `ipc-persist.ts` 里各建一次、随 `registerPersistIpc` 活（不是每次请求新建：`ports` 里没有请求级状态，而 `redact` 的 `Set` 与 `firstStoreyTurn` 都是纯函数）。
+
+---
+
+**本步的 Files（Step 8 实际触碰的清单；拼接时并进 t9a 的 Files 行，见末尾清单）**
+
+- Create: `apps/desktop/src/main/persist/admin-ports.ts`（`ensureSchema` + `makeAdminPorts` + `probeOpener`；**electron-free / fs-free / mysql2-import-free**）
+- Modify: `apps/desktop/src/main/ipc-persist.ts`（六处改动：import 块、`safeStorageCipher` 八行、`adminWiring` 两份模块态、`errorCode` 加一支、`dispatch` 五个新 `case`、`registerPersistIpc` 里的装配与 `loadConfig` 换源）
+- Modify: `apps/desktop/src/preload/index.ts`（**整文件替换**：`DajiaApi` 从 5 件到 11 件）
+- Modify: `apps/desktop/src/main/index.ts`（`attachInteractiveUi` + 菜单模板 + startup 那一发 `send`；**五个 shot 分支一字不动**）
+- Modify: `apps/desktop/test/unit/persist-boundary.test.ts`（**+3 格** ⇒ 11）
+- Modify: `apps/desktop/test/unit/ipc-channels.test.ts`（格 1 改一个数、格 2 与格 3 一字不动、**+2 格** ⇒ 5）
+- Create: `apps/desktop/test/db/admin-ports.test.ts`（**5 格**，真库自建自清）
+- **不碰**：`apps/desktop/src/main/db/pool.ts`（Step 3 已落）、`db/env.ts`、`db/migrate.ts`、`db/database.ts`、`db/repository.ts`、`persist/session.ts`、`persist/admin.ts`、`persist/config-store.ts`、`renderer/**`（Step 9 的靶）。
+
+---
+
+- [ ] **Step 8 ①: `apps/desktop/src/main/persist/admin-ports.ts`（新建）**
+
+这个文件是 T9 唯一新增的"真把式"档：它认识 mysql2 的池、认识建库与迁移，而**不认识 electron、不认识 fs**。P-38 的全部理由都在这一句里 —— 只有这样的文件才装得进连库档的夹具，也只有装得进夹具的建库逻辑才算被证过。
+
+```ts
+import type { EntityId } from '@dajia/core';
+import { ensureDatabase } from '../db/database';
+import type { MysqlEnv } from '../db/env';
+import { migrate } from '../db/migrate';
+import { createDbPool, CONFIG_TEST_CONNECT_TIMEOUT_MS } from '../db/pool';
+import { listProjects, ProjectRepository } from '../db/repository';
+import type { AdminCreateDb, AdminListDb, AdminPorts, ProbeHandle, ProbeOpener } from './admin';
+import { describeError } from './describe-error';
+import { SessionError } from './session';
+
+/**
+ * 管理通道那条连接的池宽。它与 `createDbPool` 的默认 4 不同是有意的：一次调用一条连接、
+ * 用完就掐（口径 ① 那笔代价），留 2 只是给"点得快"留一点余量，而这个数唯一的读者就是本文件。
+ */
+const ADMIN_CONNECTION_LIMIT = 2;
+
+/**
+ * 建库 + 建表（P-37 的那件事的正文）。
+ *
+ * 两发都必须在这一个函数里，因为缺任何一发的处境都真实存在：只有 `CREATE DATABASE` 而没有
+ * 迁移 ⇒ 列表拿到的是一张空库里的一张空表都查不到（`ER_NO_SUCH_TABLE`）；只有迁移而不建库 ⇒
+ * 全新机器上第一发就 `ER_BAD_DB_ERROR`。
+ *
+ * **为什么读路径（`openListDb`）也允许跑 DDL**：`migrate` 幂等（已应用的版本读校验和比对，一致就跳过），
+ * 而 T8 的 `openDb` 早就在每次开工程时跑同一条（t8c 第 ② 段那句"T9 的建库向导也跑同一条 —— 双跑无害"
+ * 就是这一发预告的那个 T9）。把建库只放在"新建工程"那一路会得到一个更坏的形状：用户在向导里点了保存、
+ * MySQL 当时没起，之后再启动服务，列表会一直报"连不上库"，直到他回去重填一遍配置。
+ *
+ * 失败的码不在这里定（`ProjectAdmin` 那一层的 `wrap(err, 'db', '连不上库')` 负责），理由与
+ * t8c 的 `openDb` 那一段完全相同：**迁移正文被改过那一抛是 `RangeError`，同样落进 `'db'`，
+ * 因为那一刻的下一步动作确实是"去检查数据库那一侧"**。
+ */
+export async function ensureSchema(env: MysqlEnv): Promise<void> {
+  await ensureDatabase(env, env.database);
+  // 迁移连接是**唯一**开 `multipleStatements` 的那一条（T2 的原话，P-17 钉过那句注释）。
+  const pool = createDbPool(env, { multipleStatements: true });
+  try {
+    await migrate(pool, env.database);
+  } finally {
+    // 不把 `end()` 的失败盖在 `migrate` 的失败上（t8c 的 `openDb` 同一句）：这里只保证一条 ——
+    // 抛出去的时候没有池留在手里。
+    await pool.end().catch(() => undefined);
+  }
+}
+
+/**
+ * 装配三条真端口所需的两样外部事实（P-31 把 `AdminPorts` 收成三键之后，剩下的"还得知道什么"就只剩这两样）：
+ * - `loadConfig`：它**不是**这里的实现。配置来自 `config-store`（safeStorage 那份文件）而 `userData` 目录
+ *   只有 electron 侧知道，所以这一发从外面递进来 —— 连库档递的是 `{ ...env, database: 'dajia_test' }`，
+ *   生产侧递的是 `configToEnv(readConfig(userDataDir, safeStorageCipher))`。
+ * - `actor`：写进 `command_log.actor` 的那个"谁的哪一号进程"。它的产地仍然是 `ipc-persist.ts` 的
+ *   `lockOwner()`（T8 的原话：与 `lock_owner` **同一个串**），这里不重算一份，因为 `node:os` 属于
+ *   本文件要躲开的那一族（第 ⑨ 段的边界扫描）。
+ */
+export interface AdminPortDeps {
+  loadConfig(): MysqlEnv;
+  actor(): string;
+}
+
+/** `ProjectAdmin` 那三条注入端口的生产实现。它返回的正是 `AdminPorts`，所以 t9d 那句"端口的形状没有隐藏要求"在这里第二次成立。 */
+export function makeAdminPorts(deps: AdminPortDeps): AdminPorts {
+  return {
+    loadConfig: deps.loadConfig,
+    async openCreateDb(env, projectId): Promise<AdminCreateDb> {
+      await ensureSchema(env);
+      const pool = createDbPool(env, { connectionLimit: ADMIN_CONNECTION_LIMIT });
+      try {
+        return { repo: new ProjectRepository(pool, projectId, deps.actor()), end: () => pool.end() };
+      } catch (err) {
+        // 先关池再抛，且**就地定 `'internal'`**：此刻唯一可能的形状是仓库自己那把尺
+        // （`actor` 长度 1..64）没过去，而那是我们的拼接错了，不是"去检查 MySQL 服务"。
+        // 这一发照的是 t8c 的 `openDb` —— 同一个处境在两个文件里得到同一句话与同一个码。
+        await pool.end().catch(() => undefined);
+        throw new SessionError('internal', `仓库建不起来：${describeError(err)}`);
+      }
+    },
+    async openListDb(env): Promise<AdminListDb> {
+      await ensureSchema(env);
+      const pool = createDbPool(env, { connectionLimit: ADMIN_CONNECTION_LIMIT });
+      // 这里没有 try/catch：`listProjects: () => listProjects(pool)` 那一发闭包不会抛（构造期不查参数），
+      // 所以"没拿到手的东西不拆"这条在 `openListDb` 上根本没有可判的形状（对照 t9d 第 ① 段格 3 的那条注释）。
+      return { listProjects: () => listProjects(pool), end: () => pool.end() };
+    },
+  };
+}
+
+/**
+ * 试连的那条连接（`probeConnection` 的 `ProbeOpener` 生产实现）。
+ *
+ * 三个形状各有其所以然：
+ * - `connectionLimit: 1` —— 一次试连一条连接，没有第二条要它。
+ * - `connectTimeoutMs: CONFIG_TEST_CONNECT_TIMEOUT_MS` —— P-34 那一发的**唯一**读者。它只握这一发的手，
+ *   会话那条常驻连接不受它管（t9b 第 ③ 段注释原话）。
+ * - **不**调 `ensureSchema`：试连是"我只看看"那一发（第 ⑤ 段的口径），它一拨号就把 DDL 做完了，
+ *   `no-database` 那一型就永远不会出现在屏幕上，而 t9b 花一整张文案表换来的那一型正是"连上了，还没建"。
+ *
+ * 池是懒的（t9d 第 ① 段末实测过的那件事）：`createDbPool` 永远不抛，失败在第一发 `query()` 上炸，
+ * 所以连不上的处境会带着 `ECONNREFUSED` / `ETIMEDOUT` / `ER_BAD_DB_ERROR` 走到 `classifyDbError` 面前。
+ */
+export const probeOpener: ProbeOpener = async (env) => {
+  const pool = createDbPool(env, {
+    connectionLimit: 1,
+    connectTimeoutMs: CONFIG_TEST_CONNECT_TIMEOUT_MS,
+  });
+  return {
+    async ping(): Promise<{ version: string }> {
+      const [rows] = await pool.query('SELECT VERSION() AS version');
+      // `as { version: string }[]` 的写法照 T4 的 `rows<T>()` 那一份夹具（同一族 mysql2 返回值），
+      // `<待实测>` 那一条里包含了"这条链上 `RowDataPacket` 的索引签名能不能直接降到 `{ version: string }`"。
+      const version = (rows as { version: string }[])[0]?.version;
+      if (typeof version !== 'string') {
+        // 这一发抛的是没有 `code` 的 `RangeError` ⇒ `classifyDbError` 回 `'unknown'`，
+        // 而那正是"对面说的话不像 MySQL"时唯一诚实的答案（第 ⑤ 段：不许"归个类算了"）。
+        throw new RangeError('SELECT VERSION() 没回一个字符串：对面应答了，但说的话不像 MySQL');
+      }
+      return { version };
+    },
+    end: () => pool.end(),
+  };
+};
+```
+
+> **为什么 `ensureSchema` 是导出的**（而不是 `makeAdminPorts` 里的一个私有步骤）：连库档要**单独**把它跑一次，才能把"库被删掉之后自己会长回来"这件事与"端口调用过它"那件事分成两条判据（格 1 与格 4 各自的名字就写着这一条分工）。它同时是 T10/T11 那两条闸门可以自己装配的入口 —— 闸门不经过向导，但它需要一个有表的库。
+
+---
+
+- [ ] **Step 8 ②: `apps/desktop/src/main/ipc-persist.ts` 的六处改动**
+
+**改动 1 —— import 块**（四处增删，其余一字不动）
+
+```ts
+// 第 148 行那份 electron import 加 `safeStorage`：
+import { app, ipcMain, safeStorage, type BrowserWindow, type WebContents } from 'electron';
+
+// `readMysqlEnv` 从这份 import 里**删掉**（P-27 的生产侧落点：环境变量不再是应用的配置源），
+// `type MysqlEnv` 留着 —— 它仍然有读者（下面 `loadConfig` 那一发的具名返回类型）。
+import type { MysqlEnv } from './db/env';
+
+// `@dajia/protocol` 那份 import 的花括号里追加（按键名排序插进现有名单，别在末尾堆一行）：
+//   值：UI_COMMAND_EVENT, parseConfigReadRequest, parseConfigSaveRequest, parseConfigTestRequest,
+//       parseConfigValue, parseConnectionTestValue, parseProjectCreateRequest, parseProjectCreateValue,
+//       parseProjectListRequest, parseProjectListValue
+//   （`parseUiCommand` **不**在这里用：main 递出去的是字面量，验它是屏幕侧的事 —— 见第 ③ 段末那条限度）
+
+// 三份新文件：
+import {
+  ConfigError,
+  configToEnv,
+  probeConfig,
+  readConfig,
+  writeConfig,
+  type ByteCipher,
+} from './persist/config-store';
+import { ProjectAdmin, buildDraftEnv, probeConnection } from './persist/admin';
+import { makeAdminPorts, probeOpener } from './persist/admin-ports';
+```
+
+> 三处最容易红的地方，先写在这里：`type ByteCipher` 漏成值 import 是 `verbatimModuleSyntax` 的红；`ConfigError` 漏删会撞上 `noUnusedLocals`（它在**改动 4** 之前一个读者都没有 —— 所以改动 2 与改动 4 要同一批发下去，别半路跑 `tsc`）；protocol 那份名单多写一个没用的 `parse*` 同上。
+
+**改动 2 —— `safeStorageCipher` 那八行（P-27 / P-36）**
+
+位置在 `lockOwner()` 之后、`let target: WebContents | null = null;` 那两行之前。
+
+```ts
+/**
+ * `ByteCipher` 的 `safeStorage` 实现。它住在这里而不是 `persist/config-store.ts`，是 P-27 那一刀的正文：
+ * `config-store.ts` 保持 electron-free，它的 10 格才跑得了纯 node 档（t9a 第 ⑦ 段末那条"import 那一刻就炸"
+ * 的处境在这个文件里不存在 —— 本文件本来就被授权认识 electron）。
+ *
+ * `available` 是 getter 不是常量（P-36）：`safeStorage.isEncryptionAvailable()` 在 app ready 之前回 false，
+ * 而模块级常量等于把"这台机器能不能加密"冻在求值那一刻。留一个惰性的读数，代价是两次读之间它会变。
+ *
+ * `decrypt` 那一句要 `Buffer.from(bytes)`：`ByteCipher.decrypt(bytes: Uint8Array)` 交出来的是
+ * 普通 `Uint8Array`，而 `decryptString` 只认 Buffer —— 这是"类型过、运行不过"那一族（t9c 第 ② 段末预告的那发实测）。
+ * `encryptString` 返回 Buffer（Buffer 是 `Uint8Array` 的子类），出去那一向不会犯。
+ *
+ * **没有 unit 格**：它唯一的真读者是 T11 的 `--persist-shot`（第 ⑦ 段的限度 ③）。
+ */
+const safeStorageCipher: ByteCipher = {
+  get available() {
+    return safeStorage.isEncryptionAvailable();
+  },
+  encrypt: (text) => safeStorage.encryptString(text),
+  decrypt: (bytes) => safeStorage.decryptString(Buffer.from(bytes)),
+};
+```
+
+**改动 3 —— 模块态：`adminWiring` 与 `requireWiring()`**
+
+紧跟在 `let session: ProjectSession | null = null;` 之后。**`session` 与 `requireSession()` 一字不动**：
+
+```ts
+/**
+ * 会话之外那五条通道要的两样共用件：`userData` 目录（`config:*` 三条）与一份装配好的
+ * `ProjectAdmin`（`project:list` / `project:create`）。
+ *
+ * 它与 `session` 分成两份是刻意的：会话有"当前开着哪个工程"这件事，而列表与向导**没有**，
+ * 把两者塞进一个可空对象会得到"session 为 null 时 admin 是不是也为 null"这种没人能答的问题（P-22）。
+ * `userDataDir` 走模块态而不是 `app.getPath` 就地调用，是因为 `dispatch` 是模块级函数，
+ * 而 `app.getPath('userData')` 必须在 `whenReady` 之后 —— 同一个理由管 `registerPersistIpc` 的形状。
+ */
+let adminWiring: { readonly userDataDir: string; readonly admin: ProjectAdmin } | null = null;
+
+function requireWiring(): { userDataDir: string; admin: ProjectAdmin } {
+  if (adminWiring === null) {
+    throw new SessionError('internal', '管理通道在 registerPersistIpc 之前被调用了：窗口比端口早到');
+  }
+  return adminWiring;
+}
+```
+
+> 那句文案与 `requireSession()` 的同形（"窗口比端口早到"）不是复制懒惰：两处都是"屏幕比装配早到"这一种事故，读日志的人应该得到同一句话，而排查的动作也确实是同一个（检查 `createWindow` 里那两行注册的顺序）。
+
+**改动 4 —— `errorCode` 加一支（P-39）**
+
+插在 `if (err instanceof SessionError)` 之后、`if (err instanceof TypeError)` 之前，**逐字这一行**（`ipc-channels.test.ts` 格 5 扫的就是它）：
+
+```ts
+  if (err instanceof ConfigError) return 'not-configured';
+```
+
+注释（放在 `errorCode` 那段已有注释的末尾，别新开一块）：
+
+```
+ * 第三支是 T9 加的（P-39）：`ConfigError` 是"这份连接配置不能用"三种处境的合称（没配 / 读不出来 /
+ * 这台机器存不了口令），它既不是屏幕递错了东西（`'bad-request'`），也不是我们拼错了包（`'internal'`），
+ * 而用户此刻要做的三件事里第一件都是"回向导重填一次" —— 那正是 `'not-configured'` 这个码在 T8 的定义。
+ * 三种处境不在码上分，在 `message` 与 `ConfigValue.state` 上分（那两个读者在屏幕上，而横幅读的是 message 原话）。
+```
+
+**改动 5 —— `dispatch` 的五个新 `case`**
+
+插在 `case IPC.projectClose:` 那一发之后、`default:` 之前。**`askSession` 一个都不套**：那五条通道没有一条吃屏幕递来的文档（`ConnectionInput` 与 `name` 都是 `parse*` 的活儿），套了会把"我们的参数表拒了"变成"递来的文档解不开"。
+
+```ts
+      case IPC.configRead: {
+        // 空表请求（`ConfigReadRequestSchema`）在这一发唯一的价值是让"每条通道都过自己的请求表"
+        // 这句全称命题不需要特例（t9a 第 ① 段末）。它没有返回值可用，所以不接住 ——
+        // `parseConfigReadRequest` 的抛就是这一发要的抛。
+        parseConfigReadRequest(channel, raw);
+        const { userDataDir } = requireWiring();
+        // `probeConfig` **永不抛**：「还没配」是首屏要显示的常态，不是失败（第 ⑦ 段那条分工）。
+        const value = parseOutbound(
+          channel,
+          probeConfig(userDataDir, safeStorageCipher),
+          parseConfigValue,
+        );
+        return { ok: true, value };
+      }
+      case IPC.configSave: {
+        const req = parseConfigSaveRequest(channel, raw);
+        const { userDataDir } = requireWiring();
+        // `writeConfig` 的抛有三种：`ConfigError('unavailable')`（这台机器存不了）走改动 4 那一支；
+        // `ConfigRecordSchema.parse` 的 `TypeError` 走 `'bad-request'`；fs 的抛走默认档 `'internal'`
+        // —— 那一条是对的，因为"写不进去"确实是我们要查的（磁盘、权限、路径）。
+        const value = parseOutbound(
+          channel,
+          writeConfig(userDataDir, safeStorageCipher, req.connection),
+          parseConfigValue,
+        );
+        return { ok: true, value };
+      }
+      case IPC.configTest: {
+        const req = parseConfigTestRequest(channel, raw);
+        // 试连吃的是**屏幕上那份草稿**，不是盘上存过的那一份（口径 ⑤ 的另一半：用户在改 host
+        // 之后点「测试连接」，测的必须是他刚敲进去的那串）。`buildDraftEnv` 把库名钉成 `'dajia'`。
+        // `probeConnection` **自己不抛**（t9d 第 ① 段末），所以这一发只有 `parseOutbound` 会抛。
+        const value = parseOutbound(
+          channel,
+          await probeConnection(buildDraftEnv(req.connection), probeOpener),
+          parseConnectionTestValue,
+        );
+        return { ok: true, value };
+      }
+      case IPC.projectList: {
+        parseProjectListRequest(channel, raw);
+        const { admin } = requireWiring();
+        const value = parseOutbound(channel, await admin.list(), parseProjectListValue);
+        return { ok: true, value };
+      }
+      case IPC.projectCreate: {
+        const req = parseProjectCreateRequest(channel, raw);
+        const { admin } = requireWiring();
+        const value = parseOutbound(channel, await admin.create(req.name), parseProjectCreateValue);
+        return { ok: true, value };
+      }
+```
+
+**改动 6 —— `registerPersistIpc` 里的装配与 `loadConfig` 换源**
+
+把 T8 那一份 `const ports: PersistPorts = { … }` 之前的三行改写成下面这样（`userDataDir` 那一行不动，`timer` / `openDb` / `acquire` / `readEmergency` / `writeEmergency` / `emitStatus` 六键一字不动）：
+
+```ts
+  // 配置源换血（P-27 的生产侧落点）：环境变量那一套从此只属于 `pnpm test:db` 与闸门夹具，
+  // 应用只认 `userData/connection.bin` 那份密文。这一发是惰性的闭包 —— 装端口的时候不读盘，
+  // 于是"没配"这件事只在用户真的要点开一个工程 / 刷新一次列表时才说话（第 ② 段末那条时序）。
+  const loadConfig = (): MysqlEnv => configToEnv(readConfig(userDataDir, safeStorageCipher));
+  // `ProjectAdmin` 与 `probeOpener` 各装配一次，随 `registerPersistIpc` 活（t9d 交接末句的那件事：
+  // `ports` 里没有请求级状态，而 `redact` 的 `Set` 与 `firstStoreyTurn` 都是纯函数，
+  // 每次请求新建一份只会让"重建窗口"那一族 bug 多一个可变因素）。
+  const adminPorts = makeAdminPorts({ loadConfig, actor: lockOwner });
+  adminWiring = { userDataDir, admin: new ProjectAdmin(adminPorts) };
+  const ports: PersistPorts = {
+    userDataDir,
+    timer: realTimer,
+    loadConfig,
+    openDb,
+    acquire,
+    readEmergency: listEmergency,
+    writeEmergency: (payload) => writeEmergency(userDataDir, payload),
+    emitStatus,
+  };
+```
+
+> `actor: lockOwner` 递的是**函数引用**而不是 `lockOwner()` 的读数：机器名与 pid 在进程生命周期里不变，但把"什么时候算"留给调用点会让下一次改动（多窗口？重启？）无处下手。T8 的 `openDb` / `acquire` 内部各调一次 `lockOwner()` 这件事保持原样，两边同源。
+
+---
+
+- [ ] **Step 8 ③: `apps/desktop/src/preload/index.ts` —— 整文件替换**
+
+T8 那五件一字不动地留在原位（`ping` / `openProject` / `submitJournal` / `closeProject` / `onSaveStatus`），新六件按"四个请求 + 一个读 + 一个事件订阅"的顺序排在它们后面。整个文件如下（替换而不是追加的理由：花括号里那份类型 import 要按键名重排，一行一行改会把 diff 弄成读不出形状的东西）：
+
+```ts
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
+import {
+  IPC,
+  SAVE_STATUS_EVENT,
+  UI_COMMAND_EVENT,
+  type CloseRequest,
+  type CloseValue,
+  type ConfigValue,
+  type ConnectionInput,
+  type ConnectionTestValue,
+  type IpcResult,
+  type OpenValue,
+  type ProjectCreateValue,
+  type ProjectListValue,
+  type SaveStatusWire,
+  type SubmitRequest,
+  type SubmitValue,
+  type UiCommand,
+} from '@dajia/protocol';
+
+/**
+ * 屏幕能问 main 的全部事情。**没有一条是"直接写库"**：十一个方法背后是八条请求通道 + 两条事件，
+ * 参数与回包的形状全部由 `packages/protocol/src/persist-schema.ts` 定义（T8 第 ③ 段 + T9 第 ④ 段）。
+ *
+ * 口令在这一族里**只有一个通路**：`saveConfig` 与 `testConnection` 吃 `ConnectionInput`（类型名，
+ * 不是字段名）。于是本文件的文本里一个字节都不必出现那个键（P-33）—— 而 `ipc-channels.test.ts`
+ * 最后一格那条禁令因此**原样保留**，这是它比"摘掉禁令 + 写明只许进方向"更强的一档。
+ */
+export interface DajiaApi {
+  ping(): Promise<string>;
+  /**
+   * 参数写 `string` 而不是 `EntityId`：`EntityId = string` 无品牌（core 的 `ids.ts`），
+   * 写两个名字等于让读的人多记一件事，而真正的形状检查在 main 的 `parseOpenRequest`。
+   */
+  openProject(projectId: string): Promise<IpcResult<OpenValue>>;
+  submitJournal(request: SubmitRequest): Promise<IpcResult<SubmitValue>>;
+  closeProject(request: CloseRequest): Promise<IpcResult<CloseValue>>;
+  /** 首屏那一份读数（`probeConfig` 永不抛：没配 ⇒ `state: 'unset'` + 四格 null）。 */
+  readConfig(): Promise<IpcResult<ConfigValue>>;
+  /** 保存。回的是**读回来那一份**，不是输入（`writeConfig` 的"写完立刻以读的路径验一遍"）。 */
+  saveConfig(connection: ConnectionInput): Promise<IpcResult<ConfigValue>>;
+  /** 试连屏幕上那份草稿。它**不落盘** —— 试一次不会把人家的配置文件改掉。 */
+  testConnection(connection: ConnectionInput): Promise<IpcResult<ConnectionTestValue>>;
+  listProjects(): Promise<IpcResult<ProjectListValue>>;
+  /** 只回 id。开开会话由屏幕接着调 `openProject`（口径 ② 末那句"顺序由 renderer 负责"）。 */
+  createProject(name: string): Promise<IpcResult<ProjectCreateValue>>;
+  /** 返回注销函数：屏幕侧一份 store 一次订阅，撤干净是测试（每格一个 store）与 T11 的前提。 */
+  onSaveStatus(listener: (status: SaveStatusWire) => void): () => void;
+  /** 同上，第二条事件通道（main → 屏幕的"该显示哪一层"）。 */
+  onUiCommand(listener: (command: UiCommand) => void): () => void;
+}
+
+const api: DajiaApi = {
+  // 这里的 `as` 是**声明**，不是校验。校验在 main 的出口那一发（`parseXValue`），
+  // 而 preload 不可能再验一遍：`apps/desktop` 没有 zod 依赖，pnpm 的严格 node_modules 也解析不到
+  // protocol 那一份（T4 写在 `entity-schema.ts` 顶部的同一条理由）。
+  ping: () => ipcRenderer.invoke(IPC.ping) as Promise<string>,
+  openProject: (projectId) =>
+    ipcRenderer.invoke(IPC.projectOpen, { projectId }) as Promise<IpcResult<OpenValue>>,
+  submitJournal: (request) =>
+    ipcRenderer.invoke(IPC.journalSubmit, request) as Promise<IpcResult<SubmitValue>>,
+  closeProject: (request) =>
+    ipcRenderer.invoke(IPC.projectClose, request) as Promise<IpcResult<CloseValue>>,
+  // `{}` 必须**显式写出来**：两张空表请求（`ConfigReadRequestSchema` / `ProjectListRequestSchema`）
+  // 都拒 `undefined`（`persist-config-schema.test.ts` 第 9 格钉的正是这件事），
+  // 漏传参数的症状是"列表永远打不开"，而横幅上那句是"解不开工程列表的请求"—— 一句都不指向真正的病因。
+  readConfig: () => ipcRenderer.invoke(IPC.configRead, {}) as Promise<IpcResult<ConfigValue>>,
+  saveConfig: (connection) =>
+    ipcRenderer.invoke(IPC.configSave, { connection }) as Promise<IpcResult<ConfigValue>>,
+  testConnection: (connection) =>
+    ipcRenderer.invoke(IPC.configTest, { connection }) as Promise<IpcResult<ConnectionTestValue>>,
+  listProjects: () => ipcRenderer.invoke(IPC.projectList, {}) as Promise<IpcResult<ProjectListValue>>,
+  createProject: (name) =>
+    ipcRenderer.invoke(IPC.projectCreate, { name }) as Promise<IpcResult<ProjectCreateValue>>,
+  onSaveStatus: (listener) => {
+    // 包一层再挂：`IpcRendererEvent` 不越过 contextBridge（那是 electron 的对象，屏幕侧拿到只会是噪音），
+    // 也因为这个注销函数要把**同一个**引用交给 removeListener —— 直接挂 `listener` 就撤不掉。
+    const wrapped = (_event: IpcRendererEvent, status: SaveStatusWire): void => {
+      listener(status);
+    };
+    ipcRenderer.on(SAVE_STATUS_EVENT, wrapped);
+    return () => ipcRenderer.removeListener(SAVE_STATUS_EVENT, wrapped);
+  },
+  onUiCommand: (listener) => {
+    // 与上面那一发同一个形状，包括那个"包一层"的理由。两份相似不是要抽公共函数：
+    // 泛型化之后 `SaveStatusWire` 与 `UiCommand` 的区别就没了读者，而这两发的载荷类型正是它们的价值。
+    const wrapped = (_event: IpcRendererEvent, command: UiCommand): void => {
+      listener(command);
+    };
+    ipcRenderer.on(UI_COMMAND_EVENT, wrapped);
+    return () => ipcRenderer.removeListener(UI_COMMAND_EVENT, wrapped);
+  },
+};
+
+contextBridge.exposeInMainWorld('dajia', api);
+```
+
+三条写法的理由，别在评审时被问倒：
+
+- **`ConnectionInput` 是 type-only**：屏幕侧不许拿到 zod（T8 第 ⑥ 段那一格的判据管的是 renderer 的 `.tsx`，preload 在同一族扫描的名单里，`verbatimModuleSyntax` 会把值 import 变成一次运行时解析）。
+- **`saveConfig` 的参数叫 `connection` 而不是 `input`**：它要在 `ipcRenderer.invoke` 那一句里拼成 `{ connection }`，两处同名比"外层一个名、内层一个名"少一次记错，而拼错的症状是边界回 `'bad-request'`（少一格 + 多一格）。
+- **`testConnection` 不落盘**（第 ⑤ 段的口径）：如果它顺手存了一份，"试一次看看"就变成了"把我原来能用的配置换成一个连不上的"，而那一刻屏幕上没有任何东西提示这件事。
+
+---
+
+- [ ] **Step 8 ④: `apps/desktop/src/main/index.ts` —— 交互 UI 的唯一入口**
+
+**改动 1 —— 第二行与第五行的 import**
+
+```ts
+import { app, BrowserWindow, ipcMain, Menu, type MenuItemConstructorOptions } from 'electron';
+import { IPC, UI_COMMAND_EVENT, type UiCommand } from '@dajia/protocol';
+```
+
+**改动 2 —— `createWindow` 里 T8 那一行之后再加一行**（盘上位置：T8 的 `registerPersistIpc(win);`，实测在 `ipcMain.handle(IPC.ping, …)` 那两行之后）
+
+```ts
+  attachInteractiveUi(win);
+```
+
+**改动 3 —— 两个新函数放在 `whenLoaded` 之后、`waitForDebug` 之前**
+
+```ts
+/**
+ * 交互模式的应用菜单（P-35）。它**不是往默认菜单上加一条** —— electron 没有"追加顶层项"的 API，
+ * 要加「工程」就得把整份菜单重建一遍，所以这是一份**重建的子集**：
+ * `editMenu` 必须在（向导那四个输入框的 Ctrl+C / Ctrl+V / Ctrl+Z 与"全选"全靠它，
+ * 摘掉等于把中文输入法的剪贴板路径一起摘掉），`viewMenu` 必须在（Reload / DevTools 是排查现场的门），
+ * `fileMenu` 给的是"关闭窗口"与"退出"。丢掉 `windowMenu`、`help` 与 macOS 那份应用菜单是**刻意的取舍**
+ * （S1 一个窗口，没有"最小化/全部前置"要管），登记在本步限度 ⑤。
+ *
+ * 两条 click 递的都是 `UiCommand` 的成员，不是字符串字面量：`'config'` 这类拼法漂了会静默
+ * （屏幕收到一个不认识的值 ⇒ 什么都不显示），而名字有 protocol 那张闭集表管，
+ * 加第四个值的代价由 `ipc-channels.test.ts` 第 4 格与 `panels.tsx` 那一支一起付（P-32）。
+ */
+function buildMenuTemplate(win: BrowserWindow): MenuItemConstructorOptions[] {
+  const sendCommand = (command: UiCommand): void => {
+    if (win.isDestroyed()) return;
+    win.webContents.send(UI_COMMAND_EVENT, command);
+  };
+  return [
+    { role: 'fileMenu' },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    {
+      label: '工程',
+      submenu: [
+        { label: '连接设置…', accelerator: 'CmdOrCtrl+,', click: () => sendCommand('config') },
+        { label: '工程列表', accelerator: 'CmdOrCtrl+O', click: () => sendCommand('projects') },
+      ],
+    },
+  ];
+}
+
+/**
+ * 交互模式独有的两件事：菜单 + 首屏那发 `startup`。
+ *
+ * **第一道判据是闸门模式早退**，这一句就是 `persist-boundary.test.ts` 第 11 格判的东西（口径 ③ 的那条主张
+ * 的字面形状：向导与列表两块 DOM 只能从交互分支进来）。判据用 `--shot` 而不是 `visible` 参数：
+ * `--prop` / `--draw` / `--pick` / `--edit` 那四道闸门要 OS 级输入，窗口是**可见**的（实测 `whenReady`
+ * 里那句 `createWindow(shotPath === null || wantInput)`），拿 `visible` 当开关会让四道闸门带上菜单。
+ * 实测的凭据：`scripts/desktop-shot.mjs` 的 argv 链（第 70 行）永远把具体开关与 `--shot` **成对**给。
+ *
+ * `startup` 发在 `did-finish-load` 之后（`whenLoaded` 那一发既有的条件轮询，不是固定 sleep）：
+ * 屏幕侧的订阅发生在 `main.tsx` 同步 render 的那一刻，早于 `did-finish-load`，所以这一发不会落在无人监听的时候。
+ * 代价照登记（限度 ⑥）：`void` 掉的 promise 意味着这一发是 fire-and-forget —— 它没送到，屏幕停在
+ * `phase: 'off'`，症状与"这台机器没接持久化"完全同形，不报红。
+ *
+ * `'startup'` 的**语义是"你问我一次"**：main 不猜这台机器配没配（那是读盘那一发的事），
+ * 屏幕收到它之后自己调 `readConfig()`，再按 `state` 决定向导还是列表。被否掉的替代方案写在 t9a 第 ③ 段末
+ * （"store 挂载时自动 `readConfig()`" 会把闸门变成按机器绿）。
+ */
+function attachInteractiveUi(win: BrowserWindow): void {
+  if (process.argv.includes('--shot')) return;
+  Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate(win)));
+  void whenLoaded(win).then(() => {
+    if (win.isDestroyed()) return;
+    win.webContents.send(UI_COMMAND_EVENT, 'startup');
+  });
+}
+```
+
+> **`Menu.setApplicationMenu(null)` 那一行（盘上 2555）与五个 shot 分支一字不动**。这一发函数在 shot 模式下唯一的动作就是那句 `return`，所以"闸门环境里既没有菜单也没有 send"这句话的凭据是**早退判据**而不是调用位置 —— 这正是格 11 要扫的顺序（`--shot` 那一句的 `indexOf` 必须小于 `send(UI_COMMAND_EVENT` 的 `indexOf`）。
+>
+> **`attachInteractiveUi` 与 `registerPersistIpc` 的分工**：后者管**请求方向**（八条 `handle`），前者管**main 主动往屏幕上说的那两件事**。合成一发函数会得到"闸门也要注册 handle"与"注册要连菜单一起建"两个都不想要的结论（T8 第 ② 段的名单与第 ③ 段的时机各判一件事），登记在本步限度 ⑦。
+
+---
+
+- [ ] **Step 8 ⑤: `apps/desktop/test/unit/persist-boundary.test.ts` —— +3 格（8 ⇒ 11）**
+
+**前两批（T7 的 2、T8 的 3、t9c 的 2、t9d 的 1）一字不动**，包括 T8 那一格那句 `expect(hit).toEqual(['index.ts', 'ipc-persist.ts'])` —— **本步不许让它变长**：P-38 新开的那个文件恰恰必须落在名单**之外**（它若 import 了 electron，连库档就装不出来，而那份装配是 P-37 唯一的证人）。这句话是 t8c 第 ④ 段末预告的"T9 要 import safeStorage 时必须同时改这一格"的落盘答案：**不改，因为 safeStorage 住在早就在名单里的 `ipc-persist.ts`（P-27）。**
+
+顶部补三行常量（放在 `SESSION` / `ADMIN` 那一族旁边）：
+
+```ts
+const ADMIN_PORTS = '../../src/main/persist/admin-ports.ts';
+const IPC_PERSIST = '../../src/main/ipc-persist.ts';
+const INDEX = '../../src/main/index.ts';
+```
+
+```ts
+// —— Step 8 追加的三格 ——
+
+it('9 格：admin-ports.ts 是"真把式但 electron-free"那一档：连库档因此装得出它', () => {
+  const src = srcOf(ADMIN_PORTS);
+  for (const banned of ["from 'electron'", "from 'node:fs'", "from 'node:os'", "from 'mysql2"]) {
+    expect(src.includes(banned)).toBe(false);
+  }
+  // 正控制四发，缺一发就是"文件被搬空了"（这一族扫描最怕的形状是全绿）。
+  // 这四发合起来才是 P-38 的那句话：建库、建表、开池、超时数值都从 mysql2 那一层进来，
+  // 而 `node:os` 不在其中（`actor` 是递进来的，见 `AdminPortDeps` 的注释）。
+  expect(src.includes('ensureDatabase(')).toBe(true);
+  expect(src.includes('migrate(')).toBe(true);
+  expect(src.includes('createDbPool(')).toBe(true);
+  expect(src.includes('CONFIG_TEST_CONNECT_TIMEOUT_MS')).toBe(true);
+});
+
+it('10 格：应用的配置源只有一个 —— safeStorage 那份文件，环境变量不再是它的通路', () => {
+  const src = srcOf(IPC_PERSIST);
+  // 正控制先走：这一发读的不是空文件（同格 8 那一句"别让人搬空"）。
+  expect(src.includes('configToEnv(readConfig(')).toBe(true);
+  // `readMysqlEnv` 在本文件里**一个字节都不许留**（连注释里都不许 —— 这一族扫描的共同限度，
+  // 但它同时是好事：哪天有人想给生产路径加一条环境变量后门，得先把这一格的红解释掉）。
+  // 环境变量那一条通路现在只属于 `pnpm test:db` 与闸门夹具，而那正是 `PersistPorts.loadConfig`
+  // 这个注入点存在的理由（第 ⑦ 段末的交接第 1 条）。
+  expect(src.includes('readMysqlEnv')).toBe(false);
+  // 适配器的两个形状各扫一句（P-36）：getter 而不是常量，`Buffer.from` 而不是裸递 Uint8Array。
+  expect(src.includes('get available()')).toBe(true);
+  expect(src.includes('Buffer.from(bytes)')).toBe(true);
+});
+
+it('11 格：UI 指令只有一个发点，而它在闸门模式的早退之后（口径 ③ 的字面形状）', () => {
+  const src = srcOf(INDEX);
+  const sends = src.split('\n').filter((line) => line.includes('send(UI_COMMAND_EVENT'));
+  expect(sends).toHaveLength(1);
+  // 发点必须在 `attachInteractiveUi` 体内：写在 `createWindow` 里、写在 `whenReady` 里，
+  // 都会绕开那一道 `--shot` 早退，而屏幕上就长出向导/列表的 DOM 了。
+  expect(src.includes('function attachInteractiveUi')).toBe(true);
+  const body = src.slice(src.indexOf('function attachInteractiveUi'));
+  const guard = body.indexOf("process.argv.includes('--shot')");
+  const send = body.indexOf('send(UI_COMMAND_EVENT');
+  expect(guard).toBeGreaterThan(-1);
+  expect(send).toBeGreaterThan(-1);
+  expect(guard).toBeLessThan(send);
+});
+```
+
+> 格 11 的 `body` 是从 `attachInteractiveUi` 切到**文件末尾**，不是切到下一个函数：这里要判的是"早退在那一发 send 之前"，而那一句发函数恰好是本文件里最后一个函数声明吗 —— 不是（盘上现物在它之后还有 `waitForDebug` 与五个 `run*Shot`）。所以这一格只判顺序，不判"这一发函数体内只有一个发点"；后一半是 `sends` 那一句 `toHaveLength(1)` 在全文件范围内兜的。**两半合起来才等价于口径 ③ 的主张**，这条分工写在这里是因为分开读容易以为格 11 只判了顺序。
+
+Run: `npx vitest run apps/desktop/test/unit/persist-boundary.test.ts > tmp/t9e-boundary.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`、**11 格**（T7 2 + T8 3 + t9c 2 + t9d 1 + 本步 3）。**格数与标题以盘上实测为准并写进回填；不一致时改计划文本**（t9d 第 ④ 段末那条同一句）。
+
+---
+
+- [ ] **Step 8 ⑥: `apps/desktop/test/unit/ipc-channels.test.ts` —— 格 1 改一个数、+2 格（3 ⇒ 5）**
+
+**格 1** 只改最后一行（`INVOKE_CHANNELS.length` 的 3 ⇒ 8），上面那个循环一个字都不动 —— 它会自动扫到八条，而这正是格 1 的价值：加通道不写 `case` 或不在 preload 落点，当场红。P-32 说的是这一处判据的改法由计划作者决定，不是 implementer 顺手放宽：
+
+```ts
+    // 正控制：名册悄悄变短（或为空）时上面那个循环一句都不断，这一行才是"扫过了八条"的凭据。
+    // 3 ⇒ 8 是 T9 的那五条请求通道（`configRead` / `configSave` / `configTest` / `projectList` / `projectCreate`）。
+    expect(INVOKE_CHANNELS.length).toBe(8);
+```
+
+**格 2 与格 3 一字不动。** 尤其格 3 那份 `banned` 名单里的 `'password'` **不摘**（P-33），因为第 ③ 段的 preload 文本里那个键名一次都不出现 —— 这一发是 t8c 第 ⑤ 段末那句"改判据"的落盘答案，两处（`password` 与 `host:`/`port:`/`user`）里只有一处真的需要放宽，而那一处（protocol 的第 ④ 段两块牙）在 Step 1–2 已经做完了。
+
+顶部补一行 `const INDEX = '../../src/main/index.ts';`（与 `persist-boundary` 那一族同名同值，两个文件各自持有是自己的扫描自己的靶，不为此开第三个共享夹具 —— 一旦共享，"改一个常量两个文件一起红"就变成了排查两件事）。
+
+```ts
+// —— Step 8 追加的两格 ——
+
+it('4 格：第二条事件通道两头都在 —— main 的交互分支发、preload 订，且给得出注销', () => {
+  // 靶在 `index.ts` 而不是 `ipc-persist.ts`（P-35）：这一发事件的读者是"那一个窗口该显示哪一层"，
+  // 而会话状态的读者是端口装配好的 main 侧逻辑。两份方向不同，不合并（第 ④ 段末那句分工）。
+  expect(srcOf(INDEX).includes('send(UI_COMMAND_EVENT')).toBe(true);
+  const preload = srcOf(PRELOAD);
+  expect(preload.includes('ipcRenderer.on(UI_COMMAND_EVENT')).toBe(true);
+  // 注销不是装饰（格 2 同一条理由，第二次成立）：`createProjectStore` 在模块加载时挂一次，
+  // 而 `project-store.test.ts` 每格建一个 store，撤不干净就是往一份已经作废的 store 里写指令。
+  expect(preload.includes('ipcRenderer.removeListener(UI_COMMAND_EVENT')).toBe(true);
+  // 三值是闭集：加第四个值必须同时改 `panels.tsx` 那一支与这一格（P-32 的第二半）。
+  expect(UiCommandSchema.options).toEqual(['startup', 'config', 'projects']);
+});
+
+it('5 格：`config-store` 的失败有自己的码（不许落进 'internal' 那一档）', () => {
+  const main = srcOf(MAIN);
+  // 逐字这一行（P-39）。它红的两种形状：那一支被删（⇒ `ConfigError` 走默认档 'internal'，
+  // 屏幕上出现"这一条我们没认出来"，而 stdout 里多一行假警报说我们拼错了包），
+  // 或者它被写在 `return 'internal';` **之后**（永远走不到，症状与删掉一模一样）。
+  expect(main).toContain("if (err instanceof ConfigError) return 'not-configured';");
+  const guard = main.indexOf('err instanceof ConfigError');
+  const fallback = main.indexOf("return 'internal';");
+  expect(guard).toBeGreaterThan(-1);
+  expect(fallback).toBeGreaterThan(-1);
+  expect(guard).toBeLessThan(fallback);
+});
+```
+
+顶部 `@dajia/protocol` 那份 import 加 `UiCommandSchema`（值 import —— 本文件在 `test/unit`，纯 node 档，允许）。
+
+Run: `npx vitest run apps/desktop/test/unit/ipc-channels.test.ts > tmp/t9e-channels.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`、**5 格**。
+
+---
+
+- [ ] **Step 8 ⑦: `apps/desktop/test/db/admin-ports.test.ts` —— 5 格，真库自建自清**
+
+这一档是 P-37 与 P-38 的存在理由。夹具形状照 `projects.test.ts`（t9d 第 ⑤ 段）而有一处关键不同：**`beforeAll` 只 drop，不 ensure、不 migrate** —— 建库建表这件事必须是被测代码做的，不是夹具替它做完的。库名仍然写死 `dajia_test`、不抄 env（t9a 第 ⑧ 段那条红线，注释也照抄那一句的理由）。
+
+```ts
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { Pool } from 'mysql2/promise';
+import { SCHEMA_VERSION } from '@dajia/core';
+import { readMysqlEnv } from '../../src/main/db/env';
+import { dropTestDatabase, ensureDatabase } from '../../src/main/db/database';
+import { createDbPool } from '../../src/main/db/pool';
+import { ProjectRepository } from '../../src/main/db/repository';
+import { ProjectAdmin } from '../../src/main/persist/admin';
+import { ensureSchema, makeAdminPorts, probeOpener } from '../../src/main/persist/admin-ports';
+
+const env = readMysqlEnv();
+// 红线：库名由本文件写死，**不抄 env**。`env.database` 允许是 `dajia`（那是应用运行时的合法取值），
+// 测试照抄它就把用户的真工程库当试验田 —— 而本档比别的档更危险，因为它测的就是建库那一发。
+const DATABASE = 'dajia_test';
+/** 七张表：`_migration` 与六张业务表。名字来自 T2 的 001 DDL，逐字抄。 */
+const TABLES = ['_migration', 'asset', 'command_log', 'element', 'project', 'snapshot', 'storey'];
+
+let reader: Pool | null = null;
+
+/** 开一条读连接（每次用完就掐：本档要在两次断言之间把库删掉，留着连接等于留着一个会炸的东西）。 */
+async function openReader(): Promise<Pool> {
+  reader = createDbPool({ ...env, database: DATABASE });
+  return reader;
+}
+async function closeReader(): Promise<void> {
+  const pool = reader;
+  reader = null;
+  if (pool !== null) await pool.end().catch(() => undefined);
+}
+
+/** 当前连的库名。它是"这一发到底连了谁"的收据，也是 `assertDatabaseName` 那条白名单的现场证据。 */
+async function databaseName(): Promise<string> {
+  const pool = reader ?? (await openReader());
+  const [rows] = await pool.query('SELECT DATABASE() AS db');
+  return String((rows as { db: string }[])[0]?.db);
+}
+
+async function tableNames(): Promise<Set<string>> {
+  const pool = reader ?? (await openReader());
+  const [rows] = await pool.query(
+    'SELECT TABLE_NAME AS t FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?',
+    [DATABASE],
+  );
+  // 不比对有序数组：`utf8mb4_0900_ai_ci` 排序规则下 `ORDER BY` 的结果不是我们想判的那件事。
+  return new Set((rows as { t: string }[]).map((r) => r.t));
+}
+
+const admin = new ProjectAdmin(
+  makeAdminPorts({ loadConfig: () => ({ ...env, database: DATABASE }), actor: () => 'tester' }),
+);
+
+beforeAll(async () => {
+  await dropTestDatabase(env, DATABASE);
+  // **这里没有 `ensureDatabase`，也没有 `migrate`**：那两件事是格 1 与格 4 的靶。
+});
+
+afterAll(async () => {
+  await closeReader();
+  await dropTestDatabase(env, DATABASE);
+});
+
+describe('admin-ports 连库档：全新机器上第一条通道真的能自建自清', () => {
+  it('1 格：库被删干净之后 `ensureSchema` 把库与七张表一起建回来（P-37 的正文）', async () => {
+    const e = { ...env, database: DATABASE } as const;
+    await closeReader();
+    await dropTestDatabase(e, DATABASE);
+    await ensureSchema(e);
+    await openReader();
+    expect(await databaseName()).toBe(DATABASE);
+    const names = await tableNames();
+    for (const table of TABLES) expect(names.has(table)).toBe(true);
+    expect(names.size).toBe(TABLES.length);
+  });
+
+  it('2 格：`ensureSchema` 幂等 —— 连跑两次不抛，已有的一行都不少', async () => {
+    const e = { ...env, database: DATABASE } as const;
+    await ensureSchema(e);
+    await ensureSchema(e);
+    const names = await tableNames();
+    expect(names.size).toBe(TABLES.length);
+    // 第二发真的**跳过**了已应用的版本（不是重跑 DDL）：`project` 表还在，而 `_migration` 只有一行。
+    const pool = reader ?? (await openReader());
+    const [rows] = await pool.query('SELECT COUNT(*) AS n FROM `_migration`');
+    expect(Number((rows as { n: number | string }[])[0]?.n)).toBe(1);
+  });
+
+  it('3 格：真端口建出来的工程，读路径打得开，而 `actor` 是递进来的那一份', async () => {
+    const { projectId } = await admin.create('端口自建房');
+    const pool = await openReader();
+    const [log] = await pool.query(
+      'SELECT `actor` FROM `command_log` WHERE `project_id` = ? ORDER BY `turn` ASC',
+      [projectId],
+    );
+    // 这一句是 `AdminPortDeps.actor` 那个注入点的唯一凭据：写死一份"反正生产也是它"就等于把
+    // 「谁写的这发账」这件事交给了一个没人检查的常量（M39 的靶）。
+    expect((log as { actor: string }[]).map((r) => r.actor)).toEqual(['tester']);
+    const loaded = await new ProjectRepository(pool, projectId, 'tester').loadProject('read');
+    expect(loaded.header.projectId).toBe(projectId);
+    expect(loaded.header.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(loaded.header.journalTurn).toBe(1);
+    // 首层在文档里（口径 ② 那发 turn 1 的下游）：读路径与写路径说的是同一份账。
+    expect(Object.keys(loaded.doc.storeys).length).toBe(1);
+  });
+
+  it('4 格：库不存在时 `list()` 自己把库建回来并回一份空列表（读路径也自愈，P-37 的后一半）', async () => {
+    await closeReader();
+    await dropTestDatabase({ ...env, database: DATABASE } as typeof env, DATABASE);
+    const value = await admin.list();
+    expect(value).toEqual({ projects: [] });
+    await openReader();
+    expect(await databaseName()).toBe(DATABASE);
+    expect((await tableNames()).has('project')).toBe(true);
+  });
+
+  it('5 格：`probeOpener` 的 ping 回一个真字符串，`end()` 之后那条池真的用不了', async () => {
+    const handle = await probeOpener({ ...env, database: DATABASE });
+    const { version } = await handle.ping();
+    expect(typeof version).toBe('string');
+    expect(version.length).toBeGreaterThan(0);
+    // 这一发是本计划里**唯一**一次真驱动真握手的读数：`SELECT VERSION()` 的返回形状
+    // 与 `mysql2` 的 typings（`<待实测>` 第一条的凭据就落在这里）。
+    await handle.end();
+    await expect(handle.ping()).rejects.toThrow();
+  });
+});
+```
+
+> ① 这一档**会建库**，而建的是 `dajia_test`（授权范围内的那个名字）。`ensureSchema` 在生产装配里拿到的库名只会是 `'dajia'`（`ConfigDatabaseSchema` 一值 + `assertDatabaseName` 白名单两道），所以"跑一次 `pnpm test:db` 会不会在用户机器上长出 `dajia` 库"这个问题的答案是：只有当环境变量 `DAJIA_MYSQL_DATABASE=dajia` **且**有人手改本档的 `DATABASE` 常才会 —— 而后者是本档第一条断言（`databaseName()`）会红的改动。
+> ② 它同时是 T8 第 ⑧ 段那条限度（"T8 不建库"）的**接续**而不是推翻：会话那条路径（`openDb`）到本步为止**仍然不建库**，所以 `openProject` 在一个库被删掉的机器上仍报 `'db'`，而不是悄悄建一个空库给用户一个"工程不存在"。登记在本步限度 ④。
+> ③ `vitest.db.config.ts` 的 `fileParallelism: false`（T1 钉的）又多了一个证人，而且是**第一个会 `DROP DATABASE` 的证人**：本档与 `projects.test.ts`、`locks.test.ts`、`autosave-journal.test.ts` 共用同一个 `dajia_test`，并行跑会把那三档的连接全体炸掉。（T7 落盘时写的那句"本档是它的第二个证人"是当时的顺序数法 —— 顺序数法会随每加一档漂开，本条不数第几，只数"谁会被牵连"。）回填里把这条写进收据。
+
+Run: `npx vitest run --config vitest.db.config.ts apps/desktop/test/db/admin-ports.test.ts > tmp/t9e-db.log 2>&1; echo "exit=$?"`
+Expected: 先红（`admin-ports.ts` 还没落盘 ⇒ `Cannot find module`），落盘后 `exit=0`、**5 格**。若红在 `ECONNREFUSED` 或建库权限，那是环境没起 —— **不许把这一档的失败写成计划的失败**（t9d 第 ⑤ 段同一条口径）。
+
+---
+
+- [ ] **Step 8 ⑧: 计数与编译**
+
+```bash
+npx vitest run apps/desktop/test/unit/persist-boundary.test.ts apps/desktop/test/unit/ipc-channels.test.ts > tmp/t9e-units.log 2>&1; echo "exit=$?"
+```
+Expected: `exit=0`；`persist-boundary.test.ts` **11 格**、`ipc-channels.test.ts` **5 格**。
+
+```bash
+npx tsc --noEmit -p apps/desktop/tsconfig.json > tmp/t9e-tsc.log 2>&1; echo "exit=$?"
+npx tsc --noEmit -p apps/desktop/tsconfig.test.json > tmp/t9e-tsc-test.log 2>&1; echo "exit=$?"
+```
+Expected: 两发都 `exit=0`。第一发管 `src/main` / `src/preload` / `src/shared` / `src/renderer/src`（**注意是哪一份**：`tsconfig.node.json` 的 `include` 只有 `electron.vite.config.ts`，跑错那一份会得到 `exit=0` 而 preload 一个字没查 —— t8c 第 ⑤ 段末同一句，再说一遍因为它仍然会咬人）。第二发管 `test/**`（`admin-ports.test.ts` 里 `loadProject('read')` 的返回形状只有它看得见）。
+
+最容易红的四处，先写在这里：
+1. `MenuItemConstructorOptions` 漏成值 import 之外的一种错法：从 `'electron'` 里**具名值**导入它（那是个类型，`verbatimModuleSyntax` 当场红）。
+2. `probeConfig` / `probeConnection` / `makeAdminPorts` 里任何一个参数表的字段数与 protocol 那张表对不上：症状是 `parseOutbound` 那一句的类型错，而不是 case 那一行 —— 读栈要往下读一行。
+3. `listProjects` 的名字撞车：本文件的 `import { listProjects, ProjectRepository }` 与 `admin.ts` 里 `AdminListDb.listProjects()`（方法）不同层，但如果 implementer 把端口方法写成 `listProjects: listProjects`，`noUnusedLocals` 不管、TS 也不管，而它**是**对的写法 —— 写下这一句是因为 t9d 的假夹具里那一发写的是闭包，两种写法都过编译，别在评审里当成不一致来改。
+4. `attachInteractiveUi` 里 `void whenLoaded(win).then(...)`：漏掉 `void` 是 `noFloatingPromises` 类 lint 的红（盘上现物 `win.webContents` 那几发的写法照它）。
+
+```bash
+pnpm verify > tmp/t9e-verify.log 2>&1; echo "exit=$?"
+```
+Expected: `exit=0`。`pnpm test` 的数（按 t9a 第 34 行改过之后）：**40 文件 / 576 条**。`lint:deps` 静默 —— 本步没有新增 `@dajia/*` 跨包边（`admin-ports.ts` 只 import `@dajia/core` 的**类型**，而 desktop → core 是既有许可）。
+
+```bash
+pnpm --filter @dajia/desktop build > tmp/t9e-build.log 2>&1; echo "exit=$?"
+```
+Expected: `exit=0`。这一发不是仪式：它是**闸门自己会跑的那一发**（`scripts/desktop-shot.mjs` 第一手就是它），而 preload 那份新文件里 `UI_COMMAND_EVENT` 若被写成值缺失，只有 rollup 会说真话。
+
+```bash
+pnpm test:db > tmp/t9e-db-all.log 2>&1; echo "exit=$?"
+```
+Expected: `exit=0`、**8 文件 / +11 格**（`projects` 6 + `admin-ports` 5）。必须整套连库档一起跑的理由见第 ⑦ 段末那条 ③。
+
+---
+
+**⑨ 本步的变异靶（编号接 t9d 的 M31 之后；靶的编号只在 Step 10 的总表里成立，正文引用的是那一行内容）**
+
+| 靶 | 变异 | 谁红 |
+| --- | --- | --- |
+| T9-M32 | `ensureSchema` 去掉 `ensureDatabase` 那一发（"migrate 自己会建表"） | 连库档格 1 与格 4 同时红（第一发 `query` 抛 `ER_BAD_DB_ERROR`）—— 这两发是"库不存在"这个处境的唯一证人 |
+| T9-M33 | `openListDb` 去掉那句 `await ensureSchema(env)`（只在 create 那一路建库） | 连库档格 4 红：`admin.list()` reject 成 `'db'` 而不是回一份空列表。这一发抓的是"自愈只做了一半"，而那一半正是新用户第一眼看到的形状 |
+| T9-M34 | `probeOpener` 的 `end` 改成 `async () => {}`（不掐池） | 格 5 末句 `rejects.toThrow()` 红（`end` 之后仍可查）。T9-M27 管的是"试连失败也要掐"，这一发管的是"成功那条路真掐了"，两发不是同一件事 |
+| T9-M35 | `errorCode` 里那一支 `ConfigError` 挪到 `return 'internal';` **之后**（顺序错，等效于删掉） | 格 5 的顺序断言红；`toContain` 那一句**不红** —— 这正是格 5 要写第二半的理由 |
+| T9-M36 | `dispatch` 里删掉 `case IPC.configTest:`（忘了写其中一条） | 格 1 红（循环 + `toBe(8)` 的正控制）。这一发是格 1 那次改数的价值证明：八条而不是三条 |
+| T9-M37 | `onUiCommand` 返回 `void`（不给注销闭包） | 格 4 第三句 `removeListener(UI_COMMAND_EVENT` 红 |
+| T9-M38 | `attachInteractiveUi` 的 `--shot` 早退删掉，或挪到 `send` 之后 | 格 11 红（两种红分别落在 `guard > -1` 与顺序那两句上）。这是本步唯一直接五道闸门的靶：它红了就意味着闸门环境里长出了常驻 DOM |
+| T9-M39 | `makeAdminPorts` 里 `deps.actor()` 换成写死的 `'dajia'`（或 `'system'`） | 连库档格 3 的 `actor` 读数红。**unit 档抓不到它**（`admin.test.ts` 用的是假端口），所以这一发证明 `AdminPortDeps` 那个注入点不是装饰 |
+
+跑法同前（改坏一处 → 只跑受影响的档 → `cp` 还原 → 同码复跑一次确认回到绿）。变异棒只用 `cp` + md5 还原，**不许** `git checkout`/`restore`/`stash`；闸门复跑由控制位独占，席位不跑闸门。
+
+---
+
+**⑩ 本步登记的限度（进 Step 10 的总表，别在这里就当它们被证过了）**
+
+① `ipc-persist.ts` 到本步仍然**没有 unit 格**，五个新 `case` 的**行为**不在纯 node 档被调用：格 1 与格 5 扫的是文本形状（有没有那条 `case`、那一支码在不在），不是"这个 case 里调的是不是 `buildDraftEnv` 而不是盘上那份"。这一半只剩 Step 10 的人工验证与 T11 的 `--persist-shot`。
+② `connectTimeoutMs` 的**生效**没有自动化证人：`diagnostics.test.ts` 格 8 扫的是 `pool.ts` 的透传写法，连库档格 5 走的是握手成功的快路。"填一个黑洞主机名，五秒之内拿到 `timeout` 那一型"只能人工验 ⇒ 进「人工验证，本计划不打勾的项」。
+③ `safeStorageCipher` 那八行在纯 node 档永不被调用（P-27 那笔代价的原样登记），真读者是 T11。格 10 只扫形状（getter / `Buffer.from`），扫不到 `isEncryptionAvailable()` 的真实返回值。
+④ 建库授权在**打开工程列表那一发**就行使了，不需要用户点任何按钮。缓解它的是两道名字闸（`ConfigDatabaseSchema` 一值 + `assertDatabaseName` 白名单）与"用户刚刚亲手保存过这台机器的连接参数"这个事实。这条是本计划里最接近"未经明确点击的写操作"的一处，**明写在这里而不是埋在代码注释里**。
+⑤ 交互菜单是**重建的子集**：丢掉 `windowMenu` / `help` / macOS 应用菜单是刻意取舍。留 `editMenu` 不是为了像默认菜单，是因为向导的四个输入框需要剪贴板与撤销。
+⑥ `startup` 那一发是 fire-and-forget：没送到 ⇒ 屏幕停在 `phase: 'off'`，症状与"这台机器没接持久化"同形，不报红。凭据只有 Step 10 那条 `--prop` 复跑里的 `bannerNodes === 0`（它是"没长出来"的证据，不是"该长的时候长出来了"的证据）。
+⑦ 两条事件通道有两种发法（`emitStatus` 用 `target: WebContents | null`，UI 指令用 `win.webContents`）：不合并的理由在第 ④ 段末，代价是"发事件的形状有两份"。
+⑧ `attachInteractiveUi` 在 `createWindow` 里 ⇒ 每次重建窗口都会重设一次应用菜单。这是 `activate` 那一支要的行为，但"重设菜单"这件事在 Windows 上是否会让窗口客户区高度抖一下（T8 第 ③ 段那条 26px 的教训只在**摘除**时验过），由 Step 10 的复跑读数证明，不在本步主张。
+
+---
+
+**交接（给 `chunk-t9f.md` 的 Step 9）**
+
+1. **preload 现物的十一件名字逐字**（`projectStore.ts` 要用）：`ping` / `openProject` / `submitJournal` / `closeProject` / `readConfig` / `saveConfig` / `testConnection` / `listProjects` / `createProject` / `onSaveStatus` / `onUiCommand`。`NOT_INJECTED` 那份壳子要补六个新键，`onUiCommand` 的壳回一个空注销函数。
+2. **`UiCommand` 三值的分派表**在 Step 9 定：`'startup'` = 屏幕自己发一次 `readConfig()`（然后按 `state` 决定 `phase`），`'config'` = 直接进向导，`'projects'` = 直接进列表。`'startup'` 之后要不要顺手 `listProjects()` 由 `probe()` 那一发的 `state === 'ready'` 分支决定 —— 这是 `computeBanner` 之外唯一新增的控制流。
+3. **回包的错误码读者表**：`'not-configured'` 现在有两个产地（会话那一条 + 管理这五条），横幅文案继续用 `message` 原话，Step 9 不许按码分文案。
+4. **面板的 DOM 靶名在 Step 9 定稿**：建议 `data-dajia-field` / `data-dajia-action` / `data-dajia-diagnostic` 三个独立属性（`panels.tsx` 盘上现物用的是 `data-dajia="storey-tabs"` 这一种"一个属性一个值"的形状，另开两条独立属性可以把 `[data-dajia="..."]` 那族既有选择器留着不动）。菜单里那两句标签（「连接设置…」「工程列表」）与面板标题不许各写一份 —— 要嘛都来自 `DIAGNOSTIC_TEXT`，要嘛菜单只写动词。
+5. `STOREY_TAB_HEIGHT_PX = 32` / `VIEW_PAD_PX = 60` / `PROP_PANEL_WIDTH_PX = 260` 三个数不许动；叠层一律 `position: 'fixed'`，不占流（T8 第 ⑧ 段那条"多一根常驻条全体像素判据作废"的规矩在 T9 的两块表单上更严格）。
+
+---
+
+- [ ] **Step 9: 屏幕侧 —— `projectStore` 的两枚新相位 + `ConnectionWizard` / `ProjectPicker` + `App` 的叠层**
+
+**前置实测（2026-10-05 逐条落盘，写正文前先量）**
+
+| 量什么 | 实测 | 对本步的约束 |
+|---|---|---|
+| `App.tsx` 行数 | **12 行**（`declare global { Window { dajia: DajiaApi } }` + `return <PlanCanvas />`） | 叠层就加在这一发文件里；它今天**不认识** `panels.tsx` 的任何东西，T9 是第一次 |
+| `panels.tsx` 行数 | **425 行**，靶名一族是 `data-dajia="storey-tabs"` / `"storey-tab"` / `"prop-panel"` / `"wall-id"` / `"thickness-input"` / `"height-mm"` / `"material-select"` / `"load-bearing"` / `"axis-length-mm"` / `"trial-reason"` / `"no-wall"` | 两块新面板**加进这一只文件**（t9a Files 第 22 行已定：`Modify: panels.tsx`，`ConnectionWizard` + `ProjectPicker`）；既有 11 个靶名一个都不许重名、不许改值 |
+| `PlanCanvas.tsx` 行数 | 1039 行 | **本步一个字不碰**。它是五发像素闸门的画法本体，进它等于把 T9 的屏幕改动挂到五道闸门的射程里 |
+| `editorStore` 的 zustand 姿势 | `create<EditorState>((set, get) => ({ … }))`（`:103`），`import { create } from 'zustand'`（`:1`） | `projectStore.ts` 的 T8 现物是 `createProjectStore(api, editor?)` 工厂 + `useProject` 单例（t8a Interfaces）；T9 的六个新动作**沿用同一姿势**，不另起 store |
+| `main/index.ts` 的 shot 名单 | 五发：`--shot` / `--edit-shot` / `--pick-shot` / `--draw-shot` / `--prop-shot`（`:2541-2545` 的 `argPath` 块），`wantInput = propShotRequested() \|\| drawShotRequested() \|\| pickShotRequested() \|\| editShotRequested()`（`:2557`） | **六发变七发这件事不在本步**：t9a Files 第 19 行写死"五个 shot 分支一字不动"。T9 的屏幕证据走 Step 10 的 `--prop-shot` 复跑 + T11 的 `--persist-shot` |
+| 菜单条那一发 | 摘默认应用菜单必须发生在**建窗之前**（`:2558-2560` 那段注释：菜单条 ≈ 26px 客户端高度，运行中摘 = resize = 全体像素判据作废） | `attachInteractiveUi`（t9e Step 8 落的）只在交互分支建菜单 ⇒ 交互模式**没有**像素闸门，两者不冲突；本步不许以"统一菜单"为由去动 shot 分支 |
+
+**① `projectStore.ts`：两枚新相位、四格新状态、六个新动作**
+
+**相位**（t9a Files 第 21 行）：`ProjectPhase` 从 `'off' | 'opening' | 'open' | 'closed'` 变成
+
+```ts
+export type ProjectPhase = 'off' | 'opening' | 'open' | 'closed' | 'config' | 'list';
+```
+
+`computeBanner` 的八条优先级**一字不动**（t8d `:301`）；它读的是 `phase | opened | failure | save` 四格，新增两枚相位落在它的第 2 条（`banner === null`）之外 ⇒ **`'config'` / `'list'` 相位下横幅照常显示**（向导是叠在横幅之上的，不是替换它）。这一句是本步最容易写错的地方，落地由第 ④ 段格 4 钉。
+
+**四格新状态**：
+
+```ts
+  readonly config: ConfigValue | null;          // readConfig 的回包（null = 还没读过）
+  readonly projects: readonly ProjectSummary[] | null;  // listProjects 的回包（null = 还没读过）
+  readonly testResult: ConnectionTestValue | null;      // testConnection 最近一发的读数
+  readonly busy: 'none' | 'saving' | 'testing' | 'creating' | 'listing';  // 四发按钮的禁用位
+```
+
+`busy` 单独成一格而不是复用 `phase`：`phase` 是"会话走到哪"，`busy` 是"哪颗按钮此刻按不动"。合并的后果是试连期间横幅消失（`phase` 被推离 `open`），而试连恰恰要在**已打开工程**的时候也能点。
+
+**六个新动作**（命名与产地）：
+
+| 动作 | 触发者 | 做什么 | 失败形状 |
+|---|---|---|---|
+| `probe()` | `'startup'` 指令（t9e 的 `attachInteractiveUi` 是唯一发点） | `readConfig()` ⇒ 写 `config`；`state === 'ready'` ⇒ `phase` 进 `'list'` 并顺发一次 `list()`，否则进 `'config'` | `readConfig` 回 `{ok:false}` ⇒ `failure` 记 `message` 原话，`phase` 不动（停在 `off`），横幅由 `computeBanner` 第 1 条接手 |
+| `openWizard()` | 菜单「连接设置…」（`'config'`） | `phase = 'config'`；`config` 已有读数就**不重读** | 无网络动作 ⇒ 无失败形状 |
+| `openList()` | 菜单「工程列表」（`'projects'`） | `phase = 'list'` + 发一次 `list()` | 同上 |
+| `list()` | `probe()` 的 ready 支 + `openList()` + 列表面板的「刷新」 | `busy='listing'` ⇒ `listProjects()` ⇒ 写 `projects` ⇒ `busy='none'` | 回包 `{ok:false}` ⇒ `projects = null` + `failure` 记原话；`busy` **必须**回 `'none'`（否则按钮永久禁死） |
+| `saveConfig(input)` | 向导「保存」 | `busy='saving'` ⇒ `saveConfig(input)` ⇒ 成功回 `ConfigValue` 直接写 `config` | 失败 ⇒ `config` 保持旧值（**不许写半成品**），`failure` 记原话 |
+| `testCfg(input)` | 向导「测试连接」 | `busy='testing'` ⇒ `testConnection(input)` ⇒ 写 `testResult` | `ConnectionTestValue` 的 6 个错误kind 全部**原样进面板**，屏幕侧不翻译（`DIAGNOSTIC_TEXT` 是唯一文案产地，t9b） |
+
+`createProject(name)` 走第 7 个动作位？**不走**：t9a 的 Interfaces 只给了六个，新建工程那一发在屏幕侧的动作名叫 `createProj(name)` 会多出第七个 —— 落地时它归在 `list()` 同族：`busy='creating'` ⇒ `createProject(name)` ⇒ 成功后 `list()`。⇒ **六个动作的名单是 `probe` / `openWizard` / `openList` / `list` / `saveConfig` / `testCfg`，`creating` 只是 `busy` 的一枚取值，动作本体是 `list()` 之前的那一发 `api.createProject`。** 这一句是本步对 t9a 的一处收窄（t9a 只写"六个新动作"没点名），落盘后要在 t9a 的 Interfaces 行补上这六个名字。
+
+**`'startup'` 之后要不要顺手 `listProjects()`**（t9e 交接第 2 条留的开放项）⇒ **定稿：只有 `state === 'ready'` 那一支发。** 理由照 t9e：非 ready 时列表必然失败，多发一发只会让横幅在两种失败形状之间打架。这一条的凭据是第 ④ 段格 2 与格 3（两格各自断"发了一次"与"一次都没发"）。
+
+**② `panels.tsx`：`ConnectionWizard` 与 `ProjectPicker`**
+
+DOM 靶名定稿（t9e 交接第 4 条的"建议"在此变成本步的写死项）：**三条独立属性**，与既有 `data-dajia="…"` 一族并存、互不覆盖。
+
+```tsx
+<input data-dajia-field="host" … />      // 四字段：host / port / user / password
+<button data-dajia-action="save" … />    // 动作：save / test / refresh / pick / create
+<div data-dajia-diagnostic="timeout" … /> // 值 = ConnectionTestValue 的 kind 或 ConfigValue 的 state
+```
+
+- `ConnectionWizard` 的四字段：`host` / `port` / `user` / `password`。**`password` 这一格的 `value` 永远来自本地 state，一次都不从 `config` 回填**（`ConfigValue` 里根本没有它 —— t9c 的回包只到 `passwordSet: boolean`）。面板上那句提示写"口令已保存，留空表示不改"，其真值来自 `config.passwordSet`。
+- 标题与按钮文案同源于 `DIAGNOSTIC_TEXT`（t9b 的 `next`/`detail`）；菜单里那两句标签（「连接设置…」「工程列表」）**只写动词**（t9e 交接第 4 条给的两个方案里选这一个），这样"面板标题"与"菜单标签"不可能漂开。
+- `ProjectPicker`：`projects === null` 时显示"读不到列表"加 `failure` 原话；非 null 时逐行 `name` + `updatedAt` + 一颗「打开」按钮（`data-dajia-action="pick"`，`onClick` 调 `useProject` 已有的 `open(id)`）。**空数组 ≠ null**：空列表显示"还没有工程"加一颗「新建」，读不到显示错误原话 —— 两格的判据形状不同，落地各钉一格。
+- 叠层样式：`position: 'fixed'`、`zIndex` 高于横幅，**不占流**。三个数（`STOREY_TAB_HEIGHT_PX = 32` / `VIEW_PAD_PX = 60` / `PROP_PANEL_WIDTH_PX = 260`）一字不动。
+
+**③ `App.tsx`：只在两枚新相位叠一层**
+
+```tsx
+export default function App(): React.JSX.Element {
+  const phase = useProject((s) => s.phase);
+  return (
+    <>
+      <PlanCanvas />
+      {phase === 'config' ? <ConnectionWizard /> : null}
+      {phase === 'list' ? <ProjectPicker /> : null}
+    </>
+  );
+}
+```
+
+其余一律维持"不叠"（`'off' | 'opening' | 'open' | 'closed'` 四枚相位下面板**不存在于 DOM**）。这条可扫性由第 ④ 段格 5 钉：`phase: 'open'` 时 `[data-dajia-field]` 的节点数必须为 **0** —— 它是"闸门那一屏只有一种形状"这条设计约束（t9a 口径⑧）在屏幕侧的另一半凭据；另一半（`send(UI_COMMAND_EVENT` 唯一发点）已经在 t9e 的 Step 8 ⑤ 落了。
+
+**④ `test/unit/project-store.test.ts`：+7 格（⇒ 18 格，t9a Files 第 29 行的数）**
+
+夹具照 T8 现物：`createProjectStore(api, editor?)` 工厂 + 假 `api`（十一件方法全假把式），**不起窗口、不连库**。
+
+1. `'startup'` + `readConfig` 回 `state:'unset'` ⇒ `phase === 'config'`，且 `listProjects` **一次都没被调用**（计数断言，不是"没报错"）。
+2. `'startup'` + `state:'ready'` ⇒ `phase === 'list'` 且 `listProjects` **恰好一次**。
+3. `state:'unreadable'` ⇒ `phase === 'config'` + `failure` 等于回包 `message` 原话（`toBe` 不是 `toMatch` —— 屏幕不许改写诊断）。
+4. `phase: 'config'` 时 `banner` 仍由 `computeBanner` 决定（同一份 state 先 `open` 一个工程再 `openWizard()` ⇒ 横幅在、面板也在）。
+5. `phase: 'open'` 时 `document.querySelectorAll('[data-dajia-field]').length === 0`（node 侧用 `createProjectStore` 的纯状态读，不起 DOM：判据写"两枚新相位之外面板不挂载"的等价物 —— 组件层若难以在无 DOM 下断，这一格改断 `phase` 到面板的映射函数 `panelFor(phase)` 回 `null`；**两者选一，落地按实跑的写并在此注明选了哪条**）。
+6. `saveConfig` 失败 ⇒ `config` 保持旧值、`busy === 'none'`、`failure` 有原话（三道一起断：任何一道漂都是真事故 —— 半成品写进 `config` 会让"已保存"显示在没保存的状态上）。
+7. `list()` 在四种 `busy` 取值下都不许把 `busy` 留在非 `'none'`（含 `api.listProjects` reject 的那一发）。
+
+**⑤ 本步不新增 shot 分支（写死，免得下一个人"顺手补一发"）**
+
+t9a Files 第 19 行与口径⑧ 是本任务的承重结构：**五道像素闸门的判据必须与"这台机器有没有装 MySQL"无关**。加一发 `--config-shot` 等于新开一个"闸门模式还要分机器"的地方，而 t9a 已经论证过它的代价（两种 DOM 形状）。屏幕侧的常驻证据因此只有两处：第 ④ 段格 5 的映射断言，与 Step 10 复跑 `--prop-shot` 时的 `bannerNodes === 0`（t9e 口径⑥已登记为限度：它是"没长出来"的证据，不是"该长的时候长出来了"的证据）。**真窗口 + 真点击向导的证据在 T11 的 `--persist-shot`**，本计划不为它加一发中间闸门。
+
+**⑥ 本步的变异靶（编号接 t9e 的 M39 之后 ⇒ **M40 起**；总表归 Step 10。原稿这里写的是"接 M31 ⇒ M32 起"，与 t9e 第 ⑨ 段实际用掉的 M32…M39 撞号，2026-10-05 订正）**
+
+| ID | 打哪里 | 预期红 |
+|---|---|---|
+| T9-M40 | `probe()` 去掉 `state === 'ready'` 那个条件（unset/unreadable 也去发列表） | 格 1 红（`listProjects` 被调了一次）；格 2 照绿 ⇒ 两格是方向相反的一对牙 |
+| T9-M41 | `probe()` 的 ready 支不发 `list()` | 格 2 红 |
+| T9-M42 | `failure` 的赋值改成"取 `DIAGNOSTIC_TEXT[kind].title`"（屏幕侧翻译） | 格 3 红（`toBe` 对不上原话）—— 这一发是"文案只有一个产地"的牙 |
+| T9-M43 | `saveConfig` 失败路径顺手 `set({ config: partial })` | 格 6 红（旧值没了） |
+| T9-M44 | `list()` 的 `finally` 改成只在成功路径 `set({busy:'none'})` | 格 7 红（reject 那一发 `busy` 卡在 `'listing'`） |
+| T9-M45 | `App.tsx` 的叠层条件从 `phase === 'list'` 放宽成 `phase !== 'off'` | 格 5 红（`'open'` 相位下面板也长出来）—— 如果格 5 落地成了映射函数版，这一发同样红，两条实现都有牙 |
+| T9-M46 | `computeBanner` 第 2 条（`phase === 'off'` 回 null）挪到第 8 条之后 | 与 T8-M36 同型：期望红在格 4。⇒ 本步**预期这一发不红**（`computeBanner` 一字未动，格 4 测的是"新相位不改横幅"而不是横幅优先级本身），红与不红都如实回报，恒绿不登记为缺口（它在 T8 有牙，归那张总表） |
+
+**⑦ 本步登记的限度（写在这里，但**只有实测过才进 Step 10 的限度表**）**
+
+- 向导的"填了四格、点了试连、屏幕上出现 `timeout` 那一行"这条**没有任何常驻证人**：单测档打的是假 `api`，DOM 层不进测试。凭据要到 T11 的 `--persist-shot` 才出现。⇒ 本步**不主张**它被证过；写进限度表时要带这一句原话，并且 Step 10 复跑必须把 T9-M40…M45 的每一发红格名实测填进总表，不许从本表抄。
+- `passwordSet` 那一发提示（"留空表示不改"）在 `config === null` 时的形状没测：`probe()` 之前用户直接走菜单进向导 ⇒ `config` 是 null ⇒ 提示该显示什么。落地时二选一并写进注释（建议：`config === null` 时提示整行不渲染），第 ④ 段没有为它开格（**这是缺口不是限度**，Step 10 前补一格或在本步正文加格，不带走）。
+
+**⑧ 交接（给 `chunk-t9g.md` 的 Step 10）**
+
+1. 全量复跑：`pnpm verify` / `pnpm test:db` / `tsc -p apps/desktop/tsconfig.test.json` / `check-package-deps` / `check-invariants-cycle` / 只读普查（前后各一发）+ `--prop-shot` 复跑读数。**期望数按 T8 收口后的盘上实测重定基线**，不许沿用本块任何预估（t9a 那句"40 文件 / 576 条"是写作时的数）。
+2. 变异总表：T9-M1…M38（t9a–t9f 全量），逐行填实测红格名；恒绿的行按"发现的凭据"写，不当失败。
+3. 提交切分建议三发：protocol + diagnostics（Step 1–4）⇒ config-store + admin + admin-ports + ipc-persist 接线（Step 5–8）⇒ renderer（Step 9）。每发的 `git add` 名单写死，`docs/install-mysql.md` 跟第一发还是第三发要在 t9g 定（建议跟第一发：它是 `diagnostics-text.test.ts` 那格"每个 `next` 逐字出现在安装说明里"的同批证人）。
+4. 限度表合并登记：t9a 第 110/114 行那两条（`config-store` 拿不到"真加密"证据 / `safeStorageCipher` 无 unit 格）与本步第 ⑦ 段合并，同一件事只留一条。
+5. §五之四式收口：Step 10 跑完之后，本任务对 `dajia` 库仍**不建不连不删**（归 T11），普查逐名等于基线。
+
+---
+
+- [ ] **Step 10: 全量复跑 + 变异总表 + 提交切分 + 限度表合并 + 收口**
+
+---
+
+**① 前置实测（2026-10-05 逐条落盘，先量后写）**
+
+| 量什么 | 实测读数 | 在本步的用途 |
+|---|---|---|
+| 五道 shot 闸门的开关名 | `main/index.ts:2541-2545` 五个 `argPath`：`--shot` / `--edit-shot` / `--pick-shot` / `--draw-shot` / `--prop-shot`；根 `package.json:16-20` 五个脚本：`pnpm shot` / `pick-shot` / `edit-shot` / `draw-shot` / `prop-shot` | Step 10 的第六档闸门就是这五发，一个不多一个不少（**T9 不加第六发**，t9f 第 ⑤ 段写死） |
+| 闸门判据的产地 | `scripts/desktop-shot.mjs`（含 `--prop` 那一族的 P6/P20 行），`origin` 判据行与 `bannerNodes` 计数都在脚本里 | 本步**不重述判据**：读数以脚本自己的 PASS 行为准，谁把手写判据抄进计划文本，谁就造出第二份真源 |
+| 全量闸门的组成 | `package.json:21` 的 `verify` = `typecheck && lint:deps && test`；`typecheck`（:10）编译四个 `tsconfig`，desktop 那发是 `pnpm --filter @dajia/desktop typecheck` ⇒ `tsc --noEmit -p tsconfig.test.json`，其 `include` 覆盖 `test`（P-63） | 所以 Step 10 的单跑 `tsc` 是"日志聚焦"，不是"补一个 verify 看不见的洞" |
+| 依赖方向守卫 | `scripts/check-package-deps.mjs`、`scripts/check-invariants-cycle.mjs` 两支独立脚本 | 本任务新增的 `persist/admin-ports.ts` 与 `shared/diagnostics-text.ts` 都在守卫射程内（t9e 第 ① 段、t9b 第 ⑤ 段的"零 import"主张由这两发出凭据） |
+| db 档配置 | `vitest.db.config.ts`：`fileParallelism: false`、60s test / 120s hook timeout；靶面只有 `apps/desktop/test/db/**` | 新增两档 db 文件（`projects` / `admin-ports`）自动入靶，不需要改配置；**要改配置就是走偏** |
+| 只读普查 | `scripts/` 下无普查脚本，普查是控制位的一次性脚本（SDD 工作区）；口径 = **逐名等于基线**（`a77997b` 那次订正），当前基线 19 个库名 | 前后各一发；`dajia` 本任务仍**不建不连不删**（归 T11） |
+| 写作时的盘上基线 | Task 5 收口后控制位亲测 `pnpm verify` = **45 文件 / 593 格**，`pnpm test:db` = **4 文件 / 70 格** | 只是写公式时的样本，**不是 T9 跑 Step 10 时的基线**（见第 ② 段） |
+
+---
+
+**② Step 10 的六档闸门，逐字命令与读数口径**
+
+席位在靶面全绿之后跑完这六档并把读数抄进报告；控制位随后**独立复跑同一组**作验收（既有分工：席位回报读数，控制位复跑定账）。
+
+```bash
+pnpm verify                > tmp/t9-verify.log 2>&1; echo "exit=$?"
+pnpm test:db               > tmp/t9-db.log     2>&1; echo "exit=$?"
+npx tsc --noEmit -p apps/desktop/tsconfig.test.json > tmp/t9-tsc.log 2>&1; echo "exit=$?"
+node scripts/check-package-deps.mjs    > tmp/t9-deps.log  2>&1; echo "exit=$?"
+node scripts/check-invariants-cycle.mjs > tmp/t9-cycle.log 2>&1; echo "exit=$?"
+node <SDD 工作区>/t9-census.mjs before  # 只读，逐名等于基线；跑完再一发 after
+pnpm shot / pnpm pick-shot / pnpm edit-shot / pnpm draw-shot / pnpm prop-shot
+                                         > tmp/t9-shots.log 2>&1; echo "exit=$?"
+```
+
+三条规矩：
+
+1. `eval "$(node db-env.mjs)"` 那一行后面**永远不接** `| tee`、`> log`、`| tail`；重定向只挂在闸门命令上（凭据源 2026-10-05 已换，见台账的凭证事件条目）。
+2. 五道 shot 闸门**五发都要跑**：本任务动过 `App.tsx` 与 `panels.tsx`，而 T8 第 ⑧ 段那条"多一根常驻条 ⇒ 全体像素判据作废"的规矩在这里同样成立。叠层必须是 `position: 'fixed'`（t9e 交接第 5 条），跑完五发是对这件事的唯一实证。`--prop-shot` 那一发的 `bannerNodes === 0` 是"闸门环境里没长出常驻 DOM"的证据，**不是**"该长的时候长出来了"的证据（t9e 口径⑥登记的限度，本步照抄进行使限度表，不许改写）。
+3. 任何一档红 ⇒ 先回报读数再动手，不许"先改一行试试"。同一份代码复跑一次才能重测写死的字面量（既有红线）。
+
+**期望数写成公式**（t9f 交接第 1 条：不许沿用本块任何预估）：
+
+```
+verify 文件数 = 派发时实测文件数 + 5
+verify 格数   = 派发时实测格数   + 67   （+68 若 t9f 第 ⑦ 段那格缺口在 Step 9 补了格）
+db 文件数     = 派发时实测文件数 + 2
+db 格数       = 派发时实测格数   + 11
+```
+
+增量 67 的来源逐档写死，便于对不上时定位是谁的账：protocol 新档 10 + `diagnostics` 8 + `diagnostics-text` 6 + `config-store` 10 + `admin` 14 = **48** 新格，加 `session` +4、`project-store` +7、`persist-boundary` +6（Step 6 两格、Step 7 一格、Step 8 三格）、`ipc-channels` +2 = **67**。另有两格是改写不增数（t9a Step 2 的"T8 那两格改写"、t9c Step 6 的那格注释订正）。db 侧 11 = `projects` 6 + `admin-ports` 5。
+
+> **对不上的处理顺序**（T4/T5 两棒的同一课）：先 `it()` 逐档点数控是谁的账，再判"计划文本过期"还是"实现漏了一格"。**只允许改计划文本**（把实测数与差在哪格写进执行回填），不许改判据去凑预估。t9a 那句"预估 40 文件 / 576 条"是写作时（盘上 35 / 509）的数，Task 1–5 落地后盘上已经是 45 / 593 —— 这句话本身就要跟着进回填。
+
+---
+
+**③ 变异总表：把 M1…M46 的编号账在 Step 10 结清**
+
+前置四块的表只编到 M9 起（t9c 第 ⑨ 段末那条"编号预留"把 **M1…M8 空给 Step 1–4**，并写明"若靶多于八发，M9…M21 整体后移"）。本步把这条预留**结成实数**，因为编号一旦前移，t9c/t9d/t9e 正文里那十几处"（T9-M27 在这一格才有证人）"式的交叉引用会全部失效 —— 那正是本计划从 T5 起立起的规矩：**编号只在总表里成立，正文引用的是那一行内容**。所以：
+
+- **M1…M8 = Step 1–4 的靶，本步一次定死八发**（下表）。Step 1–4 若实测还有**额外的**靶，**追加 M47 起**，绝不前移既有编号。
+- M9…M21 = t9c（Step 5–6）第 ⑨ 段那张表，逐行照抄。
+- M22…M31 = t9d（Step 7）第 ⑩ 段那张表，加它自己那条 M13 指针行（凭据在连库档 `projects.test.ts` 格 4，靶在 t9c）。
+- M32…M39 = t9e（Step 8）第 ⑨ 段那张表。
+- M40…M46 = t9f（Step 9）第 ⑥ 段那张表。**t9f 原稿写的是 M32…M38，与 t9e 撞号，落盘时已就地订正为 M40…M46**；拼接时若发现还有任何一处按旧号引用，以 t9f 表里那一行内容为准。
+
+Step 1–4 那八发（靶与预期红都按 t9a/t9b 已写死的格名给，Step 10 实跑时填实测格名）：
+
+| ID | 打哪里 | 预期红在 |
+|---|---|---|
+| T9-M1 | `IPC` 常量表里漏登记一条新通道（`INVOKE_CHANNELS` 少一条） | `ipc-channels.test.ts` 名册那格（循环 + `toBe(8)` 的正控制）；t9e 的 M36 打的是 main 侧 `dispatch` 的 `case`，两发不是同一件事 |
+| T9-M2 | 把 `password` 这键加进某张**出方向**的表（`ConfigValueSchema` / `ProjectSummarySchema`） | `persist-config-schema.test.ts` 格 5（带 `password` 的回包一律拒）+ 那格"`password` 只许出现在两张进方向的表里"（双侧红 = 两道门各一道牙） |
+| T9-M3 | `ConnectionInputSchema.password` 改成 `.min(1)`（"空口令不算配好"） | 格 1 红：Windows 上 root 装完就是空口令，拒它等于把人挡在自己机器外面 |
+| T9-M4 | 长度尺任意一格漂（253/254、32/33、65535/65536、1.5 取一） | 格 2 红（四组边界是四发独立的牙，逐组验，不许合并成一格） |
+| T9-M5 | `ConfigDatabaseSchema` 放宽成允许 `dajia_test` | **三处同红**（t9a 口径⑧ 的原话："改一个 enum 会让三格红"）：`persist-config-schema.test.ts` 格 4（钉 `options.length === 1`）、`config-store.test.ts` 里"落盘那一份的 database 只能是 `dajia`"那一格、以及 t9c 的格 8（`configToEnv` 去掉 `assertDatabaseName` 的那条人造 `dajia_test` record 直过界 —— M20 的同一只牙在这一发也该红）。这是本步唯一一发的"一靶三产地"，实测若只红两处，要写清缺的是哪一处，不许默认它成立 |
+| T9-M6 | `ProjectSummarySchema.locked` 从"只认真布尔"改成 `z.boolean().optional()` 之类 | 格 7 红（真库给 0/1 时应当在过界那一发红，而不是悄悄进屏幕） |
+| T9-M7 | `classifyDbError` 去掉别名合并那几支（只认字面码） | `diagnostics.test.ts` 格 2 红（别名漂了就是分型白做）；另配一发"改读 `message` 里的码" ⇒ 格 4 红 |
+| T9-M8 | 文案表某一型的 `next` 与 install-mysql.md 的小节措辞分家（改文档或改文案任一侧） | `diagnostics-text.test.ts` 格 6 红（"每个 `next` 逐字出现在 `docs/install-mysql.md` 里"，验收 6 的那颗牙） |
+
+跑法沿用 T4/T5 已验证的那套，不重发明：`cp` 备份 + md5 还原到 SDD 工作区，**本任务一笔提交都不给变异**；每一发跑完立刻还原并用 `git status --porcelain` 与跑前对账；只跑该靶所在的档（unit 靶跑 `vitest run <文件>`，db 靶跑 `vitest run --config vitest.db.config.ts <文件>`，两档靶按表注明）。**恒绿的行算发现的凭据、不算失败**，如实回报并写进限度表（T9-M46 与 T5-M9 那样的"预期不红"事先写在表里，不许事后改口径）。
+
+---
+
+**④ 提交切分：三发，`git add` 名单写死**
+
+t9f 交接第 3 条的建议在此定稿，并补一条它没结的账（`install-mysql.md` 跟哪一发）：**跟第一发**。理由 —— `diagnostics-text.test.ts` 格 6 那一发是"每个 `next` 逐字出现在安装说明里"，文档与文案表必须同批落地，否则第一发之后那个仓里的 `verify` 自己就红（T9-M8 是它的证人，证人不能与犯人在不同提交里）。
+
+```bash
+# 第一发：protocol + 分型 + 文档
+git add packages/protocol/src/persist-schema.ts packages/protocol/test/persist-config-schema.test.ts \
+        packages/protocol/test/ipc-channels.test.ts apps/desktop/src/main/db/diagnostics.ts \
+        apps/desktop/src/shared/diagnostics-text.ts apps/desktop/test/unit/diagnostics.test.ts \
+        apps/desktop/test/unit/diagnostics-text.test.ts apps/desktop/test/unit/ipc-channels.test.ts \
+        docs/install-mysql.md
+git commit -m "feat(persist): 配置通道的十一件契约 + 分型诊断与那一页安装说明"
+
+# 第二发：main 侧（口令盘 + 管理 + 接线）
+git add apps/desktop/src/main/db/errors.ts apps/desktop/src/main/db/repository.ts \
+        apps/desktop/src/main/db/pool.ts apps/desktop/src/main/persist/session.ts \
+        apps/desktop/src/main/persist/config-store.ts apps/desktop/src/main/persist/admin.ts \
+        apps/desktop/src/main/persist/admin-ports.ts apps/desktop/src/main/ipc-persist.ts \
+        apps/desktop/src/main/index.ts apps/desktop/src/preload/index.ts \
+        apps/desktop/test/unit/session.test.ts apps/desktop/test/unit/config-store.test.ts \
+        apps/desktop/test/unit/admin.test.ts apps/desktop/test/unit/persist-boundary.test.ts \
+        apps/desktop/test/db/projects.test.ts apps/desktop/test/db/admin-ports.test.ts
+git commit -m "feat(persist): 连接配置的密文盘、工程管理与 main 侧接线"
+
+# 第三发：屏幕侧
+git add apps/desktop/src/renderer/src/stores/projectStore.ts apps/desktop/src/renderer/src/panels.tsx \
+        apps/desktop/src/renderer/src/App.tsx apps/desktop/test/unit/project-store.test.ts
+git commit -m "feat(persist): 连接向导与工程列表接屏 —— 两枚新相位、叠层不进流"
+```
+
+（名单以盘上现物为准：任一路径不存在 ⇒ 停下回报，不许"顺手 `git add -A`"。`docs/` 下除 `install-mysql.md` 之外一律归控制位；SDD 工作区的临时脚本与 `tmp/*.log` 绝不 add。）
+
+---
+
+**⑤ 限度表合并登记（Step 10 收口时，同一件事只留一条）**
+
+去重按"主张的是同一只牙"判，不按措辞判。合并清单：
+
+1. `config-store` 拿不到"真加密"证据（t9a 第 110 行）与 `safeStorageCipher` 那八行没有 unit 格（t9a 第 114 行）⇒ **同一条**：密文盘的真假只到 `ipc-persist.ts` 的适配器，凭据要到 T11 的 `--persist-shot`；证据是 `config-store.test.ts` 用的是假 cipher。
+2. `--prop-shot` 的 `bannerNodes === 0` 只证"没长出来"（t9e 口径⑥）⇒ 保留原话，并与 t9f 第 ⑤ 段那句"屏幕侧的常驻证据只有两处"合写，不拆成两条。
+3. 向导的"填四格 → 点试连 → 屏幕出现 `timeout` 那一行"无常驻证人（t9f 第 ⑦ 段）⇒ 与第 1 条同源（都归 T11），但**不合并**：一条说的是盘上字节，一条说的是屏幕文案通路，T11 的凭据形状不同。
+4. `attachInteractiveUi` 重设应用菜单是否让客户区高度抖一下（t9e 口径⑧）⇒ 由 Step 10 那五发的实测读数结或不结；结了就删条，没结就留在限度里点名"五道闸门的 PASS 行不含高度判据"。
+5. 建工程两步之间进程被杀 ⇒ 工程已在库里、没人开着（t9a 第 69 行）⇒ 这条**不是限度，是已设计的补偿没覆盖的形状**，留在限度表并写明它的读者是 T11（列表里看得见、点开即开）。
+6. t9f 第 ⑦ 段那条 `passwordSet` 提示在 `config === null` 时的形状：**Step 10 之前必须关**（补格或正文加格），不许作为限度带走。本步的验收动作之一 = 确认它已经落成格，落成格则第 ② 段公式取 `+68`。
+
+---
+
+**⑥ 本任务的收口判据（写给 Step 10 的最后一次自问）**
+
+- `pnpm verify` / `pnpm test:db` 两档 exit=0，读数符合第 ② 段公式（不符 ⇒ 已按"改文本不改判据"写进执行回填）。
+- 五道 shot 闸门五发全绿，且 `--prop-shot` 那份报告的 `bannerNodes === 0`。
+- 依赖方向与 cycle 两支守卫 exit=0；`db/**`、`persist/config-store.ts`、`persist/admin.ts`、`persist/admin-ports.ts`、`shared/diagnostics-text.ts`、`db/diagnostics.ts` 的 electron-free / fs-free 主张各有一格常驻证人（t9e 第 ① 段与 t9c 第 ⑤ 段那张 `persist-boundary` 名单）。
+- 只读普查前后各一发：**逐名等于基线**（19 个库名，一个用户库都不能少），`dajia` 一次未建、未连、未删。
+- 变异表 M1…M46（含可能的 M47+）逐行有实测红格名或"恒绿 + 解释"，没有一行是从本块的预期栏抄的。
+- `git status --porcelain` 只剩控制位的 `docs/**` 改动；`tmp/` 只有 `*.log`；SDD 工作区外的仓目录没有临时脚本。
+- 三发提交的 `git add` 名单与第 ④ 段逐字相符，提交信息里没有"顺便"两个字。
+
+---
+
+**⑦ 交接（给 Task 10 / 11 与收尾三章的账）**
+
+1. **T11 的 `--persist-shot` 要消费本任务的三样东西**：真窗口里点得动的向导（本块 Step 9 的 DOM 靶名 `data-dajia-field` / `-action` / `-diagnostic` 三条独立属性，t9e 交接第 4 条）、`config-store` 落盘的密文文件（`userData/connection.bin`，P-27）、以及"口令留空表示不改"那条提示在真 `config !== null` 时的形状。第 ⑤ 段第 1、3 两条限度由它结清。
+2. **T10 的 `--lock-shot` 与本任务无接口**：锁住在 `db/locks.ts`（T6），与配置通道互不知情（T6 第 ⑥ 段）。T10 不要"顺手"读 `connection.bin` —— 那是 T11 的三进程剧本的料。
+3. **验收 6 的一半已由 `docs/install-mysql.md` + T9-M8 落地**：另一半（"照着那一页能在本机把 MySQL 装上并连上"）是人工验收，进"人工验证不打勾项"那一章，不许伪装成自动判据。
+4. `ProjectPhase` 现在是六枚（`off/opening/open/closed/config/list`）：Task 10/11 若加相位，t9f 第 ① 段那句"两枚新相位之外面板不挂载"的映射断言要跟着扩，那一格的格名不改、判据扩。
+5. 本任务对 `dajia` 库**不建不连不删**这条账，在 §五之四式收口里再点一次名 —— 它是 Plan 4 唯一一处"计划里明写不做的的事"，读者容易当漏网。
