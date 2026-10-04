@@ -11,6 +11,8 @@
     "build": "pnpm --filter @dajia/desktop build",
     "lint:deps": "node scripts/check-package-deps.mjs",
     "test": "vitest run",
+    "test:db": "vitest run --config vitest.db.config.ts",
+    "db:sql": "node scripts/db-sql.mjs",
     "shot": "node scripts/desktop-shot.mjs",
     "pick-shot": "node scripts/desktop-shot.mjs --pick",
     "edit-shot": "node scripts/desktop-shot.mjs --edit",

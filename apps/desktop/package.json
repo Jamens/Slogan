@@ -9,12 +9,13 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "dist": "electron-builder",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "@dajia/core": "workspace:*",
     "@dajia/protocol": "workspace:*",
     "@dajia/scene-2d": "workspace:*",
+    "mysql2": "^3.24.5",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "zustand": "^5.0.15"
