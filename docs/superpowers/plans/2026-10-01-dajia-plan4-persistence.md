@@ -138,7 +138,7 @@
 
 ---
 
-## 裁决（P-1 … P-17 + 执行期追加的 P-40 … P-43；执行中若与落地的代码冲突，按代码订正并写执行回填。P-18 … P-39 住在 Task 8 / Task 9 的文本里，随那两个任务回写并进本表）
+## 裁决（P-1 … P-17 + 执行期追加的 P-40 … P-54；执行中若与落地的代码冲突，按代码订正并写执行回填。P-18 … P-39 住在 Task 8 / Task 9 的文本里，随那两个任务回写并进本表）
 
 | # | 决定 | 理由 | 已接受的代价 |
 |---|---|---|---|
@@ -160,7 +160,7 @@
 | **P-16** | upsert 一律用 MySQL 8.0.19+ 的 `INSERT ... AS new ON DUPLICATE KEY UPDATE x = new.x` 别名形态；`writeSnapshot` 用**裸 INSERT**，不写 ODKU | `VALUES()` 函数从 8.0.20 起废弃（仍可用但打 warning），别名形态是长期写法；快照那一格"一个 `journal_turn` 最多一行"是有语义的断言（同一发重复落盘说明 autosave 的触发判定漂了），让 `uk_project_turn` 当场抛比 ODKU 静默覆盖更容易查 | 换到 MariaDB 时别名形态要回退（S1 不换，spec §12 钉的是 MySQL 8.0.45）；重复快照在实现里成了"必炸"路径 ⇒ T7 的 autosave 必须自己记住"这个 turn 已经落过盘"，不许靠 ODKU 兜 |
 | **P-17** | `createDbPool` 在 **T4** 补两条配置：`supportBigNumbers: true` + `bigNumberStrings: false`，以及 `lockWaitTimeoutMs?: number`（透传 `sessionVariables`） | `journal_turn` / `turn` / `seq` / `updated_seq` 四列都是 BIGINT。mysql2 默认把 BIGINT 直接转 JS number，超出 2^53 静默失精；开 `supportBigNumbers` 后"安全范围内回 number、范围外回 string"，而 `MmSchema`/`JournalTurnSchema` 对 string 一律拒 ⇒ 越界变成一次抛，不是一次悄悄写歪的账。`lockWaitTimeoutMs` 唯一读者是 P-15 那一格（默认 50 秒会让测试看起来像挂死） | Task 2 已把 `pool.ts` 写完，T4 要回头改它 ⇒ 该文件的注释里"业务连接永远不开 multipleStatements"那句不许顺手删。越界那条主张本计划只到"会抛"为止，不主张"抛得好看"（真出现 2^53 号楼层需要 P-8 同款的 spec 订正） |
 
-### 执行期裁决（P-40 起；Task 1 落码时由控制位追加）
+### 执行期裁决（P-40 起；Task 1 与 Task 2 落码时由控制位追加）
 
 > 编号从 **P-40** 起，因为 **P-18 … P-39** 已经在 Task 8 / Task 9 的计划文本里被点名（散在各自 chunk 的段落里，随那两个任务的回写并进上表）。这里不回填它们，避免两份编号抢同一个格子。
 
@@ -170,6 +170,17 @@
 | **P-41** | 普查那五发参数一律按**驱动真实回值形状**断：整数两发过 `Number()`、字符串那一发过 `String()`；行 cast 从 `Record<string, string>` 改成 `Record<string, string \| number>` | 实测（2026-10-04 第一次真连库）`@@lower_case_table_names` 回 JS **number 1**，而 brief 写 `expect(got.lctn).toBe('1')` —— 同一发 `SELECT` 里的 `max_connections` 却已经 `Number()` 包过了，两行本身就不自洽。根因是那个 cast 假装整行都是字符串，typecheck 于是**站在错的那一边** | `String(got.v)` 放弃了"VERSION() 必须是字符串"这条附带形状断言（登记为限度，不是待办）。`lctn` 的断言从"等于 '1'"改成"恰好等于 1"，**没有变弱**：面对 number 1 的 `toBe('1')` 本来就是一副空牙 |
 | **P-42** | `pnpm test` 的基线文件数订正：**35 → 36**（Task 1 之后），不是 Step 8 原写的 37；后续任务的起点跟着改 | 原文把 `packages/protocol` 那 1 文件算成"这一档新增的"，可 35 的基线里本来就含它（25 core + 7 scene-2d + 2 `scripts/test` + 1 protocol = 35，与「现状事实」表逐字一致）⇒ 净增只有 `db-safety.test.ts`。审查席用 `git ls-tree` 在 `e548174` / `df961e6` 各枚举一遍全集独立复核，两边逐名相同 | 计划第 5 行早就点名过这一型（"按盘上实测重数，别为了凑数去动判据"），这次是控制位自己写的数字踩上去的。**判据的牙未动**：`Tests` +4 与 Step 3 那发"文件被发现但模块缺失"的红，两处独立证据仍夹住 include 生效 |
 | **P-43** | 「缺环境变量必须响亮失败」这条红线需要一个 **CI 通道里的证人**：把 `env.test.ts` 的第 3 格（假 `env` 入参，不连库）复制一份进 `apps/desktop/test/unit/` | 审查席独立发现：该判据目前**只住在 `test/db`**，而 db 档不进 `verify`（CI 既无 MySQL 也无口令）⇒ 有人把 `readMysqlEnv` 改回"没配就返回默认参数"（变异 M3 那一型）时，`pnpm test` 抓不到，红线在 CI 上是零覆盖。那一格本来就是纯函数测试（喂假 `env` 对象），搬过去不需要任何凭据 | 两处同一判据 ⇒ 一份行为两份用例。这是有意的：被复制的那一格守的是红线，不是实现细节；改判据时两格会一起红，正是想要的连带。**不**把 `readMysqlEnv` 的整个测试面搬到 unit —— 只有这一格不依赖连接 |
+| **P-44** | `apps/desktop/test/unit/env.test.ts`（P-43 的证人档）三处收口：格 4 的注释改成它真正证的事、格 2 的整串正则换成逐名 `toContain`、档头补四格分层 | 定点复核席判 **FAIL**（不是断言坏，是**注释谎报**）：格 4 写着"挡住把口令悄悄塞进日志"，可它既不 spy `console` 也不看日志通路，而"`MysqlEnv` 没有 `toString` ⇒ 要打整份得显式点名"这个前提是**反的**（普通对象 `console.log` 连 `password` 一起吐）。格 2 的 `/HOST.*PORT.*USER.*PASSWORD.*DATABASE/` 连五个名字的**排列顺序**一起焊死，而顺序不是判据 | 形状那一格**否掉**了复核席建议的 `toMatchObject`（去锁）：五键闭集就是判据本身，去锁等于把红线换成软要求；`Object.keys(env).sort()` 留着，身份降为诊断质量。代价：这一格绑住"消息里五个名字都在"，将来文案改成不含变量名的一句会红 —— 那是**该红的**（红线要求点名） |
+| **P-45** | Task 2 Step 5 原文的 `expect(tables).not.toContain('_migration')`（半途失败的迁移 ⇒ 无残留）改成 `toContain`，并**另补一格**证对偶方向：坏迁移的**第一条语句**就失败 ⇒ 库里一张表不留、版本不记账 | 两个理由叠在一起：① MySQL 的 DDL **隐式提交**，跑到的语句就是跑了的，`migrate()` 的 `rollback` 抹不掉已建的表 —— 而本任务自己落地的 `migrate.ts` 注释①写的正是这句话，原判据与同文件的注释互相打脸；② 真凭据实测（`t2fix-probe.mjs` E 条）：`multipleStatements` 的一批语句在第一条报错处停下，**后面的语句根本不执行** ⇒ "无残留"的正确形状是"根本没开始"，不是"回滚成功" | 原判据想守的那件事（半途失败不许把库带进半套状态）改由**新格**守，形状不同但更强：它同时是 `readApplied` 幂等重放的前提。已提交的那一半靠校验和 + `_migration` 记账在下一次 `migrate` 时炸，这条主张在 T2 有实测凭据（M1 那一发） |
+| **P-46** | `migrate(pool, database)` 在读写任何东西之前，先发一发 `SELECT DATABASE()` 核对"声称迁的库"与"连接实际所在的库" | 审查席 I4：连接池带着 `database` 参数，而 `migrate` 只吃一个 `database` 形参 ⇒ 两者**可以不是同一个库**，而 runner 会报成功。这是 I3 那一族"报成功而打错了库"里唯一没有任何判据覆盖的一型，且它是后面五个任务的地板 | `migrate` 每次多一发往返（M10 实测：删掉这一发 ⇒ `001` 整批静默打进 `dajia_test` 并返回成功）。代价按审查 m1 的口径登记：T7 接线时若嫌开工程慢，**带判据地**缓存，不许无判据先砍 |
+| **P-47** | 白名单那一道闸必须**有证人**：拿一个已关闭的池喂 `smartscrm` ⇒ 红的必须是"不是搭家的库"，而不是连接类错误 | 落盘文本里"闸在 SQL 之前"只是一句注释。M12 的实测给它上了价：白名单后移到 `readApplied()` 之后，全档**只有这一格**接得住（红在 `Pool is closed.`），其余 12 格全绿 ⇒ 无此格则"先闸后 SQL"在 CI 与本地都是零覆盖 | 独苗。这一发用"已关闭的池"这种形状才观测得到顺序，换一个破坏形状（M11 的两行互换是另一发证人）就靠 P-46 的两格。登记给 T3+：共享夹具里这条顺序只有两格在守 |
+| **P-48** | `dropTestDatabase` 的**第二道闸**（名字不等于 `dajia_test` 就抛，`dajia` 也挡）补常驻判据；同时把原文串在一个 `it` 里的三发 `expect` 拆成七格 | 审查席 I1：那段代码在 `168939a` 之前是"代码在、判据零"—— 删掉它没有任何测试会红。拆格是同一批的连带：旧形状下只删一个入口的闸拿不到读数（M3 实测：拆格后只有 `ensureDatabase` 自己那一格红，别的入口照常挡住，"入口重复是有意的"这条纪律第一次有凭据） | 格子数从 6 涨到 14 的主要来源。`ensureDatabase(env,'dajia')` 那一格**没有真建库**（改道走打不通的实例，只观测文案层）—— 丢掉的读数只有"`CREATE DATABASE dajia` 这句语法真能成"，复审席判改道成立：同一行代码每跑都在 `dajia_test` 上绿过 |
+| **P-49** | 生成列的字符集口径钉成 `STORED COLLATE ascii_bin`，并在**静态**与**连库**两侧各留一个证人 | 计划文本原先写 `STORED CHARACTER SET ascii` —— 实测（`t2fix-probe.mjs`）这一串在 8.0.45 上是 `ER_PARSE_ERROR`，只有 `COLLATE` 形态能解析。而 `idx_project_loadbearing` 值不值得建（spec §8.1）取决于生成列的**落点字符集**，漂回 `utf8mb4` 只有 `information_schema` 那一格看得见 | 连库那一格不进 CI（P-2 的老代价），所以静态那一半（写死 `STORED\s+COLLATE` 形状）是本仓唯一在 CI 有牙的证人 |
+| **P-50** | `migrate.test.ts` 的 `afterEach` 由"固定七张表名"改成 `SHOW TABLES` 驱动（读什么清什么） | 审查席 I5：写死名单 ⇒ 002 加一张表就得记得改夹具，忘了就是下一格"表已存在"的莫名红。同一批改掉了格子之间的顺序耦合 | 清理与证据共用同一张 `SHOW TABLES` 是复审席追问过的点，判无危险：**没有任何格子吃上一格的残留当证据**（P-45 两格与 P-46 不一致格的读数全部发生在本格体内）。验收方式按裁决指定：打乱声明顺序重跑，`2 files / 17 tests` 仍全绿 |
+| **P-51** | 三个"必须被闸挡住"的格子改成**只走 `unreachableEnv`**（`{ ...env, host: '127.0.0.1', port: 1 }`），真实例那半发删掉 | 复审席 I1（安全）：`dropTestDatabase` 发的是 `DROP DATABASE IF EXISTS <name>`，而格子原来**先拿真 `env` 跑一遍**。今天闸在所以空转；变异棒会把闸删掉真跑 —— 那一发会在格子变红之前把 `DROP DATABASE smartscrm` / `DROP DATABASE dajia` 发出去。前者是用户别的项目在跑的库，后者 T11 之后躺着真工程数据。`ensureDatabase(env, 'ledger_db')` 同批收 —— 它靠"库里恰好已有同名库"才空转，不值得赌 | 判据一点没弱（M3/M9 实测：闸挪到 SQL 之后拿到的是 `ECONNREFUSED` 而不是白名单文案，照样红在错误种类上），破坏面从"用户的库"变成"一次连不上"。新依赖："127.0.0.1:1 立即拒绝"这一形状债（m4）：进 CI/容器前应换成桩 `Pool`（`query` 一被调用就抛），本档登记为已知形状债 |
+| **P-52** | 两条生成列正则的无上界部分收紧：`[\s\S]*` ⇒ `[^;]*`，`load_bearing` 另钉 `END)`（CASE 的收口锚） | 复审席 I2：原判据能抓 VIRTUAL 漂移纯属"`STORED` 字面量在 `migrations.ts` 里只出现两行"的布局巧合，002 一落地就打开假绿门 | **这条收紧被 P-54 证明只关住了跨语句那一半** —— 同一条 `CREATE TABLE` 里两张生成列之间没有分号，`[^;]` 跨得过去。诚实的记法是：P-52 处理了 002 的方向，M13 实测暴露了 001 自己的方向，后者由 P-54 补 |
+| **P-53** | `load_bearing` 用 `CASE` 而不用 `CAST` 的理由，按**实测红相**改写 | 变异棒 M2：计划文本预测 `['wall',1]` 变 `['wall',0]`，真跑出来是三条探针 INSERT 的**第一条就被服务端硬拒** —— `ER_TRUNCATED_WRONG_VALUE (1292, 'Truncated incorrect INTEGER value: ''true''')`。strict mode 下既不静默给 0，也不"警告后仍成功" | 红得比预测更响：那句注释的凭据从"会算错"升级为"根本进不了库"。代价：001 从此**冻结**（校验和在运行时按 SQL 正文算，改注释即改校验和 ⇒ 已应用的 001 不许再动，后续只许加 002） |
+| **P-54** | 静态档补 `expect(first.sql).not.toMatch(/VIRTUAL/)`，把整型关掉 | 变异棒 M13 的两步对照跑（a=只改 SQL、b=连正则一起还原）给出最扎人的读数：`kind` 漂成 VIRTUAL 时，`:23`「001 建齐六张表」那一格**收紧前后都绿** —— P-52 的 `[^;]` 在同一条语句内跨到了 `load_bearing` 的 `END) STORED`。真正钉住它的是 P-49 的两个证人（静态形状格 + 连库 `EXTRA` 格），而"建齐六张表"这一格的名声比它的覆盖面大 | 用的是整型禁用（`not.toMatch(/VIRTUAL/)`）而不是"数 `STORED` 的个数"：后者在 002 加生成列那天当场假红，判据该跟着长的方向反了。控制位亲自复跑：三格同时红（新格 + P-49 静态证人 + 镜像档），还原后 6/6 绿、md5 与开局逐字节一致 |
 
 ---
 
@@ -564,8 +575,11 @@ EOF
 - Create: `apps/desktop/src/main/db/pool.ts`
 - Create: `apps/desktop/src/main/db/migrations.ts`
 - Create: `apps/desktop/src/main/db/migrate.ts`
+- Create: `apps/desktop/src/main/db/database.ts`（**本节原漏这一行**：Step 4 的代码块要新建它，Step 5 的夹具要用它建库/删库。落码时由 `brief-files-check.mjs` 普查出这一族缺陷里唯一的一条真缺陷，席位按正文落盘，见执行回填）
+- Create: `apps/desktop/src/main/db/migrations/001_init.sql`（P-11 选② 之后的镜像文件，由 `scripts/db-sql.mjs` 落盘）
 - Create: `apps/desktop/test/db/migrate.test.ts`
 - Create: `apps/desktop/test/unit/migrations.test.ts`
+- Create: `apps/desktop/test/unit/migrations-sql-mirror.test.ts`（钉住内联与镜像**逐字节**相同，双向）
 - Modify: `scripts/db-sql.mjs`（占位 → 真导出）
 - Modify: `apps/desktop/src/main/index.ts`（**只加注释一处**，指向新目录；不动五段分支）
 
@@ -1028,8 +1042,8 @@ describe('迁移 runner', () => {
 
 > 上面那个探针用的 `id` 是**手写的合法 UUIDv7 形状**（时间戳段固定、版本位 `7`、变体位 `8`）。`isEntityId` 只认形状，所以它能进库；但这类 id 只出现在这一格探针里，业务读写一律 `uuidv7()` 现造。
 
-Run: `npx vitest run --config vitest.db.config.ts apps/desktop/test/db/migrate.test.ts` → Expected: PASS（6 条）。
-再跑 `npx vitest run apps/desktop/test/unit/migrations.test.ts` → Expected: PASS（4 条）。
+Run: `npx vitest run --config vitest.db.config.ts apps/desktop/test/db/migrate.test.ts` → Expected: PASS（**14 条**，原文写 6 条；修棒按 P-45…P-50 补了 8 条常驻判据，见本节末执行回填）。
+再跑 `npx vitest run apps/desktop/test/unit/migrations.test.ts` → Expected: PASS（**5 条**，原文写 4 条；P-49 的静态证人自加一格）。镜像档 `migrations-sql-mirror.test.ts` 另有 1 条 ⇒ 静态档合计 **6 格**。
 
 - [ ] **Step 6: `pnpm db:sql` 把内联 SQL 还原成 .sql（P-11 的缓解措施）**
 
@@ -1050,19 +1064,26 @@ import { MIGRATIONS } from '../apps/desktop/src/main/db/migrations.ts';
 ```bash
 pnpm verify > tmp/plan4-t2-verify.log 2>&1; echo "verify exit=$?"
 pnpm test:db > tmp/plan4-t2-testdb.log 2>&1; echo "test:db exit=$?"
+npx tsc --noEmit -p apps/desktop/tsconfig.test.json; echo "typecheck exit=$?"
 ```
 
-Expected: `verify exit=0`，`Test Files` **37 → `<待实测>`**、`Tests` **513 → `<待实测>`**（本任务净增：`migrations.test.ts` 4 条 + `migrations/` 镜像一致性那条；`test/db` 不进这里）；`pnpm test:db` exit=0，条数 = `<待实测>`（`env.test.ts` 3 + `migrate.test.ts` 6 起步）。**跑完必须确认 `dajia_test` 已被 afterAll 删掉**：
+Expected（**2026-10-04 落码后按实测回填**）：`verify exit=0`，`Test Files` **37 → 39**（+`migrations.test.ts`、+`migrations-sql-mirror.test.ts`）、`Tests` **517 → 523**（+5 静态 +1 镜像，但 517 是 T1 那两步账的终点，原文写的 513 早已被 P-43 抬高）。`pnpm test:db` exit=0，**2 文件 / 17 条**（`env.test.ts` 3 + `migrate.test.ts` 14）。
+
+> **第三发 `tsc` 不是可选的**：`pnpm verify` 的 typecheck 面**不吃 `apps/desktop/test/**`**（P-1 打开跨包 import 口子时登记的连带），所以"测试文件里的类型错"只有这一发看得见。本轮它 exit=0，后续任务的 db 档改动必须把它一起跑。
+
+**跑完必须确认 `dajia_test` 已被 afterAll 删掉**：
 
 ```bash
 node -e "const{createPool}=require('mysql2/promise');(async()=>{const p=createPool({host:process.env.DAJIA_MYSQL_HOST,port:+process.env.DAJIA_MYSQL_PORT,user:process.env.DAJIA_MYSQL_USER,password:process.env.DAJIA_MYSQL_PASSWORD});const[r]=await p.query('SHOW DATABASES');console.log(r.map(x=>Object.values(x)[0]).join(' '));await p.end();})()"
 ```
 
-Expected: 输出的库名列表里**没有** `dajia_test`（也没有 `dajia` —— 它归 T11 的闸门在 `DAJIA_MYSQL_DATABASE=dajia` 时才建），且其余 14 个用户库一个不少。这一发是"自建自清"唯一的凭据，不许省。
+Expected: 输出的库名列表里**没有** `dajia_test`（也没有 `dajia` —— 它归 T11 的闸门在 `DAJIA_MYSQL_DATABASE=dajia` 时才建），且其余用户库一个不少。这一发是"自建自清"唯一的凭据，不许省。
+
+> 实测（2026-10-04，T2 席位 + 修棒 + 变异棒共 20+ 次普查）：名单恒为 **19 个名字** = 15 个用户库 + `information_schema mysql performance_schema sys`。原文写"其余 **14** 个用户库"，那是 spec §12 当年的读数，本机现已 15（`ai_k12 babytun flowmart imooc_oa junmo ledger_db mybatis_test sleeve smartscrm smartscrm_react testdb train train_business water-drop zhixue`）—— 与搭家无关，不订正 spec。**这一发的判据是"逐名等于基线"，不是"数一下大概对"**：变异棒的须知里把它写成脚本（`t2-show-dbs.mjs`），因为"用户库少了一个"和"多了一个 `dajia`"在这句散文下都能被读成过。
 
 ```bash
 git status --porcelain && git diff --cached --stat
-git add apps/desktop/src/main/db apps/desktop/test scripts/db-sql.mjs package.json
+git add apps/desktop/src/main/db apps/desktop/src/main/index.ts apps/desktop/test scripts/db-sql.mjs
 git commit -m "$(cat <<'EOF'
 feat(plan4): 迁移 runner 与六张表（授权的第一次落地）
 
@@ -1083,6 +1104,56 @@ EOF
 | T2-M2 | `load_bearing` 生成列改成 `CAST(JSON_UNQUOTE(JSON_EXTRACT(payload,'$.loadBearing')) AS UNSIGNED)` | 生成列那一格红：`['wall', 1]` 变 `['wall', 0]`（MySQL 把 'true' CAST 成 0）。**这就是注释里那条主张的凭据，也是它为什么值一发变异** |
 | T2-M3 | `ensureDatabase` 里把 `assertDatabaseName` 删掉（名字直接进串） | 「库名不在白名单」那条红；同时 `_migration` 探针之后 `migrate(pool, 'smartscrm')` 仍会抛 —— 两条抛点各自独立，这一发改的就是"入口重复是有意的"那条纪律 |
 | T2-M4 | 001 里 `storey` 表的 `IF NOT EXISTS` 去掉 | 结构测试（`migrations.test.ts` 第三条）当场红，且不连库就能红 —— 这一发证明静态那一档真在守着可重放性 |
+
+### Task 2 执行回填（2026-10-04，落码后）
+
+**盘上账**（提交链，代码棒与控制位交替；控制位的文档提交一律排在审查之后，免得审查包混进计划文本）：
+
+| 提交 | 谁 | 内容 |
+|---|---|---|
+| `c86c82f` | T2 席位 | 六个实现/测试文件 + `001_init.sql` 镜像 + `scripts/db-sql.mjs` 真导出 + `index.ts` 注释 |
+| `168939a` | T2 修棒 | 六条裁决落成常驻判据（P-45…P-50），`migrate.test.ts` 6 → 14 格、静态档 +1 格 |
+| `e1e6275` | 控制位 | 复审席两笔收口（P-51 安全、P-52 假绿） |
+| `ce2e94b` | 控制位 | 变异棒两条实测回灌（P-53 红相、P-54 假绿），含 `migrations.ts`/`001_init.sql` 的注释同步 |
+
+闸门读数（控制位独占复跑，每一笔收口后各一次，全部 `exit=0`）：`pnpm verify` **39 文件 / 523 条**；`npx tsc --noEmit -p apps/desktop/tsconfig.test.json` **exit=0**（`verify` 不吃 `test/`，这一发才算编译）；`pnpm test:db` **2 文件 / 17 条**，普查行照旧 `[census] version=8.0.45 max_connections=151`。**下一棒的起点是 39 / 523 / db 2 / 17。**
+
+**授权兑现的形态**：这一档是本计划第一次真行使「允许建 `dajia` 和 `dajia_test`」—— 实际建过的只有 `dajia_test`（`beforeAll` 建、`afterAll` 删），`dajia` **一次都没被建、没被删、也没被连过**（P-48 那一格走的是打不通的实例）。20+ 次只读普查逐名等于基线 19 名，15 个用户库一个不少。
+
+**四处文本与盘上的不一致（本节正文已按盘上订正，代码块本身保留原样，以文件为准）**：
+
+1. **Files 列表少三行**（`database.ts` / `migrations/001_init.sql` / `migrations-sql-mirror.test.ts`），`git add` 那一行多一个 `package.json`、少一个 `index.ts` —— 已在 Files 与 Step 8 就地订正。这一族是 `brief-files-check.mjs` 对 T1–T8 全量普查出的**唯一真缺陷**。
+2. **Step 3 的 `migrate.ts` 代码块已过期**：盘上多了 `assertTargetDatabase`（P-46）与 `const target = assertDatabaseName(database)`（P-47 的顺序前提），代码块仍是 `assertDatabaseName(database);` 一句。`migrate(pool, database, migrations?)` 签名与返回类型未变 ⇒ 只影响"照着抄"的人。
+3. **Step 5 的 `migrate.test.ts` 代码块已过期**：`afterEach` 由固定七名改成 `SHOW TABLES` 驱动（P-50）；原第 5 格（一个 `it` 三发 `expect`）拆成 7 格进新 describe（P-48）；拒绝型格子全部改走 `unreachableEnv`（P-51）。期望条数 6 → 14。
+4. **`database.ts` 的注释与实际差一层**（**未改**，红线"不改文案"）：`dajia 走这里会被白名单挡在 SQL 之前` 说的其实是**第二道闸**，白名单本身对 `dajia` 放行 —— 建库放行 / 删库挡住这条不对称正是 P-48 对偶格的内容。建议 T3 之后任一批把文案下修成"会被第二道闸挡在 SQL 之前"。
+
+**变异棒实跑（`task-2-mutation-report.md`；规则：`cp` 备份 + md5 还原，全程零 git 写操作、零提交）**：上表 M1–M4 全部按预期红，另跑 M9–M13（M8 未跑，理由见下）。四靶文件开局与结束 md5 逐字节相同，`git status --porcelain` 结束为空。
+
+| # | 改坏 | 实跑 | 与推演的差 |
+|---|---|---|---|
+| M1 | 删校验和比对 | db 1 红 | 与推演逐字吻合 |
+| M2 | `load_bearing` CASE→CAST | 静态 2 + db 1 红 | **红相升级**（P-53）：不是 `['wall',0]`，是第一条探针 INSERT 被 `ER_TRUNCATED_WRONG_VALUE(1292)` 硬拒 |
+| M3 | `ensureDatabase` 删白名单闸 | db 1 红（`ECONNREFUSED`） | 拆格后第一次拿到"只删一个入口 ⇒ 只它自己红"的读数，M3 要证的"入口重复是有意的"落地 |
+| M4 | `storey` 去 `IF NOT EXISTS` | 静态 2 红、**db 14 全绿** | 预期内的不对称：`afterEach` 每格清空 ⇒ 运行时永远打不到这一发。这正是静态正则存在的全部理由 |
+| M8 | `INSERT` 的 `query`→`execute` | **未跑** | 审查席判"预期零红，而零红无法区分'判据没牙'与'变异没生效'"；预算转给 M9。M9 红了一格且红相精确落在预期的错误种类 ⇒ 顶替成立 |
+| M9 | 删 `dropTestDatabase` 第二道闸 | db 1 红 | "代码在、判据零"翻案为有牙；并实测了 P-51 的必要性（若格子仍带可连通实例，这一发会真发 `DROP DATABASE dajia`） |
+| M10 | 删 `assertTargetDatabase` 调用 | db 2 红 | **打错库静默成功真的发生了**：`migrate(pool,'dajia')` 不抛、返回成功、001 整批打进 `dajia_test`（落点全在授权库内，`afterEach` 已清） |
+| M11 | 两行互换（先核对后白名单） | db 1 红（`Pool is closed.`） | P-47 按设计接住 |
+| M12 | 白名单整体挪到 `readApplied()` 之后 | db 2 红，**1 格该红没红** | 见下面「该红没红」第 2 条 |
+| M13 | `[\s\S]*` 还原 + `kind` STORED→VIRTUAL（两步对照跑） | 静态 2 + db 1 红，**`:23` 格收紧前后都绿** | 见下面「该红没红」第 1 条 ⇒ P-54 |
+
+**该红没红清单（这两条是本档判据覆盖面的精确边界，T3 复用夹具时必须知情）**：
+
+1. **P-52 的 `[^;]*` 只关得住跨语句**：001 里 `kind` 与 `load_bearing` 两张生成列之间没有 ASCII 分号，`[^;]*` 跨得过去 ⇒ 「001 建齐六张表」那一格对 `kind=VIRTUAL` 从收紧前到收紧后**一直假绿**。已由 P-54 用 `not.toMatch(/VIRTUAL/)` 关掉整型（刻意不用"数 `STORED` 个数"：002 加生成列那天它就假红）。
+2. **"白名单先于第一发 SQL"这一段顺序只有 P-47 一个证人**：M12 把白名单后移后，P-46 的「声称迁 `dajia`」格断言全数仍可兑现（`readApplied` 先在正确的空库里读了个空，误称随后仍被核对闸抛下）。不是缺陷，是覆盖面比格子标题给人的印象窄 —— 与 M11 的"独苗"是同一条账。
+
+**登记的限度（不改码，后续席位别重新猜）**：
+- `migrate()` 现在每次多两发只读往返（`SELECT DATABASE()` + `SHOW TABLES LIKE`）。**没有任何格子守 `migrate` 的往返次数**（全仓无 query 计数桩）。T7 autosave 开工程时调它 ⇒ +2 RTT 可忽略；真要优化必须**带判据地**缓存，且把代价注释搬进代码。
+- `unreachableEnv` 依赖"127.0.0.1:1 立即拒绝"（本机实测 2ms `ECONNREFUSED`）。进 CI/容器前应换成桩 `Pool`（`query` 一被调用就抛）—— 已知形状债。
+- `afterEach` 的 `SET FOREIGN_KEY_CHECKS` 是会话级，靠 mysql2 池顺序复用同一连接才生效；若有格子并发发查询会静默失效。T3 抽共享夹具时值得写成注释。
+- **001 从此冻结**：校验和在运行时按 SQL 正文现算，改一个注释就是改校验和。今天安全仅因为 `dajia` 还没被建过（`probe-db.mjs` 实测 `hasDajia:false`）；T11 之后只许加 002，且加 002 必须连镜像文件一起（`migrations-sql-mirror.test.ts` 双向比字节，多一个少一个都红）。
+
+**给 T3 及之后每一棒的须知**：`migrate` 现在会核对"声称的库 = 连接所在的库" ⇒ 业务侧调用必须用 `createDbPool({ ...env, database })` 让两者同源；`test/db` 的格子若需要建库，走 `ensureDatabase`/`dropTestDatabase`（`dajia_test`），**不许**手写 `DROP DATABASE`；拒绝型断言一律配不可连通实例（P-51 的形状债在换桩之前继续有效）。
 
 ---
 ## Task 3: zod 边界与读盘不变式（`assertTruthSourceInvariants`）
