@@ -7758,3 +7758,3788 @@ EOF
 5. **`userDataDir` 底下不是目录时 `err.code` 的具体值未实测**（`ENOTDIR` / `EPERM` / `EACCES` 之一）。判据**故意不加** `/ENOTDIR/`：三条或在一起的判据等于没有判据，而那一格盯的是"返回而不抛"。跑完把实际值抄进执行回填，只作记录。
 6. **db 档「八发连着落：日志 1..8…」那一格那对 `[3, 6, 8]` 依赖一个形状**：八发在同一个同步 `for` 里投完，于是 `submit` 撤了八次空闲钟、`armIdle` 只在队列排空后重新排 —— 40ms 的窗口最早也从第八发落地之后才开始计。若 T8 的接线改成"每发之间 await 一次 IPC"，这一格会漂；那时候要改的是判据（只断 `includes(8)`），**不是**把 `idleSnapshotMs` 调大。
 7. **`pause` 那一格用的是 120ms 观察窗口**（证"不发生"没法用 `waitUntil`）。慢机上这个窗口只会更宽裕（pause 已经把三个定时器都撤了，窗口里没有任何东西会敲第二下），但它是本任务唯一一处"以固定时间当判据"的地方 —— 记在这里，红了先查是不是有人往 `pause` 里漏回了定时器，再怀疑窗口值。
+
+## Task 8: IPC 契约与会话接线（`persist-schema.ts` + `session.ts` + `ipc-persist.ts` + `projectStore.ts`）
+
+**Files:**
+- Modify: `packages/protocol/src/ipc.ts`（`IPC` 从 1 条到 **5 条**：`ping` 一字不动，新增 4 条持久化通道）
+- Modify: `packages/protocol/src/entity-schema.ts`（**只把 T4 那个模块私有的 `issueText` 改成导出**，其余一个字不动 —— 理由见第 ③ 段）
+- Create: `packages/protocol/src/persist-schema.ts`
+- Modify: `packages/protocol/src/index.ts`（把 `persist-schema` 的出口并进去，写法照盘上现物）
+- Create: `packages/protocol/test/persist-schema.test.ts`（**10 格**）
+- Create: `apps/desktop/src/shared/document-wire.ts`（第 ② 段：为什么是"第三个目录"）
+- Modify: `apps/desktop/src/main/db/codec.ts`（`encodeDocument` / `decodeDocument` 改成委托，P-19）
+- Modify: `apps/desktop/tsconfig.json`（`include` 加 `"src/shared"`）
+- Create: `apps/desktop/test/unit/document-wire.test.ts`（**7 格**）
+- Create: `apps/desktop/src/main/persist/session.ts`（编排，electron-free / fs-free）
+- Create: `apps/desktop/test/unit/fake-timer.ts`（把 T7 内联在 `autosave.test.ts` 里的 `FakeTimer` 与 `tick()` 搬进来：假钟现在有两个读者，复制第二份的话"到点顺序"这件事会有两个答案）
+- Modify: `apps/desktop/test/unit/autosave.test.ts`（删掉那段内联假钟、改成 `import { FakeTimer, tick } from './fake-timer'`；**24 格与判据一字不动**，搬完之后原样复跑）
+- Create: `apps/desktop/test/unit/session.test.ts`（**16 格**，全假把式）
+- Create: `apps/desktop/src/main/ipc-persist.ts`（**本任务唯一新增的、许 import `electron` 的 main 文件**）
+- Modify: `apps/desktop/src/main/index.ts`（`createWindow` 里加两行：import + `registerPersistIpc(win)`；五段分支与判据一字不动。另在 `runPropShot` 的「15) 终态」之后加一发**零节点 DOM 探针**（Step 7 ②），并往 `extras` 补一行收据 `bannerNodesAtPropGate` —— `expectedChecksByMode.prop` 那个 30 一个字不动）
+- Modify: `apps/desktop/src/main/persist/emergency.ts`（加 `listEmergency`，第 ⑤ 段：T7 那句"恢复侧（T8/T9）读同一个名字"的读者就在这里）
+- Modify: `apps/desktop/test/unit/emergency.test.ts`（**+2 格**：`listEmergency` 的正反两型）
+- Modify: `apps/desktop/test/unit/persist-boundary.test.ts`（**+3 格**，见 Step 4）
+- Create: `apps/desktop/test/unit/ipc-channels.test.ts`（**3 格**：preload 与 main 的源码扫通道名单）
+- Modify: `apps/desktop/src/preload/index.ts`（`DajiaApi` 从 1 个方法扩到 3 方法 + 1 事件订阅）
+- Modify: `apps/desktop/src/renderer/src/stores/editorStore.ts`（加 `loadProject` / `setReadOnly` / `readOnly` 一格 + **四处**只读闸门（`dispatch` / `dispatchBatch` / `undo` / `redo`）+ **裁决 P-21** 的 `dispatchBatch` 改判：每应用一条扳一次 `revision`；**初始态与既有 action 的语义一字不动**，见 Step 6 ② 段）
+- Create: `apps/desktop/src/renderer/src/stores/projectStore.ts`
+- Modify: `apps/desktop/src/renderer/src/PlanCanvas.tsx`（**只有** `fit` 那个 useEffect 的依赖表加 `log` 一项 + 把那段注释补一节：`reopenAsEdit()` 之后视口要跟着换手重算，见 Step 6 ③ 段）
+- Modify: `apps/desktop/src/renderer/src/App.tsx`（横幅：**默认 `banner === null` ⇒ 一个 DOM 节点都不多渲染**；那块 `declare global` **不在这里改可选**，而是整块搬进 `projectStore.ts` —— 理由见 Step 6 ④ 段开头）
+- Create: `apps/desktop/test/unit/editor-fixtures.ts`（`DEMO` 基准 + `resetEditor()` + `oneStoreyDoc()`：两份测试共用的夹具，写在里面而不是各写一份，见 Step 6 ⑤ 段）
+- Create: `apps/desktop/test/unit/editor-store.test.ts`（**9 格**）
+- Create: `apps/desktop/test/unit/project-store.test.ts`（**11 格**）
+
+**Interfaces:**
+- Consumes（名字逐字，不许另起一套）:
+  - T1：`readMysqlEnv(env?)` / `interface MysqlEnv { host; port; user; password; database: 'dajia' | 'dajia_test' }` / `assertDatabaseName(db)`
+  - T2：`createDbPool(env, opts?)` / `migrate(pool, database, migrations?)`
+  - T3：`EntityIdSchema` / `JournalTurnSchema` / `EntitySchema` / `PatchSchema`（都在 `packages/protocol/src/entity-schema.ts`）；core 的 `assertTruthSourceInvariants(doc)`（T5 在 `loadProject` 里已经调过，T8 一处都不重调，见第 ⑩ 段）
+  - T4：`DocumentPayloadSchema` / `type DocumentPayloadShape` / `type PatchShape` / `parseDocumentPayload` / `parsePatchShape`；`class ProjectRepository`（`constructor(pool, projectId, actor)`、`appendJournal(entry): Promise<'applied'|'already-applied'>`、`writeSnapshot(turn, doc)`）；`type JournalEntry { turn; patch; doc }`
+  - T5：`type OpenIntent = 'edit' | 'read'` / `interface ProjectHeader { projectId; name; schemaVersion; journalTurn; wasCleanShutdown }` / `interface LoadOutcome { doc; header; snapshot: { seq; turn } | null; replayed: { rows; fromSeq; toSeq } }` / `interface CloseReport { elementRows; storeyRows }` / `loadProject(intent)` / `closeProject(doc)`
+  - T6：`newLockTicket({ projectId, owner })` / `acquireLock(pool, ticket, ttlMs?)` / `heartbeat(pool, ticket, ttlMs?)` / `releaseLock(pool, ticket)` / `LOCK_TTL_MS`
+  - T7：`class Autosave`（`submit` / `flush` / `pause` / `resume` / `stop` / `settled` / `status`）、`type SaveStatus`、`type AutosavePhase`、`realTimer`、`writeEmergencySnapshot(userDataDir, input)`、`EMERGENCY_DIR_NAME`、`emergencyFileName(projectId, turn)`、`describeError(err)`、core 的 `get lastPatch(): Patch | null`
+  - 现成屏幕侧：`useEditor`（`log` / `storeyId` / `viewport` / `viewportStoreyId` / `revision` / `lastError` / `setViewport` / `setStorey` / `setTool` / `dispatch` / `dispatchBatch` / `undo` / `redo` / `reportPaintError`）、`TransactionLog` 的公开 `constructor(doc: Document)`、core 的 `Document.get/byKind/entities/create/replaceEntities`、scene-2d 的 `storeyTabsOf(doc, projectId)` / `fitStorey(doc, storeyId, wPx, hPx, padPx)` / `demoHouse()`（`projectStore.open()` 要知道开在哪一层：`storeyTabsOf` 是"该显示哪层"的唯一产地，Step 6 ④ 段）
+- Produces（T9/T10/T11 只能从这里取）:
+  - protocol：`IPC` 五条通道（`ping` / `projectOpen` / `projectClose` / `journalSubmit` / `saveStatus`）、`PERSIST_ERROR_CODES`（闭集 **7** 个）/ `type PersistErrorCode` / `FailureReplySchema` / `type PersistFail` / `type IpcResult<T>`；`OpenRequestSchema`+`OpenValueSchema`、`SubmitRequestSchema`+`SubmitValueSchema`、`CloseRequestSchema`+`CloseValueSchema`、`SaveStatusSchema`、`ProjectHeaderWireSchema`、`EmergencyRefSchema`、`OpenDecisionSchema` 与各自的 `type`；`parseOpenRequest` / `parseSubmitRequest` / `parseCloseRequest` / `parseOpenValue` / `parseSubmitValue` / `parseCloseValue` / `parseSaveStatus`；名册 `INVOKE_CHANNELS`（`readonly IpcChannel[]`，三条）/ `SAVE_STATUS_EVENT`（一条 `IpcChannel`）；`issueText`（导出）
+  - `apps/desktop/src/shared/document-wire.ts`：`payloadFromDocument(doc): DocumentPayloadShape`、`documentFromPayload(payload, where): Document`
+  - session：`class ProjectSession`，`constructor(ports: PersistPorts)`，`open(projectId): Promise<OpenValue>` / `submit(req): SubmitValue`（**同步**，第 ① 段的取号纪律要求它不能有 `await`）/ `close(req): Promise<CloseValue>` / `status(): SaveStatus | null` / `get active(): boolean` / `get decision(): OpenDecision | null`；`const CLOSE_FLUSH_TIMEOUT_MS = 10_000`（唯一读者是 `close` 里那一发 `withTimeout`）；`interface PersistPorts { userDataDir; timer; loadConfig(); openDb(env, projectId); acquire(db, projectId); readEmergency(userDataDir, projectId); writeEmergency(payload); emitStatus(status) }`（八个键，`owner` 不在里面 —— 拼票是 `ipc-persist.ts` 的事，session 不认识 `node:os`）、`interface DbHandle { repo; raw: unknown; end() }`（`raw` 是连接本体的不透明把手，session 一个字段都不读）、`interface LockHandle { beat(); release() }`、`interface SessionRepo extends JournalSink { loadProject; closeProject }`、`class SessionError extends Error { code: PersistErrorCode }`
+  - emergency 追加：`interface EmergencyFound { readonly turn: number; readonly path: string }` 与 `listEmergency(userDataDir, projectId): EmergencyFound[]`（读盘、除"空 `userDataDir`"那一刀之外不抛、按 turn 升序；与 protocol 的 `EmergencyRef` 结构同型，`session.ts` 的端口直接吃它）
+  - preload：`DajiaApi = { ping; openProject; submitJournal; closeProject; onSaveStatus }`
+  - renderer：`useProject`（状态格 `phase` / `opened`（`OpenedProject | null`，里面有 `projectId` / `decision` / `name` / `wasCleanShutdown` / `replayedRows` / `emergencyCount` / `emergencyHint`）/ `failure` / `save` / `closedReport`（`CloseValue | null`，`graceful` 那两格对账读数的唯一读者）/ `banner`；动作 `open(id)` / `reopenAsEdit()` / `closeSession(mode)` / `setSaveStatus(status)`）、`createProjectStore(api, editor?)`（测试用的工厂，返回 `readonly [store, unsubscribe]`）、`readDajia(): DajiaApi | null`、`type ProjectBanner` / `type ProjectBannerTone` / `type ProjectPhase` / `type CloseMode`、`declare global` 那块 `Window { dajia?: DajiaApi }`
+  - editorStore 追加：`readOnly: boolean`、`setReadOnly(v: boolean)`、`loadProject(doc: Document, storeyId: string): boolean`
+
+**①（裁决 P-18）`turn` 由主进程分配，renderer 只交 `{ projectId, patch, doc }`。**
+`JournalEntry.turn` 是库里的幂等键（`uk_project_turn`），而 T4 的 `appendJournal` 只认"恰好 `journal_turn + 1`"，别的都是 `journal turn 跳号` 一抛。两边都能编号时，"谁的那个号"这件事会漂：renderer 编号要在重开时跟 `header.journalTurn` 对齐、要在 undo/redo 时继续加、还要跟主进程那条已经排进 `Autosave` 队列的号不打架 —— 三个都对，就是三份状态。收进主进程以后只剩一条纪律：**`ProjectSession.submit` 里"取号 + `autosave.submit`"之间一个 `await` 都不许有**（写成 `const turn = this.lastTurn + 1; this.lastTurn = turn; const outcome = this.autosave.submit({ turn, patch, doc })`，`Autosave.submit` 本身是同步的）。于是 `ipcRenderer.invoke` 的消息顺序（同一 port 上严格有序）就是取号顺序，`appendJournal` 看到的 turn 序列必然严格 +1，跳号那一抛的产地只剩"会话状态被外力改坏"一种。
+代价照登记：屏幕上的"已经保存到第几发"不能由 renderer 自己算，只能读 `SaveStatus.lastTurn`（T7 已经在 `status()` 里给了，横幅只读那一个形状）；`--persist-shot`（T11）要断"取号不乱序"时读的是库里的 `journal_turn` 序列，不是屏幕上的数。
+
+**②（裁决 P-19）`payload ↔ Document` 的构造只有一个产地：`apps/desktop/src/shared/document-wire.ts`。**
+T8 之后有**两边**都要把一份 `DocumentPayloadShape` 变成 core 的 `Document`：main 侧（`submit` 要把 renderer 递来的文档交给 `writeSnapshot(turn, doc)` 与 `closeProject(doc)`；`loadProject` 的产物要编码回线上）与 renderer 侧（打开工程时要把回包变成 `new TransactionLog(doc)` 的起点）。`Document` 的构造口径不是一行：`Document.create` 认 `isEntityId`、`replaceEntities` 逐实体 validate（UUID + 该 kind 的整数毫米名单），而**重复 id 必须当场抛**（"同一份快照存着同一 id 的两个真值"那一型，`Map.set` 会静默取后者 ⇒ `canonical()` 从此说谎）。renderer 自己再写一遍这个循环，就是 D2b 明令禁止的第二份真源，且第一份漂了没人红。
+所以：`documentFromPayload(payload, where)` 与 `payloadFromDocument(doc)` 住在一个**谁都能相对 import 的目录**（`src/shared`，第三个目录）。不放 `src/main/**`：renderer 不许认识 main。不放进 `@dajia/core`：core 不许认识"盘上/线上一份 payload"这种外壳形状（`codec.ts` 里那句"为一次排序给 core 加导出 = 多一条只服务于磁盘的 API"是同一个理由，而这里要加的是一条**边界形状**的 API，比那次更该留在 desktop 侧）。
+T4 的 `decodeDocument` / `encodeDocument` 改成**委托**它：`decodeDocument(ref, raw)` = `documentFromPayload(parseDocumentPayload(where(ref), asJsonValue(raw)), where(ref))`，抛错文案 `${where} 的 entities 里实体 X 出现两次：一份快照不许有重复 id` **逐字保留**（`where` 由调用方递，前缀照样是 `snapshot 行 3`），T4 `codec.test.ts` 那两格正则一字不动地继续成立。
+代价照登记：`apps/desktop/tsconfig.json` 的 `include` 多一条 `"src/shared"`（漏了就等于那个目录不进 typecheck，红要等运行时）；**T4 的变异样本 T4-M9 从此挪靶** —— 删重复 id 检查要删 `src/shared/document-wire.ts` 那一处，`codec.ts` 里已经没有可删的牙了。这一条挪动在 Step 2 落，并同步在计划文件里 T4 变异表那一行末尾追加一句"（T8 之后靶在 `src/shared/document-wire.ts`）"。
+
+**③（裁决 P-20）spec §9 那句「IPC 边界 zod 校验 + 结构化错误码」落成的形状：入站验请求、出站验值、错误码闭集、事件只带 `SaveStatus`。**
+方向分清楚就简单。**入站**（renderer → main）：handler 第一行就是 `parseOpenRequest(channel, args)` 这类具名出口，验不过 ⇒ 直接回 `{ ok: false, code: 'bad-request', message }`，main 一个字节都不写库。**出站**（main → renderer）：回包组装完，先拿该通道的 `parseXValue(channel, value)` 过一遍再发 —— 它抓的正是"main 自己把形状拼错"那一型，而这一型在 renderer 抛只是换个栈，在出口抛则连坏包都不会离开进程。
+过界校验用 **`Value` schema 而不是 `ok/value` 的 union**，理由是错误文案的可定位性：`z.union` 在嵌套字段坏掉时报的是根上的 `invalid_union`，`issueText` 只能给出 `(根): Invalid input`，谁读了都不知道是哪一格的毫米漂了；直接验 `OpenValueSchema` 则给 `doc.entities.0.thicknessMm: ...` 这种点号路径（Step 1 第 6 格钉的就是这一格）。所以这一族里没有 `OpenResultSchema` 之类的 union 运行时判据，只有 `type IpcResult<T>` 一个 TS 形状给 preload 的方法签名用。
+`PersistErrorCode = 'not-configured' | 'no-project' | 'bad-request' | 'session' | 'db' | 'internal' | 'reconcile'` —— 七个都有唯一的产地和一个读者（横幅文案按码分岔）。**T8 只产生其中六个**：`'no-project'` 的产地在 T9（那条"工程行不在库里"的通道 —— 新建/打开一个查无此号的工程），T8 的 `open` 撞上不存在的工程时走的是 `acquireLock` 的 `'no-project'` ⇒ 只读打开 ⇒ `loadProject` 抛 ⇒ `'reconcile'`，不是这个码。它留在闭集里是因为 `FailureReplySchema` 必须一次把话说完，而 T9 改码表等于改 protocol 的公开形状。**没有** `'unknown'`：留了就等于允许哪天"归个类算了"，而 spec §9 要的"分型诊断"（T9）恰恰靠每个码都有下一步动作才有意义。`'internal'` 不是那个"unknown"：它的触发点是**出口那一发 `parseXValue` 抛了**（= 我们的代码错了），下一步动作是"这一发没存上，屏幕上的东西仍在"（spec §9 的第一句），且它同时 `console.error` 一份带点号路径的原文给人查。
+`'reconcile'` 单列而**不并进 `'db'`**，因为这两个码的下一步动作相反：`'db'` 说"查服务、查网络"（连接层，数据没动），`'reconcile'` 说**停下来别再写了**（T5 的 `closeProject` 三方对账不平 = 库里已经和屏幕上不是同一份东西）。这种时候提示用户去检查 MySQL 服务是错的（服务健康得很），提示他"这份账先别再动"才对。它是本计划里唯一一个由**我们自己的账目判据**而非 MySQL 错误码触发的持久化错误，混进 `'db'` 等于把 T4/T5 最重那道护栏的报警声改了口径。产地是一条规则而不是一个调用点：`session.ts` 的 `persistErrorCode(err)` —— mysql2 抛的错一律带 `code`（`ER_*` / `PROTOCOL_CONNECTION_LOST` / `ECONNREFUSED`）⇒ `'db'`，不带 `code` 的都是我们自己抛的 `RangeError`/`TypeError`（T5 的 `closeProject` 三方对账不平、T5 的 `loadProject` 拒开：跳号与三处 `schema_version` 不符、T4 的归属守卫）⇒ `'reconcile'`。这两类的下一步动作都是"库里这份账不对，先别再写"，把它们拆成两个码反而会让 T9 给同一种处境配两套文案。代价照登记：我们自己的一处代码 bug（比如某处 `TypeError`）混在没有 `code` 那一支，会被说成"账不对"；防线是**每条 `SessionError` 的 message 永远带 `describeError(err)` 的原话**，码只决定下一步动作、不代替事实。
+`issueText` 从 `entity-schema.ts` 的模块私有改成导出：T8 的七个 `parse*` 与 T4 的三个 `parse*` 是同一条"把 `ZodError` 收成一行文本"的规则，复制第二份一定会漂（T3/T5/T6 同族口径）。代价：它是 protocol 的一个新公开出口，将来谁都能调 —— 由第 10 格钉住它的输出形状（点号路径 + `; ` 分隔 + 根那一格写 `(根)`）。
+
+**④ 口令不进 IPC。**
+`persist-schema.ts` 里**任何** schema 都不许出现 `password` 这个键名，连提都不提（正反两面各一格钉它：传一个带 `password` 键的请求 ⇒ `strictObject` 拒；文件文本里出现 `password` / `host:` / `port:` / `user` 字样 ⇒ 扫描格红）。这一格在 T8 是免费的：T8 的配置来源是 `readMysqlEnv()`（环境变量），renderer 根本没有口令可交。它同时是一条**给 T9 的门槛**：连接向导必然要把用户敲的口令送进 main（IPC 不经网络，这条本身不破红线），届时**必须**同时改这一族判据 —— 只放行新开的配置通道的**请求方向**，回包方向仍然一个字节都不许带。交接写在这里是因为"改判据"这件事必须由计划的作者先说清楚能放宽到哪一步，不能让 T9 的 implementer 自己决定（同族纪律见红线"闸门判据与写死的字面量永不削弱"）。
+真正的防线不是"不过 IPC"，是**不回显**：`issueText` 把 `path` 与 `message` 拼进文案，而文案会进 `lastError`、进横幅、进日志 —— 所以任何含口令的 schema 都必须给该字段写**自定义 message**（`z.string('password 必须是字符串')` 那种形态；zod 的默认 `invalid_type` 文案本身不回显值，但自定义 refine 常手滑把值抄进文案）。T9 落这一族时照这条写。
+
+**⑤ 只读决定在 `open` 那一刻定，锁中途丢了不在原会话里翻回可写。**
+T6 第 ⑥ 段留的口子是"`'edit'` 意图先 `acquireLock`，拿不到就用 `'read'` 打开（T8）"。于是 `open()` 只有一条岔路：拿到票 ⇒ `loadProject('edit')` + `new Autosave({ beat })`；拿不到（`'busy'` 或 `'no-project'`）⇒ `loadProject('read')`（T5：`'read'` 支不锁行、不抹 `clean_shutdown`）+ 不起 `Autosave`、`submit` 一律 `code: 'session'` 拒。
+那"心跳报了 `'lost'` 之后能不能再拿回来"？不在原会话里。因为丢锁意味着**另一个人正在往同一行账上写**，本会话手里那个 `lastTurn` 已经不再等于库里的 `journal_turn`；原地 `resume()` 会立刻撞跳号（好的一面），或者撞上别人已经占用的 turn（T4 的 ODKU 幂等支路把它吞成 `already-applied` ⇒ 静默丢失，本计划最恨的一型）。所以 T8 给的是**重开**：`closeSession('abandon')`（`stop()`，不 flush、不对账、只解锁关池）+ `open(同一 id)`，两步都在 `projectStore.reopenAsEdit()` 里，可单测。
+代价登记两条，Step 8 之后一并写进"登记的限度"：① `stop()` 会把队列里未落盘的那几发**丢掉** —— 防线是 T7 在停写那一刻已经为每一发写过 emergency 现场，而 T8 新增的 `listEmergency()` 把"有 K 发没进库、现场在哪个目录"读进横幅 ⇒ 这是**告知过的放弃**，不是静默丢失（这一发就是 emergency 那一族文件在生产里的唯一读者）；② 重开会换掉 `TransactionLog` ⇒ 撤销栈清空，用户丢掉"撤销回丢锁之前"的能力。两条在 S1 的威胁模型（两台机器同时开一个库）下都比"双线写"便宜。
+
+**改判一条 T7 留下的口子**：`autosave.ts` 的 `resume()` 注释写着「T8 重新拿到锁之后调」。按上面这段，T8 **不调它** —— 那句注释与这条改判由 T8 的执行回填写进 `task-7-report` 那一族记录，不改 T7 已提交的 24 格（`resume` 与 `pause` 是成对原语，删它等于作废那几格，且它是 T7 队列语义的一部分，不是为 T8 而存在的）。`resume()` 在生产里的读者留给 S2 的「重连」按钮，届时得连带解决"本会话的 `issuedTurn` 已不等于库里 `journal_turn`"这件事（P-9 之外新的一条状态），而不是原地按一下就好。
+
+**⑥ `ipc-persist.ts` 是本任务唯一新增的、许 import `electron` 的 main 文件，例外名单由测试钉住。**
+P-2 禁的是 `db/**` 与 `persist/**`，`ipc-persist.ts` 住在 `src/main/` 根下、不在禁令范围内 —— 但它需要一个常驻证人，否则下一个人会把真把式（`createDbPool` / `migrate` / `ProjectRepository`）一点点挪进 `session.ts`，那条边界就漂没了。所以 Step 4 给 `persist-boundary.test.ts` 追加三格：(a) `session.ts` 的源码里既无 `from 'electron'` 也无 `from 'node:fs'`，**连 `node:os` 都不许碰**（owner 串 `host:pid` 由 ports 从 `ipc-persist.ts` 递进来）；(b) **`src/main/**` 下 import 了 `electron` 的文件名单逐字等于 `['index.ts', 'ipc-persist.ts']`**（排序后比字面量数组）；(c) `src/renderer/**` 里对 `@dajia/protocol` 的 import **必须全是 type-only**（vite 顺着 workspace link 解析得到 protocol，值 import 不会构建失败，只会把 zod 拖进屏幕侧的 bundle —— 所以这一条是约定，约定的常驻证人只能扫文本）。代价：T9 若要在 `persist/config-store.ts` 里 `import { safeStorage } from 'electron'`（P-2 明写的例外），**必须同时改这一格**并写明它是 spec §8.2 的例外 —— 这条也写进 T9 的交接。
+
+**⑦ `close` 由 renderer 发起，`before-quit` 握手归 T11。**
+`closeProject(doc)` 要吃最终文档（T5 第 ④ 段：main 不拥有文档，收尾那一发由 renderer 递进来），而退出时机由 main 决定 —— 两边要的是同一份数据，方向相反。真握手是：main `before-quit` + `event.preventDefault()` → 向 renderer 要最终 doc → renderer 调 `projectClose` → main 收尾后放行退出，外加"renderer 不 reply 怎么办"的超时。那一整块是**生命周期与多进程编排**，和 T11 的 `--persist-shot`（三进程 + `SIGKILL`）同属一件事，放在那里才有证人（放 T8 就只能靠人肉关窗验，等于没验）。
+于是 T8 的 `close` 通道在生产里只有一个读者：横幅上那一个「关闭工程」。没有 `before-quit` 会怎样？**不会静默丢**：每发的补丁已经进 `command_log`（T7 的队列按发落地），只丢最后那次快照与 `clean_shutdown = 1` ⇒ 下次打开 `wasCleanShutdown === false`，横幅说"上次没正常结束，已从流水取回 N 发"。这正是 spec §9 那句"启动时若发现未合并片段，走恢复流程并明确告知恢复了什么、是否丢失"要的恢复路径 —— T8 提前给它加一条优雅退出，反而会把那条路径测没。
+
+**⑧ 默认态一字不动：横幅只在 `banner !== null` 时渲染，且 `position: fixed` 不占流。**
+五道闸门吃的是 `demoHouse()` 那一屏：画布原点 `(0, 32)`（`STOREY_TAB_HEIGHT_PX`）、`--prop` 的靶子 `click=(113,416)`、画布 `1167×833`、P7 墨迹 `30742`、P20 级联 `10→7`。任何多出来的**常驻** DOM（哪怕一根 24px 的条）都会把 `fitStorey` 量到的画布尺寸挪开 ⇒ 全体判据作废。所以：闸门环境里 `useProject` 的 `phase === 'off'`、`banner === null`，App 渲染 `<>{children}{null}</>` ⇒ 零节点。真打开工程之后横幅出现，用 `fixed` 贴屏幕下缘，不挤占任何 flex 尺寸（会盖住画布下缘，S1 接受，T9 整理界面时搬进面板）。
+`loadProject` 换手时把 `viewport` 与 `viewportStoreyId` **同时置 null**（不是保留旧视口）：`PlanCanvas` 的绘制 effect 第一行就是 `if (canvas === null || viewport === null) return`，所以那一帧是干净的空白 + 它自己的占位 tab 栏，随后 `storeyId` 变化触发它自带的重算 effect 递回真视口。反过来（留着上一层的视口配新文档）会画出一帧"新文档 × 旧口径"的错位图 —— 与 `setStorey` 那条 P10 判据同一个理由。
+
+**⑨ 提交触发点在 `projectStore`（订阅 `useEditor`），不在 `editorStore.dispatch` 里。**
+两个 store 互相 import 会成环，而 `editorStore` 的 import 图一动，`App.tsx` / `PlanCanvas` 跟着动 —— 那是给五道闸门找事。更要紧的是语义：**`revision` 不是"真源变了"的扳机，是"该重绘了"的扳机**，`setStorey` 也 +1 它（`editorStore` 自己的注释明写"切层不是真源编辑，是视图状态"）。于是"revision 变了就发一记账"会把**切层**变成一发空账（同一份 `lastPatch` 落两次 turn ⇒ 库里同一补丁重放两次 ⇒ 屏幕上多一面墙）。真正的判据是 `log.lastPatch` 的**对象身份**变了：`TransactionLog` 只在 `dispatch`/`undo`/`redo` 成功时换它（T7 第 ① 段），切层不动它。所以订阅体写成 `if (patch !== lastSeen) { lastSeen = patch; submitOne(patch); }`。
+这一格是 `project-store.test.ts` 第 7 格的靶子（「点一次楼层 tab ⇒ 一次 IPC 都不发，而 `revision` 确实变了」），它同时是 T7 那条 `lastPatch` getter 在生产里的**第一个读者**。
+
+**⑩ main 不持工程列表；`open` 在已有会话时一律拒；T8 不重跑读盘不变式。**
+S1 是"一个窗口一个工程"（spec §4.3 的进程模型），不是工程管理器，所以 `ProjectSession.active === true` 时再来一发 `open` ⇒ `SessionError('session', '上一个工程还没收尾')`，顺序由 renderer 负责（第 ⑤ 段的 `reopenAsEdit()`）。`assertTruthSourceInvariants` 在 T5 的 `loadProject` 末尾已经跑过（那是它的放行证所在地），`submit` 那一发的文档则由 core 的 `Document.replaceEntities` 逐实体 validate（整数毫米与 id 形状）+ T4 的归属守卫（`doc.projectId` 不是本工程的账 ⇒ 抛）拦着；T8 再补跑一遍整层派生就是第三次验同一份数据，而 autosave 每发都要跑一遍它（O(实体数) × 每发）。代价：跨实体的引用/几何不变式在**过界这一发**不查，它的读者仍是 T5 的读盘与 T3 的那一档；登记进"登记的限度"。
+
+**⑪（裁决 P-21）`dispatchBatch` 从「一批只扳一次」改成「每应用一条扳一次」。**
+第 ⑨ 段的触发点是 `log.lastPatch` 的**对象身份**，而 `lastPatch` 是**覆盖式**的（T7 第 ① 段：三个赋值点各写一次）。于是"一批一扳"那个现物写法（`dispatchBatch` 循环里只 `set` 一次 `revision`）会让订阅体在整批结束时只看得到**最后一发**的补丁 —— 屏幕上删掉四件、库里只记一件，而且**一句错都不抛**（`autosave` 收到的仍是合法的一发）。改判的形状、代价（一批 N 发 ⇒ N 次重绘，样例房最多 4 次；五道闸门判的是**终态**像素，与中间帧数无关）、以及被否掉的替代方案（在 store 里挂一条 `pendingPatches` 队列）都写在 Step 6 ① 段。凭据：`project-store.test.ts` 第 8 格（三条命令 ⇒ 三发账，且每发配它自己那一刻的整份快照）与 `editor-store.test.ts` 第 8 格（revision +N）。
+
+- [ ] **Step 1: protocol 那一侧 —— `persist-schema.ts` + 通道名册 + 10 格**
+
+`packages/protocol/src/ipc.ts` 整体替换（`ping` 那条与 `IpcChannel` / `isIpcChannel` 三个出口一字不动；`isIpcChannel` 的判据是"值落在 `IPC` 里"，扩表自动成立）：
+
+```ts
+export const IPC = {
+  ping: 'dajia:ping',
+  // 以下四条归计划 4（T8）。命名口径：`dajia:<域>:<动作或事件>`。
+  // `saveStatus` 是这条表里唯一的事件通道（main → renderer，没有请求方向），
+  // 它不进 `INVOKE_CHANNELS` 那张名册 —— 名册只管需要注册 handler 的那三条。
+  projectOpen: 'dajia:project:open',
+  projectClose: 'dajia:project:close',
+  journalSubmit: 'dajia:journal:submit',
+  saveStatus: 'dajia:save:status',
+} as const;
+
+export type IpcChannel = (typeof IPC)[keyof typeof IPC];
+
+export function isIpcChannel(value: unknown): value is IpcChannel {
+  return typeof value === 'string' && Object.values(IPC).includes(value as IpcChannel);
+}
+```
+
+`packages/protocol/src/entity-schema.ts`：只改一个词 —— `function issueText(` ⇒ `export function issueText(`。T3/T4 写下的其余部分（含那三个 `parse*` 与 `DocumentPayloadSchema`）一个字节不动。
+
+`packages/protocol/src/persist-schema.ts`
+
+```ts
+import { z } from 'zod';
+import { IPC, type IpcChannel } from './ipc';
+import {
+  DocumentPayloadSchema,
+  EntityIdSchema,
+  JournalTurnSchema,
+  PatchSchema,
+  issueText,
+  type DocumentPayloadShape,
+  type PatchShape,
+} from './entity-schema';
+
+/**
+ * IPC 侧的"非负安全整数"尺。为什么**不**复用 `JournalTurnSchema`：那把尺的名字就是它的语义
+ * （落库那一发的编号），拿它去量 `snapshot.seq` 与 `replayed.rows` 会让读代码的人以为
+ * "这三者是同一个量"，而 seq 是 AUTO_INCREMENT 的游标（**可以带洞**，P-6），turn 不可以。
+ * 规则相同、语义不同 ⇒ 两个 schema 各自存在，正是为了让"把它们混成一个"这件事有名字可红。
+ */
+const SafeCountSchema = z
+  .number()
+  .refine((v) => Number.isSafeInteger(v) && v >= 0, '必须为非负安全整数');
+
+/** 结构化错误码（spec §9）。闭集，**没有** `'unknown'`：理由见计划第 ③ 段。 */
+export const PERSIST_ERROR_CODES = [
+  'not-configured',
+  'no-project',
+  'bad-request',
+  'session',
+  'db',
+  'reconcile',
+  'internal',
+] as const;
+export const PersistErrorCodeSchema = z.enum(PERSIST_ERROR_CODES);
+export type PersistErrorCode = z.output<typeof PersistErrorCodeSchema>;
+
+export const FailureReplySchema = z.strictObject({
+  ok: z.literal(false),
+  code: PersistErrorCodeSchema,
+  message: z.string(),
+});
+export type PersistFail = z.output<typeof FailureReplySchema>;
+
+/**
+ * 过界的回包形状。它是**类型**，不是 zod schema：成功那一支的 `value` 由各通道的
+ * `XValueSchema` 单独验（用 union 会让嵌套字段的错误文案塌成 `(根)`，第 ③ 段），
+ * 失败那一支由 `ipc-persist.ts` 自己拼，只有 `code` 需要闭集保证 —— 那一条走
+ * `PersistErrorCodeSchema`，见 `fail()`。
+ */
+export type IpcResult<T> = { readonly ok: true; readonly value: T } | PersistFail;
+
+// —— 打开工程 ——————————————————————————————————————————————
+
+/** 只有 `projectId`。没有名字、没有口令、没有建库参数（第 ④ 段：T8 的配置源是环境变量）。 */
+export const OpenRequestSchema = z.strictObject({ projectId: EntityIdSchema });
+export type OpenRequest = z.output<typeof OpenRequestSchema>;
+
+/** `decision` 与 T5 的 `OpenIntent` 不是一张表：那边是"我想怎么开"，这边是"库里那一行让我怎么开"。 */
+export const OpenDecisionSchema = z.enum(['edit', 'read-only']);
+export type OpenDecision = z.output<typeof OpenDecisionSchema>;
+
+/**
+ * 带 `Wire` 后缀的两张表（`ProjectHeaderWire` / `SaveStatusWire`）是因为
+ * `session.ts` 同一文件里会同时出现 T5 的 `ProjectHeader` 与 T7 的 `SaveStatus`：
+ * 两份类型必须分得开，否则读的人以为校验的是自己那份（这正是"过界再验一次"最容易被
+ * 顺手写成 `as` 的地方）。其余 schema 没有对手，不带后缀。
+ */
+export const ProjectHeaderWireSchema = z.strictObject({
+  projectId: EntityIdSchema,
+  name: z.string().min(1),
+  schemaVersion: SafeCountSchema,
+  journalTurn: JournalTurnSchema,
+  wasCleanShutdown: z.boolean(),
+});
+export type ProjectHeaderWire = z.output<typeof ProjectHeaderWireSchema>;
+
+export const EmergencyRefSchema = z.strictObject({
+  turn: JournalTurnSchema,
+  /** 绝对路径，只给人看：renderer 一行 fs 都不许碰（spec §4.3），所以它只是横幅上的那串字。 */
+  path: z.string().min(1),
+});
+export type EmergencyRef = z.output<typeof EmergencyRefSchema>;
+
+export const OpenValueSchema = z.strictObject({
+  decision: OpenDecisionSchema,
+  header: ProjectHeaderWireSchema,
+  doc: DocumentPayloadSchema,
+  snapshot: z.strictObject({ seq: SafeCountSchema, turn: JournalTurnSchema }).nullable(),
+  replayed: z.strictObject({
+    rows: SafeCountSchema,
+    fromSeq: SafeCountSchema.nullable(),
+    toSeq: SafeCountSchema.nullable(),
+  }),
+  emergency: z.array(EmergencyRefSchema),
+});
+export type OpenValue = z.output<typeof OpenValueSchema>;
+
+// —— 每发提交 ——————————————————————————————————————————————
+
+export const SubmitRequestSchema = z.strictObject({
+  projectId: EntityIdSchema,
+  patch: PatchSchema,
+  doc: DocumentPayloadSchema,
+});
+export type SubmitRequest = z.output<typeof SubmitRequestSchema>;
+
+export const SubmitValueSchema = z.strictObject({
+  /** T7 `Autosave.submit` 的两个返回值，原样搬过界（`'ignored-duplicate'` = 引擎认为这发已经排过了）。 */
+  outcome: z.enum(['queued', 'ignored-duplicate']),
+  acceptedTurn: JournalTurnSchema,
+});
+export type SubmitValue = z.output<typeof SubmitValueSchema>;
+
+// —— 收尾（T5 的 flush + closeProject + 解锁），第 ⑤/⑦ 段 ——————
+
+export const CloseRequestSchema = z.strictObject({
+  projectId: EntityIdSchema,
+  doc: DocumentPayloadSchema,
+  /** `abandon` = 停写、解锁、关池，**不** flush、**不**对账（丢锁之后重开前那一发）。 */
+  mode: z.enum(['graceful', 'abandon']),
+});
+export type CloseRequest = z.output<typeof CloseRequestSchema>;
+
+export const CloseValueSchema = z.strictObject({
+  /** `abandon` 那一支不跑对账 ⇒ 两格读数都是 `null`。用 `null` 而不是 `0`：0 是"平账"的答案。 */
+  elementRows: SafeCountSchema.nullable(),
+  storeyRows: SafeCountSchema.nullable(),
+});
+export type CloseValue = z.output<typeof CloseValueSchema>;
+
+// —— 事件：main → renderer，只带 T7 那一个形状 ————————————————
+
+/**
+ * 与 `apps/desktop/src/main/persist/autosave.ts` 的 `SaveStatus` 一字对齐，
+ * 由 `persist-schema.test.ts` 第 4 格做源码级对账（同一族判据的先例：T6 的
+ * 「`locks.ts` 里不许出现客户机时钟」与 T7 的「心跳标识符还在」）。
+ */
+export const SaveStatusSchema = z.strictObject({
+  phase: z.enum(['idle', 'saving', 'failed', 'paused', 'stopped']),
+  queuedTurns: SafeCountSchema,
+  lastTurn: JournalTurnSchema.nullable(),
+  snapshotTurn: JournalTurnSchema.nullable(),
+  rowsSinceSnapshot: SafeCountSchema,
+  lastError: z.string().nullable(),
+  pauseReason: z.string().nullable(),
+});
+export type SaveStatusWire = z.output<typeof SaveStatusSchema>;
+
+// —— 解析出口：每通道各一个具名函数，不做泛型 ——————————————————
+//
+// 为什么不用一个泛型 `parsePersist(where, schema, value)`：zod v4 的 `z.ZodType<T>` 单参数
+// 写法在 4.6.5 上未经实测（本计划只主张 T1 装得上 `zod@4.6.5` 这件事），而泛型一旦要写第二份
+// 就得先证明它解析得到。十一个具名出口啰嗦 20 行，换来的是每条通道的错误文案里有一句人话
+// （"解不开打开工程的请求"），T9 的分型诊断要读它。
+
+function fail(where: string, what: string, err: z.ZodError): never {
+  throw new TypeError(`${where} 解不开${what}：${issueText(err)}`);
+}
+
+export function parseOpenRequest(where: string, value: unknown): OpenRequest {
+  const r = OpenRequestSchema.safeParse(value);
+  if (!r.success) fail(where, '打开工程的请求', r.error);
+  return r.data;
+}
+
+export function parseOpenValue(where: string, value: unknown): OpenValue {
+  const r = OpenValueSchema.safeParse(value);
+  if (!r.success) fail(where, '打开工程的回包', r.error);
+  return r.data;
+}
+
+export function parseSubmitRequest(where: string, value: unknown): SubmitRequest {
+  const r = SubmitRequestSchema.safeParse(value);
+  if (!r.success) fail(where, '每发提交的请求', r.error);
+  return r.data;
+}
+
+export function parseSubmitValue(where: string, value: unknown): SubmitValue {
+  const r = SubmitValueSchema.safeParse(value);
+  if (!r.success) fail(where, '每发提交的回包', r.error);
+  return r.data;
+}
+
+export function parseCloseRequest(where: string, value: unknown): CloseRequest {
+  const r = CloseRequestSchema.safeParse(value);
+  if (!r.success) fail(where, '收尾的请求', r.error);
+  return r.data;
+}
+
+export function parseCloseValue(where: string, value: unknown): CloseValue {
+  const r = CloseValueSchema.safeParse(value);
+  if (!r.success) fail(where, '收尾的回包', r.error);
+  return r.data;
+}
+
+export function parseSaveStatus(where: string, value: unknown): SaveStatusWire {
+  const r = SaveStatusSchema.safeParse(value);
+  if (!r.success) fail(where, '保存状态', r.error);
+  return r.data;
+}
+
+// —— 通道名册：注册与扫描的同一份名单 ————————————————
+
+/**
+ * 需要注册 handler 的那三条（请求方向，renderer 发起）。`ipc-persist.ts` 按这张名单
+ * **循环注册**（`removeHandler` + `handle` 成对，形状照盘上现物那条 `ping`），
+ * `ipc-channels.test.ts` 按同一张名单去扫 `ipc-persist.ts` 的 `dispatch`：名单上有一条没写 `case` ⇒ 当场红。
+ *
+ * 这里故意**不带** parse 函数（一版草稿写过 `ChannelSpec { channel, parseRequest }`，删了）：
+ * 外壳只能把 parse 的结果当 `unknown` 交下去，那条 `as` 会把 zod 已经建起来的类型牙拆掉 ——
+ * `submit(req: SubmitRequest)` 会失去编译期检查。解析留在 `dispatch` 的 `case` 里用各通道具名 parse，
+ * 于是这张名单唯一的职责就是"哪些通道要注册"，一个字段都不多。
+ */
+export const INVOKE_CHANNELS: readonly IpcChannel[] = [
+  IPC.projectOpen,
+  IPC.journalSubmit,
+  IPC.projectClose,
+];
+
+/** 事件方向只有一条（main → renderer，没有请求方向），所以它不进上面的名册。 */
+export const SAVE_STATUS_EVENT: IpcChannel = IPC.saveStatus;
+```
+
+> `<待实测>`：`z.strictObject` / `z.enum(内联数组)` / `z.literal(true)` / `.nullable()` / `z.output` 在 T3/T4 已经实测过（`DocumentPayloadSchema` 用的就是 `strictObject`）。**没实测过的是 `z.enum(PERSIST_ERROR_CODES)` 收一个 `as const` 元组**（T3 那几处都传内联数组）。若 4.6.5 拒绝它，改成 `z.enum(['not-configured', 'no-project', 'bad-request', 'session', 'db', 'reconcile', 'internal'])` 内联一份，并让第 7 格同时钉"两份名单一致"（`expect([...PERSIST_ERROR_CODES]).toEqual([...七个字面量])` 已经在了，它就是这个口径的牙）。执行时把实测结果回填到这一格。
+
+`packages/protocol/src/index.ts`：按盘上现物的写法把 `persist-schema` 的出口并进去。今天是 `export * from './ipc'` 一行（T3/T4 若已把它扩成逐名列举，就照逐名那一族继续，**别把 `export *` 塞进一个逐名列举的文件里**）。
+
+`packages/protocol/test/persist-schema.test.ts`
+
+```ts
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+import { IPC } from '../src/ipc';
+import {
+  FailureReplySchema,
+  INVOKE_CHANNELS,
+  OpenRequestSchema,
+  OpenValueSchema,
+  PERSIST_ERROR_CODES,
+  SAVE_STATUS_EVENT,
+  SaveStatusSchema,
+  SubmitRequestSchema,
+  CloseRequestSchema,
+  parseOpenRequest,
+  parseOpenValue,
+  type SaveStatusWire,
+} from '../src/persist-schema';
+
+const ID = '01932f6a-7c1e-7000-8000-000000000001';
+const HERE = fileURLToPath(new URL('.', import.meta.url));
+const SCHEMA_SRC = readFileSync(`${HERE}../src/persist-schema.ts`, 'utf8');
+const AUTOSAVE_SRC = readFileSync(`${HERE}../../apps/desktop/src/main/persist/autosave.ts`, 'utf8');
+
+/** 一份**完整合法**的 `OpenValue`，多个用例在它身上只改一处。 */
+function openValue(): Record<string, unknown> {
+  return {
+    decision: 'edit',
+    header: { projectId: ID, name: '样例房', schemaVersion: 1, journalTurn: 7, wasCleanShutdown: true },
+    doc: { projectId: ID, schemaVersion: 1, entities: [] },
+    snapshot: { seq: 12, turn: 5 },
+    replayed: { rows: 2, fromSeq: 11, toSeq: 12 },
+    emergency: [],
+  };
+}
+
+describe('persist-schema：请求方向一律 strictObject', () => {
+  it('打开工程的请求只认 projectId 一个键：缺、多、非 UUIDv7 三型都拒', () => {
+    expect(OpenRequestSchema.safeParse({ projectId: ID }).success).toBe(true);
+    expect(OpenRequestSchema.safeParse({}).success).toBe(false);
+    // 多一个 `name` 就红：这是"谁都能顺手往请求里塞一格"的常驻证人。
+    expect(OpenRequestSchema.safeParse({ projectId: ID, name: 'x' }).success).toBe(false);
+    expect(OpenRequestSchema.safeParse({ projectId: 1 }).success).toBe(false);
+    expect(OpenRequestSchema.safeParse({ projectId: '00000000-0000-4000-8000-000000000000' })
+      .success).toBe(false);
+  });
+
+  it('带 password 键的请求一律拒（口令不进 IPC 的那道牙，第 ④ 段）', () => {
+    const doc = { projectId: ID, schemaVersion: 1, entities: [] };
+    const cases = [
+      OpenRequestSchema.safeParse({ projectId: ID, password: 'hunter2' }),
+      SubmitRequestSchema.safeParse({
+        projectId: ID, patch: { upsert: [], remove: [] }, doc, password: 'hunter2',
+      }),
+      CloseRequestSchema.safeParse({ projectId: ID, doc, mode: 'graceful', password: 'hunter2' }),
+    ];
+    // 三条都补齐了必填项 ⇒ 拒的只能是多出来的那一格，不是缺必填。
+    for (const r of cases) expect(r.success).toBe(false);
+  });
+
+  it('收尾请求的 mode 只认两值；缺 mode 与第三种拼法都拒', () => {
+    const doc = { projectId: ID, schemaVersion: 1, entities: [] };
+    expect(CloseRequestSchema.safeParse({ projectId: ID, doc, mode: 'graceful' }).success).toBe(true);
+    expect(CloseRequestSchema.safeParse({ projectId: ID, doc, mode: 'abandon' }).success).toBe(true);
+    expect(CloseRequestSchema.safeParse({ projectId: ID, doc, mode: 'force' }).success).toBe(false);
+    expect(CloseRequestSchema.safeParse({ projectId: ID, doc }).success).toBe(false);
+  });
+});
+
+describe('persist-schema：回包值与错误码', () => {
+  it('SaveStatus 的键集合与 phase 取值 == autosave.ts 里那一份（源码对账）', () => {
+    const KEYS = [
+      'phase', 'queuedTurns', 'lastTurn', 'snapshotTurn', 'rowsSinceSnapshot',
+      'lastError', 'pauseReason',
+    ] as const;
+    const block = /interface SaveStatus \{([\s\S]*?)\n\}/.exec(AUTOSAVE_SRC);
+    if (!block) throw new Error('没在 autosave.ts 里找到 interface SaveStatus —— 它被改名或搬走了');
+    const found = [...block[1]!.matchAll(/readonly (\w+):/g)].map((m) => m[1]!);
+    expect(found.sort()).toEqual([...KEYS].sort());
+
+    const phases = /type AutosavePhase = ([^;]+);/.exec(AUTOSAVE_SRC);
+    if (!phases) throw new Error('没在 autosave.ts 里找到 type AutosavePhase');
+    expect([...phases[1]!.matchAll(/'([^']+)'/g)].map((m) => m[1]!).sort())
+      .toEqual(['failed', 'idle', 'paused', 'saving', 'stopped']);
+
+    const full: SaveStatusWire = {
+      phase: 'idle', queuedTurns: 0, lastTurn: null, snapshotTurn: null,
+      rowsSinceSnapshot: 0, lastError: null, pauseReason: null,
+    };
+    expect(SaveStatusSchema.safeParse(full).success).toBe(true);
+    // 多一格 ⇒ 拒（否则"autosave 加了字段、UI 永远看不见"静默通过）；
+    // 少任意一格 ⇒ 也拒（否则 T7 新加的格子在过界那一刻被悄悄丢掉）。
+    expect(SaveStatusSchema.safeParse({ ...full, extra: 1 }).success).toBe(false);
+    for (const key of KEYS) {
+      const missing = { ...full } as Record<string, unknown>;
+      delete missing[key];
+      expect(SaveStatusSchema.safeParse(missing).success).toBe(false);
+    }
+  });
+
+  it('seq / queuedTurns 不接受负数、小数、字符串、超安全整数（BIGINT 回到 string 时在过界那一发就红，P-17 的下游）', () => {
+    const base: SaveStatusWire = {
+      phase: 'idle', queuedTurns: 0, lastTurn: null, snapshotTurn: null,
+      rowsSinceSnapshot: 0, lastError: null, pauseReason: null,
+    };
+    for (const bad of [-1, 1.5, '12', null, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(SaveStatusSchema.safeParse({ ...base, queuedTurns: bad }).success).toBe(false);
+      const v = openValue();
+      v.snapshot = bad === null ? null : { seq: bad, turn: 5 };
+      expect(OpenValueSchema.safeParse(v).success).toBe(bad === null);
+    }
+  });
+
+  it('doc 载荷里的浮点毫米在过界那一发就红，且文案给到点号路径（整数毫米纪律的第二道）', () => {
+    const v = openValue();
+    v.doc = {
+      projectId: ID,
+      schemaVersion: 1,
+      entities: [{
+        kind: 'wall', id: ID, projectId: ID, storeyId: ID,
+        startPointId: ID, endPointId: ID,
+        thicknessMm: 240.5, heightMm: 3000, elevationOffsetMm: 0,
+        loadBearing: true, material: '砖',
+      }],
+    };
+    expect(OpenValueSchema.safeParse(v).success).toBe(false);
+    // 这一格同时钉住第 ③ 段那条口径：**不许拿 union 当回包判据**，否则路径塌成 `(根)`，
+    // 谁也不知道是哪一格的毫米漂了。
+    expect(() => parseOpenValue(IPC.projectOpen, v)).toThrow(/doc\.entities\.0\.thicknessMm/);
+  });
+
+  it('错误码是闭集：七个各过，`unknown` 与大小写不同都整包拒', () => {
+    expect([...PERSIST_ERROR_CODES]).toEqual([
+      'not-configured', 'no-project', 'bad-request', 'session', 'db', 'reconcile', 'internal',
+    ]);
+    for (const code of PERSIST_ERROR_CODES) {
+      expect(FailureReplySchema.safeParse({ ok: false, code, message: 'x' }).success).toBe(true);
+    }
+    expect(FailureReplySchema.safeParse({ ok: false, code: 'unknown', message: 'x' }).success).toBe(false);
+    expect(FailureReplySchema.safeParse({ ok: false, code: 'DB', message: 'x' }).success).toBe(false);
+    expect(FailureReplySchema.safeParse({ ok: false, code: 'db' }).success).toBe(false);
+  });
+});
+
+describe('persist-schema：名册与出口纪律', () => {
+  it('名册三条 + 事件那一条 == IPC 里除 ping 的全部（漏登记即红）', () => {
+    expect([...INVOKE_CHANNELS].sort()).toEqual(
+      [IPC.journalSubmit, IPC.projectClose, IPC.projectOpen].sort(),
+    );
+    const covered = [...INVOKE_CHANNELS, SAVE_STATUS_EVENT].sort();
+    expect(covered).toEqual(Object.values(IPC).filter((c) => c !== IPC.ping).sort());
+    // 事件通道不许混进名册（它没有请求方向，被注册成 handler 是自己调自己）。
+    expect(INVOKE_CHANNELS.includes(SAVE_STATUS_EVENT)).toBe(false);
+  });
+
+  it('persist-schema.ts 的源码里没有口令，也没有连接参数的影子（第 ④ 段）', () => {
+    // 三条 `\b` 前缀的尺为什么打得开却不误红：`import` / `export` 里的 "port" 前面是字母，
+    // 没有词边界 ⇒ 不匹配；这个文件里真正的连接参数一个都不许出现。
+    for (const re of [/password/i, /\bhost\s*:/, /\bport\s*:/, /(^|[^\w])user[^\w]/]) {
+      expect(SCHEMA_SRC).not.toMatch(re);
+    }
+  });
+
+  it('parse 出口的文案 = `<通道名> 解不开<那一句>：<点号路径>: …`', () => {
+    expect(() => parseOpenRequest(IPC.projectOpen, { projectId: 42 })).toThrow(
+      /^dajia:project:open 解不开打开工程的请求：projectId: /,
+    );
+    // 整个 value 不是对象时路径落在根那一格：`(根)` 是 T4 给 issueText 定的口径。
+    expect(() => parseOpenValue(IPC.projectOpen, 42)).toThrow(/解不开打开工程的回包：\(根\)/);
+  });
+});
+```
+
+Run: `npx vitest run packages/protocol/test/persist-schema.test.ts > tmp/t8-schema.log 2>&1; echo "exit=$?"`
+Expected: 先红（`persist-schema.ts` 还没写）⇒ 写完后 **exit=0 / 10 格全绿**。第 4 格在 `autosave.ts` 不存在时会抛"没在 autosave.ts 里找到 interface SaveStatus" —— 那是**故意的**：Step 1 排在 T7 落盘之后执行，真抛了就说明 T7 的形状漂了，先按盘上现物订正计划文本再往下走。
+
+再跑一次 `pnpm typecheck`（protocol 那一段）：这一档抓的是 `z.output` 与手写 `Record<string, unknown>` 之间的可赋值性，vitest 跑得过不代表类型对。
+
+- [ ] **Step 2: 边界形状只有一个产地 —— `src/shared/document-wire.ts` + `codec.ts` 委托 + 7 格**
+
+这一步先把"一个目录凭什么存在"说清楚，再动代码（裁决 P-19 的落地形状）。
+
+**为什么现在是第三个目录，而不是塞进已有的两个地方**：`payload ↔ Document` 这双向构造从 T8 起有**两侧**读者 —— main（`submit`/`close` 要把屏幕递来的 payload 变成 `Document` 才能交给 `writeSnapshot` / `closeProject`；`loadProject` 的产物要编码回线上）与 renderer（打开工程时要把回包变成 `new TransactionLog(doc)` 的起点）。放 `src/main/**` 不行：renderer 不许认识 main，`vite` 会把 `mysql2` 顺这条边拖进屏幕的 bundle。放 `@dajia/core` 不行：core 不许认识"盘上/线上一份 payload"这种外壳形状（T4 里那句"为一次排序给 core 加导出 = 多一条只服务于磁盘的 API"是同一个理由，而这次要加的是一条**边界** API，比那次更该留在 desktop 侧）。放 `@dajia/protocol` 也不行：protocol 是纯契约包，`Document` 的构造是 core 的领域知识，而 protocol 的依赖方向只允许新增 npm 依赖（`zod`）。
+
+于是 `apps/desktop/src/shared/` 是本计划唯一的第三个目录，它同时被 `src/main/**` 与 `src/renderer/src/**` 相对 import。**它对两侧的区别只在 import 形式**：core 用值 import（两侧都要真的建 `Document`），`@dajia/protocol` 一律 `import type` —— `electron.vite.config.ts` 的 `renderer` 段只 alias 了 `@dajia/core` 与 `@dajia/scene-2d`，没有 `@dajia/protocol`；`verbatimModuleSyntax` 会把 `import type` 擦干净，所以 renderer 的构建配置**一个字节都不许改**（改它 = 动首帧时序以外的构建面 = 五道闸门按红线要全体重测，这里完全不必冒这个险）。
+
+**① `apps/desktop/tsconfig.json` 的 `include`（漏了这一行就等于那个目录不进 typecheck，红要等运行时）**
+
+改前（盘上现物，第 8 行）：
+
+```json
+  "include": ["src/main", "src/preload", "src/renderer/src"],
+```
+
+改后：
+
+```json
+  "include": ["src/main", "src/preload", "src/shared", "src/renderer/src"],
+```
+
+`exclude` 那行与 `compilerOptions` 一字不动。为什么不用 `src/*` 那种通配：`src/renderer` 目录里有 `index.html`，那条 `exclude` 的存在就是证据 —— 通配会把下一次新增的怪东西静默吸进编译。
+
+**② `apps/desktop/src/shared/document-wire.ts`**
+
+```ts
+import { Document, type Entity, type EntityId } from '@dajia/core';
+import type { DocumentPayloadShape } from '@dajia/protocol';
+
+/**
+ * 与 `core/model/document.ts`、`main/db/reconcile.ts` 里那两个同名的模块私有比较符各写一份。
+ * 三处都要"按 id 升序"，但它们住在三个互不许 import 的域里（core 不认识磁盘，main 不许被 shared
+ * 认识 —— renderer 的 bundle 会顺着那条边把 mysql2 拖进屏幕）。给任何一方开导出都是一条新边。
+ *
+ * 排序**只影响线上与盘上的字节顺序，不影响语义**：`documentFromPayload` 建的是 `Map`，
+ * `canonical()` 自己会再排一次。所以这一份的读者是"字节稳定"（抢救件可比、快照可 diff），不是正确性。
+ */
+function byId(a: { id: EntityId }, b: { id: EntityId }): number {
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/**
+ * 唯一的"文档 → 边界形状"出口。编码 = 序列化，**不是校验**：`JSON.stringify(-0)` 是 `"0"`，
+ * 挡 `-0`/浮点/多余字段是读取侧 zod 的活（T4 ② 段同一条口径，别在这里加第二道）。
+ */
+export function payloadFromDocument(doc: Document): DocumentPayloadShape {
+  return {
+    projectId: doc.projectId,
+    schemaVersion: doc.schemaVersion,
+    entities: [...doc.entities.values()].sort(byId),
+  };
+}
+
+/**
+ * 唯一的"边界形状 → 文档"出口，main 与 renderer 共用这一份。
+ * `where` 由调用方给（`snapshot 行 3` / `IPC dajia:journal:submit`），抛错文案的前缀归调用方的坐标 ——
+ * 与 T4 的 `codec.ts` 完全一致，所以 `codec.test.ts` 那两格正则一字不动地继续成立。
+ */
+export function documentFromPayload(payload: DocumentPayloadShape, where: string): Document {
+  const next = new Map<EntityId, Entity>();
+  for (const entity of payload.entities) {
+    if (next.has(entity.id)) {
+      // zod 与 Map.set 都不管数组里的重复：同一份快照存着同一 id 的两个真值，
+      // 静默取后者会让 canonical() 说谎 —— 这一型必须在过界/读盘当场炸。
+      throw new TypeError(
+        `${where} 的 entities 里实体 ${entity.id} 出现两次：一份快照不许有重复 id`,
+      );
+    }
+    next.set(entity.id, entity);
+  }
+  // 只 validate 形状（id 是 UUIDv7、该 kind 的整数毫米字段），不 validate 引用与几何：
+  // 放行证在 `assertTruthSourceInvariants`，而它的调用点是 T5 的 `loadProject`（那里才知道读了几层）。
+  return Document.replaceEntities(
+    Document.create(payload.projectId, payload.schemaVersion),
+    next,
+  );
+}
+```
+
+> `<待实测>`：`[...doc.entities.values()]` 的元素类型是 `Entity`，而 `DocumentPayloadShape.entities` 是 `EntityShape[]`。T4 只实测过**反方向**（`EntityShape → Entity`，`decodeEntity` 的返回值就是那一道编译期牙）。`Entity → EntityShape` 若被 `tsc` 拒，说明这两份形状其实不对称（多半是某个 `.optional()` 与 core 的必填/可选不一致）—— **不许写 `as`，也不许加 `satisfies` 糊**：那正是 T3 字段对账那一格本该红而没红的形状，把 `tsc` 的报错原文（哪个键、哪一侧）抄进执行回填，并按它改 `packages/protocol/src/entity-schema.ts`。回填里同时写这一格实测过的那条命令的 exit。
+
+**③ `apps/desktop/src/main/db/codec.ts` 改成委托（只动三个位置）**
+
+改动 1 —— import 两行换成三行（`Document` 从值 import 降为 type import，`EntityId` 整个不再需要：它唯一的用处是那个搬走的 `Map<EntityId, Entity>`；`Entity` 留着，`encodeEntity` / `decodeEntity` 还在用它）：
+
+```ts
+import type { Document, Entity, Patch } from '@dajia/core';
+import { parseDocumentPayload, parseEntityShape, parsePatchShape } from '@dajia/protocol';
+import { documentFromPayload, payloadFromDocument } from '../../shared/document-wire';
+```
+
+改动 2 —— 删掉模块私有的 `byId`（`noUnusedLocals` 会立刻为它报错，所以它**必须**被删，而不是留着"以后也许用得上"）。
+
+改动 3 —— `encodeDocument` / `decodeDocument` 两个函数体替换为：
+
+```ts
+/**
+ * 落盘形状与线上形状同一个产地（`src/shared/document-wire.ts`，裁决 P-19）：这里只补"变成字符串"这一步。
+ * 这条委托有两个证人：`codec.test.ts` 第 9 格（`encodeDocument` 的产物与形状表逐字节比，**原样留着**）
+ * 与 `document-wire.test.ts` 第 4 格（`encodeDocument(doc)` 逐字节等于 `JSON.stringify(payloadFromDocument(doc))`）。
+ */
+export function encodeDocument(doc: Document): string {
+  return JSON.stringify(payloadFromDocument(doc));
+}
+
+/** 只解码、不验不变式：引用与几何的放行证在 T5 的 `loadProject`（那里才知道一共读了几层）。 */
+export function decodeDocument(ref: RowRef, raw: unknown): Document {
+  const at = where(ref);
+  return documentFromPayload(parseDocumentPayload(at, asJsonValue(raw)), at);
+}
+```
+
+`RowRef` / `where` / `asJsonValue` / `encodeEntity` / `decodeEntity` / `encodePatch` / `decodePatch` 一字不动。**`decodeDocument` 里那段重复 id 的循环整体搬走**：它现在住在 `documentFromPayload`，文案逐字保留（`${where} 的 entities 里实体 X 出现两次：一份快照不许有重复 id`），所以 `codec.test.ts` 吃这条文案的正则一格都不用改 —— 这是"委托没把牙弄丢"的第一证人。
+
+**④ `apps/desktop/test/unit/document-wire.test.ts`（7 格，不连库）**
+
+```ts
+import { describe, expect, it } from 'vitest';
+import {
+  Document,
+  SCHEMA_VERSION,
+  type Entity,
+  type EntityId,
+  type PointEntity,
+  type StoreyEntity,
+  type WallEntity,
+} from '@dajia/core';
+import { encodeDocument } from '../../src/main/db/codec';
+import { documentFromPayload, payloadFromDocument } from '../../src/shared/document-wire';
+
+/**
+ * 夹具手写，不走命令：这一族判的是形状与字节，"几何成不成立"归 T3 的读盘不变式与 T5 的 loadProject。
+ * id 的字面量与 `codec.test.ts` 同族（同一批 `0193aa00-…-7000-8000-…`），因为两边的对账文案要能并排读。
+ */
+const PID = '0193aa00-0000-7000-8000-00000000000a';
+const S1 = '0193aa00-0000-7000-8000-000000000001';
+const P1 = '0193aa00-0000-7000-8000-000000000002';
+const P2 = '0193aa00-0000-7000-8000-000000000003';
+const W1 = '0193aa00-0000-7000-8000-000000000004';
+
+const point: PointEntity = { kind: 'point', id: P1, storeyId: S1, x: 0, y: 0 };
+const point2: PointEntity = { kind: 'point', id: P2, storeyId: S1, x: 4000, y: 0 };
+const wall: WallEntity = {
+  kind: 'wall',
+  id: W1,
+  storeyId: S1,
+  startId: P1,
+  endId: P2,
+  thicknessMm: 200,
+  heightMm: 2800,
+  elevationOffsetMm: 0,
+  loadBearing: false,
+  material: '砖',
+};
+const storey: StoreyEntity = {
+  kind: 'storey',
+  id: S1,
+  projectId: PID,
+  index: 0,
+  elevationMm: 0,
+  heightMm: 3000,
+};
+
+/** 插入序**故意**是 W1,S1,P2,P1（升序是 S1,P1,P2,W1）：排序与"别照插入序泄出去"两件事都由它测。 */
+function doc(insertion: readonly Entity[]): Document {
+  return Document.replaceEntities(
+    Document.create(PID, SCHEMA_VERSION),
+    new Map<EntityId, Entity>(insertion.map((e) => [e.id, e])),
+  );
+}
+
+const DOC = doc([wall, storey, point2, point]);
+
+describe('payloadFromDocument：形状与顺序', () => {
+  it('往返逐字节同源，且四件事实都活着（三键、按 id 升序、空文档、字段值）', () => {
+    const payload = payloadFromDocument(DOC);
+    expect(Object.keys(payload).sort()).toEqual(['entities', 'projectId', 'schemaVersion']);
+    expect(payload.projectId).toBe(PID);
+    expect(payload.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(payload.entities.map((e) => e.id)).toEqual([S1, P1, P2, W1]);
+    expect(documentFromPayload(payload, 'test').canonical()).toBe(DOC.canonical());
+  });
+
+  it('换个插入序得到**同一串字节**（排序是"字节稳定"的产地，不是 Map 的副产品）', () => {
+    const a = payloadFromDocument(doc([point, point2, storey, wall]));
+    const b = payloadFromDocument(doc([wall, storey, point2, point]));
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
+  });
+
+  it('零实体的文档：`entities` 是空数组而不是缺键，且照样建得回来', () => {
+    const empty = Document.create(PID, SCHEMA_VERSION);
+    const payload = payloadFromDocument(empty);
+    expect(payload.entities).toEqual([]);
+    const back = documentFromPayload(payload, 'test');
+    expect(back.entities.size).toBe(0);
+    expect(back.canonical()).toBe(empty.canonical());
+  });
+
+  it('`encodeDocument(doc)` 与 `JSON.stringify(payloadFromDocument(doc))` 逐字节相同（委托没漂）', () => {
+    expect(encodeDocument(DOC)).toBe(JSON.stringify(payloadFromDocument(DOC)));
+  });
+});
+
+describe('documentFromPayload：过界那一步的牙', () => {
+  it('重复 id 当场抛，文案与 T4 读盘那一条逐字相同（T4-M9 挪靶之后唯一的产地）', () => {
+    const payload = payloadFromDocument(DOC);
+    const next = [...payload.entities, payload.entities[0] as (typeof payload.entities)[number]];
+    expect(() => documentFromPayload({ ...payload, entities: next }, 'snapshot 行 7')).toThrow(
+      new RegExp('snapshot 行 7 的 entities 里实体 .* 出现两次：一份快照不许有重复 id'),
+    );
+  });
+
+  it('抛错文案用的是**调用方**给的坐标：同一份 payload，两个标签给出两条不同的话', () => {
+    const payload = payloadFromDocument(DOC);
+    const next = [...payload.entities, payload.entities[0] as (typeof payload.entities)[number]];
+    const bad = { ...payload, entities: next };
+    expect(() => documentFromPayload(bad, 'IPC dajia:journal:submit')).toThrow(/IPC dajia:journal:submit/);
+    expect(() => documentFromPayload(bad, 'emergency 行 3')).toThrow(/emergency 行 3/);
+  });
+
+  it('不管引用完整性：一面没有端点的墙照样建得回来（放行证在别处，这里不许提前叫）', () => {
+    const orphan = doc([wall]);
+    const built = documentFromPayload(payloadFromDocument(orphan), 'test');
+    expect(built.byKind('point')).toEqual([]);
+    expect(built.get(W1)?.kind).toBe('wall');
+  });
+});
+```
+
+Run: `npx vitest run apps/desktop/test/unit/document-wire.test.ts apps/desktop/test/unit/codec.test.ts > tmp/t8-wire.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`，`document-wire.test.ts` **7 passed**，`codec.test.ts` 的格数**一格不减**（T4 的计划数是 12；执行时以盘上实测为准并把两个数写进回填）。第 4 格红而第 1 格绿 ⇒ 委托写反了（`encodeDocument` 还在自己拼对象）；`codec.test.ts` 那两条读重复 id 文案的格红 ⇒ `where` 没传给 `documentFromPayload`。
+
+再单独量一次编译（`import type` 有没有漏写、`Entity ↔ EntityShape` 那一支对称不对称，只有 `tsc` 看得见）：
+
+```bash
+npx tsc --noEmit -p apps/desktop/tsconfig.json > tmp/t8-tsc.log 2>&1; echo "exit=$?"
+```
+
+Expected: `exit=0`。若报 `'DocumentPayloadShape' 是类型，必须用 type-only import`，说明上面第 2 行的 `import type` 被写成了值 import —— 那正是 renderer bundle 会去解析 `@dajia/protocol` 的形状，必须改回 `import type`，**不许**改成给 renderer 加 alias。
+
+- [ ] **Step 3: 会话编排 —— `persist/session.ts` + 假钟搬家 + 16 格**
+
+先搬假钟，再写被测文件（顺序反了就要在两个文件之间来回跳）。
+
+**① `apps/desktop/test/unit/fake-timer.ts`**：把 T7 内联在 `autosave.test.ts` 里的 `FakeTimer`（`clock` / `now()` / `schedule()` / `advance()` / `pending()`）与 `tick()` **原样搬进来并加 `export`**，类体、那句"定时器回调是同步触发的，但它 kick 出来的活是 async 的"注释、以及"假钟收到非法延时"那一抛，一个字都不改。为什么搬而不是再写一份小的：假钟的**内部口径**（到点顺序、同刻度按 `id` 稳定序、`advance` 把钟面拨到 `target`）现在有两个读者，而 T7 的第 ① 段与 T8 的 `close` 超时格依赖的是同一套语义。两份假钟一旦漂开，红的那一格就无法判断是代码错还是夹具错 —— 本仓罚过的正是这一型。
+
+新文件顶部只需要一行 import（`import type { SaveTimer, TimerHandle } from '../../src/main/persist/autosave';` —— `verbatimModuleSyntax` 要求 type-only，路径按 `test/unit/` 到 `src/main/` 的实际层级）。
+
+`autosave.test.ts` 的改动有**三**处：删掉那段内联类与 `tick`，加一行 `import { FakeTimer, tick } from './fake-timer';`，并把 autosave 那个 import 块里的 `type SaveTimer,` 与 `type TimerHandle,` **一起删掉** —— 那两个名字只被搬走的那段用到过，留在原地 `tsconfig.test.json`（T1 建，include 覆盖 `test`）会报 `TS6133 'SaveTimer' is declared but its value is never read`。**24 格与判据一字不动**，搬完立刻原样复跑：
+
+```bash
+npx vitest run apps/desktop/test/unit/autosave.test.ts > tmp/t8-autosave-move.log 2>&1; echo "exit=$?"
+```
+
+Expected: `exit=0` 且格数与搬之前**同一个数**（这是"搬家没丢东西"的判据，不是"跑过了"）。
+
+**② `apps/desktop/src/main/persist/session.ts`**
+
+```ts
+import type { Document, EntityId, Patch } from '@dajia/core';
+import {
+  IPC,
+  type CloseRequest,
+  type CloseValue,
+  type EmergencyRef,
+  type OpenDecision,
+  type OpenValue,
+  type PersistErrorCode,
+  type SubmitRequest,
+  type SubmitValue,
+} from '@dajia/protocol';
+import type { MysqlEnv } from '../db/env';
+import type { CloseReport, LoadOutcome, OpenIntent } from '../db/repository';
+import { documentFromPayload, payloadFromDocument } from '../../shared/document-wire';
+import {
+  Autosave,
+  type EmergencyPayload,
+  type JournalSink,
+  type SaveStatus,
+  type SaveTimer,
+  type TimerHandle,
+} from './autosave';
+import { describeError } from './describe-error';
+
+/**
+ * 收尾 flush 的时间上限。**唯一读者是 `close` 里那一发 `withTimeout`**：MySQL 不可达时 `flush()`
+ * 挂在重试链上，而窗口在等这次收尾放行 —— 没有上限，"关闭工程"这个动作就没有出口。
+ * 为什么不是 `LOCK_TTL_MS` 那种共享常量：那两个数没有同源的理由，硬凑一个名字反而误导（T7 口径）。
+ */
+export const CLOSE_FLUSH_TIMEOUT_MS = 10_000;
+
+/** 会话侧看得见的仓库。`ProjectRepository` 恰好满足它，两边都不 import 对方的类（T7 的 `JournalSink` 同族做法）。 */
+export interface SessionRepo extends JournalSink {
+  loadProject(intent: OpenIntent): Promise<LoadOutcome>;
+  closeProject(doc: Document): Promise<CloseReport>;
+}
+
+export interface DbHandle {
+  readonly repo: SessionRepo;
+  /**
+   * 连接本体的**不透明把手**：session 一个字段都不读它，只在 `acquire(db, …)` 那一发原样递回去。
+   * 为什么是 `unknown` 而不是 `Pool`：`PersistPorts` 是 electron-free / mysql-free 的那道边界
+   * （P-2 同一把尺），把 `Pool` 写进来就会逼 `persist/session.ts` import mysql2，而那 16 格全跑在纯 node 里。
+   * 代价：`ipc-persist.ts` 取回它时要一次向下转型（`db.raw as Pool`）—— 全仓仅此一处，写在它自己的注释里。
+   */
+  readonly raw: unknown;
+  end(): Promise<void>;
+}
+
+/** 票已经拿到手之后剩下的两件事。心跳的**调度**不在这里（引擎自己按 `LOCK_HEARTBEAT_INTERVAL_MS` 排）。 */
+export interface LockHandle {
+  beat(): Promise<'renewed' | 'lost'>;
+  release(): Promise<void>;
+}
+
+/**
+ * 会话的全部外部依赖。`owner`（`机器名:pid`）与 `newLockTicket` 都不在这里：拼票是 `ipc-persist.ts`
+ * 的事，session 连 `node:os` 都不许碰（P-2 + `persist-boundary.test.ts` 那一格）。
+ */
+export interface PersistPorts {
+  readonly userDataDir: string;
+  readonly timer: SaveTimer;
+  /** 没配好就抛（T8 的实现读环境变量）。抛 ⇒ `'not-configured'`，且**不建连接**。 */
+  loadConfig(): MysqlEnv;
+  openDb(env: MysqlEnv, projectId: EntityId): Promise<DbHandle>;
+  /** `null` = 没拿到（`'busy'` 或 `'no-project'`）⇒ 只读打开（第 ⑤ 段）。 */
+  acquire(db: DbHandle, projectId: EntityId): Promise<LockHandle | null>;
+  readEmergency(userDataDir: string, projectId: EntityId): EmergencyRef[];
+  /** 原样转交：session 不数件、不碰 fs，"抢救过几份"这件事的读者是下一次 `open` 的 `readEmergency`。 */
+  writeEmergency(payload: EmergencyPayload): void;
+  emitStatus(status: SaveStatus): void;
+}
+
+export class SessionError extends Error {
+  constructor(
+    readonly code: PersistErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'SessionError';
+  }
+}
+
+/**
+ * 一条规则，不是两个调用点（第 ③ 段）。mysql2 抛的错一律带 `code`（`ER_*` / `PROTOCOL_CONNECTION_LOST`
+ * / `ECONNREFUSED`）⇒ `'db'`，下一步是"查服务"；不带 `code` 的都是我们自己抛的
+ * （T5 的三方对账不平、T5 的 `loadProject` 拒开、T4 的归属守卫）⇒ `'reconcile'`，下一步是"先别再写"。
+ */
+function persistErrorCode(err: unknown): PersistErrorCode {
+  const code = typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined;
+  return typeof code === 'string' && code.length > 0 ? 'db' : 'reconcile';
+}
+
+/**
+ * 各步失败的统一包装：**端口自己已经定了码 ⇒ 原样上抛**，其余的按"这一步默认是什么错"包一层。
+ * 为什么需要这一条：`openDb` 里会顺手校验 `actor` 长度（T4 的仓库尺），那一发不是"连不上库"；
+ * T9 的 `loadConfig` 会区分"没配"与"解不开已存的配置"。没有这条通道，端口只能把已经查清的结论
+ * 降级成一个 `RangeError`，再被下一步的默认码重新解释一遍 —— 那是把事实丢了两次。
+ */
+function wrap(err: unknown, code: PersistErrorCode, prefix: string): SessionError {
+  return err instanceof SessionError ? err : new SessionError(code, `${prefix}：${describeError(err)}`);
+}
+
+/**
+ * 给 `flush()` 套上限。超时**不取消** `flush`（Promise 取消不了，队列也还在跑），只是让调用方能立刻拆会话：
+ * `stop()` 撤掉链上的定时器，`db.end()` 掐了在途连接。
+ * 返回 `null` 而不是抛一个自定义 Error：一支路一个形状，读的人不必先认识一个新类型。
+ */
+async function withTimeout(
+  promise: Promise<SaveStatus>,
+  ms: number,
+  timer: SaveTimer,
+): Promise<SaveStatus | null> {
+  let handle: TimerHandle | undefined;
+  const timeout = new Promise<null>((resolve) => {
+    // executor 是同步跑的，所以这里 `handle` 一定有值 —— 但 TS 看不见这件事，故用 `?.`。
+    handle = timer.schedule(() => resolve(null), ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    handle?.cancel();
+  }
+}
+
+/**
+ * 一个窗口 ↔ 一个工程 ↔ 一份会话（spec §4.3，第 ⑩ 段）。
+ * main 不持文档（P-9）：这里的 `Document` 全是**借来的** —— `open` 从仓库借一份发给屏幕，
+ * `submit`/`close` 从屏幕借一份交给引擎/对账，每个方法返回时一个都不留在字段上。
+ */
+export class ProjectSession {
+  private db: DbHandle | null = null;
+  private lock: LockHandle | null = null;
+  private autosave: Autosave | null = null;
+  private projectId: EntityId | null = null;
+  private openDecision: OpenDecision = 'read-only';
+  /**
+   * 已经**发出去**的号，不是已经落盘的号（第 ① 段）。为什么不能读 `autosave.status().lastTurn`：
+   * 那一个字段是 `landedTurn`，队列里排上但还没写完的发在它上面看不见 ⇒ 下一发会拿到重复的号，
+   * 而重复号在 `uk_project_turn` 那条支路上被吞成 `already-applied` = 静默丢失。
+   */
+  private issuedTurn = 0;
+
+  constructor(private readonly ports: PersistPorts) {}
+
+  get active(): boolean {
+    return this.projectId !== null;
+  }
+
+  /** 没有会话 ⇒ `null`，而不是猜一个默认值：横幅与 `reopenAsEdit` 都要能区分"没开"和"开成只读"。 */
+  get decision(): OpenDecision | null {
+    return this.projectId === null ? null : this.openDecision;
+  }
+
+  status(): SaveStatus | null {
+    return this.autosave?.status() ?? null;
+  }
+
+  async open(projectId: EntityId): Promise<OpenValue> {
+    if (this.projectId !== null) {
+      throw new SessionError('session', `会话已经开在工程 ${this.projectId} 上：先关再开（第 ⑩ 段）`);
+    }
+    let env: MysqlEnv;
+    try {
+      env = this.ports.loadConfig();
+    } catch (err) {
+      // 这一支**没有** try 里的 teardown：此刻一个资源都没拿到手，多拆一次就会把"谁分配了谁释放"搅浑。
+      throw wrap(err, 'not-configured', '连接配置读不出来');
+    }
+    let db: DbHandle;
+    try {
+      db = await this.ports.openDb(env, projectId);
+    } catch (err) {
+      throw wrap(err, 'db', '连不上库');
+    }
+    // 状态先落地再往下走：下面任何一步抛，都按同一套顺序拆（`teardown` 只认字段，不认参数）。
+    this.db = db;
+    this.projectId = projectId;
+    let lock: LockHandle | null;
+    try {
+      lock = await this.ports.acquire(db, projectId);
+    } catch (err) {
+      await this.teardown();
+      throw wrap(err, persistErrorCode(err), '拿锁这一发本身坏了');
+    }
+    const intent: OpenIntent = lock === null ? 'read' : 'edit';
+    let loaded: LoadOutcome;
+    try {
+      loaded = await db.repo.loadProject(intent);
+    } catch (err) {
+      await this.teardown();
+      throw wrap(err, persistErrorCode(err), '读不出这份工程');
+    }
+    this.lock = lock;
+    this.openDecision = lock === null ? 'read-only' : 'edit';
+    this.issuedTurn = loaded.header.journalTurn;
+    if (lock !== null) {
+      this.autosave = new Autosave({
+        sink: db.repo,
+        timer: this.ports.timer,
+        beat: () => lock.beat(),
+        onStatus: (status) => this.ports.emitStatus(status),
+        onEmergency: (payload) => this.ports.writeEmergency(payload),
+        fromJournal: {
+          lastTurn: loaded.header.journalTurn,
+          snapshotTurn: loaded.snapshot?.turn ?? null,
+          rowsSinceSnapshot: loaded.header.journalTurn - (loaded.snapshot?.turn ?? 0),
+        },
+      });
+    }
+    return {
+      decision: this.openDecision,
+      header: loaded.header,
+      doc: payloadFromDocument(loaded.doc),
+      snapshot: loaded.snapshot,
+      replayed: loaded.replayed,
+      emergency: this.ports.readEmergency(this.ports.userDataDir, projectId),
+    };
+  }
+
+  submit(req: SubmitRequest): SubmitValue {
+    const autosave = this.autosave;
+    const projectId = this.projectId;
+    if (autosave === null || projectId === null) {
+      throw new SessionError('session', '这个会话是只读的（或已经关了）：屏幕上的改动不会进库');
+    }
+    if (req.projectId !== projectId) {
+      throw new SessionError('session', `这发记在工程 ${req.projectId} 名下，会话开的是 ${projectId}`);
+    }
+    const state = autosave.status();
+    if (state.phase === 'paused') {
+      throw new SessionError(
+        'session',
+        `已经停写（${state.pauseReason ?? '原因未知'}）：请重开工程，不要在同一会话里续写（第 ⑤ 段）`,
+      );
+    }
+    if (state.phase === 'stopped') {
+      throw new SessionError('session', '保存引擎已停：这个会话正在收尾');
+    }
+    // 先解码，后取号。反过来 = 一个坏请求吃掉一个号 ⇒ 下一发 `appendJournal` 从此撞"跳号"永久拒收。
+    const doc = documentFromPayload(req.doc, `IPC ${IPC.journalSubmit}`);
+    if (doc.projectId !== projectId) {
+      throw new SessionError(
+        'session',
+        `递来的文档签在 ${doc.projectId}，会话开的是 ${projectId}：一份状态不能同时是两个工程的现场`,
+      );
+    }
+    // 这一行是**编译期**那道牙（T4 的 `decodePatch` 同一个写法）：`PatchShape → Patch` 漂了，
+    // `tsc -p apps/desktop/tsconfig.json` 当场红，不用等运行时。
+    const patch: Patch = req.patch;
+    const turn = this.issuedTurn + 1;
+    this.issuedTurn = turn;
+    const outcome = autosave.submit({ turn, patch, doc });
+    return { outcome, acceptedTurn: turn };
+  }
+
+  async close(req: CloseRequest): Promise<CloseValue> {
+    const projectId = this.projectId;
+    const db = this.db;
+    if (projectId === null || db === null) {
+      throw new SessionError('session', '没有开着的会话：这一发没有可收尾的账');
+    }
+    if (req.projectId !== projectId) {
+      throw new SessionError('session', `要关的工程是 ${req.projectId}，会话开的是 ${projectId}`);
+    }
+    const autosave = this.autosave;
+    if (req.mode === 'abandon' || autosave === null) {
+      // 只读会话与 `abandon` 走同一条路：不 flush、不对账、**不写 `clean_shutdown`**（第 ⑤ 段）。
+      // 只读那一支要是跑了 `closeProject`，就等于替上一个编辑者宣告"这库干净"，那是撒谎。
+      await this.teardown();
+      return { elementRows: null, storeyRows: null };
+    }
+    const doc = documentFromPayload(req.doc, `IPC ${IPC.projectClose}`);
+    if (doc.projectId !== projectId) {
+      throw new SessionError('session', `收尾递来的文档签在 ${doc.projectId}，会话开的是 ${projectId}`);
+    }
+    let drained: SaveStatus | null;
+    try {
+      drained = await withTimeout(autosave.flush(), CLOSE_FLUSH_TIMEOUT_MS, this.ports.timer);
+    } catch (err) {
+      // 引擎本该把库错吞进 `lastError`（T7 ⑨ 段），所以走到这里要么是接线错要么是链上漏了抛：
+      // 码按同一条规则给，但**必须**拆会话 —— 不留半开的锁与池。
+      await this.teardown();
+      throw wrap(err, persistErrorCode(err), '收尾 flush 直接抛了');
+    }
+    if (drained === null) {
+      await this.teardown();
+      throw new SessionError(
+        'db',
+        `收尾 flush 在 ${CLOSE_FLUSH_TIMEOUT_MS}ms 内没跑完：最后几发没落，跳过对账（不等下去会把窗口卡死）`,
+      );
+    }
+    if (drained.queuedTurns > 0 || drained.phase === 'paused') {
+      await this.teardown();
+      throw new SessionError(
+        drained.phase === 'paused' ? 'session' : 'db',
+        `还有 ${drained.queuedTurns} 发没进库（${drained.lastError ?? '无更多信息'}）：这次收尾不对账 —— ` +
+          `库里缺最后几发时，文档↔element 必然不平，跑了只会把"没落盘"说成"账坏了"`,
+      );
+    }
+    let report: CloseReport;
+    try {
+      // 顺序是**先对账再放锁**：反过来会给另一个人留出"我刚写完、他还没对账"的窗口。
+      report = await db.repo.closeProject(doc);
+    } catch (err) {
+      await this.teardown();
+      throw wrap(err, persistErrorCode(err), '收尾对账没过');
+    }
+    await this.teardown();
+    return { elementRows: report.elementRows, storeyRows: report.storeyRows };
+  }
+
+  /**
+   * 唯一的拆卸口：先拆引擎（它的 idle / retry / beat 三个定时器还在排），再放锁，最后关池。
+   * 顺序不许改 —— 反过来就留下"锁还在、但已经没人管队列"的那一刻，而 `beat` 会拿着已释放的票去续期。
+   * 解锁与关池的失败**只记不抛**：锁会自己过期（T6 的 `LOCK_TTL_MS`），而这一发的结论已经定了。
+   */
+  private async teardown(): Promise<void> {
+    const autosave = this.autosave;
+    const lock = this.lock;
+    const db = this.db;
+    this.autosave = null;
+    this.lock = null;
+    this.db = null;
+    this.projectId = null;
+    this.openDecision = 'read-only';
+    this.issuedTurn = 0;
+    const stopped = autosave?.stop();
+    try {
+      await lock?.release();
+    } catch (err) {
+      console.error(`[dajia] 解锁失败，等它自己过期：${describeError(err)}`);
+    }
+    try {
+      await db?.end();
+    } catch (err) {
+      console.error(`[dajia] 连接池没关掉：${describeError(err)}`);
+    }
+    if (stopped !== undefined) this.ports.emitStatus(stopped);
+  }
+}
+```
+
+> `<待实测>` 三件：
+> ① `header: loaded.header` 直接把 T5 的 `ProjectHeader` 交给 `ProjectHeaderWireSchema`（`persist-schema.ts` 出口那一步会验它）。两边五键同名同号，但 `journalTurn` 若以 `string`（BIGINT 越界的形状，T4 P-17）回来，出口的 `SafeCountSchema` 会红 —— **那是故意的**，越界的账不许过界，把实测读数写进回填。
+> ② `snapshot: loaded.snapshot` 与 `replayed: loaded.replayed` 同理靠结构对得上；若 T5 的字段名或可空性与 wire 不一致，红的第一个位置是 `apps/desktop/tsconfig.json` 那一发 `tsc`（不是运行时），按它订正 wire 或 T5 侧并写回填。
+> ③ `state.phase === 'stopped'` 那一支：`stop()` 之后 `autosave` 字段已被置 `null`，所以正常路径走不到它，它防的是"将来有人把 `teardown` 拆成两步"。**这一支没有格打得到**（登记的限度，Step 8 汇总）。
+
+**③ `apps/desktop/test/unit/session.test.ts`（16 格，全假把式：零 mysql2、零 electron、零 fs）**
+
+```ts
+import { describe, expect, it } from 'vitest';
+import {
+  Document,
+  SCHEMA_VERSION,
+  type Entity,
+  type EntityId,
+  type Patch,
+  type PointEntity,
+} from '@dajia/core';
+import { type CloseRequest, type EmergencyRef, type SubmitRequest } from '@dajia/protocol';
+import {
+  CLOSE_FLUSH_TIMEOUT_MS,
+  ProjectSession,
+  SessionError,
+  type DbHandle,
+  type LockHandle,
+  type PersistPorts,
+  type SessionRepo,
+} from '../../src/main/persist/session';
+import type {
+  CloseReport,
+  JournalEntry,
+  JournalOutcome,
+  LoadOutcome,
+  OpenIntent,
+} from '../../src/main/db/repository';
+import type { MysqlEnv } from '../../src/main/db/env';
+import type { EmergencyPayload, SaveStatus } from '../../src/main/persist/autosave';
+import { documentFromPayload, payloadFromDocument } from '../../src/shared/document-wire';
+import { FakeTimer, tick } from './fake-timer';
+
+const PID = '0193aa00-0000-7000-8000-00000000000a';
+const OTHER = '0193aa00-0000-7000-8000-00000000000c';
+const S1 = '0193aa00-0000-7000-8000-000000000001';
+const P1 = '0193aa00-0000-7000-8000-000000000002';
+
+const point: PointEntity = { kind: 'point', id: P1, storeyId: S1, x: 1000, y: 0 };
+const DOC = Document.replaceEntities(
+  Document.create(PID, SCHEMA_VERSION),
+  new Map<EntityId, Entity>([[P1, point]]),
+);
+
+/** 假把式的 env：这个文件零 mysql2，它只是 `loadConfig` 的返回值形状，永远不会被拨号。 */
+const FAKE_ENV: MysqlEnv = {
+  host: 'example.invalid',
+  port: 3306,
+  user: 'fake',
+  password: 'fake',
+  database: 'dajia_test',
+};
+
+const patchOf = (x: number): Patch => ({
+  upsert: [{ ...point, x }],
+  remove: [],
+});
+
+const submitReq = (projectId: EntityId, doc: Document): SubmitRequest => ({
+  projectId,
+  patch: patchOf(1000),
+  doc: payloadFromDocument(doc),
+});
+
+const closeReq = (projectId: EntityId, doc: Document, mode: 'graceful' | 'abandon'): CloseRequest => ({
+  projectId,
+  doc: payloadFromDocument(doc),
+  mode,
+});
+
+/**
+ * 一发真账的形状：补丁把 P1 的 x 改成 `x`，文档就是改完之后的样子。
+ * 两边对不上也没人查（引擎不看内容，`closeProject` 的三方对账才看），
+ * 但假把式里写一致可以省掉一格"到底是哪一侧漂了"的排查。
+ */
+const docAt = (x: number): Document =>
+  Document.replaceEntities(
+    Document.create(PID, SCHEMA_VERSION),
+    new Map<EntityId, Entity>([[P1, { ...point, x }]]),
+  );
+
+const submitAt = (x: number): SubmitRequest => ({ projectId: PID, patch: patchOf(x), doc: payloadFromDocument(docAt(x)) });
+
+class FakeRepo implements SessionRepo {
+  readonly appended: { turn: number; docCanonical: string; patch: Patch }[] = [];
+  loadResult: LoadOutcome;
+  loadThrows: Error | null = null;
+  closeThrows: Error | null = null;
+  failTurns = new Set<number>();
+  hangAppends = false;
+
+  /** 时间线**只有一个**：`calls` 由 harness 传进来，与 `FakeLock`、`PersistPorts` 三个假把式共用同一根针。 */
+  constructor(readonly calls: string[]) {
+    this.loadResult = {
+      doc: DOC,
+      header: {
+        projectId: PID,
+        name: '接线样例',
+        schemaVersion: SCHEMA_VERSION,
+        journalTurn: 7,
+        wasCleanShutdown: true,
+      },
+      snapshot: { seq: 3, turn: 5 },
+      replayed: { rows: 2, fromSeq: 4, toSeq: 5 },
+    };
+  }
+
+  async appendJournal(entry: JournalEntry): Promise<JournalOutcome> {
+    if (this.hangAppends) return new Promise<JournalOutcome>(() => {});
+    if (this.failTurns.has(entry.turn)) {
+      // 不带 `code` 是我们自己的抛；带 `code` 的那一型由格 12 用另一支假错打。
+      throw new RangeError(`假故障：turn ${entry.turn} 写不进去`);
+    }
+    this.calls.push(`append:${entry.turn}`);
+    this.appended.push({ turn: entry.turn, docCanonical: entry.doc.canonical(), patch: entry.patch });
+    return 'applied';
+  }
+
+  async writeSnapshot(turn: number): Promise<void> {
+    this.calls.push(`snapshot:${turn}`);
+  }
+
+  async loadProject(intent: OpenIntent): Promise<LoadOutcome> {
+    this.calls.push(`load:${intent}`);
+    if (this.loadThrows) throw this.loadThrows;
+    return this.loadResult;
+  }
+
+  async closeProject(doc: Document): Promise<CloseReport> {
+    // 文案只记"是不是同一份文档"：canonical 串太长，会把顺序判据读成噪音。
+    this.calls.push(doc.canonical() === DOC.canonical() ? 'close:same' : 'close:other');
+    if (this.closeThrows) throw this.closeThrows;
+    return { elementRows: 4, storeyRows: 1 };
+  }
+}
+
+class FakeLock implements LockHandle {
+  outcome: 'renewed' | 'lost' = 'renewed';
+  constructor(private readonly calls: string[]) {}
+
+  async beat(): Promise<'renewed' | 'lost'> {
+    this.calls.push('beat');
+    return this.outcome;
+  }
+
+  async release(): Promise<void> {
+    this.calls.push('release');
+  }
+}
+
+function harness(over: {
+  lock?: LockHandle | null;
+  loadConfigThrows?: Error;
+  openDbThrows?: Error;
+  acquireThrows?: Error;
+  emergency?: EmergencyRef[];
+} = {}) {
+  const calls: string[] = [];
+  const repo = new FakeRepo(calls);
+  const timer = new FakeTimer();
+  const statuses: SaveStatus[] = [];
+  const rescued: EmergencyPayload[] = [];
+  const lock = over.lock === undefined ? new FakeLock(calls) : over.lock;
+  const ports: PersistPorts = {
+    userDataDir: '/tmp/dajia-session-test',
+    timer,
+    loadConfig() {
+      calls.push('loadConfig');
+      if (over.loadConfigThrows) throw over.loadConfigThrows;
+      return FAKE_ENV;
+    },
+    async openDb(env, projectId) {
+      calls.push(`openDb:${projectId}:${env.host}`);
+      if (over.openDbThrows) throw over.openDbThrows;
+      // `raw` 在这里没有含义：假把式不连库，session 也一个字段都不读它（第 ⑥ 段）。
+      const db: DbHandle = { repo, raw: 'fake-pool', async end() { calls.push('end'); } };
+      return db;
+    },
+    async acquire() {
+      calls.push('acquire');
+      if (over.acquireThrows) throw over.acquireThrows;
+      return lock;
+    },
+    readEmergency(_userDataDir, projectId) {
+      calls.push(`readEmergency:${projectId}`);
+      return over.emergency ?? [];
+    },
+    writeEmergency(payload) {
+      calls.push(`emergency:${payload.turn}`);
+      rescued.push(payload);
+    },
+    emitStatus(status) {
+      statuses.push(status);
+    },
+  };
+  return {
+    session: new ProjectSession(ports),
+    repo,
+    timer,
+    lock,
+    calls,
+    statuses,
+    rescued,
+  };
+}
+
+/** 每格都从这里起步：一个开好的可写会话。 */
+async function opened(h?: ReturnType<typeof harness>) {
+  const ctx = h ?? harness();
+  await ctx.session.open(PID);
+  return ctx;
+}
+```
+
+- [ ] **Step 3 续：16 格逐格落盘**
+
+```ts
+describe('open 的失败分型：每一步失败只报自己那一步，后一步零调用', () => {
+  it('1. 配置读不出来 ⇒ not-configured，且一个连接都没建', async () => {
+    const ctx = harness({ loadConfigThrows: new Error('缺 DAJIA_MYSQL_PASSWORD') });
+    await expect(ctx.session.open(PID)).rejects.toMatchObject({ code: 'not-configured' });
+    expect(ctx.calls.filter((c) => c.startsWith('openDb'))).toEqual([]);
+    expect(ctx.session.active).toBe(false);
+  });
+
+  it('2. 连库失败 ⇒ db，且一次锁都没试过', async () => {
+    const ctx = harness({ openDbThrows: Object.assign(new Error('ECONNREFUSED'), { code: 'ECONNREFUSED' }) });
+    await expect(ctx.session.open(PID)).rejects.toMatchObject({ code: 'db' });
+    expect(ctx.calls).toEqual(['loadConfig', 'openDb:0193aa00-0000-7000-8000-00000000000a:example.invalid']);
+    expect(ctx.session.active).toBe(false);
+  });
+
+  it('3. 读盘拒开（不带 code 的抛）⇒ reconcile；端口自己定了码 ⇒ 原样上抛、不被降级', async () => {
+    const a = harness();
+    a.repo.loadThrows = new RangeError('journal turn 跳号：盘上记到 3，这发要写 5');
+    await expect(a.session.open(PID)).rejects.toMatchObject({ code: 'reconcile' });
+    expect(a.calls).toContain('release');
+    expect(a.calls).toContain('end');
+    expect(a.session.active).toBe(false);
+
+    // `wrap` 的那条通道：端口已经查清的结论不许被下一步的默认码重说一遍
+    // （没有这一支，T9 的"配置解不开"到了横幅上就会变成"连不上库"）。
+    const b = harness({ acquireThrows: new SessionError('bad-request', '假把式：这台机器名太长') });
+    await expect(b.session.open(PID)).rejects.toMatchObject({ code: 'bad-request' });
+    expect(b.calls).toContain('release');
+    expect(b.session.active).toBe(false);
+  });
+});
+
+describe('open 的两条岔路', () => {
+  it('4. 拿到票 ⇒ edit、loadProject("edit")、引擎起来了，且 fromJournal 三格读数来自库里那份头', async () => {
+    const ctx = await opened();
+    expect(ctx.session.decision).toBe('edit');
+    expect(ctx.calls).toContain('load:edit');
+    const status = ctx.session.status();
+    expect(status).not.toBeNull();
+    expect(status?.phase).toBe('idle');
+    // journalTurn=7 而快照在 5 ⇒ 阈值计数器从 2 起算，不是从 0（"每 2000 条"在重启之后还成立靠的就是这一格）
+    expect(status?.snapshotTurn).toBe(5);
+    expect(status?.rowsSinceSnapshot).toBe(2);
+    expect(status?.lastTurn).toBeNull();
+  });
+
+  it('5. 拿不到票 ⇒ read、loadProject("read")、没有引擎，submit 一律 session', async () => {
+    const ctx = harness({ lock: null });
+    const value = await ctx.session.open(PID);
+    expect(value.decision).toBe('read-only');
+    expect(ctx.session.decision).toBe('read-only');
+    expect(ctx.calls).toContain('load:read');
+    expect(ctx.session.status()).toBeNull();
+    try {
+      ctx.session.submit(submitReq(PID, DOC));
+      expect.unreachable('只读会话的 submit 必须抛');
+    } catch (err) {
+      expect(err).toBeInstanceOf(SessionError);
+      expect((err as SessionError).code).toBe('session');
+    }
+  });
+
+  it('6. 回包逐字段同源：doc 往返不漂、snapshot/replayed 原样、emergency 来自 readEmergency', async () => {
+    const refs: EmergencyRef[] = [{ turn: 4, path: '/tmp/dajia-session-test/emergency/a.json' }];
+    const ctx = harness({ emergency: refs });
+    const value = await ctx.session.open(PID);
+    expect(documentFromPayload(value.doc, 'test').canonical()).toBe(DOC.canonical());
+    expect(value.header).toEqual({
+      projectId: PID,
+      name: '接线样例',
+      schemaVersion: SCHEMA_VERSION,
+      journalTurn: 7,
+      wasCleanShutdown: true,
+    });
+    expect(value.snapshot).toEqual({ seq: 3, turn: 5 });
+    expect(value.replayed).toEqual({ rows: 2, fromSeq: 4, toSeq: 5 });
+    expect(value.emergency).toEqual(refs);
+    expect(ctx.calls).toContain(`readEmergency:${PID}`);
+  });
+
+  it('7. 会话还开着时二开 ⇒ session，并且现有会话一个资源都没动', async () => {
+    const ctx = await opened();
+    const before = [...ctx.calls];
+    await expect(ctx.session.open(OTHER)).rejects.toMatchObject({ code: 'session' });
+    // 调用序列一字没动 ⇒ 没有 second openDb / acquireLock / loadProject，也没有把现有会话的锁放了
+    expect(ctx.calls).toEqual(before);
+    expect(ctx.calls).not.toContain('release');
+    expect(ctx.calls).not.toContain('end');
+    expect(ctx.session.active).toBe(true);
+  });
+});
+
+describe('submit：取号纪律（第 ① 段的全部牙）', () => {
+  it('8. 连投三发 ⇒ 8、9、10（起点来自库里的 journalTurn=7），且补丁与文档原样到 sink', async () => {
+    const ctx = await opened();
+    const turns: number[] = [];
+    for (const x of [1000, 2000, 3000]) {
+      turns.push(ctx.session.submit(submitAt(x)).acceptedTurn);
+    }
+    expect(turns).toEqual([8, 9, 10]);
+    await tick();
+    expect(ctx.repo.appended.map((a) => a.turn)).toEqual([8, 9, 10]);
+    expect(ctx.repo.appended[0]?.docCanonical).toBe(docAt(1000).canonical());
+    expect(ctx.repo.appended[2]?.patch.upsert[0]?.kind).toBe('point');
+  });
+
+  it('9. 坏 payload 吃掉一个号 = 永久跳号，所以解码必须在取号之前', async () => {
+    const ctx = await opened();
+    const bad = payloadFromDocument(DOC);
+    const dup = { ...bad, entities: [...bad.entities, bad.entities[0] as (typeof bad.entities)[number]] };
+    expect(() => ctx.session.submit({ projectId: PID, patch: patchOf(1000), doc: dup })).toThrow(
+      /出现两次：一份快照不许有重复 id/,
+    );
+    // 号没有被吃掉：下一发仍然是 8。这一格是"坏请求不吃号"的唯一证人。
+    expect(ctx.session.submit(submitReq(PID, DOC)).acceptedTurn).toBe(8);
+  });
+
+  it('10. 工程号对不上、文档签名对不上 ⇒ session，且都不消耗号', async () => {
+    const ctx = await opened();
+    expect(() => ctx.session.submit(submitReq(OTHER, DOC))).toThrow(/记在工程/);
+    const otherDoc = Document.replaceEntities(
+      Document.create(OTHER, SCHEMA_VERSION),
+      new Map<EntityId, Entity>([[P1, point]]),
+    );
+    expect(() => ctx.session.submit(submitReq(PID, otherDoc))).toThrow(/一份状态不能同时是两个工程的现场/);
+    expect(ctx.calls.filter((c) => c.startsWith('append'))).toEqual([]);
+    expect(ctx.session.submit(submitReq(PID, DOC)).acceptedTurn).toBe(8);
+  });
+
+  it('11. 写失败 ⇒ 抢救件原样转交；丢锁 ⇒ 停写，此后 submit 报 session，且号一个都不许回收', async () => {
+    const ctx = await opened();
+    ctx.repo.failTurns = new Set([8]);
+    ctx.session.submit(submitReq(PID, DOC));
+    await tick();
+    expect(ctx.rescued.length).toBe(1);
+    expect(ctx.rescued[0]?.turn).toBe(8);
+    expect(ctx.rescued[0]?.projectId).toBe(PID);
+    expect(ctx.session.status()?.phase).toBe('failed');
+    (ctx.lock as FakeLock).outcome = 'lost';
+    ctx.timer.advance(5_000);
+    await tick();
+    expect(ctx.session.status()?.phase).toBe('paused');
+    expect(() => ctx.session.submit(submitReq(PID, DOC))).toThrow(/已经停写/);
+    // 号不回退：停写之前已经发出去的是 8，恢复能力归"重开"，不归原地补号（第 ⑤ 段）
+    expect(ctx.repo.appended.map((a) => a.turn)).toEqual([]);
+  });
+});
+
+describe('close 的五种收场', () => {
+  it('12. abandon ⇒ 不 flush、不对账、只拆；两格读数是 null 而不是 0', async () => {
+    const ctx = await opened();
+    const value = await ctx.session.close(closeReq(PID, DOC, 'abandon'));
+    expect(value).toEqual({ elementRows: null, storeyRows: null });
+    expect(ctx.calls.filter((c) => c.startsWith('append'))).toEqual([]);
+    expect(ctx.calls).not.toContain('close:same');
+    expect(ctx.calls).toContain('release');
+    expect(ctx.calls).toContain('end');
+    expect(ctx.session.active).toBe(false);
+    expect(ctx.session.decision).toBeNull();
+    expect(ctx.timer.pending()).toBe(0);
+    expect(ctx.statuses.at(-1)?.phase).toBe('stopped');
+  });
+
+  it('13. 只读会话的 graceful ⇒ 与 abandon 同路，绝不替别人宣告这库干净', async () => {
+    const ctx = harness({ lock: null });
+    await ctx.session.open(PID);
+    const value = await ctx.session.close(closeReq(PID, DOC, 'graceful'));
+    expect(value).toEqual({ elementRows: null, storeyRows: null });
+    expect(ctx.calls).not.toContain('close:same');
+    expect(ctx.calls).toContain('release');
+  });
+
+  it('14. graceful 平账 ⇒ 顺序是 flush→closeProject→release→end；读数原样、定时器清零', async () => {
+    const ctx = await opened();
+    ctx.session.submit(submitReq(PID, DOC));
+    await tick();
+    const value = await ctx.session.close(closeReq(PID, DOC, 'graceful'));
+    expect(value).toEqual({ elementRows: 4, storeyRows: 1 });
+    const order = ctx.calls.filter((c) =>
+      ['append:8', 'close:same', 'release', 'end'].includes(c),
+    );
+    expect(order).toEqual(['append:8', 'close:same', 'release', 'end']);
+    expect(ctx.timer.pending()).toBe(0);
+    expect(ctx.statuses.at(-1)?.phase).toBe('stopped');
+  });
+
+  it('15. 对账不平（不带 code 的抛）⇒ reconcile，且 closeProject 只试一次、照样拆干净', async () => {
+    const ctx = await opened();
+    ctx.repo.closeThrows = new RangeError('对账不平：element↔storey 少一行');
+    await expect(ctx.session.close(closeReq(PID, DOC, 'graceful'))).rejects.toMatchObject({
+      code: 'reconcile',
+    });
+    expect(ctx.calls.filter((c) => c === 'close:same')).toEqual(['close:same']);
+    expect(ctx.calls).toContain('release');
+    expect(ctx.calls).toContain('end');
+  });
+
+  it('16. flush 挂死（库不可达）⇒ 到 CLOSE_FLUSH_TIMEOUT_MS 报 db，窗口不许被卡住', async () => {
+    const ctx = await opened();
+    ctx.repo.hangAppends = true;
+    ctx.session.submit(submitReq(PID, DOC));
+    const closing = ctx.session.close(closeReq(PID, DOC, 'graceful'));
+    // 拨到 10 秒会顺路敲一发心跳（5 秒那一档），但它**不会**留下第二个定时器：
+    // `close` 的续体先跑 `stop()`，而 `scheduleBeat()` 第一行就是 `if (this.stopped) return`。
+    // 于是下面那句 `pending()` 是 0 而不是 1 —— 读的人不必怀疑这一格会飘（T7 的 `stopped` 闸门在这里第二次上岗）。
+    ctx.timer.advance(CLOSE_FLUSH_TIMEOUT_MS);
+    await expect(closing).rejects.toMatchObject({ code: 'db' });
+    expect(ctx.calls).toContain('release');
+    expect(ctx.calls).toContain('end');
+    expect(ctx.timer.pending()).toBe(0);
+  });
+});
+```
+
+**格数订正**：上面 1..16 分在四个 `describe` 里 —— 1、2、3 三格，4..7 四格，8..11 四格，12..16 五格 ⇒ 共 **16 格**。计划文本里原先写 14，本 chunk 与 t8a 的 Files 行、Step 3 标题已一并改成 16，理由：写的时候合了两格（"open 前置两步各自失败"），落地时又必须分开 —— `not-configured` 那条的判据是"`openDb` 零调用"（红线"没配好就不许连库"），`db` 那条的判据是"calls 逐字等于两步"，把它们并成一格会让其中一支红时读不出红在哪。Step 8 提交前按盘上实测重数一遍再填验收表（计划 3 的教训：席位被告知计划数会去追幻影差异）。
+
+**夹具订正（同一处文本的两条判据都靠它）**：`FakeRepo` 的 `calls` 现在由 harness 传进来，与 `FakeLock`、`PersistPorts` 共用**同一根时间线针**。原先它自己持有一个数组，于是 `ctx.calls` 里永远看不到 `load:edit` / `append:8` / `close:same` —— 第 4、5 格的 `toContain` 会**假绿**（读不出红），第 12 格那条 `filter(startsWith('append'))` 更是"就算 flush 跑了也说没跑"，而第 14 格"flush→closeProject→release→end"的顺序判据直接立不起来。三件假把式共用一根针是这一族测试的全部价值所在：`toEqual([...])` 逐字比顺序，才读得出"少了一步"和"顺序反了"这两种不同的红。
+
+Run: `npx vitest run apps/desktop/test/unit/session.test.ts apps/desktop/test/unit/document-wire.test.ts apps/desktop/test/unit/autosave.test.ts > tmp/t8-session.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`，三档共 `16 + 7 + 24` 格（24 那一档是搬假钟的"没丢东西"证人）。`npx tsc --noEmit -p apps/desktop/tsconfig.test.json` 同码必须 `exit=0`（`session.test.ts` 里那些 `as` 之外的类型都由它判）。
+
+**这一档的两个已知薄弱点，写在这里而不是留给评审去抓**：
+① 格 11 的"号一个都不许回收"只断到"停写前 append 是空的"，它没有断"重开之后 `issuedTurn` 与库里的 `journal_turn` 一致"—— 那是 `open` 的 `fromJournal` 读数（格 4）与重开路径（格 12 拆干净 + 下一次 `harness()`）拼起来才成立的主张，跨两格。真库那一头的凭据在 `test/db/autosave-journal.test.ts` 与 T4 的跳号那一格里，不在这里。
+② `emitStatus` 在 `open` 那一刻会不会被调，本档**不主张**（T7 的 `report()` 时机是引擎内部的事）。格 12/14 只断"最后一发是 `stopped`"，用的就是 `statuses.at(-1)` 而不是 `statuses[0]` —— 前者不依赖引擎在构造时是否汇报过。
+
+- [ ] **Step 4: 接线那一档 —— `listEmergency` + `ipc-persist.ts` + `main/index.ts` 两行 + 边界三格**
+
+顺序是**先 fs 侧、再 electron 侧**：`ipc-persist.ts` 的 ports 要 import `listEmergency`，反过来不成立（emergency 不认识 electron 也不认识 session）。
+
+**① `apps/desktop/src/main/persist/emergency.ts` 末尾追加**
+
+```ts
+/**
+ * 抢救件的读侧形状。为什么**不** import protocol 的 `EmergencyRef`：这一族文件住在 fs 侧，
+ * `{ turn, path }` 与那张表结构同型，直接写得让 fs 侧认识 protocol —— T9 换 wire 形状时就得改两个包。
+ * 同一理由见 `EmergencyInput` 为什么比 `EmergencyPayload` 少一个 `patch`（T7 ⑨ 段）。
+ */
+export interface EmergencyFound {
+  readonly turn: number;
+  readonly path: string;
+}
+
+/**
+ * 读出某个工程在盘上的现场，**按 turn 升序**（写侧的 `pruneEmergency` 是"新的在前"，因为裁剪要砍尾巴；
+ * 读侧给横幅，升序才读得出"最新那一份是第几发"）。
+ *
+ * 除 `userDataDir` 为空串那一刀（`emergencyDir` 的参数守卫，与写侧同一把尺，**不吞** ——
+ * 吞了就把"我们没接线"说成"盘上没有现场"），其余失败一律不抛：这一发发生在 `open` 的途中，
+ * 读目录失败不能把"打开工程"整个拒掉。但**也不能悄悄返回空**：横幅上"有 K 发没进库"那句
+ * 要是因为读不动就说成"没有"，那是这一族文件最不该撒的一句谎 —— 所以除 ENOENT 之外都 `console.error` 一声。
+ */
+export function listEmergency(userDataDir: string, projectId: EntityId): EmergencyFound[] {
+  const dir = emergencyDir(userDataDir);
+  const found: EmergencyFound[] = [];
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch (err) {
+    if ((err as { code?: unknown }).code !== 'ENOENT') {
+      console.error(`[dajia] 抢救件目录读不动，"有几发没进库"这一发只能空着：${describeError(err)}`);
+    }
+    return found;
+  }
+  for (const name of names) {
+    const m = FILE_RE.exec(name);
+    const stem = m?.[1];
+    const rawTurn = m?.[2];
+    // 词干直接等于要查的工程号：形状不认识与别人的文件都从这里出局（与 pruneEmergency 同一口径）。
+    if (stem !== projectId || rawTurn === undefined) continue;
+    const turn = Number(rawTurn);
+    if (!Number.isSafeInteger(turn) || turn < 1) continue;
+    found.push({ turn, path: join(dir, name) });
+  }
+  return found.sort((a, b) => a.turn - b.turn);
+}
+```
+
+`projectId` 在这里**不做** `isEntityId` 守卫：它是筛选键而不是路径片段（写侧那一刀的理由是"串要进文件名"，读侧没有这件事），非法号自然匹配不到任何东西。调用方递来的号已经过 `parseOpenRequest`（`EntityIdSchema`）。
+
+`apps/desktop/test/unit/emergency.test.ts` 的改动有**两**处：把 import 名单里的 `writeEmergencySnapshot` 那一族加上 `listEmergency`，`vitest` 那一行加上 `vi`（第二格要 spy `console.error`）；然后在文件末尾追加下面这个 `describe`。**六个原有格子与它们的判据一字不动**，`dir` / `dirB` 也不共用 —— 新格子自己造临时目录，否则"几份现场"这个数会被别的格子的写入污染（T7 那 6 格在同一个 `dir` 里反复写）。
+
+```ts
+describe('listEmergency：把盘上的现场读回横幅（T8 的唯一读者）', () => {
+  // 本 describe 自己的目录：计数类判据不能依赖别的 describe 写过几份。
+  let dirC = '';
+  beforeAll(() => {
+    dirC = mkdtempSync(join(tmpdir(), 'dajia-emergency-list-'));
+  });
+  afterAll(() => {
+    rmSync(dirC, { recursive: true, force: true });
+  });
+
+  it('按 turn 升序给出本工程的每一份；别人的、形状不认识的一个都不许混进来', () => {
+    // 故意倒着写，而且**最大那份用两位数（10）而不是个位数**：个位数时文件名序与数值序同序
+    //（写 9、4、7 读出来就是 4、7、9），"按 turn 升序排"这一发被删掉也照样绿 —— 那一版的这一格只证了 `readdirSync` 的恩赐。
+    // 有了 10，`[..., '-turn-10.json', ..., '-turn-4.json', ...]` 与 `[4, 7, 10]` 是两串不同的数，
+    // 于是 `found.sort((a, b) => a.turn - b.turn)` 那一句有了能红的判据（变异表 T8-M12）。
+    for (const turn of [10, 4, 7]) {
+      const w = writeEmergencySnapshot(dirC, {
+        projectId: PID_A,
+        turn,
+        error: '写库失败',
+        doc: Document.create(PID_A),
+      });
+      if (!w.ok) throw new TypeError(`夹具塌了：${w.error}`);
+    }
+    const other = writeEmergencySnapshot(dirC, {
+      projectId: PID_B,
+      turn: 1,
+      error: '写库失败',
+      doc: Document.create(PID_B),
+    });
+    if (!other.ok) throw new TypeError('夹具塌了：别人的那一份也没写成');
+    // 两个"长在这儿但不是现场"的文件：形状不对的（词干非 UUIDv7）与根本不是这族名字的。
+    const subdir = join(dirC, EMERGENCY_DIR_NAME);
+    writeFileSync(join(subdir, 'notes.txt'), '不是现场', 'utf8');
+    writeFileSync(join(subdir, 'bogus-turn-5.json'), '{}', 'utf8');
+
+    const found = listEmergency(dirC, PID_A);
+    expect(found.map((f) => f.turn)).toEqual([4, 7, 10]);
+    expect(found[0]?.path).toBe(join(subdir, `${PID_A}-turn-4.json`));
+    // path 不是装饰：它是能打开的绝对路径，且开出来就是那份 envelope（横幅要给人抄去查）。
+    for (const f of found) {
+      expect((JSON.parse(readFileSync(f.path, 'utf8')) as { kind: unknown }).kind).toBe(
+        'dajia.emergency.v1',
+      );
+    }
+    // 分桶在读侧也成立：B 只看得到自己那一份，A 的三份一份都不许挂到 B 名下。
+    expect(listEmergency(dirC, PID_B).map((f) => f.turn)).toEqual([1]);
+  });
+
+  it('目录不存在 ⇒ 空且不吭声；读盘真失败 ⇒ 空 + 一声 console.error（不许谎报"没有现场"）', () => {
+    // ENOENT 是每个新工程的正常第一面：喊一声等于把噪音做成功能。
+    expect(listEmergency(join(dirC, 'never-created'), PID_A)).toEqual([]);
+
+    // "真失败"那一支要造的是**非 ENOENT** 的读盘失败，而形状要挑稳的：把 `emergency` 那一层本身
+    // 做成一个普通文件 ⇒ `readdirSync` 直接落在文件节点上，两个平台都给 ENOTDIR。
+    // （另一条写法 —— 把 `userDataDir` 指到一个普通文件、靠 `…/a-file/emergency` 去找 —— 不选它：
+    // 那要走"祖先不是目录"的映射，Windows 上给的是 ENOENT，会被上面那一支吞掉，
+    // 于是这一格在一台机器上绿、在另一台上绿得没有意义。
+    // 本机 2026-10-03 实测（探针 `.superpowers/sdd/…/probe-enotdir.mjs`，留在本计划的 git-ignored 工作区里）：
+    // `readdirSync(普通文件)` ⇒ `ENOTDIR`，`readdirSync(普通文件 + '/emergency')` ⇒ `ENOENT`。）
+    const isolated = mkdtempSync(join(tmpdir(), 'dajia-emergency-eisdir-'));
+    const logged: unknown[][] = [];
+    try {
+      writeFileSync(join(isolated, EMERGENCY_DIR_NAME), 'x', 'utf8');
+      const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+        logged.push(args);
+      });
+      try {
+        expect(listEmergency(isolated, PID_A)).toEqual([]);
+      } finally {
+        spy.mockRestore();
+      }
+    } finally {
+      rmSync(isolated, { recursive: true, force: true });
+    }
+    expect(logged.length).toBe(1);
+    expect(String(logged[0]?.[0])).toMatch(/读不动/);
+
+    // 第三条：空 userDataDir 那一刀**不吞**（参数守卫与写侧同一把尺）。
+    expect(() => listEmergency('', PID_A)).toThrow(/不能是空串/);
+  });
+});
+```
+
+**② `apps/desktop/src/main/ipc-persist.ts`**
+
+本文件是 T8 唯一新增的、许 import `electron` 的 main 文件（第 ⑥ 段），也是**唯一**许认识 mysql2 连接本体的地方 —— ports 那张表（`DbHandle.raw: unknown`）就是为它留的向下转型位。
+
+```ts
+import { hostname } from 'node:os';
+import { app, ipcMain, type BrowserWindow, type WebContents } from 'electron';
+import type { Pool } from 'mysql2/promise';
+import {
+  INVOKE_CHANNELS,
+  IPC,
+  SAVE_STATUS_EVENT,
+  parseCloseRequest,
+  parseCloseValue,
+  parseOpenRequest,
+  parseOpenValue,
+  parseSaveStatus,
+  parseSubmitRequest,
+  parseSubmitValue,
+  type IpcChannel,
+  type IpcResult,
+  type PersistErrorCode,
+  type PersistFail,
+  type SaveStatusWire,
+} from '@dajia/protocol';
+import type { EntityId } from '@dajia/core';
+import { readMysqlEnv, type MysqlEnv } from './db/env';
+import { createDbPool } from './db/pool';
+import { migrate } from './db/migrate';
+import { acquireLock, heartbeat, newLockTicket, releaseLock, type LockTicket } from './db/locks';
+import { ProjectRepository } from './db/repository';
+import { realTimer, type EmergencyPayload, type SaveStatus } from './persist/autosave';
+import { describeError } from './persist/describe-error';
+import { listEmergency, writeEmergencySnapshot } from './persist/emergency';
+import {
+  ProjectSession,
+  SessionError,
+  type DbHandle,
+  type LockHandle,
+  type PersistPorts,
+} from './persist/session';
+
+/**
+ * 锁的归属串 = `机器名:pid`。两个读者：`project.lock_owner`（VARCHAR(200)，横幅上直接显示的那一行）
+ * 与 `command_log.actor`（VARCHAR(64)，谁的哪一号进程写的这发账）。**同一个串**：
+ * 分成两份就会漂（"锁在我这儿、账不是"这种现场没法读），而它的上限检查交给各自那把尺
+ * （`newLockTicket` 管 200，`ProjectRepository` 管 64），这里不留第二份数（P-4 口径）。
+ */
+function lockOwner(): string {
+  return `${hostname()}:${process.pid}`;
+}
+
+/** 当前要送状态的窗口。S1 一个窗口一个工程（第 ⑩ 段），所以是一个，不是一张表。 */
+let target: WebContents | null = null;
+let session: ProjectSession | null = null;
+
+// —— 三条端口实现（session.ts 不认识 electron / fs / mysql2，全部从这里进来）——
+
+/**
+ * 迁移跑在**临时连接**上：一个 `.sql` 版本里是多条 DDL，只有迁移连接开 `multipleStatements`
+ * （T2 在 `pool.ts` 的原话，P-17 又钉过那句注释"业务连接永远不开"不许删）。
+ * 所以这里确实是两个池：迁完立刻 `end()` 掉那一个，留给会话的永远是不开多语句的这一份。
+ *
+ * 每次开工程都跑一遍 `migrate`：幂等（已应用的版本读校验和比对，一致就跳过），而 T9 的
+ * 建库向导也跑同一条 —— 双跑无害。失败**原样上抛**：连接类失败由 session 包成 `'db'`，
+ * 而迁移正文被改过那一抛是 `RangeError`，同样落进 `'db'`。码的口径是"去检查数据库那一侧"，
+ * 这个场景下成立（配置指错库 / 迁移文件被改过，两边都是库那一侧的事）。
+ *
+ * 登记的限度（写进 Step 8 那一族）：T8 **不建库**。`dajia` 库不存在时这一发抛 `ER_BAD_DB_ERROR`
+ * ⇒ `'db'`，文案带原话；建库是 T9 连接向导的职责（那也是本计划唯一行使建库授权的地方）。
+ */
+async function openDb(env: MysqlEnv, projectId: EntityId): Promise<DbHandle> {
+  const migration = createDbPool(env, { multipleStatements: true });
+  try {
+    await migrate(migration, env.database);
+  } finally {
+    // 关掉迁移连接。**不**把它的失败盖在 migrate 的失败上：migrate 已经抛了就先让它抛，
+    // 这里只保证一条 —— 抛出去的那个 `DbHandle` 一个都没留下，连接不漏。
+    await migration.end().catch(() => undefined);
+  }
+  const pool = createDbPool(env);
+  try {
+    const repo = new ProjectRepository(pool, projectId, lockOwner());
+    return { repo, raw: pool, end: () => pool.end() };
+  } catch (err) {
+    // 先关池再定码：仓库构造失败时池已经建好了（mysql2 的池是懒连接，但句柄在），
+    // 不关就是每次重开漏一个池，漏到 connectionLimit 用尽时"连不上库"就不是配置错了，是我们漏的。
+    await pool.end().catch(() => undefined);
+    // 这一发只可能是仓库自己那把尺（`actor` 长度 1..64，`command_log.actor` 是 VARCHAR(64)）：
+    // 池还没被用过，连接层不可能在这里说话。所以**就地定 'internal'**（我们的拼接错了），
+    // 而不是让 session 把它包成默认的 'db' —— 那会把"屏幕上的 host:pid 太长"报成"去检查 MySQL 服务"。
+    // 这正是 `session.ts` 里 `wrap` 那条"端口自己定了码 ⇒ 原样上抛"的直通通道在 T8 的真读者。
+    throw new SessionError('internal', `仓库建不起来：${describeError(err)}`);
+  }
+}
+
+/**
+ * 拿票。`'busy'` 与 `'no-project'` 都返回 `null`（= 只读打开，第 ⑤ 段），**不抛**：
+ * 那两种情形是"库里那一行让我只能读"，不是失败。各留一行日志，因为横幅上只显示"只读"，
+ * 不显示为什么 —— 排查的人手里得有第二个来源。
+ */
+async function acquire(db: DbHandle, projectId: EntityId): Promise<LockHandle | null> {
+  // 全仓仅此一次向下转型（`DbHandle.raw` 的注释里就写着这一条代价）：
+  // session 那一侧必须不认识 Pool，否则 `persist/session.ts` 要 import mysql2，那 16 格就跑不进纯 node。
+  const pool = db.raw as Pool;
+  let ticket: LockTicket;
+  try {
+    ticket = newLockTicket({ projectId, owner: lockOwner() });
+  } catch (err) {
+    // 同样是"票还没拼出来，库一个字节都没动"：`newLockTicket` 那两把尺（projectId 形状 / owner ≤ 200）
+    // 抛的是没有 `code` 的 `RangeError`，原样递到 session 会被 `persistErrorCode` 说成 `'reconcile'`
+    // （"库里这份账不对，先别再写"）—— 那是把我们的拼接错误报成别人的账目问题。就地定 'internal'。
+    throw new SessionError('internal', `锁票拼不出来：${describeError(err)}`);
+  }
+  const outcome = await acquireLock(pool, ticket);
+  if (outcome !== 'acquired') {
+    console.log(`[dajia] 锁没拿到（${outcome}），以只读打开工程 ${projectId}`);
+    return null;
+  }
+  return {
+    beat: () => heartbeat(pool, ticket),
+    async release() {
+      const result = await releaseLock(pool, ticket);
+      if (result !== 'released') {
+        // 'not-mine' = 锁已经被人接管。这不是"解锁失败"，是"我们已经没有那把锁了"：
+        // 抛与不抛都是停手（引擎那边早按 'lost' 停了），但这句话必须留在 stdout，
+        // 否则 T10 的双进程闸门红了只能看到"写不进去"。
+        console.error(`[dajia] 解锁返回 ${result}：锁已被接管，等它自己过期`);
+      }
+    },
+  };
+}
+
+/**
+ * 事件方向的出站校验（③ 段：出站验值）。**不抛给引擎**：这一发跑在 `Autosave` 的 `onStatus` 钩子里，
+ * 抛出会被 `drain` 当成"写库失败"记进 `lastError` —— 而坏掉的是我们的发送通路，不是数据库。
+ * 宁可少报一次状态（横幅停在上一发，用户看得见它没动），也不谎报一次写失败。
+ */
+function emitStatus(status: SaveStatus): void {
+  let wire: SaveStatusWire;
+  try {
+    wire = parseSaveStatus(SAVE_STATUS_EVENT, status);
+  } catch (err) {
+    console.error(`[dajia] 保存状态过不了自己的 schema：${describeError(err)}`);
+    return;
+  }
+  if (target === null || target.isDestroyed()) return;
+  target.send(SAVE_STATUS_EVENT, wire);
+}
+
+function writeEmergency(userDataDir: string, payload: EmergencyPayload): void {
+  // 原样转交：`EmergencyInput` 比 `EmergencyPayload` 少一个 `patch`（抢救件保整份状态，T7 ⑨ 段），
+  // 多余字段按结构赋值出局，这里不重组一份。
+  const written = writeEmergencySnapshot(userDataDir, payload);
+  if (!written.ok) {
+    console.error(`[dajia] 抢救件没写成（${written.path ?? '路径也没算出来'}）：${written.error}`);
+  }
+}
+
+// —— 分发：入站验请求、出站验值、错误码闭集 ——
+
+/**
+ * 会话之外的抛到这里为止。`SessionError` 是各步已经查清过的码，原样用；
+ * `TypeError` 只有一个产地 —— protocol 那十个 `parse*` 出口（它们把 `ZodError` 收成一发 `TypeError`，
+ * T3/T4 同一族），所以这一档就是"递来的东西形状不对" ⇒ `'bad-request'`。
+ * 其余一律 `'internal'`：**默认档是"我们错了"，不是"归个类算了"**（③ 段：闭集里不留 `'unknown'` 的同一个理由）。
+ *
+ * 唯一的例外是**出站**那一发 `parseXValue`，它也抛 `TypeError` 却必须是 `'internal'` —— 所以它不换码，
+ * 而是就地换成 `SessionError('internal', …)`（`parseOutbound`），这一档才不必靠上下文猜方向。
+ */
+function errorCode(err: unknown): PersistErrorCode {
+  if (err instanceof SessionError) return err.code;
+  if (err instanceof TypeError) return 'bad-request';
+  return 'internal';
+}
+
+function fail(code: PersistErrorCode, message: string, channel: IpcChannel): PersistFail {
+  if (code === 'internal') {
+    // 'internal' 的下一步动作是"人来查"，而查的人只有 stdout：这一码必须同时留原文（③ 段）。
+    console.error(`[dajia] ${channel} 报了 internal：${message}`);
+  }
+  return { ok: false, code, message };
+}
+function requireSession(): ProjectSession {
+  if (session === null) {
+    throw new SessionError('internal', '持久化通道在 registerPersistIpc 之前被调用了：窗口比端口早到');
+  }
+  return session;
+}
+
+/** 出站再验一次：`TypeError` 在这里的含义是"main 自己把回包拼错了"，与入站那一档相反。 */
+function parseOutbound<T>(
+  channel: IpcChannel,
+  value: unknown,
+  parse: (where: string, raw: unknown) => T,
+): T {
+  try {
+    return parse(channel, value);
+  } catch (err) {
+    throw new SessionError(
+      'internal',
+      `main 自己拼的 ${channel} 回包过不了自己的 schema：${describeError(err)}`,
+    );
+  }
+}
+
+/**
+ * 屏幕递来的那一份文档会在 `session.submit` / `session.close` 里解码（`documentFromPayload`），
+ * 抛的是裸 `TypeError`（重复 id）或 `RangeError`（core 的逐实体 validate）—— **不是** `SessionError`，
+ * 因为那一族码归会话（`session.test.ts` 第 9 格钉的就是解码失败不吃号、也不被会话包码）。
+ * 到这一层只剩一个问题可答：这一发出自屏幕，还是出自 main？答案固定是"屏幕" ⇒ 就地定 `'bad-request'`，
+ * 别让 `errorCode` 的默认档把"用户递错东西"说成"我们拼错了包"。
+ *
+ * 代价照登记：这一发同时把 submit/close 里**其它**没包码的抛也说成 bad-request。已查过的形状是
+ * 会话剩下的每一发都自己定了码（`open` 的四步、`close` 的 flush 与对账），所以剩下的可能只剩"没见过的 bug" ——
+ * 它的 message 仍带 `describeError` 原话，T9 的诊断按文本分诊，不被码骗。
+ */
+async function askSession<T>(run: () => T | Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    if (err instanceof SessionError) throw err;
+    throw new SessionError('bad-request', `递来的文档解不开：${describeError(err)}`);
+  }
+}
+
+async function dispatch(channel: IpcChannel, raw: unknown): Promise<IpcResult<unknown>> {
+  try {
+    switch (channel) {
+      case IPC.projectOpen: {
+        const req = parseOpenRequest(channel, raw);
+        // `open` 里没有 inbound 文档解码（它只读库），所以不套 `askSession`：
+        // 它的每一步失败都已经在 session 里定过码了。
+        const value = parseOutbound(channel, await requireSession().open(req.projectId), parseOpenValue);
+        return { ok: true, value };
+      }
+      case IPC.journalSubmit: {
+        const req = parseSubmitRequest(channel, raw);
+        const reply = await askSession(() => requireSession().submit(req));
+        return { ok: true, value: parseOutbound(channel, reply, parseSubmitValue) };
+      }
+      case IPC.projectClose: {
+        const req = parseCloseRequest(channel, raw);
+        const reply = await askSession(() => requireSession().close(req));
+        return { ok: true, value: parseOutbound(channel, reply, parseCloseValue) };
+      }
+      default:
+        // 名册与 switch 漂开时（加了通道没写 case）必须报"我们错了"，而不是 `undefined` 回包 ——
+        // `ipc-channels.test.ts` 第 1 格也钉这一句，但那一格扫的是文本，这一句兜的是运行时。
+        throw new SessionError('internal', `没有给通道 ${channel} 写过 case`);
+    }
+  } catch (err) {
+    // 唯一的出口收窄点：任何异常都不许跨过 IPC（`invoke` 的 reject 到屏幕侧只是一个 Error，码与
+    // 下一步动作全丢）。`describeError` 会读 `err.code`，所以 `SessionError` 的 message 长成
+    // `SessionError(db): 连不上库：…` —— 前缀与 `code` 字段重复是**有意的**：横幅读字段，日志读文本。
+    return fail(errorCode(err), describeError(err), channel);
+  }
+}
+
+/**
+ * 注册持久化通道。**必须在 `app.whenReady()` 之后**（`app.getPath('userData')` 的那条规矩）。
+ * 形状照盘上现物那条 `ping`：`removeHandler` + `handle` 成对 ⇒ 重建窗口（`activate` 那一支）不残留旧 handler。
+ * 没有 `before-quit` 握手（第 ⑦ 段：那一整块归 T11），所以关窗不会自动收尾 —— 锁等 TTL 过期，
+ * 最后那次快照缺席 ⇒ 下次打开 `wasCleanShutdown === false`，那正是 spec §9 要人看见的恢复路径。
+ */
+export function registerPersistIpc(win: BrowserWindow): void {
+  target = win.webContents;
+  const userDataDir = app.getPath('userData');
+  const ports: PersistPorts = {
+    userDataDir,
+    timer: realTimer,
+    // 配置源是环境变量（④ 段：renderer 没有口令可交，T8 的通道里也不许出现口令）。
+    loadConfig: () => readMysqlEnv(),
+    openDb,
+    acquire,
+    readEmergency: listEmergency,
+    writeEmergency: (payload) => writeEmergency(userDataDir, payload),
+    emitStatus,
+  };
+  session = new ProjectSession(ports);
+  for (const channel of INVOKE_CHANNELS) {
+    ipcMain.removeHandler(channel);
+    ipcMain.handle(channel, (_event, raw: unknown) => dispatch(channel, raw));
+  }
+}
+```
+
+三条判据形状在这一族里的落点，写下来免得评审去代码里找：`dispatch` 的 `catch` 是**唯一**的出口收窄点 —— 任何异常都不许跨过 IPC 边界（`ipcRenderer.invoke` 的 reject 在屏幕侧只是一个 `Error`，码与下一步动作全丢了，那正是 spec §9 要避免的形状）。`raw: unknown` 而不是 `any`：入站值在 `parse*` 之前必须是 `unknown`，否则"验过了"这件事没有凭据。
+
+**③ `apps/desktop/src/main/index.ts` 的两行改动**
+
+改动 1 —— import 块里 `import { IPC } from '@dajia/protocol';` 之后加一行：
+
+```ts
+import { registerPersistIpc } from './ipc-persist';
+```
+
+改动 2 —— `createWindow` 里那对 ping 注册（盘上现物 `apps/desktop/src/main/index.ts:40-41`）之后紧接一行：
+
+```ts
+  registerPersistIpc(win);
+```
+
+一字不动的部分要写清：**五段 shot 分支、`whenReady` 的参数守卫、菜单摘除时机、`createWindow` 的尺寸与 `webPreferences` 全都不碰**。为什么注册放在 `createWindow` 而不是 `whenReady` 的交互模式分支里：shot 模式也要走到注册（放在 `shotPath === null` 那一支之后会漏，而那一支之后是 `return`），而注册本身不动 DOM、不改窗口尺寸、不连库 —— `readMysqlEnv` 只在 `open` 真的被调用时才跑，`--shot` 的 renderer 一行 IPC 都不发（它没有 `window.dajia.openProject` 的调用点）。五道闸门的像素判据因此与注册前逐字节同；Step 8 由控制位原码复跑五道闸门把这件事变成读数，不是主张。
+
+**④ `apps/desktop/test/unit/persist-boundary.test.ts` 追加三格**
+
+改动有**三**处：`node:fs` 的 import 加 `readdirSync` 与 `join`（`node:path`）、`node:url` 的 `fileURLToPath` 已在；新增两个路径常量与一个递归列目录的辅助函数；末尾追加三个 `it`。**原有 2 格与判据一字不动**（T7 那一格钉的是 `autosave.ts`/`emergency.ts`/`describe-error.ts`，这一族钉的是 T8 新落地的三个文件 —— 两批判据不重叠，别"顺手合并"）。
+
+```ts
+// —— T8 追加的三格 ——
+
+const SESSION = '../../src/main/persist/session.ts';
+
+/** 目录名要用**绝对路径**读：`srcOf` 那一套 URL 解析给的是文件，不是目录。 */
+const MAIN_ROOT = fileURLToPath(new URL('../../src/main', import.meta.url));
+const RENDERER_ROOT = fileURLToPath(new URL('../../src/renderer', import.meta.url));
+
+/** 递归列出目录下的 `.ts` / `.tsx`，返回**排序后的相对路径**。两格共用它，别在别处再写一份遍历。 */
+function tsUnder(root: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (entry.isDirectory()) {
+      out.push(...tsUnder(join(root, entry.name)).map((rel) => join(entry.name, rel)));
+    } else if (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) {
+      // 两种后缀都要：`src/main/**` 今天只有 `.ts`，而 renderer 那一侧**全是 `.tsx`**
+      // （App.tsx / PlanCanvas.tsx / panels.tsx）—— 只扫 `.ts` 的名单会把"屏幕侧的 protocol 值 import"
+      // 全数漏过，而那正是这一格唯一的靶子。
+      out.push(entry.name);
+    }
+  }
+  return out.sort();
+}
+
+/**
+ * 行级扫描：屏幕侧对 protocol 的 import 必须写成**一行** `import type { A, B } from '@dajia/protocol';`。
+ * 多行写法（`import type {` 换行再 `} from '@dajia/protocol';`）会被这一格误红 ——
+ * 这是这一族源码扫描已登记的共同限度（⑥ 段"注释里出现 `from 'electron'` 会误红"同族），
+ * 换来的是扫描器不需要第二个依赖（AST 解析要装 typescript 到 devDeps，不值得）。
+ */
+function untypedProtocolImports(src: string): string[] {
+  return src
+    .split('\n')
+    .filter((line) => line.includes("@dajia/protocol'") && !/^\s*import\s+type\s/.test(line));
+}
+
+describe('T8 的 import 边界：真把式只能住在 ipc-persist.ts', () => {
+  it('session.ts 既不碰 electron / node:fs / node:os，也不 import mysql2', () => {
+    const src = srcOf(SESSION);
+    for (const banned of ["from 'electron'", "from 'node:fs'", "from 'node:os'", "from 'mysql2"]) {
+      expect(src.includes(banned)).toBe(false);
+    }
+    // 正控制（注入通道确实在用）：缺任何一条，"端口表被绕过"就是这一格唯一会看见的时刻。
+    expect(src.includes('this.ports.loadConfig')).toBe(true);
+    expect(src.includes('this.ports.openDb')).toBe(true);
+    expect(src.includes('this.ports.acquire')).toBe(true);
+    expect(src.includes('this.ports.emitStatus')).toBe(true);
+  });
+
+  it('src/main/** 里认识 electron 的名单逐字等于 [index.ts, ipc-persist.ts]', () => {
+    const hit = tsUnder(MAIN_ROOT).filter((rel) =>
+      readFileSync(join(MAIN_ROOT, rel), 'utf8').includes("from 'electron'"),
+    );
+    // 名单比字面量：这条边界的价值在"没写进名单的那个文件就是漂移"，
+    // 而 `length <= 2` 那种宽松判据会把"有人把 createDbPool 挪进 persist/config-store.ts"说成合规。
+    // T9 的落盘结论（裁决 P-27）：`safeStorage` 的适配器住在本名单里**已有**的 ipc-persist.ts，
+    // 没有人在 config-store.ts 里 import 它 —— 所以这一格一字未动，spec §8.2 的那条例外没有被启用。
+    expect(hit).toEqual(['index.ts', 'ipc-persist.ts']);
+  });
+
+  it('屏幕侧对 @dajia/protocol 只许 type-only import（zod 不许进 renderer 的 bundle）', () => {
+    // 先证扫描器自己会红：这一族扫描最怕的形状是"永远返回空数组"。
+    expect(untypedProtocolImports("import { IPC } from '@dajia/protocol';")).toEqual([
+      "import { IPC } from '@dajia/protocol';",
+    ]);
+    expect(untypedProtocolImports("import type { IPC } from '@dajia/protocol';")).toEqual([]);
+    const files = tsUnder(RENDERER_ROOT);
+    expect(files.length).toBeGreaterThan(0);
+    for (const rel of files) {
+      expect(untypedProtocolImports(readFileSync(join(RENDERER_ROOT, rel), 'utf8'))).toEqual([]);
+    }
+  });
+});
+```
+
+为什么第三格必须存在（而"构建会挡住"这个说法是错的）：`@dajia/protocol` 在 `apps/desktop/package.json` 的 dependencies 里，vite 顺着 workspace link **解析得到**它 —— 屏幕侧写值 import 不会红，只会把 zod 一起打进 renderer 的 bundle，并且让"protocol 只住在有它的那个包"（T4 在 `entity-schema.ts` 顶部写的同一条理由）在屏幕上悄悄失效。所以这一条是**约定**，而约定的常驻证人只能扫文本。
+
+Run: `npx vitest run apps/desktop/test/unit/emergency.test.ts apps/desktop/test/unit/persist-boundary.test.ts > tmp/t8-wiring.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`，`emergency.test.ts` **8 格**（T7 的 6 + 本步 2）、`persist-boundary.test.ts` **5 格**（T7 的 2 + 本步 3）。格数以盘上实测为准并把两个数写进回填；**计划数与实测数不一致时改计划文本**（计划 3 的教训：别让席位去追幻影差异）。
+
+再单独量一次编译 —— `ipc-persist.ts` 没有 unit 格，它的三道凭据里编译期是头一道：
+
+```bash
+npx tsc --noEmit -p apps/desktop/tsconfig.json > tmp/t8-tsc-main.log 2>&1; echo "exit=$?"
+```
+
+Expected: `exit=0`。三处最容易红的地方，先写在这里：`DbHandle.raw as Pool` 那一次向下转型；`readEmergency: listEmergency` 的结构赋值（`EmergencyFound[]` → `EmergencyRef[]`，两侧都是 `readonly` 两键）；`writeEmergencySnapshot` 吃 `EmergencyInput`（少 `patch`）而端口给的是 `EmergencyPayload` —— 结构赋值允许"多余字段"，但**只在对象字面量之外**允许，直接传 `payload` 变量成立，写成字面量展开就会被 excess property check 拦。
+
+`ipc-persist.ts` 这一族**没有 unit 格**，凭据是三条而不是四条，登记清楚：① 编译期（上面那条 `tsc`）；② `ipc-channels.test.ts` 的三格源码扫（Step 5）；③ 五道闸门的原码复跑 + T10 的双进程闸门 + T11 的 `--persist-shot`（真把式只能在真环境里证，这正是 P-2 划界之后剩下的那一半，也是 `persist/**` 保持 electron-free 的全部理由）。限度照登记：本文件里的 ports 实现（`openDb` / `acquire` / `emitStatus` / `writeEmergency`）在纯 node 档不被调用，接线写错（比如把 `SAVE_STATUS_EVENT` 写成 `IPC.saveStatus` 之外的串）只有 T11 才看得见。
+
+- [ ] **Step 5: preload 那一档 —— `DajiaApi` 五件 + `ipc-channels.test.ts` 3 格 + `App.tsx` 的类型**
+
+**① `apps/desktop/src/preload/index.ts` 整文件替换**
+
+```ts
+import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
+import {
+  IPC,
+  SAVE_STATUS_EVENT,
+  type CloseRequest,
+  type CloseValue,
+  type IpcResult,
+  type OpenValue,
+  type SaveStatusWire,
+  type SubmitRequest,
+  type SubmitValue,
+} from '@dajia/protocol';
+
+/**
+ * 屏幕能问 main 的全部事情。**没有一条是"直接写库"**：五个方法背后是三条请求通道 + 一条事件，
+ * 参数与回包的形状全部由 `packages/protocol/src/persist-schema.ts` 定义（③ 段）。
+ */
+export interface DajiaApi {
+  ping(): Promise<string>;
+  /**
+   * 参数写 `string` 而不是 `EntityId`：`EntityId = string` 无品牌（core 的 `ids.ts`），
+   * 写两个名字等于让读的人多记一件事，而真正的形状检查在 main 的 `parseOpenRequest`。
+   */
+  openProject(projectId: string): Promise<IpcResult<OpenValue>>;
+  submitJournal(request: SubmitRequest): Promise<IpcResult<SubmitValue>>;
+  closeProject(request: CloseRequest): Promise<IpcResult<CloseValue>>;
+  /** 返回注销函数：屏幕侧一份 store 一次订阅，撤干净是测试（每格一个 store）与 T11 的前提。 */
+  onSaveStatus(listener: (status: SaveStatusWire) => void): () => void;
+}
+
+const api: DajiaApi = {
+  // 这里的 `as` 是**声明**，不是校验。校验在 main 的出口那一发（`parseXValue`），
+  // 而 preload 不可能再验一遍：`apps/desktop` 没有 zod 依赖，pnpm 的严格 node_modules 也解析不到
+  // protocol 那一份（T4 写在 `entity-schema.ts` 顶部的同一条理由）。
+  ping: () => ipcRenderer.invoke(IPC.ping) as Promise<string>,
+  openProject: (projectId) =>
+    ipcRenderer.invoke(IPC.projectOpen, { projectId }) as Promise<IpcResult<OpenValue>>,
+  submitJournal: (request) =>
+    ipcRenderer.invoke(IPC.journalSubmit, request) as Promise<IpcResult<SubmitValue>>,
+  closeProject: (request) =>
+    ipcRenderer.invoke(IPC.projectClose, request) as Promise<IpcResult<CloseValue>>,
+  onSaveStatus: (listener) => {
+    // 包一层再挂：`IpcRendererEvent` 不越过 contextBridge（那是 electron 的对象，屏幕侧拿到只会是噪音），
+    // 也因为这个注销函数要把**同一个**引用交给 removeListener —— 直接挂 `listener` 就撤不掉。
+    const wrapped = (_event: IpcRendererEvent, status: SaveStatusWire): void => {
+      listener(status);
+    };
+    ipcRenderer.on(SAVE_STATUS_EVENT, wrapped);
+    return () => ipcRenderer.removeListener(SAVE_STATUS_EVENT, wrapped);
+  },
+};
+
+contextBridge.exposeInMainWorld('dajia', api);
+```
+
+**② `apps/desktop/src/renderer/src/App.tsx`：本 Step 一个字不动**
+
+那块 `declare global { interface Window { dajia: DajiaApi } }`（盘上现物，必填）**不在这里改**，而是由 Step 6 ④ 段附带那一节整块搬进 `projectStore.ts` 并在那里改成可选。搬家而不是就地改的两条理由，写在那里，这里只留一条 Step 5 自己要紧的：
+
+**本 Step 不许顺手把它改成可选。** 就地改会在 `App.tsx` 与 `projectStore.ts` 之间留下两次同名不同型的 `Window['dajia']` 声明 ⇒ `tsc` 报 TS2717，而它红在**这一族没打算碰的那份文件**里。Step 5 的编译判据（本节末那一发 `tsc -p tsconfig.json`）只覆盖 `src/main` / `src/preload` / `src/renderer/src`，红成那样的话读起来像"preload 写坏了"。
+
+顺带交代判据为什么在这儿是"可选"这一族的前提：`readDajia()`（Step 6 落在 `projectStore.ts`）的 null 分支要有类型支撑。写必填就是在告诉每个读者"这里一定有"，于是 `window.dajia.openProject(...)` 直接落地；而 preload 一旦漏注入（打包路径写错那一型），真相是**横幅上什么都不显示 + 屏幕照常能画**，不是崩。可选之后每个调用点被迫先处理没有，而没有的那一支正好是第 ⑧ 段要求的"与没接持久化完全一致"的那一屏。
+
+**③ `apps/desktop/test/unit/ipc-channels.test.ts`（3 格）**
+
+为什么又一个文件只有 3 格：它盯的是**两个进程之间的名单对账**，不是任何一个函数的行为。`persist-schema.test.ts` 第 10 格钉的是"名册 == protocol 的通道全集"（包内自洽），这一格钉的是"名册在 main 与 preload **两边都有落点**"—— 后者只有跨文件扫描才看得见，而跨文件扫描混进那两个文件里都会变成"测试在测 import 语句"。
+
+```ts
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+import { INVOKE_CHANNELS, IPC, SAVE_STATUS_EVENT, type IpcChannel } from '@dajia/protocol';
+
+const MAIN = '../../src/main/ipc-persist.ts';
+const PRELOAD = '../../src/preload/index.ts';
+
+function srcOf(relative: string): string {
+  return readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');
+}
+
+/**
+ * 通道在 `IPC` 表里的**键名**（`projectOpen`）。为什么不扫字符串值（`'dajia:project-open'`）：
+ * 注册与订阅在源码里写的都是 `IPC.projectOpen`，扫值会把"硬编码那一条通道名"也算成合规 ——
+ * 而硬编码正是这一格要避免的第二份产地。
+ */
+function keyOf(channel: IpcChannel): string {
+  const key = Object.keys(IPC).find((k) => IPC[k as keyof typeof IPC] === channel);
+  if (key === undefined) throw new Error(`通道 ${channel} 不在 IPC 表里：名册与表漂了`);
+  return key;
+}
+
+describe('三条请求通道 + 一条事件的两端对账', () => {
+  it('名册里每一条都在 main 有 case、在 preload 有 invoke（只改一边就红）', () => {
+    const main = srcOf(MAIN);
+    const preload = srcOf(PRELOAD);
+    for (const channel of INVOKE_CHANNELS) {
+      const key = keyOf(channel);
+      expect(main.includes(`case IPC.${key}:`)).toBe(true);
+      expect(preload.includes(`ipcRenderer.invoke(IPC.${key}`)).toBe(true);
+    }
+    // 正控制：名册悄悄变短（或为空）时上面那个循环一句都不断，这一行才是"扫过了三条"的凭据。
+    expect(INVOKE_CHANNELS.length).toBe(3);
+  });
+
+  it('保存状态这条事件两头都在：main 发、preload 订，且给得出注销', () => {
+    expect(srcOf(MAIN).includes('send(SAVE_STATUS_EVENT')).toBe(true);
+    const preload = srcOf(PRELOAD);
+    expect(preload.includes('ipcRenderer.on(SAVE_STATUS_EVENT')).toBe(true);
+    // 注销不是装饰：一个 store 一份订阅（`createProjectStore` 在模块加载时挂一次，`reopenAsEdit()`
+    // 不重挂 —— 它靠 `open()` 里那句 `save: null` 清场）。这份注销函数给的是 T8 测试与 T11 的前提：
+    // `project-store.test.ts` 每格建一个 store，撤不干净就是往一份已经作废的 store 里写状态。
+    expect(preload.includes('ipcRenderer.removeListener(SAVE_STATUS_EVENT')).toBe(true);
+  });
+
+  it('preload 一行数据库都不许碰（"renderer 永不接触数据库"的常驻证人）', () => {
+    const preload = srcOf(PRELOAD);
+    // 正控制先走一步：同一份文本里必须有 `ipcRenderer.invoke`，否则"没搜到"只说明读错了文件。
+    expect(preload.includes('ipcRenderer.invoke')).toBe(true);
+    for (const banned of ['mysql', 'node:fs', 'readFileSync', 'createPool', 'password']) {
+      expect(preload.includes(banned)).toBe(false);
+    }
+  });
+});
+```
+
+`'password'` 出现在最后那一格里是④段的另一半：`preload` 的**文本**里连这个键名都不许出现。**T9 落盘时的结论是这条禁令原样保留**（t9e 裁决 P-33）——`DajiaApi` 那五个新入口把口令藏在 `ConnectionInput` 这个**类型名**后面，键名在 preload 的文本里一次都不出现，所以"摘出来"这件事根本不需要发生。这里不留 TODO：下一位编辑者读到"必须单独摘出来"会照做，而把它摘掉的结果是给口令开一条没有证人的通路（④段那句"改判据由计划的作者先说清楚"管的正是这种时刻）。
+
+限度照登记（这一族源码扫描的共同代价）：注释里写出被禁的那串就会误红 —— 本文件的注释用的是 `IPC.projectOpen` 与 `createDbPool`，不是被禁的字面量。`persist-boundary.test.ts` 那一族已按同一把尺登记过。
+
+Run: `npx vitest run apps/desktop/test/unit/ipc-channels.test.ts apps/desktop/test/unit/session.test.ts > tmp/t8-preload.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`，`ipc-channels.test.ts` **3 格**、`session.test.ts` 的格数与 Step 3 结束时**同一个数**（16）。这一条跑的是"接线改到 preload 之后，会话那一档没被顺手碰坏"—— 它不是新判据，是复跑判据。
+
+`npx tsc --noEmit -p apps/desktop/tsconfig.json` 同码必须 `exit=0`。**注意是哪一份 tsconfig**：盘上现物 `apps/desktop/tsconfig.node.json` 的 `include` 只有 `electron.vite.config.ts` 一个文件，`src/preload` 住在 `tsconfig.json` 的 `include`（Step 2 之后是 `["src/main", "src/preload", "src/shared", "src/renderer/src"]`；改前三样，盘上现物实测）里 —— 跑错那一份会得到 `exit=0` 而什么都没查（`IpcRendererEvent` 漏写成值 import 这种错只有 `verbatimModuleSyntax` 的那一侧看得见，而这一族错只有真编译过 preload 才看得见）。
+
+- [ ] **Step 6: 屏幕那一档 —— `editorStore` 的换手与四处只读闸门 + `projectStore.ts` + 20 格（9 + 11）**
+
+本步先记一条**改判**，因为它动的是计划 3 已经落地、五道闸门正踩在上面的语义；②～⑦ 才是这一档的代码。写完的顺序也照这个来：先改扳机（②③），再写读者（④），最后两档测试（⑥⑦）。
+
+**①（裁决 P-21）`dispatchBatch` 从「一批只扳一次」改成「每应用一条扳一次」。**
+
+盘上现物（`editorStore.ts` 的 `dispatchBatch` 末尾）是：应用完 N 条之后一发 `set`，注释写着「应用了几条就只 +1 一次 revision：扳机管的是'该重绘了'，不是'重绘几次'」。那句话在计划 3 是对的，因为那时候 `revision` 只有**一个**读者：`PlanCanvas` 的绘制 effect。计划 4 之后它有了第二个读者 —— `projectStore` 的订阅体（⑨段），而那个读者要的不是"该重绘了"，是**"有一条新账"**：它判的是 `log.lastPatch` 的对象身份。两件事在 `dispatch` 上恰好同频（一条命令 = 一次重绘 = 一发账），在 `dispatchBatch` 上**不同频**：
+
+- 删除走的就是 `dispatchBatch`（N 面墙 + M 樘独立洞口 = N+M 条命令）。
+- 循环里每条 `log.dispatch(cmd)` 都会换掉 `lastPatch`（T7 第 ① 段），但 `lastPatch` 是**覆盖式**的：循环结束时只剩最后那一条。
+- 于是一批只扳一次 ⇒ 订阅体只看得到最后一发 ⇒ **前 N−1 发的补丁永远不会进 `command_log`**：屏幕上删掉了四件东西，库里只记了一件。下一次打开按 `snapshot + 流水` 重建，那三件东西又回来了。
+- 这是本计划最恨的那一型（静默丢失），而且它**不抛任何东西**：`appendJournal` 收到的 turn 序列完全合法，T4 的跳号守卫与 T5 的三方对账都只能在对账那一刻才发现"库里少三行"。
+
+改法是把 `set` 挪进循环（每应用成功一条扳一次），批尾只补那一格错误文案。撤销栈的语义一字不动（`S5` 早就写明"一次删除 = 栈上的 N+M 步"，连按 Ctrl+Z 一条条退），改的只是**通知次数**从 1 变成 N —— 而"每发账都要被通知一次"这件事本来就不是新增语义，是计划 3 那句注释在只有一个读者时侥幸成立的前提现在不成立了。
+
+**为什么不许反过来在订阅体里补一条队列**（比如给 `editorStore` 加一个 `pendingPatches: Patch[]`）：那是把真源的流水挪进视图状态，而 `D4` 那条纪律（中途只活在 store 里、不进真源）反过来也成立 —— **进库的东西不许只活在 store 里**。队列要有幂等键就得用 turn，turn 又归 main 分配（P-18），于是屏幕侧要维护一个"已发但没确认"的窗口 —— 那正是 `Autosave` 已经在做的事，做第二份必然漂。让扳机每发一次，队列留在唯一的产地。
+
+**代价照登记**：一次删除会重绘 N 次而不是 1 次（N 是那条批发的命令数，样例房里最大是 4：一面外墙 + 三樘窗 ⇒ 4 次 `buildDrawList` + 4 趟 `paint`）。同步 canvas 重绘在这个量级上是毫秒级，且五道闸门判的都是**终态**像素，不是重绘次数；Step 8 由控制位原码复跑五道闸门把它变成读数。**不许**为了"少重绘几次"把这一条改回去 —— 那等于用静默丢失换一次眨眼。
+
+**② `apps/desktop/src/renderer/src/stores/editorStore.ts` 的五处改动**
+
+除这五处以外一字不动（`DragState`、`viewportStoreyId` 的那段注释、`reportPaintError`、`dispatch` 的 try/catch 本体、`undo`/`redo` 的现物文案，全部保持原样）。
+
+**改动 1 —— import 拆两行。** `TransactionLog` 现在只出现在类型位置（`readonly log: TransactionLog`），`loadProject` 要 `new` 它，于是它变成值 import；core 的 `Document` 是新的类型入参：
+
+改前（第 3 行）：
+
+```ts
+import type { Command, TransactionLog, WallEnd } from '@dajia/core';
+```
+
+改后：
+
+```ts
+import type { Command, Document, WallEnd } from '@dajia/core';
+import { TransactionLog } from '@dajia/core';
+```
+
+（`verbatimModuleSyntax` 要求这两行分开写：合成一行 `import { TransactionLog, type Document, ... }` 也编得过，但 `Document` 是纯类型、混进值 import 会让"这个文件真的依赖 core 的运行时"这件事看不清 —— 本文件确实依赖了，所以两行都比一行诚实。选拆两行是因为它同时把"哪些名字进了运行时"摊在纸面上，与 `document-wire.ts` 第 ② 段那个先例同形。）
+
+**改动 2 —— `EditorState` 里加三格声明**（插在 `reportPaintError` 之后、`undo` 之前；顺序跟着"视图 → 换手 → 写"排）：
+
+```ts
+  /**
+   * 只读闸门。`true` 时 `dispatch`/`dispatchBatch`/`undo`/`redo` 四个**写**动作一律只落
+   * `lastError` 一个字节都不动真源 —— 视图动作（`setStorey`/`setViewport`/`setTool`/`setDraft`/
+   * `setDrag`）不受它管：它们不改文档，挡住只是把"看"也一起废掉。
+   *
+   * 初始值 `false`：闸门环境里没人调 `setReadOnly`，那一屏与没接持久化时逐字节同（第 ⑧ 段）。
+   * 写它只有两个读者：`projectStore.open`（按 `decision`）与 `closeSession`（关掉就停手）。
+   */
+  readonly readOnly: boolean;
+  setReadOnly: (readOnly: boolean) => void;
+  /**
+   * 换手：把屏幕上这份真源换成**库里那一份**。返回 `false` = 拒收（`storeyId` 在这份文档里
+   * 不是 storey），拒收时整个 state 一个字都不动 —— 不许出现"文档换了、层还指着上一层"。
+   *
+   * `viewport` 与 `viewportStoreyId` 同时置 null，与 `setStorey` 那条 P10 配对同一个理由：
+   * 留着上一层的口径配新文档，画出来是一帧错位图；而 `PlanCanvas` 的绘制 effect 第一行就是
+   * `if (viewport === null) return`，null 那一帧是干净空白 + 它自己的占位 tab 栏。
+   * 重算由 `PlanCanvas` 那个 fit effect 负责 —— 它现在多带一个依赖 `log`，见本步第 ③ 段，
+   * 那一行是本发 `set` 能画出来的**前提**，不是顺手加的。
+   *
+   * 不碰 `readOnly`：写权限由调用方（`projectStore`）按回包的 `decision` 决定，换手本身不越权。
+   */
+  loadProject: (doc: Document, storeyId: string) => boolean;
+```
+
+**改动 3 —— 初始态加一格**，紧跟在 `draft: null,` 之后：
+
+```ts
+  readOnly: false,
+```
+
+**改动 4 —— 两个新 action**（放在 `setDraft` 之后、`dispatch` 之前）：
+
+```ts
+  setReadOnly: (readOnly) => set({ readOnly }),
+  // 拒收那一支**不 `set`**：调用方拿到 false 的时候屏幕上还是原来那一屏，
+  // 于是"被拒"这件事的记账只有一条路 —— 走 `projectStore` 的 failure 通道，不在这里另开一份。
+  loadProject: (doc, storeyId) => {
+    if (doc.get(storeyId)?.kind !== 'storey') return false;
+    set({
+      log: new TransactionLog(doc),
+      storeyId,
+      viewport: null,
+      viewportStoreyId: null,
+      drag: null,
+      draft: null,
+      tool: 'select',
+      lastError: null,
+      revision: get().revision + 1,
+    });
+    return true;
+  },
+```
+
+（`doc.get(storeyId)?.kind !== 'storey'` 是**唯一**那道闸：`Document.get` 对不存在的 id 回 `undefined`，`?.kind` 让"没这个 id"与"有但不是层"落到同一个比较上，一句判两型。不在这里查"这个 storey 属不属于 `doc.projectId`"—— `StoreyEntity.projectId` 与文档的配对由 T4 的归属守卫与 `documentFromPayload` 那条链管，这里再查一遍就是第三个产地。）
+
+**改动 5 —— 四处只读闸门**。四处都是同一形状：**第一行判闸门、只 `set` 那一格 `lastError`、直接 `return`**，原有本体从第二行起一字不动。
+
+```ts
+  dispatch: (cmd) => {
+    if (get().readOnly) {
+      set({ lastError: `只读工程：这一发改不动（${cmd.type}）` });
+      return;
+    }
+    // ↓ 以下（try/catch 与成功那发 `set`）一字不动
+```
+
+```ts
+  dispatchBatch: (cmds) => {
+    if (get().readOnly) {
+      set({ lastError: `只读工程：这一批删不掉（${String(cmds.length)} 条命令）` });
+      return;
+    }
+    const log = get().log;
+    let failed: string | null = null;
+    for (const cmd of cmds) {
+      try {
+        log.dispatch(cmd);
+      } catch (err) {
+        failed = String(err);
+        break;
+      }
+      // P-21：**每应用一条扳一次**。原先循环外那一发合并 `set` 没了 —— 理由见 Step 6 第 ① 段：
+      // `log.lastPatch` 是覆盖式的，一批只扳一次等于把前 N−1 发补丁永久吞掉，
+      // 屏幕上删四件、库里记一件，且不抛任何东西。
+      set((s) => ({ revision: s.revision + 1, lastError: null }));
+    }
+    // 半途失败：真源已经变了的那些发各扳过了，这里只补那一格文案，**不再动 revision**。
+    // 一条都没应用成功时循环没进 ⇒ revision 一字不动，与改前同一语义（失败不动扳机那条纪律没破）。
+    if (failed !== null) set({ lastError: `删不动：${failed}` });
+  },
+```
+
+`dispatchBatch` 上面那段「**它不是一个事务**」的注释里，只有「应用了几条就只 +1 一次 revision」那一句要改（改成"每应用一条扳一次，见 P-21"），其余整段 —— `TransactionLog` 没有 begin/commit/rollback、一次删除 = 栈上 N+M 步、`S5` 那条顺序、"批语义归计划 4 真源侧、UI 不许拼假事务" —— 一字不动：它讲的是**撤销栈**，P-21 讲的是**通知次数**，两件事在这里第一次分开。
+
+```ts
+  undo: () => {
+    if (get().readOnly) {
+      set({ lastError: '只读工程：撤销不动（账本没开，退了也没地方记）' });
+      return;
+    }
+    // ↓ 以下一字不动（含 `没有可撤销的操作` 那条现物文案）
+```
+
+```ts
+  redo: () => {
+    if (get().readOnly) {
+      set({ lastError: '只读工程：重做不动（账本没开，前进也没有账号可挂）' });
+      return;
+    }
+    // ↓ 以下一字不动
+```
+
+（闸门为什么**吃 undo/redo**：只读会话压根没有可退的栈（闸门挡住 dispatch，栈恒空）。真正会走到这一支的是 `closeSession` 之后 —— 账本已经关了，屏幕上再退一步就没有 turn 可挂：`submit` 会在 main 侧撞 `'session'`，但那要等一个 IPC 来回才告诉用户。就地挡住是唯一不骗人的形状。代价登记在第 ⑦ 段末尾。）
+
+**③ `apps/desktop/src/renderer/src/PlanCanvas.tsx` 的一行依赖**
+
+fit 那个 effect 现在的依赖是 `[storeyId, setViewport]`（盘上第 582 行），它里面那句注释写着「依赖里不写 `log`：`log` 是可变类实例、引用永不变，写进依赖挡不住任何东西」。那句话在计划 3 是对的，在计划 4 之后**不再成立**：`loadProject` 会换一个**新的 `TransactionLog` 实例**进来，`log` 的引用正是这时候变的 —— 而它恰恰是必须重算视口的第三个理由。
+
+不加这一行的后果不是画错，是**再也画不出来**：`loadProject` 把 `viewport` 置成 null（改动 4），重算全靠 fit effect 再跑一次。第一次打开工程时 `storeyId` 从样例房的层 id 换成库里的层 id ⇒ 依赖变了 ⇒ 会跑。但 `reopenAsEdit()`（第 ⑤ 段那条"丢锁就重开"）打开的是**同一个工程的同一份文档** ⇒ `tabs[0].storeyId` 逐字相同 ⇒ 依赖没变 ⇒ effect 不跑 ⇒ `viewport` 永远停在 null，屏幕是一张永久空白的画布，而屏幕上没有任何一句话告诉你为什么。
+
+改法：
+
+```ts
+  }, [storeyId, setViewport, log]);
+```
+
+并把那句注释补一段（**原文那句不许删**，它记录的是 resize 那一型的实测坑；只补"什么时候它不再是永真的"）：
+
+```ts
+      // 「依赖里不写 `log`」这句话到计划 4 为止是永真的，现在多了**一个**例外：
+      // `loadProject` 换手会换掉 `log` 这个实例（`editorStore` 里 `new TransactionLog(doc)` 那一行）。
+      // 引用在除换手以外的每一发 `set` 上都不变 ⇒ 加进依赖表挡不住任何东西（改文档、拖墙、切层
+      // 全都还是靠 `revision` 扳），只有换手那一发会重跑 —— 而那正是我们想要的第三个理由：
+      // 换手把 `viewport` 置了 null（P10 配对），不重跑就永远空白。
+      // 实测过的那一型：`reopenAsEdit()` 重开同一个工程，`storeyId` 逐字回到同一个值，
+      // 只有 `log` 的引用变了 ⇒ 少了这一行屏幕是一张不会消失的空画布。
+```
+
+（为什么不给 `loadProject` 里那份 null 换个写法、比如"换手时把旧视口留着"：那会画出一帧"新文档 × 旧口径"的错位图，与本文件 `viewportStoreyId` 那段 P10 判据同一个理由。为什么不在 `projectStore.open` 里直接 `setViewport(fitStorey(...))`：`fitStorey` 要的画布**像素尺寸**只有画在屏上的 `PlanCanvas` 量得到（`setStorey` 那条注释早就写明这一点），屏幕侧第二个量尺寸的读者就是第二份口径。）
+
+**④ `apps/desktop/src/renderer/src/stores/projectStore.ts`**
+
+```ts
+import { storeyTabsOf } from '@dajia/scene-2d';
+import { create } from 'zustand';
+import type { StoreApi, UseBoundStore } from 'zustand';
+import type { Document, EntityId, Patch } from '@dajia/core';
+import type {
+  CloseRequest,
+  CloseValue,
+  OpenDecision,
+  PersistErrorCode,
+  SaveStatusWire,
+  SubmitRequest,
+} from '@dajia/protocol';
+import type { DajiaApi } from '../../../preload/index';
+import { documentFromPayload, payloadFromDocument } from '../../../shared/document-wire';
+import { useEditor } from './editorStore';
+import type { EditorState } from './editorStore';
+
+/**
+ * `preload/index.ts` 里那句 `contextBridge.exposeInMainWorld('dajia', api)` 的**另一头**。
+ * 这块 `declare global` 从 `App.tsx` 搬进来（同一发要把 App.tsx 里那份删掉，见本节末「④ 段附带」，
+ * 不是 Step 7 —— 留着它编译就红在 App.tsx 里），
+ * 理由是编译范围而不是口味：`apps/desktop/tsconfig.test.json` 的 `include` 是
+ * `["test", "src/main", "src/preload"]`，`App.tsx` 住在 `src/renderer/src` 且没有任何测试 import 它
+ * ⇒ 声明留在 App.tsx 里，`readDajia()` 那一行就在**测试那一份 program** 里编不过
+ * （`pnpm typecheck` 红，而 `tsc -p tsconfig.json` 绿 —— 两发只有一发红等于判据分不出真假）。
+ * 搬到这里之后，声明与它唯一的读者 `readDajia()` 同处一个文件，被任何 import 本文件的程序自然带走。
+ */
+declare global {
+  interface Window {
+    dajia?: DajiaApi;
+  }
+}
+
+export type ProjectPhase = 'off' | 'opening' | 'open' | 'closed';
+
+/** 收尾的两种模式：`abandon` = 停写、解锁、关池，**不** flush、**不**对账（第 ⑤ 段重开前那一发）。 */
+export type CloseMode = CloseRequest['mode'];
+
+export type ProjectBannerTone = 'red' | 'amber' | 'grey';
+
+/**
+ * 横幅的那一句话。`closable` / `reopenable` 是**按钮的形状**，不是文案的修饰：
+ * 它们由 `computeBanner` 与文字同一处决定，因为"能关闭"这件事与"这句话是什么"必须同时答是。
+ * 为什么 `banner` 是 store 里的一格而不是 `useProject(bannerOf)` 那样的选择器：
+ * 选择器每发都新造一个对象，`useSyncExternalStore` 拿 `Object.is` 判 ⇒ 每帧都"变了" ⇒
+ * 整棵 React 树重渲（严重时直接死循环）。派生格落进 store、由唯一的 `put` 维护，才是这一族能测的形状。
+ */
+export interface ProjectBanner {
+  readonly tone: ProjectBannerTone;
+  readonly text: string;
+  readonly closable: boolean;
+  readonly reopenable: boolean;
+}
+
+interface ProjectFailure {
+  readonly code: PersistErrorCode;
+  readonly message: string;
+}
+
+/**
+ * `open` 成功那一刻抄下来的读数。为什么要抄而不是每次从 `OpenValue` 现算：
+ * `doc` 那一格是整份文档，留在 store 里就是 `log.document` 的第二份真源（D2b）；
+ * 而横幅要的那六格全是标量，抄一次就够，且"上次是否正常结束"这件事本来就只在打开那一刻有答案。
+ */
+export interface OpenedProject {
+  readonly projectId: EntityId;
+  readonly decision: OpenDecision;
+  readonly name: string;
+  readonly wasCleanShutdown: boolean;
+  readonly replayedRows: number;
+  readonly emergencyCount: number;
+  /** 最新那发抢救件的**绝对路径**（只当字符串用：renderer 一行 fs 都不许碰，spec §4.3）。 */
+  readonly emergencyHint: string;
+}
+
+export interface ProjectState {
+  readonly phase: ProjectPhase;
+  readonly opened: OpenedProject | null;
+  readonly failure: ProjectFailure | null;
+  /** 只从 `SaveStatusWire` 那一发事件来（T7 的 `SaveStatus` 原样过界，③段）。 */
+  readonly save: SaveStatusWire | null;
+  /**
+   * `closeSession('graceful')` 那一发的对账读数（`CloseValue` 的两格）。为什么 store 里要留它：
+   * `CloseValueSchema` 是 T8 交出、main 出口验过的形状，屏幕上没有一个读者的话它就是
+   * "过界验完就丢"的死字段 —— 而它唯一诚实的落点是关闭那一屏的那句话（31 行元素、2 行楼层
+   * 是**这一版真源在盘上的行数**，spec §9 要的"是否丢失"有一半靠它说）。
+   * `abandon` 那一支恒为 null：没跑对账就没有读数，把 null 写成 0 等于谎报"库说它干净"。
+   */
+  readonly closedReport: CloseValue | null;
+  readonly banner: ProjectBanner | null;
+  open: (projectId: string) => Promise<void>;
+  /** 丢锁之后的出路 = 关掉本会话 + 重开同一个工程（第 ⑤ 段；原地 `resume()` 被明令不调）。 */
+  reopenAsEdit: () => Promise<void>;
+  closeSession: (mode: CloseMode) => Promise<void>;
+  /** `save` 的唯一写入口。生产里唯一的读者是 `api.onSaveStatus` 那个包装（Step 5）。 */
+  setSaveStatus: (status: SaveStatusWire) => void;
+}
+
+/**
+ * 横幅文案的唯一产地。**顺序就是优先级**，每条各有一个下一步动作（③段那句"每个码都有下一步动作"
+ * 在屏幕侧的对应物）：
+ *
+ * 1. `failure`：这一发没存上 / 这一屏压根没打开成 —— 屏幕上任何东西都不许盖过它。
+ * 2. `opening` / `closed` / `off`：会话生命周期那三格。`off` 回 `null`（⑧段那一屏）。
+ *    `closed` 的那一句吃 `closedReport`：有对账读数就说读数，没有（`abandon`）就说"不再是现场"。
+ * 3. `reopenable`：只有**可写会话**才可能停写得等用户重开（只读会话压根没有 `Autosave`
+ *    ⇒ `save` 恒 null ⇒ 这一支天然只对 edit 开放，不用额外判 `decision`）。
+ * 4. `read-only`：告诉用户"这一屏一个字都不会写进库"（⑤段：拿不到锁就用 read 打开）。
+ * 5. `failed`：存不进去（`'db'` 那一族，下一步是查服务、查网络 —— 与 3 的"别再写了"相反）。
+ * 6. `!wasCleanShutdown`：spec §9 那句"明确告知恢复了什么"（⑦段：没有 before-quit，靠的就是这一格）。
+ * 7. `emergencyCount > 0`：有 K 发没并进库，现场在盘上（⑤段的代价 ① 的读者）。
+ * 8. 兜底那一句灰的：已经保存到第几发 + 队列里还有几发（①段的代价：renderer 只能读 `lastTurn`）。
+ */
+function computeBanner(
+  s: Pick<ProjectState, 'phase' | 'opened' | 'failure' | 'save' | 'closedReport'>,
+): ProjectBanner | null {
+  if (s.failure !== null) {
+    return { tone: 'red', text: s.failure.message, closable: false, reopenable: false };
+  }
+  if (s.phase === 'off') return null;
+  if (s.phase === 'opening') return { tone: 'grey', text: '正在打开工程…', closable: false, reopenable: false };
+  if (s.phase === 'closed') {
+    const rep = s.closedReport;
+    return {
+      tone: 'grey',
+      // 两种关闭给两句话：`graceful` 有对账读数就说读数（那是"没丢东西"的唯一凭据），
+      // `abandon` 没有 —— 那一支的实话是"这一屏不再是现场"，不是"库是干净的"。
+      text:
+        rep === null
+          ? '工程已关闭：这一屏不再是任何一份账的现场'
+          : `工程已关闭：盘上核对到 ${String(rep.elementRows)} 行元素、${String(rep.storeyRows)} 行楼层`,
+      closable: false,
+      reopenable: false,
+    };
+  }
+  const o = s.opened;
+  if (o === null) return null; // 不变式：`phase === 'open'` ⇒ `opened !== null`（`open` 那一发同时 `set`）
+  const save = s.save;
+  const queued = String(save?.queuedTurns ?? 0);
+  const lastTurn = String(save?.lastTurn ?? 0);
+  const reopenable = save !== null && (save.phase === 'paused' || save.phase === 'stopped');
+  if (reopenable) {
+    return {
+      tone: 'red',
+      text:
+        `工程锁丢了，已停写：第 ${lastTurn} 发是最后一发进库的，` +
+        `没存上的现场 ${String(o.emergencyCount)} 份（最新一份在 ${o.emergencyHint}）。` +
+        '重新接管会丢掉撤销栈，屏幕上已改的东西仍在。',
+      closable: true,
+      reopenable: true,
+    };
+  }
+  if (o.decision === 'read-only') {
+    return {
+      tone: 'amber',
+      text: `${o.name}：只读打开（别的会话持有工程锁）。这一屏改一个字都不会写进库`,
+      closable: true,
+      reopenable: false,
+    };
+  }
+  if (save !== null && save.phase === 'failed') {
+    return {
+      tone: 'red',
+      text: `保存失败：${save.lastError ?? '没给出原因'}（屏幕上已经改的东西还在，没存上的那几发在重试队列里）`,
+      closable: true,
+      reopenable: false,
+    };
+  }
+  if (!o.wasCleanShutdown) {
+    return {
+      tone: 'amber',
+      text: `上次没有正常结束：已从流水重放 ${String(o.replayedRows)} 发取回这份文档`,
+      closable: true,
+      reopenable: false,
+    };
+  }
+  if (o.emergencyCount > 0) {
+    return {
+      tone: 'amber',
+      text: `盘上留着 ${String(o.emergencyCount)} 份没并进库的现场（最新一份在 ${o.emergencyHint}）`,
+      closable: true,
+      reopenable: false,
+    };
+  }
+  return {
+    tone: 'grey',
+    text: `${o.name}：已保存到第 ${lastTurn} 发，队列里还有 ${queued} 发`,
+    closable: true,
+    reopenable: false,
+  };
+}
+
+/**
+ * 屏幕这一侧的会话装配。**为什么是个工厂而不是一个单例**：`api` 要从外面进来
+ * （测试递假把式，模块底部那份从 `window.dajia` 读），而订阅必须在 store 建成那一刻就挂上、
+ * 并在测试结束时能撤 —— `create()` 的 initializer 是同步执行的，所以 `subscribe` 的注销函数
+ * 只能在 `create` **外面**交回来，这就是返回 `[store, unsubscribe]` 这个形状的全部理由。
+ */
+export function createProjectStore(
+  api: DajiaApi,
+  editor: StoreApi<EditorState> = useEditor,
+): readonly [UseBoundStore<StoreApi<ProjectState>>, () => void] {
+  // 订阅那一刻的**真账**，不是 `null`：样例房是 `demoHouse()` 一路 `dispatch` 建起来的，
+  // 屏幕那份 `log.lastPatch` 从第一帧起就不是空。初始化成 null 的话，第一发订阅
+  //（哪怕只是切个层）就会把样例房最后那条建墙补丁当成"新账"递出去。
+  let lastSeen: Patch | null = editor.getState().log.lastPatch;
+  let stopWatching: (() => void) | null = null;
+
+  const store = create<ProjectState>((set, get) => {
+    /**
+     * 唯一的 `set` 出口：任何改动 state 的路径都必须走它，`banner` 由它在每一发之后重算。
+     * 分两拍（先 set 字段、再 set banner）就会有一帧"字段变了、横幅还是上一句话"，
+     * 而那一帧正是 `setStorey` 那条 P10 判据在本文件里的同型。
+     */
+    const put = (partial: Partial<ProjectState>): void => {
+      set((s) => ({ ...partial, banner: computeBanner({ ...s, ...partial }) }));
+    };
+
+    const submitOne = (doc: Document, patch: Patch, projectId: EntityId): void => {
+      // 编码在 `await` **之前**：await 之后 `log.document` 可能已经被下一发命令换掉，
+      // 那一发交出去的就是"第 N 发的补丁配第 N+1 发的整份快照" —— 库里两样各自都对，配对错。
+      const request: SubmitRequest = { projectId, patch, doc: payloadFromDocument(doc) };
+      void api
+        .submitJournal(request)
+        .then((r) => {
+          if (r.ok) {
+            // 成功只清自己那一格：`failure` 非 null 且此刻没有别的事故才清。
+            // 会不会把"打开失败"那句话抹掉？不会 —— 打开失败时压根没有会话，也就没有发能成功回来。
+            if (get().failure !== null) put({ failure: null });
+            return;
+          }
+          put({ failure: { code: r.code, message: r.message } });
+          if (r.code === 'reconcile') {
+            // 'reconcile' 的语义就是"库里这份账跟屏幕上不是同一份东西"（③段），下一步动作是停手。
+            // 'db' 那一族**不**跟着停：服务断了对账仍平，把用户的编辑权拿走才是真的坏消息。
+            editor.getState().setReadOnly(true);
+          }
+        })
+        .catch((err: unknown) => {
+          // ipcRenderer.invoke 会在通道没注册时 reject。那一发同样没存上 —— 按 'internal' 报。
+          put({ failure: { code: 'internal', message: `这一发没送出去：${String(err)}` } });
+        });
+    };
+
+    const open = async (projectId: string): Promise<void> => {
+      const phase = get().phase;
+      if (phase === 'opening' || phase === 'open') {
+        put({ failure: { code: 'session', message: '上一个工程还没收尾：先关掉再开（顺序由这一侧负责，⑤段）' } });
+        return;
+      }
+      // `opened: null` 跟着进这一发：横幅在"正在打开"那一帧不许留着**上一个**工程的名字。
+      put({ phase: 'opening', failure: null, save: null, opened: null, closedReport: null });
+      const r = await api.openProject(projectId);
+      if (!r.ok) {
+        put({ phase: 'off', failure: { code: r.code, message: r.message } });
+        return;
+      }
+      const v = r.value;
+      let doc: Document;
+      try {
+        // 文档在换手之前解不开 ⇒ main 递回来的东西与 `documentFromPayload` 那道闸对不上：
+        // 我们的装配错了，'internal'（③段那条"下一步动作是：这一发没存上，屏幕上的东西仍在"）。
+        doc = documentFromPayload(v.doc, '打开工程的回包');
+      } catch (err) {
+        put({ phase: 'off', failure: { code: 'internal', message: `回包里的文档解不开：${String(err)}` } });
+        return;
+      }
+      const tabs = storeyTabsOf(doc, v.header.projectId);
+      if (tabs.length === 0) {
+        put({
+          phase: 'off',
+          failure: { code: 'reconcile', message: '库里这个工程一份楼层都没有：没有能画的层，也就不许写' },
+        });
+        return;
+      }
+      // 换手在 `put({ phase: 'open' })` **之前**：`loadProject` 会扳一次订阅体，那时候 `phase`
+      // 还是 'opening' ⇒ 第一道闸门就把它拦住。新 log 的 `lastPatch` 恒 null 本来也发不出东西，
+      // 但两道闸门都留着是对的 —— "新 log 恒空"来自计划 3 的既有实现，不该成为这一发唯一的依赖。
+      if (!editor.getState().loadProject(doc, tabs[0].storeyId)) {
+        put({ phase: 'off', failure: { code: 'internal', message: '换手被拒：那一层 id 不在刚拿到的文档里' } });
+        return;
+      }
+      editor.getState().setReadOnly(v.decision === 'read-only');
+      put({
+        phase: 'open',
+        failure: null,
+        save: null,
+        opened: {
+          projectId: v.header.projectId,
+          decision: v.decision,
+          name: v.header.name,
+          wasCleanShutdown: v.header.wasCleanShutdown,
+          replayedRows: v.replayed.rows,
+          emergencyCount: v.emergency.length,
+          // `session.ts` 递来的是按 turn **升序**的名单（`listEmergency` 的契约），最后一发就是最新的一份。
+          emergencyHint: v.emergency.at(-1)?.path ?? '',
+        },
+      });
+    };
+
+    const closeSession = async (mode: CloseMode): Promise<void> => {
+      const o = get().opened;
+      if (o === null) return;
+      const request: CloseRequest = {
+        projectId: o.projectId,
+        doc: payloadFromDocument(editor.getState().log.document),
+        mode,
+      };
+      const r = await api.closeProject(request);
+      // 闸门落下：账本关了，屏幕上再改的那一发没有 turn 可挂。
+      // 放在 `r.ok` 判断**之外** —— main 那侧无论回什么，`close` 都已经把会话拆了（T6 的解锁与
+      // T5 的收尾在 `closeProject` 之前/之后各有一支会跑），继续让用户写只会攒一串存不进去的账。
+      editor.getState().setReadOnly(true);
+      if (!r.ok) {
+        put({ phase: 'closed', failure: { code: r.code, message: r.message }, closedReport: null });
+        return;
+      }
+      // `abandon` 恒 null（没跑对账就没有读数）；`graceful` 把 main 的两格读数留下当那一句话。
+      put({ phase: 'closed', closedReport: mode === 'graceful' ? r.value : null });
+    };
+
+    const reopenAsEdit = async (): Promise<void> => {
+      const o = get().opened;
+      if (o === null) return;
+      await closeSession('abandon');
+      await open(o.projectId);
+    };
+
+    /**
+     * 提交触发点订阅（⑨段）。三道判据的顺序不能换：
+     * 1. 身份：`patch === lastSeen` 就什么都不做 —— `revision` 是"该重绘了"的扳机，切层、改工具、
+     *    换草稿全都扳它，但都不换 `lastPatch`（T7 只在 dispatch/undo/redo 成功时换它）。
+     * 2. **先记账再判断**：`lastSeen` 必须在 null 检查与 phase 检查之前更新。反过来写的话，
+     *    换手那一发（`lastPatch` 变 null）不会被记下来，之后每一发订阅都会拿着样例房的旧补丁
+     *    重走一遍后面的判据 —— 判据挡住了账，但"为什么挡住"这件事就从每发重演变成了谜。
+     * 3. null 与 phase/decision：demo 文档那一串永不允许进用户的库（`phase !== 'open'` 是第一道，
+     *    `decision !== 'edit'` 是第二道 —— 只读会话压根没有 Autosave，走到 main 也是 `'session'`）。
+     */
+    stopWatching = editor.subscribe((state) => {
+      const patch = state.log.lastPatch;
+      if (patch === lastSeen) return;
+      lastSeen = patch;
+      if (patch === null) return;
+      const s = get();
+      if (s.phase !== 'open' || s.opened === null || s.opened.decision !== 'edit') return;
+      submitOne(state.log.document, patch, s.opened.projectId);
+    });
+
+    return {
+      phase: 'off',
+      opened: null,
+      failure: null,
+      save: null,
+      closedReport: null,
+      banner: null,
+      open,
+      reopenAsEdit,
+      closeSession,
+      setSaveStatus: (status) => put({ save: status }),
+    };
+  });
+
+  if (stopWatching === null) {
+    // 不写这一发的话，`stop` 会是个静默的空函数：测试结束时订阅没撤，下一格收走上一格的编辑，
+    // 红起来读不出是谁干的。`create` 的 initializer 是同步的，所以走到这里还是 null 就是形状变了。
+    throw new Error('createProjectStore：zustand 没同步执行 initializer，订阅撤不掉');
+  }
+  const stop = stopWatching;
+  const unsubscribeStatus = api.onSaveStatus((status) => store.getState().setSaveStatus(status));
+  return [store, () => {
+    stop();
+    unsubscribeStatus();
+  }];
+}
+
+/**
+ * 读 preload 注入的那一份接口。为什么判 `typeof window`：本文件的测试跑在 **node 档**
+ * （根 `vitest.config.ts` 没有 jsdom，T1 也没打算加），那一档压根没有 `window` 这个全局 ——
+ * 不判的话 import 这个文件就直接 ReferenceError，11 格全体起不来。
+ * 而这一发在**模块顶层**就会被 `useProject` 调用，所以它就是"这一族测试能在 node 里 import 屏幕侧
+ * store"的那道保险；判在函数里（不是模块顶层的一个常量）也是为了让测试能挂上 `globalThis.window` 再取。
+ */
+export function readDajia(): DajiaApi | null {
+  if (typeof window === 'undefined') return null;
+  return window.dajia ?? null;
+}
+
+/**
+ * 没注入时用的空壳。三个请求方法**诚实回答"没接口"**而不是抛：
+ * ⑧段要的那一屏是"横幅说清楚这一屏不会保存，画布照常能画"，不是崩。
+ * `ping` 那一支是 `reject`：它在屏幕侧没有读者（`ping` 的读者是 main 的 --shot 那一族探针），
+ * 让它响而不让它骗 —— 万一哪天有人接上它，得到的是一句真话。
+ */
+const NOT_INJECTED: DajiaApi = {
+  ping: async () => {
+    throw new Error('没有 preload 注入的 dajia 接口：ping 没人能答');
+  },
+  openProject: async () => ({
+    ok: false,
+    code: 'internal',
+    message: '没有 preload 注入的 dajia 接口：这一屏不会保存任何东西',
+  }),
+  submitJournal: async () => ({
+    ok: false,
+    code: 'internal',
+    message: '没有 preload 注入的 dajia 接口：这一屏不会保存任何东西',
+  }),
+  closeProject: async () => ({
+    ok: false,
+    code: 'internal',
+    message: '没有 preload 注入的 dajia 接口：这一屏不会保存任何东西',
+  }),
+  onSaveStatus: () => () => {
+    // 没有桥可订 ⇒ 没有可撤的东西。空函数不是"什么都没做"，是"这一族的注销契约仍然成立"。
+  },
+};
+
+/**
+ * App 用的那一份。`readDajia()` 在 node 档回 null ⇒ 空壳顶上，模块 import 不炸（那既是这一族
+ * 测试的前提，也是"打包路径写错 ⇒ 漏注入"那一型在生产里的形状：屏幕照常画，横幅说真话）。
+ */
+export const useProject = createProjectStore(readDajia() ?? NOT_INJECTED)[0];
+```
+
+> `<待实测>` 三件，都是跨包形状，执行时按 `tsc` 的原文订正并写回填：
+> ① `import type { StoreApi, UseBoundStore } from 'zustand'`：盘上现物 zustand 5.0.15 的 `index.d.ts` 是 `export * from 'zustand/vanilla'; export * from 'zustand/react';`，两个名字各自在那两份里 —— 本段是按那份 `.d.ts` 写的，没有实测过 `tsc`。若红在 `UseBoundStore` 不导出，改 `import type { StoreApi } from 'zustand'` + `import type { UseBoundStore } from 'zustand/react'`，**不许**退化成 `as any`。
+> ② `editor: StoreApi<EditorState> = useEditor`：`useEditor` 是 `UseBoundStore<StoreApi<EditorState>>`，那份 `.d.ts` 里 `UseBoundStore<S>` = `{(...): ExtractState<S>} & S`，于是它**可赋值给** `StoreApi<EditorState>`。默认实参那一支的 `subscribe`/`getState`/`setState` 三个方法全在 `StoreApi` 上 ✓。若 `tsc` 在这一行红，说明 zustand 的 `ExtractState` 那层包装变了形状 —— 那一条只能改参数类型（写成 `typeof useEditor`），不许改 `createProjectStore` 的对外契约（测试靠的是"能塞一个假 store 进来"这件事）。
+> ③ `computeBanner({ ...s, ...partial })`：`partial` 里带了 `open`/`closeSession` 这些函数的可能性（`Partial<ProjectState>` 包含 action 键），`Pick<ProjectState, 'phase' | 'opened' | 'failure' | 'save'>` 只读四格 ⇒ 结构上没问题。真报错就按报错那一行改 `put` 的参数为 `Pick<ProjectState, ...>` 的窄形状 + 让三个 action 单独 `set`（那时横幅要重算的那几处仍必须与字段同发落地）。
+
+**④ 段附带：同一发里必须改掉 `App.tsx` 的那块 `declare global`**
+
+上面那份 `projectStore.ts` 一落地，`App.tsx` 里盘上现物的 `dajia: DajiaApi`（必填）就与本文件里的 `dajia?: DajiaApi`（可选）撞成**两次同名不同型的声明** —— `tsc` 报 TS2717（"All declarations of 'dajia' must have identical modifiers"），而它红的位置在**没被改过的那份文件**里，读起来像"projectStore 写错了"。所以这两处必须同一发落地，本文件的改动面就三行：
+
+改前（盘上现物第 1、3—7 行）：
+
+```tsx
+import type { DajiaApi } from '../../preload/index';
+import { PlanCanvas } from './PlanCanvas';
+
+declare global {
+  interface Window {
+    dajia: DajiaApi;
+  }
+}
+```
+
+改后（整块删掉，连同那行 `import type` —— 本文件不再需要 `DajiaApi` 这个名字）：
+
+```tsx
+import { PlanCanvas } from './PlanCanvas';
+```
+
+`export default function App(): React.JSX.Element { return <PlanCanvas />; }` 那一行**一字不动**（横幅归 Step 7 ①，那时才整文件替换）。为什么搬家而不是在 `App.tsx` 里就地改成可选：`apps/desktop/tsconfig.test.json` 的 `include` 是 `["test", "src/main", "src/preload"]`，`src/renderer/src/App.tsx` 不在那份 program 里（盘上 318—333 行实测），而 `project-store.test.ts` 要 `readDajia()` 的 `Window['dajia']` 有声明可解 —— 声明留在 `App.tsx` 就等于"只有 import 过 App 的 program 才看得见它"，`tsc -p tsconfig.test.json` 会红在 `readDajia()` 那一行。
+
+**⑤ `apps/desktop/test/unit/editor-fixtures.ts`**
+
+两个 store 测试文件共用一份"样例房基准 + 复位"，所以它单独成文件（同族先例：t8b 把 `FakeTimer` 与 `tick` 从 `autosave.test.ts` 搬进 `fake-timer.ts` 的理由一模一样 —— 夹具的内部口径有两份实现，红的那一格就说不清是代码错还是夹具错）。`apps/desktop/test/**` 只许 import `@dajia/core`、`@dajia/protocol` 与自己包内源码（P-1 那条纪律），本文件三样都在许可内。
+
+```ts
+import { Document, uuidv7, type Entity, type EntityId } from '@dajia/core';
+import { useEditor } from '../../src/renderer/src/stores/editorStore';
+
+/**
+ * 样例房那份真源的基准三格。**读现成的 state，绝不再调一次 `demoHouse()`**：
+ * 它的 id 是随机 UUIDv7，第二次调拿到的是另一套房（`editorStore.ts` 顶上那句"只调一次"
+ * 记的就是这件事，而它在测试里同样成立 —— 基准必须是"屏幕上这一套"，不是"长得像的那一套"）。
+ */
+export const DEMO = {
+  log: useEditor.getState().log,
+  storeyId: useEditor.getState().storeyId,
+  revision: useEditor.getState().revision,
+};
+
+/**
+ * 把 store 回到"刚 import 完"那一帧。逐字段列出来而不是"存一份快照再整份塞回去"：
+ * 快照法会连 `open`/`loadProject` 这些**函数引用**一起塞回去，而那几格本来就不该动 ——
+ * 一张写明了"哪些字段属于我"的清单，比一个通配的还原器更能说明本任务动了什么。
+ *
+ * `DEMO.log` 这份可变实例本身**不回滚**（回滚要调 `undo()`，而那正是被测对象）。
+ * 于是所有用例断的是**相对量**：`depth` 与调用前比、`revision` 与 `DEMO.revision` 比。
+ */
+export function resetEditor(): void {
+  useEditor.setState({
+    log: DEMO.log,
+    storeyId: DEMO.storeyId,
+    viewport: null,
+    viewportStoreyId: null,
+    revision: DEMO.revision,
+    lastError: null,
+    drag: null,
+    draft: null,
+    tool: 'select',
+    readOnly: false,
+  });
+}
+
+/** 一份只有一个楼层的最小文档：`loadProject` 的两个分支都用它，不需要真墙。 */
+export function oneStoreyDoc(): {
+  readonly doc: Document;
+  readonly projectId: EntityId;
+  readonly storeyId: EntityId;
+  readonly wallId: EntityId;
+} {
+  const projectId = uuidv7();
+  const storeyId = uuidv7();
+  const wallId = uuidv7();
+  const entities = new Map<EntityId, Entity>([
+    [storeyId, { kind: 'storey', id: storeyId, projectId, index: 0, elevationMm: 0, heightMm: 3000 }],
+    // 一个不属于任何层的墙 id 不进文档：`loadProject` 只看 `storeyId` 那一格是不是 storey，
+    // 而"存在但不是层"那一型用**另一个 storey 的 id**去判更准（见 格 5 的第二发）。
+    [wallId, {
+      kind: 'wall', id: wallId, storeyId, startId: storeyId, endId: storeyId,
+      thicknessMm: 200, heightMm: 3000, elevationOffsetMm: 0, loadBearing: false, material: '砖',
+    }],
+  ]);
+  return { doc: Document.replaceEntities(Document.create(projectId), entities), projectId, storeyId, wallId };
+}
+```
+
+（`oneStoreyDoc` 里那面墙的 `startId/endId` 都指到 `storeyId`：**故意的**，它是给 `loadProject` 的守卫用的形状，`buildDrawList` 永远拿不到它（屏幕上没人画它）。它只需要过 `Document.replaceEntities` 那道 validate（整数毫米 + id 形状），不需要过派生复核 —— 派生复核在命令层（T7 的 `assertDerivesAfterApply`），不在 `replaceEntities` 里。这一点如果评审要问：这就是"夹具只证它该证的"那条口径。）
+
+**⑥ `apps/desktop/test/unit/editor-store.test.ts`（9 格）**
+
+```ts
+import { wallSetMaterial, uuidv7 } from '@dajia/core';
+import { fitStorey, type Viewport } from '@dajia/scene-2d';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { useEditor } from '../../src/renderer/src/stores/editorStore';
+import { DEMO, oneStoreyDoc, resetEditor } from './editor-fixtures';
+
+const WALL = DEMO.log.document.byKind('wall')[0];
+
+/** 一次 `set` 之后要逐格比的那几张（**不含** action：函数引用本来就不该动）。 */
+const KEYS = [
+  'log', 'storeyId', 'viewport', 'viewportStoreyId', 'revision',
+  'lastError', 'drag', 'draft', 'tool', 'readOnly',
+] as const;
+
+function snapshot(): Record<string, unknown> {
+  const s = useEditor.getState();
+  const out: Record<string, unknown> = {};
+  for (const k of KEYS) out[k] = s[k];
+  return out;
+}
+
+beforeEach(() => {
+  resetEditor();
+});
+
+describe('只读闸门：四处写动作、五处视图动作各归各的', () => {
+  it('只读挡住 `dispatch` 与 `dispatchBatch`：真源一字不动，只落 lastError', () => {
+    const beforeRevision = useEditor.getState().revision;
+    const beforeDepth = DEMO.log.depth;
+    useEditor.getState().setReadOnly(true);
+    useEditor.getState().dispatch(wallSetMaterial({ wallId: WALL.id, material: '混凝土' }));
+    expect(useEditor.getState().revision).toBe(beforeRevision);
+    expect(DEMO.log.depth).toBe(beforeDepth);
+    expect(String(useEditor.getState().lastError)).toMatch(/^只读工程：/);
+    // 正控制：闸门真的存在，而不是"命令自己失败了所以看起来像被挡"。
+    useEditor.getState().setReadOnly(false);
+    useEditor.getState().dispatch(wallSetMaterial({ wallId: WALL.id, material: '混凝土' }));
+    expect(useEditor.getState().revision).toBe(beforeRevision + 1);
+    expect(DEMO.log.depth).toBe(beforeDepth + 1);
+    useEditor.getState().setReadOnly(true);
+    useEditor.getState().dispatchBatch([
+      wallSetMaterial({ wallId: WALL.id, material: '钢' }),
+      wallSetMaterial({ wallId: DEMO.log.document.byKind('wall')[1].id, material: '钢' }),
+    ]);
+    expect(DEMO.log.depth).toBe(beforeDepth + 1); // 只多了正控制那一发，batch 一条都没进
+    expect(String(useEditor.getState().lastError)).toMatch(/^只读工程：这一批删不掉（2 条命令）/);
+  });
+
+  it('只读挡住 `undo`/`redo`（账本关了，退了也没地方记）', () => {
+    useEditor.getState().dispatch(wallSetMaterial({ wallId: WALL.id, material: '木' }));
+    const depth = DEMO.log.depth;
+    const revision = useEditor.getState().revision;
+    useEditor.getState().setReadOnly(true);
+    useEditor.getState().undo();
+    useEditor.getState().redo();
+    expect(DEMO.log.depth).toBe(depth);
+    expect(useEditor.getState().revision).toBe(revision);
+    expect(String(useEditor.getState().lastError)).toMatch(/^只读工程：重做不动/);
+  });
+
+  it('只读**不挡**视图动作：切层照常 +1 revision，工具/草稿/视口照旧写', () => {
+    useEditor.getState().setReadOnly(true);
+    const vp: Viewport = fitStorey(DEMO.log.document, DEMO.storeyId, 800, 600);
+    const revision = useEditor.getState().revision;
+    useEditor.getState().setStorey(DEMO.storeyId, vp);
+    expect(useEditor.getState().revision).toBe(revision + 1);
+    expect(useEditor.getState().viewportStoreyId).toBe(DEMO.storeyId);
+    useEditor.getState().setTool('wall');
+    useEditor.getState().setDrag(null);
+    useEditor.getState().setViewport(vp, DEMO.storeyId);
+    expect(useEditor.getState().tool).toBe('wall');
+    expect(useEditor.getState().viewport).toBe(vp);
+  });
+});
+
+describe('loadProject：换手那一发', () => {
+  it('成功那一支：换 log、层跟着换、视口两格同发置 null、其余视图格清零', () => {
+    const { doc, storeyId } = oneStoreyDoc();
+    useEditor.getState().setTool('wall');
+    useEditor.getState().setReadOnly(true);
+    const revision = useEditor.getState().revision;
+    expect(useEditor.getState().loadProject(doc, storeyId)).toBe(true);
+    const s = useEditor.getState();
+    expect(s.log).not.toBe(DEMO.log);
+    expect(s.log.document.equals(doc)).toBe(true);
+    expect(s.storeyId).toBe(storeyId);
+    // 两格同一发：`viewport` 与"它为哪一层算的"要么都有要么都没有（P10 同一条）。
+    expect(s.viewport).toBeNull();
+    expect(s.viewportStoreyId).toBeNull();
+    expect(s.revision).toBe(revision + 1);
+    expect(s.tool).toBe('select');
+    expect(s.drag).toBeNull();
+    expect(s.draft).toBeNull();
+    expect(s.lastError).toBeNull();
+    // 换手不越权决定写权限：`readOnly` 留着调用方（projectStore 按 decision）判。
+    expect(s.readOnly).toBe(true);
+  });
+
+  it('拒收那一支：整个 state 一字不动（两个非法入参各判一型）', () => {
+    const { doc, wallId } = oneStoreyDoc();
+    const before = snapshot();
+    expect(useEditor.getState().loadProject(doc, uuidv7())).toBe(false); // 没这个 id
+    expect(snapshot()).toEqual(before);
+    expect(useEditor.getState().loadProject(doc, wallId)).toBe(false); // id 在，但不是层
+    expect(snapshot()).toEqual(before);
+  });
+
+  it('换手把撤销栈一起换掉：旧工程的"撤销回丢锁之前"没了（⑤段代价 ②）', () => {
+    useEditor.getState().dispatch(wallSetMaterial({ wallId: WALL.id, material: '石' }));
+    expect(DEMO.log.canUndo).toBe(true);
+    const { doc, storeyId } = oneStoreyDoc();
+    useEditor.getState().loadProject(doc, storeyId);
+    const log = useEditor.getState().log;
+    expect(log).not.toBe(DEMO.log);
+    expect(log.depth).toBe(0);
+    expect(log.canUndo).toBe(false);
+    expect(log.canRedo).toBe(false);
+    // 旧栈还在旧 log 上：屏幕换到新文档以后，`undo()` 走的是新 log，不会把旧工程的补丁退回新文档里。
+    useEditor.getState().undo();
+    expect(String(useEditor.getState().lastError)).toBe('没有可撤销的操作');
+    expect(DEMO.log.depth).toBe(1);
+  });
+});
+
+describe('闸门没把计划 3 的语义碰坏', () => {
+  it('可写路径：成功 +1 且清 lastError，失败不动 revision 且落 `拖不动：`', () => {
+    const revision = useEditor.getState().revision;
+    useEditor.getState().dispatch(wallSetMaterial({ wallId: WALL.id, material: 'A' }));
+    expect(useEditor.getState().revision).toBe(revision + 1);
+    expect(useEditor.getState().lastError).toBeNull();
+    useEditor.getState().dispatch(wallSetMaterial({ wallId: uuidv7(), material: 'B' }));
+    expect(useEditor.getState().revision).toBe(revision + 1);
+    expect(String(useEditor.getState().lastError)).toMatch(/^拖不动：/);
+  });
+
+  it('P-21：`dispatchBatch` 每应用一条扳一次；半途失败只扳已应用的那几发', () => {
+    const walls = DEMO.log.document.byKind('wall');
+    const revision = useEditor.getState().revision;
+    useEditor.getState().dispatchBatch([
+      wallSetMaterial({ wallId: walls[0].id, material: 'P21-1' }),
+      wallSetMaterial({ wallId: walls[1].id, material: 'P21-2' }),
+      wallSetMaterial({ wallId: walls[2].id, material: 'P21-3' }),
+    ]);
+    // 改前这里是 +1（一批一扳），现在是 +3 —— 订阅体（projectStore 格 8）靠的就是这三下。
+    expect(useEditor.getState().revision).toBe(revision + 3);
+    expect(DEMO.log.depth).toBe(revisionDepthBaseline() + 3);
+    expect(useEditor.getState().lastError).toBeNull();
+
+    const r2 = useEditor.getState().revision;
+    const d2 = DEMO.log.depth;
+    useEditor.getState().dispatchBatch([
+      wallSetMaterial({ wallId: walls[3].id, material: 'P21-4' }),
+      wallSetMaterial({ wallId: uuidv7(), material: 'P21-x' }), // 第二条起不存在
+      wallSetMaterial({ wallId: walls[4].id, material: 'P21-5' }),
+    ]);
+    expect(useEditor.getState().revision).toBe(r2 + 1);
+    expect(DEMO.log.depth).toBe(d2 + 1);
+    expect(String(useEditor.getState().lastError)).toMatch(/^删不动：/);
+
+    // 一条都没应用成功：循环一次没进 ⇒ revision 一字不动（"失败不动扳机"那条纪律还在）。
+    const r3 = useEditor.getState().revision;
+    useEditor.getState().dispatchBatch([wallSetMaterial({ wallId: uuidv7(), material: '没门' })]);
+    expect(useEditor.getState().revision).toBe(r3);
+    expect(String(useEditor.getState().lastError)).toMatch(/^删不动：/);
+  });
+
+  it('闸门是双向门，且现物那两条空栈文案一字没动', () => {
+    useEditor.getState().setReadOnly(true);
+    useEditor.getState().undo();
+    expect(String(useEditor.getState().lastError)).toMatch(/^只读工程：/);
+    useEditor.getState().setReadOnly(false);
+    useEditor.getState().undo();
+    useEditor.getState().redo();
+    expect(useEditor.getState().lastError).toBeNull(); // 上面那发 dispatch 把 redoStack 清了，undo 也退了
+    useEditor.getState().undo();
+    useEditor.getState().undo();
+    useEditor.getState().undo();
+    const before = useEditor.getState().revision;
+    useEditor.getState().undo();
+    useEditor.getState().redo();
+    const s = useEditor.getState();
+    expect(s.revision).toBe(before);
+    expect(String(s.lastError)).toMatch(/^(没有可撤销的操作|没有可重做的操作)$/);
+  });
+});
+```
+
+**这一档的格子与 `revisionDepthBaseline()`**：`DEMO.log` 是模块级单例，同一文件里前面那几格已经往它压过撤销记录，所以"绝对 depth"没有意义 —— 上面 格 8 里那个 `revisionDepthBaseline()` 是本文件顶部的一个小助手，写法如下（**别把它写成 `DEMO.log.depth`**：`DEMO` 是 import 那一刻读的，而 格 1～7 已经改过栈）：
+
+```ts
+/** 在**调用那一刻**读栈深：`DEMO.log` 是单例，前面每一格都往它压过记录，绝对值不属于任何一格。 */
+function revisionDepthBaseline(): number {
+  return DEMO.log.depth;
+}
+```
+
+把它插在 `snapshot()` 之后、`beforeEach` 之前。它是 格 8 那一发唯一的绝对量出口，别的地方一律用"调用前读一次、调用后比"（`const d2 = DEMO.log.depth` 那种）。
+
+> `<待实测>` 两处判据的**方向**依赖计划 3 的现物，执行时按第一次跑的实际读数定，并把读数写进回填：
+> ① 本档（`editor-store.test.ts`）格 9 中段那两发 `undo()`/`redo()` 之后 `lastError` 究竟是 null 还是"没有可重做的操作"，取决于前面 8 格一共往 `DEMO.log` 压了几发、退了几发 —— 这一格判的是**那两条现物文案还活着**，不判栈的绝对深度。若实测落在那支"有得退"的分支（`lastError` 为 null、`revision` 变了），就把这一格拆成两句：`expect([null, '没有可撤销的操作', '没有可重做的操作']).toContain(s.lastError)` 是**假判据**（谁都过），不许那样写；改成"先把栈清空"那一支：`while (useEditor.getState().log.canUndo) useEditor.getState().undo();` 之后再判 `没有可撤销的操作` 那句逐字（栈清得空、`canUndo` 是 core 的公开读数，两句都是硬的）。**默认按后一种写法落地**，前一种只作为"如果 `undo()` 中途被派生复核拒绝"的备选 —— 那种情况发生的话说明 9 格里哪一发出问题了，写进回填而不是改判据。
+> ② 格 1 那句 `toMatch(/^只读工程：这一批删不掉（2 条命令）/)` 里的中文括号与数字必须与 ② 段那行代码逐字同；改文案就同时改两处，不许只改一处。
+
+**⑦ `apps/desktop/test/unit/project-store.test.ts`（11 格）**
+
+这一档全部是假把式：假 `DajiaApi`、假回包，零 electron、零 mysql2、零真窗口。`useEditor` 用**真单例**（它没有闸门之外的副作用，而"订阅体读的是同一份真源"这件事恰恰要真 store 才证得出来），所以每个 `createProjectStore` 都要在 `afterEach` 里撤干净 —— 忘了撤的代价不是泄漏一个句柄，是**下一格收走上一格的编辑**（两份订阅挂在同一个 editor 上，会各发一份账），那种红读起来像"代码错了"。
+
+```ts
+import { wallSetMaterial } from '@dajia/core';
+import { demoHouse, fitStorey, storeyTabsOf } from '@dajia/scene-2d';
+import { describe, expect, it, afterEach } from 'vitest';
+import type {
+  CloseRequest,
+  DocumentPayloadShape,
+  OpenDecision,
+  PersistErrorCode,
+  SaveStatusWire,
+  SubmitRequest,
+} from '@dajia/protocol';
+import { documentFromPayload, payloadFromDocument } from '../../src/shared/document-wire';
+import { useEditor } from '../../src/renderer/src/stores/editorStore';
+import { createProjectStore, readDajia } from '../../src/renderer/src/stores/projectStore';
+import type { DajiaApi } from '../../src/preload/index';
+import { DEMO, resetEditor } from './editor-fixtures';
+import { tick } from './fake-timer';
+
+/** 服务端那份文档：**故意**再调一次 `demoHouse()` —— 它必须与屏幕上那套不是同一套房
+ *  （随机 id ⇒ 两套房），于是"换手以后屏幕上画的确实是回包那一份"这件事才判得出来。
+ *  与 `editor-fixtures.ts` 那句"绝不再调一次"不冲突：那儿要的是**基准**，这儿要的是**对手**。 */
+const SERVER = demoHouse();
+const SERVER_PID = SERVER.doc.projectId;
+
+const STATUS_IDLE: SaveStatusWire = {
+  phase: 'idle', queuedTurns: 0, lastTurn: 7, snapshotTurn: 5,
+  rowsSinceSnapshot: 2, lastError: null, pauseReason: null,
+};
+
+function openValueFixture(init: {
+  doc?: DocumentPayloadShape;
+  decision?: OpenDecision;
+  name?: string;
+  wasCleanShutdown?: boolean;
+  replayedRows?: number;
+  emergencyCount?: number;
+}) {
+  const payload = init.doc ?? payloadFromDocument(SERVER.doc);
+  const projectId = payload.projectId;
+  const count = init.emergencyCount ?? 0;
+  return {
+    decision: init.decision ?? 'edit',
+    header: {
+      projectId,
+      name: init.name ?? '样例房',
+      schemaVersion: 1,
+      journalTurn: 0,
+      wasCleanShutdown: init.wasCleanShutdown ?? true,
+    },
+    doc: payload,
+    snapshot: null,
+    replayed: { rows: init.replayedRows ?? 0, fromSeq: null, toSeq: null },
+    emergency: Array.from({ length: count }, (_unused, i) => ({
+      turn: i + 1,
+      path: `C:/dajia/emergency/${'x'.repeat(36)}-turn-${String(i + 1)}.json`,
+    })),
+  };
+}
+
+function makeApi() {
+  const submits: SubmitRequest[] = [];
+  const closes: CloseRequest[] = [];
+  const opens: string[] = [];
+  /**
+   * 三个假把式共用的一根顺序针（同族先例：`session.test.ts` 的夹具订正）：
+   * `reopenAsEdit()` 那格要判的是"先 abandon 再 open"，而 `toEqual` 逐字比一串名字才读得出
+   * "少一步"和"顺序反了" —— 分开数 `closes.length` 与 `opens.length` 只能证"各来了一次"。
+   */
+  const calls: string[] = [];
+  const listeners: Array<(s: SaveStatusWire) => void> = [];
+  const queue: ReturnType<typeof openValueFixture>[] = [];
+  const box = {
+    /** 非 null ⇒ 这一发 `open` 直接回失败（`opens` 与 `calls` 照记：失败重试那一型要有证人）。 */
+    openFail: null as { code: PersistErrorCode; message: string } | null,
+    submitFail: null as { code: PersistErrorCode; message: string } | null,
+  };
+  const api: DajiaApi = {
+    ping: async () => 'pong',
+    openProject: async (projectId) => {
+      opens.push(projectId);
+      calls.push('open');
+      if (box.openFail !== null) return { ok: false, code: box.openFail.code, message: box.openFail.message };
+      const next = queue.shift();
+      if (next === undefined) throw new Error('夹具没准备回包：这一发 open 会挂在 await 上');
+      return { ok: true, value: next };
+    },
+    submitJournal: async (request) => {
+      submits.push(request);
+      calls.push('submit');
+      if (box.submitFail !== null) {
+        return { ok: false, code: box.submitFail.code, message: box.submitFail.message };
+      }
+      return { ok: true, value: { outcome: 'queued', acceptedTurn: submits.length } };
+    },
+    closeProject: async (request) => {
+      closes.push(request);
+      calls.push(`close:${request.mode}`);
+      return request.mode === 'abandon'
+        ? { ok: true, value: { elementRows: null, storeyRows: null } }
+        : { ok: true, value: { elementRows: 31, storeyRows: 2 } };
+    },
+    onSaveStatus: (listener) => {
+      listeners.push(listener);
+      return () => {
+        const at = listeners.indexOf(listener);
+        if (at >= 0) listeners.splice(at, 1);
+      };
+    },
+  };
+  return { api, submits, closes, opens, calls, listeners, queue, box };
+}
+
+type Fake = ReturnType<typeof makeApi>;
+
+/** 每一格自己的 store + 订阅，`afterEach` 统一撤（见本节开头那句"下一格收走上一格"）。 */
+const stops: Array<() => void> = [];
+
+function mount(f: Fake) {
+  const [store, stop] = createProjectStore(f.api, useEditor);
+  stops.push(stop);
+  return store;
+}
+
+/** 把 `open` 走完（含 `loadProject` 那一发订阅与 `put` 那一发），并等 `submitJournal` 的微任务落地。 */
+async function openProject(f: Fake, store: ReturnType<typeof mount>, init?: Parameters<typeof openValueFixture>[0]) {
+  f.queue.push(openValueFixture(init ?? {}));
+  await store.getState().open(SERVER_PID);
+  await tick();
+}
+
+afterEach(() => {
+  for (const stop of stops) stop();
+  stops.length = 0;
+  resetEditor();
+});
+
+describe('readDajia：node 档与注入档', () => {
+  it('没有 window 回 null；挂上 window.dajia 回**同一个引用**；撤掉又回 null', () => {
+    const g = globalThis as { window?: { dajia?: DajiaApi } };
+    expect(readDajia()).toBeNull();
+    const api = makeApi().api;
+    g.window = { dajia: api };
+    expect(readDajia()).toBe(api);
+    delete g.window;
+    expect(readDajia()).toBeNull();
+  });
+});
+
+describe('初始态与打开失败', () => {
+  it('刚建好：phase off、banner null，屏幕上还是样例房且可写（⑧段那一屏）', () => {
+    resetEditor();
+    const f = makeApi();
+    const store = mount(f);
+    const s = store.getState();
+    expect(s.phase).toBe('off');
+    expect(s.opened).toBeNull();
+    expect(s.failure).toBeNull();
+    expect(s.save).toBeNull();
+    expect(s.closedReport).toBeNull();
+    expect(s.banner).toBeNull(); // ⇒ App 一个 DOM 节点都不渲染
+    // 屏幕没被碰：还是样例房那一份、还是可写。`DEMO` 是 import 那一刻取的引用（⑤ 段），
+    // 这一格刚 `resetEditor()` 过 ⇒ 判"这一发 store 建起来有没有顺手改屏幕"只有拿它对照才判得出。
+    expect(useEditor.getState().log).toBe(DEMO.log);
+    expect(useEditor.getState().readOnly).toBe(false);
+    expect(f.submits.length).toBe(0);
+    // 模块级 `useProject` 也在监听同一个 editor 单例，但它 `phase === 'off'` ⇒ 订阅体第一道闸门就拦住。
+    // 这一格因此同时是"两份 store 互不干扰"的凭据：判据是 `f.submits` 空，而不是"看起来没事"。
+  });
+
+  it('回 `{ok:false, code:\'not-configured\'}` ⇒ red 横幅、phase 回 off、真源**没换手**', async () => {
+    resetEditor();
+    const f = makeApi();
+    f.box.openFail = { code: 'not-configured', message: '没读到 DAJIA_MYSQL_* 环境变量' };
+    const store = mount(f);
+    await store.getState().open(SERVER_PID);
+    const s = store.getState();
+    expect(s.phase).toBe('off');
+    expect(s.opened).toBeNull();
+    expect(s.failure).toEqual({ code: 'not-configured', message: '没读到 DAJIA_MYSQL_* 环境变量' });
+    expect(s.banner?.tone).toBe('red');
+    expect(s.banner?.text).toBe('没读到 DAJIA_MYSQL_* 环境变量');
+    expect(s.banner?.closable).toBe(false);
+    expect(s.banner?.reopenable).toBe(false);
+    // 真源没换手：样例房那一份 `TransactionLog` 实例还在原处。这一句必须与 `DEMO`（import 那一刻
+    // 从活状态取的引用，⑤ 段）比 —— 拿 `useEditor.getState()` 现读一份去和它自己比是假判据：
+    // 这一格刚 `resetEditor()` 过，现读读到的正是"没换手"想判的那一份，谁都过。
+    expect(useEditor.getState().log).toBe(DEMO.log);
+    expect(useEditor.getState().storeyId).toBe(DEMO.storeyId);
+    expect(useEditor.getState().readOnly).toBe(false);
+    // 只发了一次（失败那支不许重试），而且**没消费任何回包**：走的是 `!r.ok` 那一支，不是成功那一支。
+    expect(f.opens).toEqual([SERVER_PID]);
+    expect(f.queue.length).toBe(0);
+  });
+});
+```
+
+> 格 3 落地的形状就是上面那段：失败回包由 `f.box.openFail` 给，而不是把 `f.api.openProject`
+> 整个换掉 —— 换掉的话夹具里 `opens.push(...)` 那一行就走不到，`expect(f.opens).toEqual([SERVER_PID])
+> 会红在夹具上而不是代码上。「真源没换手」那三句必须与 `DEMO` 比（import 那一刻从活状态取的引用）：
+> 这一格刚 `resetEditor()` 过，拿 `useEditor.getState()` 现读一份与它自己比是**假判据**，谁都过。
+
+剩下 8 格（4…11）照下面的清单逐格落地，每格的判据都要**能区分"做了"与"没做"**（同族口径：`expect(x).toBe(x)` 那种不算）：
+
+**格 4「open 成功那一支：换手 + 六格读数 + 横幅那一句灰话 + **零发账**」**
+`openProject(f, store)` 之后逐条断：
+- `store.getState().phase === 'open'`；`opened` 的 `projectId === SERVER_PID`、`decision === 'edit'`、`name === '样例房'`、`wasCleanShutdown === true`、`replayedRows === 0`、`emergencyCount === 0`、`emergencyHint === ''`。
+- `useEditor.getState().log.document.equals(SERVER.doc) === true`（换手到手的是**回包那一份**，不是样例房那一份 —— `SERVER` 与 `DEMO` 是两套随机 id 的房子，这一句只有真换手才成）。
+- `useEditor.getState().readOnly === false`。
+- `banner.tone === 'grey'`、`closable === true`、`reopenable === false`、`text` 含 `'样例房'` 与 `'已保存到第 0 发'`（`save` 还没来过 ⇒ 兜底那一句里的 `lastTurn` 取 `?? 0`，这是①段那句"屏幕上的第几发只能读 `SaveStatus`"的形状）。
+- **`f.submits.length === 0`** —— 样例房那份 `lastPatch`（非 null！）与 `loadProject` 那一发扳机都不许变成账。这一句是 ⑤段 `lastSeen` 初值那三行注释的唯一凭据，删掉它那两个写法就分不出来了。
+
+同一格再加**两段**（各自一根新的 `f2`/`f3` 针 + `mount` + `openProject`，别复用 `f`：横幅文案是"最后一发 `put` 的产物"，在同一份 store 上开两次会把上一段的读数搅进去）。这两段是 `computeBanner` 第 6、7 条优先级与 spec §9 那句"明确告知恢复了什么"在屏幕侧**唯一**的落地 —— 少了它们，那两条分支就是没有读者的代码，而 T8 恰恰是它们第一次有读者的那一发：
+- **第二段**：`openValueFixture({ wasCleanShutdown: false, replayedRows: 2 })` ⇒ `banner.tone === 'amber'`、`text` 同时含 `'上次没有正常结束'` 与 `'重放 2 发'`、`closable === true`、`reopenable === false`（⑦段那句"没有 `before-quit`，靠的就是这一格"的屏幕侧对应物）。**`opened.wasCleanShutdown === false` 也断一句**：横幅那句话的读数来源就是它，只断文案会让"文案写死"这一型过界。
+- **第三段**：`openValueFixture({ emergencyCount: 3 })`（`wasCleanShutdown` 回到默认的 true ⇒ 第 6 条不抢话）⇒ `banner.tone === 'amber'`、`text` 含 `'盘上留着 3 份没并进库的现场'`、`opened.emergencyCount === 3`，且 `text` 含夹具里**最新那份**的 `path` 片段（`emergency.at(-1)?.path` 那一行的凭据：`openValueFixture` 给的是 `…-turn-3.json`，断 `text.includes('turn-3')` 就够 —— 断完整路径等于把夹具的形状钉进判据）。
+- 三段各配一发"不许抢话"的反判据：第二段那句 `expect(banner.text).not.toContain('盘上留着')`；第三段那句 `expect(banner.text).not.toContain('上次没有正常结束')`。这两句钉的是**优先级顺序本身**（6 压在 7 上）—— 只有文案没有这两句时，把第 6、7 条 `if` 换成 `||` 合并成一发也能绿。
+
+**格 5「read-only：闸门 + 横幅 + 双保险」**
+`openProject(f, store, { decision: 'read-only' })` 之后：`readOnly === true`；`banner.tone === 'amber'` 且 `text` 含 `'只读打开'`；`f.submits.length === 0`；然后 `useEditor.getState().dispatch(wallSetMaterial({ wallId: SERVER.doc.byKind('wall')[0].id, material: '混凝土' }))` ⇒ `lastError` 以 `只读工程：` 开头、`f.submits.length` 仍是 0（**两道闸门同时落下**：editorStore 挡住 dispatch，所以连"发"的机会都没有；把 `setReadOnly` 那一行摘掉，这一句就红在第二道闸门上而不是第一道，两道的读者不同 —— 这一格的存在就是为了把这两道分成两次可判的红）。
+
+**格 6「改一发 = 一发账，undo 也是一发」**
+`openProject` 后清 `f.submits.length = 0`；取 `const w = SERVER.doc.byKind('wall')[0]`；
+- `dispatch(wallSetMaterial({ wallId: w.id, material: '混凝土' }))` ⇒ `f.submits.length === 1`，且 `f.submits[0].patch === useEditor.getState().log.lastPatch`（**对象身份**，不是 `toEqual` —— ⑨段判的就是身份）、`f.submits[0].projectId === SERVER_PID`；
+- `documentFromPayload(f.submits[0].doc, 'test').get(w.id)?.material === '混凝土'`（那一发配的快照是**这一发之后**的真源）；
+- `useEditor.getState().undo()` ⇒ `f.submits.length === 2`，且 `f.submits[1].patch !== f.submits[0].patch`（逆补丁是另一个对象）、`documentFromPayload(f.submits[1].doc, 'test').get(w.id)?.material === w.material`（退回旧值 —— 撤销在库里是一发**新**账，不是删掉上一行）。
+- `await tick()` 在两发之间各一次：`submitJournal` 那支的 `.then` 是微任务，`failure` 清除那一格要它跑完。
+
+**格 7「视图动作一发都不发」（⑨段的靶子）**
+`openProject` 后清 submits；`useEditor.getState().setStorey(tabs[1].storeyId, fitStorey(SERVER.doc, tabs[1].storeyId, 800, 600))`、`setTool('wall')`、`setViewport(另一份 fitStorey 的产物, ...)` 各一次 ⇒ `f.submits.length === 0`，而 `useEditor.getState().revision` 明显变了（**必须同时断这一句**：只断"没发账"而 revision 也没动的话，红的是"扳机根本没扳"，看不出订阅体在不在工作。`tabs` 从 `storeyTabsOf(SERVER.doc, SERVER_PID)` 取，那一行 import 已经在文件顶部那一族里）。
+`setDrag`/`setDraft` 不进这一格：`DragState` 要一把真把手（`pickHandle` 的产物），为凑夹具去 scene-2d 造一把等于让这一格测的是 handle 工厂；`setStorey` 已经代表"扳机响但账没换"那一型。
+
+**格 8「`dispatchBatch` 三条 = 三发账，且每发配它自己那一刻的整份快照」（P-21 的凭据）**
+`openProject` 后清 submits；取 `const walls = SERVER.doc.byKind('wall')`、`const baseMat = [walls[0].material, walls[1].material, walls[2].material]`；
+`dispatchBatch([material(walls[0],'P-1'), material(walls[1],'P-2'), material(walls[2],'P-3')])`，`await tick()`：
+- `f.submits.length === 3`（**这一句就是 P-21 的靶子**：改回"一批一扳"它变 1）；
+- 三发 patch 两两不是同一对象（`f.submits[0].patch !== f.submits[1].patch` 等三句）；
+- 第一发的快照里第二、三面墙**还是旧材料**：`documentFromPayload(f.submits[0].doc, 'test').get(walls[1].id)?.material === baseMat[1]`；
+- 第三发的快照里第二面已是 `'P-2'`：`documentFromPayload(f.submits[2].doc, 'test').get(walls[1].id)?.material === 'P-2'`。
+（后两句是"每发配同源快照"的判据 —— 只数条数的话，把三次编码全写成最终态那份 doc 也能绿。那正是 `submitOne` 里"编码在 await 之前"那行注释要的证人。）
+再加半途失败那一支：清 submits，`dispatchBatch([material(walls[3],'Q-1'), material(不存在的 id,'Q-x'), material(walls[4],'Q-2')])` ⇒ `f.submits.length === 1`（第三条根本不该应用）、`lastError` 以 `删不动：` 开头、`useEditor.getState().log.depth` 比调用前**只多 1**。
+
+**格 9「保存状态事件驱动横幅，`stop()` 两条订阅都撤干净」**
+
+```ts
+  it('保存状态驱动横幅四档；`stop()` 撤掉事件订阅**和**编辑订阅', async () => {
+    const f = makeApi();
+    const [store, stop] = createProjectStore(f.api, useEditor); // 不用 `mount`：这一格要 `stop` 本体
+    stops.push(stop);
+    await openProject(f, store);
+    expect(f.listeners.length).toBe(1);
+
+    f.listeners[0](STATUS_IDLE);
+    expect(store.getState().save?.phase).toBe('idle');
+    expect(store.getState().banner?.text).toContain('已保存到第 7 发');
+    f.listeners[0]({ ...STATUS_IDLE, phase: 'paused', pauseReason: '锁已丢' });
+    expect(store.getState().banner?.tone).toBe('red');
+    expect(store.getState().banner?.reopenable).toBe(true); // 第 ⑤ 段的出路在这一屏上长成一个按钮
+    // 第四档 = `computeBanner` 的第 5 条（`failed`）。它与上一档只差一个 `phase`，判据差在两端：
+    // `failed` 给的是"查服务"（下一步动作在库那侧，`reopenable` 必须回 false —— 重开也修不好断连），
+    // `paused` 给的是"别再写了"（下一步动作在用户这侧）。少了这一发，第 5 条那一句就没有读者，
+    // 而把 3、5 两条并成一个 `if` 也照样绿 —— 那一并正是"每个码都有下一步动作"③段最容易被磨平的形状。
+    f.listeners[0]({ ...STATUS_IDLE, phase: 'failed', lastError: 'ECONNREFUSED' });
+    expect(store.getState().banner?.tone).toBe('red');
+    expect(store.getState().banner?.text).toContain('保存失败：ECONNREFUSED');
+    expect(store.getState().banner?.reopenable).toBe(false);
+
+    const callback = f.listeners[0];
+    stop();
+    // (a) 事件那一半：注册表空了。`onSaveStatus` 返回空函数的话这一句红 —— 而**不能**改成
+    // "再调一次 `callback`，看 `save` 更没更新"：手里已经抓住的那个闭包永远还能写 store，
+    // 生产里 `removeListener` 之后根本不会再有人调它。假把式能证的只有引用有没有撤干净。
+    expect(f.listeners.length).toBe(0);
+    callback({ ...STATUS_IDLE, phase: 'saving', queuedTurns: 9 }); // 拿着旧引用硬打一发：不作为判据
+    // (b) 编辑那一半：订阅也撤了。这一句才是本节开头"下一格收走上一格的编辑"的证人。
+    f.submits.length = 0;
+    useEditor.getState().dispatch(wallSetMaterial({ wallId: SERVER.doc.byKind('wall')[0].id, material: '混凝土' }));
+    await tick();
+    expect(f.submits.length).toBe(0);
+    // `afterEach` 会对同一个 `stop` 再发一次：`removeListener` 与夹具的 `splice` 都吃重复，
+    // 所以这一格不需要把 `stop` 从 `stops` 里摘出去（摘出去反而会让"忘了撤"那一型失去守卫）。
+  });
+```
+
+**格 10「`reopenAsEdit()` = 先 abandon 再 open，顺序读得出来」**
+
+`openProject`（edit）→ 塞一个 paused 状态（`f.listeners[0]({ ...STATUS_IDLE, phase: 'paused', pauseReason: '锁已丢' })`，把横幅推到 `reopenable === true` 那一档，这一发才像在真实出路按的钮）→ `f.queue.push(openValueFixture({}))`（重开那一发的回包）→ `await store.getState().reopenAsEdit()` → `await tick()`。判据吃**一根共享的 `calls: string[]` 针**（夹具里三个假把式各记一条 `'open'` / `` `close:${mode}` `` / `'submit'`；同族先例：`session.test.ts` 的夹具订正 —— `toEqual` 逐字比一串名字才读得出"少一步"和"顺序反了"，分开数 `closes.length` 与 `opens.length` 只能证"各来了一次"）：
+- `f.calls` 逐字等于 `['open', 'close:abandon', 'open']`；
+- `f.closes[0].mode === 'abandon'`；`f.opens` 长度 2 且两次都是 `SERVER_PID`；
+- `store.getState().phase === 'open'`、`useEditor.getState().readOnly === false`（从只读那一支翻回可写只有一条路：重开）；
+- `documentFromPayload(f.closes[0].doc, 'test').equals(SERVER.doc) === true` —— 交上去的是**换手之后**那份文档，不是样例房那一份（`abandon` 不跑对账 ⇒ `CloseValue` 两格 null，夹具已经按这个形状回了）。
+
+**同一格的第二段：`closeSession('graceful')` 的那两格读数有人读**（另起一根针 `f2 = makeApi()` + `mount(f2)` + `openProject(f2, store2)`，免得把上面那串 `calls` 搅长）。`await store2.getState().closeSession('graceful')` 之后逐条断：
+- `f2.calls` 逐字等于 `['open', 'close:graceful']`（模式名进针里就是这一句的用处：`abandon` 与 `graceful` 在源码里只差一个词）；
+- `store2.getState().phase === 'closed'`、`failure` 仍是 null、`closedReport` 逐字等于 `{ elementRows: 31, storeyRows: 2 }`（夹具给的那一份，原样过界没人重算）；
+- `banner.tone === 'grey'` 且 `banner.text` 同时含 `'31 行元素'` 与 `'2 行楼层'`，`closable === false`（关了就没有第二个关）；
+- `useEditor.getState().readOnly === true`，且再 `dispatch` 一发墙材料 ⇒ `lastError` 以 `只读工程：` 开头、`f2.submits.length === 0` —— 这一句是 `setReadOnly(true)` 放在 `r.ok` 判断**之外**那条注释的唯一证人：把 `close` 的回包换成 `{ok:false}` 那一支也得落下闸门，而成功这一支同样不许漏。
+- 收尾再证一句"**关了之后可以重开**"（第 ⑤ 段那条顺序的另一半）：`f2.queue.push(openValueFixture({}))` 之后 `await store2.getState().open(SERVER_PID)` ⇒ `f2.calls` 以第三个 `'open'` 收尾、`phase` 回 `'open'`、`useEditor.getState().readOnly === false`（`open` 成功那一支自己会把闸门抬回去）。**`open` 的闸门只挡 `opening / open`，不挡 `closed`** —— 这一句就是它不挡的凭据，落地时别"顺手"给它加第三道 phase 判据（加了这一句就红，而 `reopenAsEdit()` 那条路也会被同一道闸拦死）。
+
+**格 11「`'reconcile'` 停手，`'db'` 不停手」**
+`openProject`（edit）→ `f.box.submitFail = { code: 'reconcile', message: '三方对账不平' }` → `dispatch` 一发 → `await tick()` ⇒ `banner.tone === 'red'`、`banner.text` 含 `'三方对账不平'`、**`useEditor.getState().readOnly === true`**（③段那句"reconcile 的下一步动作是停下来别再写了"在屏幕侧唯一的落地）。
+另起一个 store：`f2.box.submitFail = { code: 'db', message: 'ECONNREFUSED' }` → 同样的 dispatch → `await tick()` ⇒ `banner.tone === 'red'`（同一格文案位置）但 `readOnly === false`（服务断了不代表账错了 —— 把用户的编辑权拿走才是更坏的消息）。
+这一格的两支必须**各自一个 store**：`readOnly` 是 editor 单例上的格，前一支设成 true 之后不 reset 就会串到后一支，得到一个"两边都只读"的假绿。
+
+Run: `npx vitest run apps/desktop/test/unit/editor-store.test.ts apps/desktop/test/unit/project-store.test.ts > tmp/t8-screen.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`，共 **20 格**（editor-store 9 + project-store 11）。若 `project-store.test.ts` 全体红在 `ReferenceError: window is not defined`，那是 `readDajia()` 的 `typeof window` 那一行被写成了模块顶层的常量 —— 本档 11 格能 import 这个文件这件事就是那道保险的证人。
+
+Run: `npx tsc --noEmit -p apps/desktop/tsconfig.json > tmp/t8-screen-tsc.log 2>&1; echo "exit=$?"`，再 `npx tsc --noEmit -p apps/desktop/tsconfig.test.json > tmp/t8-screen-tsc-test.log 2>&1; echo "exit=$?"`
+Expected: 两发都 `exit=0`。**两发都要跑**：前一份 program 里没有测试文件（`include` 是 `src/main`/`src/preload`/`src/shared`/`src/renderer/src`），后一份没有 `App.tsx`/`panels.tsx`（它们不被任何测试 import）—— 只跑一发会得到一个绿的假象，而 `declare global` 搬家（本节 ④ 段那条理由）恰恰是只有后一份才看得见的那一型错。
+
+**交给 T9 的两件事**（写在这里是因为它们是 T8 的形状留下的口子，不是 T9 自己发明的）：
+1. 这一屏**没有**任何"打开工程"的入口：`useProject.getState().open(id)` 在生产里的读者是 T11 的 `--persist-shot`（它经 main 递 id 进来），T9 才把它接进 UI。同理 `reopenAsEdit()` 的按钮由 `banner.reopenable` 给出形状，但按钮**在横幅上**、横幅会在 T9 整理界面时搬进面板（⑧段最后一句）。
+2. 只读会话**没有**"重试接管"：横幅上只有「关闭工程」。重开一个 read-only 会话再抢一次锁 = `closeSession('abandon')` + `open(id)`，`reopenAsEdit()` 这个名字与它的 `reopenable` 判据今天都只对**丢了的写锁**开放。T9 要放宽的话，改 `computeBanner` 第 3 条那一句的判据（`save !== null` → 加 `|| o.decision === 'read-only'`），别改 `submit` 那三道闸门。
+
+**本档登记的限度**（Step 8 汇总时并进"登记的限度"）：
+① `dispatchBatch` 半途失败那一支在**真源**上留下已应用的前几发（改前也一样，且 `S5` 那条命令顺序就是为它排的），本档只保证这些发各有一发账 —— "一次删除要么整组进库要么整组不进"这个批语义在 S1 **不存在**，它是计划 4 真源侧没排的决定。
+② 20 格里没有一条真 IPC：`ipc-persist.ts` 那三格凭据仍是 Step 4 登记的那三条（`tsc` + `ipc-channels.test.ts` 扫描 + 真窗口闸门与 T10/T11）。屏幕侧测的是"store 与假 api 之间"的那一层，`window.dajia` 这个对象在生产里由 contextBridge 给 —— 它是**唯一一个没被任何测试构造过的边界**，那一发的凭据只能来自 Step 8 的 `--prop-shot`（它跑的是真窗口、真 preload）。
+③ `NOT_INJECTED` 那一支（漏注入）在生产路径上没有测试覆盖它的**触发**（node 档永远没有 `window`，格 1 判的是 `readDajia()` 的回 null，不是"Electron 里 preload 真的没注入"）。spec §9 要的那句分型诊断在这种情况下会说什么，靠 格 2 的初始态与 格 3 的形状间接保证。
+④ 闸门吃 `undo`/`redo` 之后，`closeSession` 那一屏连带失去"退回去看看刚才改了什么"的能力（屏幕上没有一句话解释为什么退不动，只有 `lastError`）。S1 接受：账本关了还能退，比这个不便更危险。
+
+---
+
+- [ ] **Step 7: 横幅上屏 —— `App.tsx` 的固定横幅 + `--prop-shot` 那一发"零节点"探针**
+
+**① `apps/desktop/src/renderer/src/App.tsx` 整文件替换**
+
+```tsx
+import { PlanCanvas } from './PlanCanvas';
+import { useProject } from './stores/projectStore';
+import type { ProjectBanner, ProjectBannerTone } from './stores/projectStore';
+
+/**
+ * 两件事在这一发同时成立才叫"闸门环境一字不动"：
+ * 1. `banner === null`（`phase === 'off'` ⇒ `computeBanner` 第 2 条回 null，见 projectStore 那段注释）；
+ * 2. 那一支渲染的是 `null` 而不是一个空 div —— 于是 ③ 段那一发 DOM 探针读回来是 0，不是 1。
+ * `declare global` 那块已经搬进 `projectStore.ts`（Step 6 ④ 段：测试那一份 program 不 import 本文件，
+ * 声明留在这里 `readDajia()` 就编不过），所以本文件不再 import `DajiaApi`。
+ */
+export default function App(): React.JSX.Element {
+  const banner = useProject((s) => s.banner);
+  return (
+    <>
+      <PlanCanvas />
+      {banner === null ? null : <SessionBanner banner={banner} />}
+    </>
+  );
+}
+
+const TONE_BG: Record<ProjectBannerTone, string> = {
+  red: '#8b1d1d',
+  amber: '#8a5a00',
+  grey: '#2b2f36',
+};
+
+function SessionBanner({ banner }: { banner: ProjectBanner }): React.JSX.Element {
+  return (
+    <div
+      data-dajia-banner=""
+      style={{
+        position: 'fixed',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        // `fixed` + 不占流：⑧段那句话的形状 —— 会盖住画布下缘，S1 接受（T9 整理界面时搬进面板）。
+        // 但**不许**挤占任何 flex 尺寸：多一根 24px 的常驻条就把 `fitStorey` 量到的画布高度挪走了，
+        // 全体像素判据（1167×833 / 墨迹 30742 / click=(113,416)）随之作废。
+        padding: '6px 10px',
+        color: '#f2f2f2',
+        background: TONE_BG[banner.tone],
+        fontSize: 12,
+        lineHeight: '18px',
+        display: 'flex',
+        gap: 8,
+        alignItems: 'center',
+        zIndex: 10,
+      }}
+    >
+      <span>{banner.text}</span>
+      {banner.closable ? (
+        <button type="button" onClick={() => void useProject.getState().closeSession('graceful')}>
+          关闭工程
+        </button>
+      ) : null}
+      {banner.reopenable ? (
+        <button type="button" onClick={() => void useProject.getState().reopenAsEdit()}>
+          重新接管
+        </button>
+      ) : null}
+    </div>
+  );
+}
+```
+
+三个写法各有理由，别在评审时被问倒：
+- **`useProject.getState()` 在 handler 里，不在组件顶层**：两个按钮要的只是**动作引用**（永远稳定），订阅它们等于让每次保存状态变化都重渲一次横幅以外的东西。同族先例：`PlanCanvas` 那句"走 `getState()` 而不是订阅"（本文件 ② 段改动 5 的 `reportPaintError` 也是同一个口径）。
+- **`data-dajia-banner=""`**：② 段那一发探针的靶子。用属性而不是类名 —— 类名会被任何一次样式重构碰掉，属性是这一族测试与屏幕之间唯一的契约。（仓里没有 CSS 文件：`apps/desktop/src/renderer` 下 `find -name "*.css"` 回空，全部样式是内联的，所以这里也不开第一个 CSS 文件。）
+- **`React.JSX.Element` / `React.` 命名空间没有 import**：与本文件盘上现物同形（`jsx: 'react-jsx'` 的自动 runtime + `@types/react` 的全局 `React` 命名空间），改它要连带 import 一行 —— 不动。
+
+**② `apps/desktop/src/main/index.ts`：`runPropShot` 里加一发探针**
+
+位置在 **15) 终态**那六道 `throw` 之后、`// 逐步读数` 那句注释之前（盘上 2351 行与 2353 行之间）。这一段的键名不在 `fin` 里，撞车守卫在下一节（`collided`）会替它兜着。
+
+```ts
+  // 15b) 横幅在这一屏上必须一个节点都不渲染（⑧段的 DOM 侧凭据，与终态那一份视口/尺寸判据同一批）。
+  // 判据放在 **main 侧**而不是脚本侧：脚本那边每加一条 PASS 行就要给 `expectedChecksByMode.prop`
+  // 挪一个字面量（现物 30），而那五个数是闸门自己的账 —— 这一发的价值在"要么红要么根本不说"，
+  // 不在"多一行绿"。读数照写进 `extras` 留档（见下面那份），红了能直接看到当时是几。
+  const bannerNodes = (await win.webContents.executeJavaScript(
+    'document.querySelectorAll("[data-dajia-banner]").length',
+  )) as number;
+  if (bannerNodes !== 0) {
+    throw new Error(
+      `闸门环境里屏幕上渲染了 ${String(bannerNodes)} 个横幅节点：` +
+        '`useProject` 的 phase 应当在 off、banner 应当在 null`' +
+        '（多出来的常驻 DOM 会把五道闸门的像素判据全体作废 —— ⑧段）',
+    );
+  }
+```
+
+（`extras` 里加一行 `bannerNodesAtPropGate: bannerNodes,`，紧跟在 `viewportAtStart` 那一族之后即可 —— 它是**收据**不是判据：上面那一发 throw 之后它恒等于 0，留着是为了报告里能看见"这一发放过言"。引号写法照上面那段：模板串里那句 markdown 反引号是**故意**不用的，报错文案里出现反引号会让人以为在读代码。）
+
+**③ 计数与编译**
+
+Run: `npx vitest run apps/desktop/test/unit/ipc-channels.test.ts apps/desktop/test/unit/persist-boundary.test.ts apps/desktop/test/unit/editor-store.test.ts apps/desktop/test/unit/project-store.test.ts > tmp/t8-banner.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`。四档格数按**盘上实测**记（计划数：3 + 5 + 9 + 11 = 28），回填里同时写 `persist-boundary.test.ts` 那一档里"renderer 的 protocol import 恒 type-only"这一格现在是**真的扫到了文件**还是扫了个空 —— 它自带 `files.length > 0` 的正控制，但把实测文件数一并抄进回填更有用。
+
+Run: `pnpm --filter @dajia/desktop build > tmp/t8-build.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`。这一发不是仪式，它是**闸门自己会跑的那一发**（`scripts/desktop-shot.mjs` 第一手就是 `pnpm --filter @dajia/desktop build`，实测过的那一行在它 72 行的 `runPnpm('pnpm --filter @dajia/desktop build')`）：`src/shared/document-wire.ts` 被 `src/renderer/src/**` 相对 import 这件事，只有 rollup 的构建会说真话 —— `tsc` 只查类型，vite 的 `server.fs.allow` 只在 dev 起服时生效，而这两者都不在生产路径上。红法有两种，分开治：`Could not resolve "../../shared/document-wire"` ⇒ `electron.vite.config.ts` 的 root 比预期窄（**不许**改构建配置，改 import 路径写法或把 wire 挪进 `@dajia/core` 之外的第三个包都属于"给构建面找事"，停下来回报）；`@dajia/protocol` 被解析进 renderer chunk ⇒ `projectStore.ts` 里那条 `import type` 被写成了值 import（Step 4 ④ 段第 (c) 格的运行时对应物）。
+
+Run: `pnpm typecheck > tmp/t8-typecheck.log 2>&1; echo "exit=$?"`
+Expected: `exit=0`（四包 + desktop 的三份 tsconfig，T1 已经把 `tsconfig.test.json` 串进 desktop 那条 `typecheck`）。
+
+**本步不许动的东西**（Step 8 复跑五道闸门之前先照这几条自查，改动面越小越好判）：`PlanCanvas.tsx` 除 Step 6 ③ 那一行依赖与那段注释之外一字不动；`panels.tsx` 一字不动；`electron.vite.config.ts` 一字不动；`index.html`/`main.tsx` 一字不动；`STOREY_TAB_HEIGHT_PX`、画布尺寸口径、`--prop` 的 `click=(113,416)` 三个闸门字面量一个都不许碰。
+
+- [ ] **Step 8: 控制位独占全量复跑 + 提交**
+
+**棒次（先把这一发交给谁定清楚，再谈命令）**：
+
+- **Step 7 与 Step 8 不分给同一个座位。** 理由不是工作量，是同一发命令会在两步里各跑一次：Step 7 的最后一发是 `pnpm --filter @dajia/desktop build`（编译计数的靶子），Step 8 的第一发又是它（五道闸门各自内部还会再跑一次）。一个座位手里握着两发同名命令，第二发必然凭第一发的印象写回填 —— 本计划罚过的正是"把上一次绿抄成这一次绿"。
+- **Step 8 的闸门复跑由控制位独占**（既有口径：席位不跑闸门）。席位在 Step 1…7 里只跑自己那几档 `npx vitest run <file>`，回报里给的是**格数与判据**，不是闸门读数。
+- **变异表单独一棒**，`cp` 备份 + md5 还原；座位上**不许** `git checkout`/`switch`/`restore`/`stash`/`reset`/`clean`。
+
+控制位跑法（五道闸门一律 `> tmp/*.log 2>&1; echo exit=$?`，绝不 `| tail` —— 判据条数与那句 JSON `report` 都在日志尾部，管道会吃掉它）：
+
+```bash
+pnpm verify > tmp/t8e-verify.log 2>&1; echo "exit=$?"
+sed 's/\x1b\[[0-9;]*m//g' tmp/t8e-verify.log | grep -E "^ *(Test Files|Tests) |FAIL"
+pnpm test:db > tmp/t8e-db.log 2>&1; echo "exit=$?"
+sed 's/\x1b\[[0-9;]*m//g' tmp/t8e-db.log | grep -E "^ *(Test Files|Tests) |FAIL"
+npx tsc --noEmit -p apps/desktop/tsconfig.json > tmp/t8e-tsc-main.log 2>&1; echo "exit=$?"
+npx tsc --noEmit -p apps/desktop/tsconfig.test.json > tmp/t8e-tsc-test.log 2>&1; echo "exit=$?"
+pnpm --filter @dajia/desktop build > tmp/t8e-build.log 2>&1; echo "exit=$?"
+pnpm shot      > tmp/t8e-shot.log 2>&1; echo "exit=$?"
+pnpm pick-shot > tmp/t8e-pick.log 2>&1; echo "exit=$?"
+pnpm edit-shot > tmp/t8e-edit.log  2>&1; echo "exit=$?"
+pnpm draw-shot > tmp/t8e-draw.log  2>&1; echo "exit=$?"
+pnpm prop-shot > tmp/t8e-prop.log  2>&1; echo "exit=$?"
+git status --porcelain
+```
+
+Expected：
+
+1. `pnpm verify` `exit=0`。`Test Files` 比 T7 的回填值 **+6**（`persist-schema` / `document-wire` / `session` / `ipc-channels` / `editor-store` / `project-store` —— 全是新档），`Tests` **+61**，拆开是 protocol 10 + document-wire 7 + session 16 + ipc-channels 3 + editor-store 9 + project-store 11 + emergency 2 + persist-boundary 3。
+   - **`Test Files` +7 或 +8**：有人把夹具命名成了 `*.test.ts`（`fake-timer.test.ts` / `editor-fixtures.test.ts`）。夹具不是档，改回名字，别给 `vitest.config.ts` 的 include 开洞。
+   - **`Tests` +58**：少的 3 格只会是 `persist-boundary.test.ts` 那一族里新加的三个（它改的是既有档，新格被"顺手"并进了 T7 那两个 `it` 的话，计数就不涨）；**+59** 少的 2 格同型，在 `emergency.test.ts`。这两档的红法都是"追加变成了合并"，按 Step 3/4 的原文把它们各自成 `it`。
+   - **`autosave.test.ts` 仍是 24 格**（假钟搬去 `fake-timer.ts` 的那一发不许丢东西）；`codec.test.ts` 的格数与 T4 回填一致（委托没削牙）。这两个数在 `verify` 的逐档输出里读，不用单跑。
+2. `pnpm test:db` `exit=0`，`Test Files` 与 `Tests` 与 T7 的回填值**一字不差** —— T8 不新增连库档。这一发仍然必须跑，因为它是 `codec.ts` 那两行委托的**下游**：`test/db/repository.test.ts` 与 `test/db/autosave-journal.test.ts` 都经 `decodeDocument` → `documentFromPayload` 读快照，而这条链在 `verify` 里只被 `document-wire.test.ts` 的假 payload 摸过。**若这一发红而 `verify` 绿**：`codec.ts` 里那六个"一字不动"的名字（`RowRef` / `where` / `asJsonValue` / `encodeEntity` / `decodeEntity` / `encodePatch`）被人顺手改了，按 T4 原文还原，不许改判据。
+3. 两份 tsconfig 各 `exit=0`，**两发都要单独跑**。`pnpm verify` 里那一串 `typecheck` 也覆盖它们，但两发同码各跑一次读的是**哪一份红**：`declare global` 搬家那一型（TS2717，Step 6 ④ 段）只有 `tsconfig.test.json` 看得见；`ipc-persist.ts` 的三处形状（`db.raw as Pool`、`readEmergency: listEmergency` 的结构赋值、`EmergencyPayload` → `EmergencyInput`）只有 `tsconfig.json` 看得见。只跑 `verify` 会得到一句红而说不出是谁红的。
+4. `pnpm --filter @dajia/desktop build` `exit=0`，红法两型按 Step 7 ③ 那一段治（`Could not resolve "../../shared/document-wire"` ⇒ 构建 root；`@dajia/protocol` 进了 renderer chunk ⇒ `import type` 被写成值 import）。**不许**动 `electron.vite.config.ts`。
+5. 五道闸门 `exit=0`，PASS 条数 **6 / 11 / 22 / 28 / 30**（`shot` / `pick` / `edit` / `draw` / `prop`），FAIL **0**。那五个数在 `scripts/desktop-shot.mjs:346` 的 `expectedChecksByMode` 里，是**闸门自己的账** —— 本任务只往 main 侧加了一发会抛的探针（15b），它不给 PASS 名单加一条。
+   - **`--prop-shot` 报"判据条数对不上：实到 31"** ⇒ 有人把 15b 搬到了脚本侧（每条 PASS 都要动那个字面量，等于让测试改闸门的账）。搬回 main 侧，判据一字不动。
+   - **`--prop-shot` 报 `闸门环境里屏幕上渲染了 N 个横幅节点`** ⇒ Step 7 ① 那一支渲染了常驻 DOM（⑧段）。这是唯一一条会因"多一个空 div"而红的判据，别用调尺寸绕开。
+   - 超时口径照盘上现物：`draw` 与 `prop` 各 300s，其余 180s，前面都还有一发 `build`。慢机上先确认是超时还是 FAIL 再谈复跑。
+6. `git status --porcelain` 里**不许出现**：`dajia-emergency-*` / `dajia-session-*` 之类的临时目录、任何 `*-turn-<n>.json`、`apps/desktop/out/**`、`tmp/*.log`（后两样 `.gitignore` 已收，出现说明忽略规则被改过）。真出现 ⇒ `userDataDir` 被写成了仓库路径，那是测试自己的缺陷，先修测试再谈落盘。
+7. 跑完确认库清干净（命令同 T6 Step 5 那一发，**从 `apps/desktop` 目录跑**，`node -e` 按 cwd 解析裸说明符）。Expected：输出里既没有 `dajia_test` 也**没有 `dajia`**。后一句是本任务新增的收据：T8 是第一个在生产侧连库的任务（`ipc-persist.ts` 的 `openDb` 真会 `createConnection`），而它**不该建库** —— 建库是 T9 向导的职责，也是本计划唯一行使那条建库授权的地方。若 `dajia` 出现了：有代码绕过了 T2 的 `assertDatabaseName` ⇒ **停手回报，不自己删库**（授权里没有 DROP）。
+
+提交（代码棒只提交 `src` 与 `test`，`docs/` 归控制位）：
+
+```bash
+git status --porcelain
+git diff --stat
+git add packages/protocol/src/ipc.ts packages/protocol/src/entity-schema.ts \
+  packages/protocol/src/persist-schema.ts packages/protocol/src/index.ts \
+  packages/protocol/test/persist-schema.test.ts \
+  apps/desktop/src/shared/document-wire.ts apps/desktop/src/main/db/codec.ts \
+  apps/desktop/tsconfig.json \
+  apps/desktop/test/unit/document-wire.test.ts apps/desktop/test/unit/fake-timer.ts \
+  apps/desktop/test/unit/autosave.test.ts apps/desktop/test/unit/session.test.ts \
+  apps/desktop/src/main/persist/session.ts apps/desktop/src/main/persist/emergency.ts \
+  apps/desktop/test/unit/emergency.test.ts \
+  apps/desktop/src/main/ipc-persist.ts apps/desktop/src/main/index.ts \
+  apps/desktop/src/preload/index.ts \
+  apps/desktop/test/unit/ipc-channels.test.ts apps/desktop/test/unit/persist-boundary.test.ts \
+  apps/desktop/src/renderer/src/stores/editorStore.ts apps/desktop/src/renderer/src/stores/projectStore.ts \
+  apps/desktop/src/renderer/src/PlanCanvas.tsx apps/desktop/src/renderer/src/App.tsx \
+  apps/desktop/test/unit/editor-fixtures.ts apps/desktop/test/unit/editor-store.test.ts \
+  apps/desktop/test/unit/project-store.test.ts
+git commit -m "$(cat <<'EOF'
+feat(persist): IPC 契约与会话接线 —— 五条通道、一个会话、一条横幅
+
+protocol：persist-schema.ts 把请求方向一律钉成 strictObject（多一键即拒，password 键
+单独一格），错误码闭集 7 个，parse 出口按通道具名；SaveStatus 的键集合与 autosave.ts
+做源码级对账，autosave 加字段而 UI 看不见那一型从此有牙。
+
+desktop/shared：document-wire.ts 是 payload ↔ Document 的唯一产地（P-19），codec.ts
+的 encode/decode 改成委托，重复 id 的文案逐字保留 —— T4 那两格正则一字不动。
+
+session.ts：编排 electron-free / fs-free / mysql-free（P-2 的第三个证人）。取号在解码
+之后（坏请求吃掉一个号 = 永久跳号）、'stopped' 之外只有 paused 停写、只读会话与 abandon
+同路（绝不替别人宣告这库干净）、close 的顺序是 flush→closeProject→release→end。
+
+ipc-persist.ts：本任务唯一新增的、许 import electron 的 main 文件；三格扫描档
+（ipc-channels / persist-boundary）是它与 preload 的常驻证人。
+
+renderer：projectStore 订阅 useEditor 的 log.lastPatch（对象身份，不是 revision —— 切层
+不发账），三道闸门 + 'reconcile' 停手 / 'db' 不停手；editorStore 加 readOnly 与四处闸门，
+dispatchBatch 按 P-21 每应用一条扳一次；App.tsx 的横幅在 banner===null 时一个节点都不渲染，
+--prop-shot 的 15b 探针在 main 侧数那个节点数。
+EOF
+)"
+```
+
+---
+
+**Task 8 的改坏验证**（变异棒，`cp` 备份 + md5 还原；**座位不许 `git checkout`/`restore`/`stash`/`reset`/`clean`**）：
+
+用例引用一律用 `it` 的名字。⑦ 段那 8 格 prose 标题落地时 `it()` 第一参**逐字**取「」内的句子，所以本表的引用也就是盘上的名字。跑法同前：改坏一处 → 只跑受影响的档 → `cp` 还原 → 同码复跑确认回到绿。五道闸门不在这一棒里（控制位独占）。
+
+| # | 改坏哪里 | 哪一格红、为什么 |
+|---|---|---|
+| T8-M1 | `OpenRequestSchema` 从 `z.strictObject` 换成 `z.object`（"宽松点好改"） | 「打开工程的请求只认 projectId 一个键：缺、多、非 UUIDv7 三型都拒」红（多一个 `name` 过了）；「带 password 键的请求一律拒（口令不进 IPC 的那道牙，第 ④ 段）红在 Open 那一支（Submit/Close 仍 strict ⇒ 三条里只有一条过）。**"以后加字段方便"的第一颗糖就是这么化的**：请求方向一旦宽松，T9 想往 `OpenRequest` 里塞 `host` 就没人红 |
+| T8-M2 | `CloseRequestSchema.mode` 从 `z.enum([...])` 换成 `z.string()` | 「收尾请求的 mode 只认两值；缺 mode 与第三种拼法都拒」红；**session 那 16 格全绿** —— 假把式直接构造 TS 字面量，不经 parse。这一行是 P-20 那句"parse 只住在 IPC 外壳"的分工图示：`'force'` 那一型在生产里由 `ipc-persist.ts` 挡，`session.ts` 压根不认识它 |
+| T8-M3 | `PERSIST_ERROR_CODES` 加第八个（如 `'timeout'`） | 「错误码是闭集：七个各过，`unknown` 与大小写不同都整包拒」第一句 `[...PERSIST_ERROR_CODES]` 逐字比数组即红。附注：`z.enum` 会跟着变宽，`session.ts` / `ipc-persist.ts` 的 `switch` 少一支而**无人红** —— 那一型只有 T9 的分型诊断读得到，所以闭集的默认答案永远是"不加新码" |
+| T8-M4 | `SaveStatusSchema` 里 `pauseReason` 加 `.optional()` | 「SaveStatus 的键集合与 phase 取值 == autosave.ts 里那一份（源码对账）」红（"少任意一格也拒"那个 `for` 循环）。**`tsc` 不红**（`SaveStatusWire` 跟着变 optional，`projectStore` 的读点照编）、**五道闸门不红** —— 这一发是那一格存在的全部理由：autosave 加了字段而 UI 永远看不见，编译期是看不见的 |
+| T8-M5 | `fail()` 的模板从 `${where} 解不开${what}：` 改成 `${what} 解不开：` | 「parse 出口的文案 = `<通道名> 解不开<那一句>：<点号路径>: …」红（正则 `^dajia:project:open 解不开…` 落空）。那串前缀是 T9 分型诊断的唯一线索：没有它，日志里三行"解不开请求"分不出是哪条通道 |
+| T8-M6 | `INVOKE_CHANNELS` 摘掉 `IPC.projectClose`（"反正 close 走同一个 handler"） | protocol 侧「名册三条 + 事件那一条 == IPC 里除 ping 的全部（漏登记即红）」红；desktop 侧「名册里每一条都在 main 有 case、在 preload 有 invoke（只改一边就红）」也红（`INVOKE_CHANNELS.length === 3` 那发正控制）。**`tsc` 不红**（只是数组短一条）⇒ 名册这类"清单"的牙只能在扫源码的档里 |
+| T8-M7 | `payloadFromDocument` 去掉按 id 升序（"Map 的插入序本来就是稳的"） | 「换个插入序得到**同一串字节**（排序是"字节稳定"的产地，不是 Map 的副产品）」红；「`encodeDocument(doc)` 与 `JSON.stringify(payloadFromDocument(doc))` 逐字节相同（委托没漂）」同型红；**`codec.test.ts` 第 9 格跟着红**（它拿 `encodeDocument` 的产物与 T4 形状表逐字节比）—— 三处证人，最后一处是 T4 那档在 T8 之后继续上岗的凭据 |
+| T8-M8 | `documentFromPayload` 里重复 id 那道 `if` 删掉（"Map.set 取后者，反正不炸"） | 「重复 id 当场抛，文案与 T4 读盘那一条逐字相同（T4-M9 挪靶之后唯一的产地）」红；`codec.test.ts` 吃那条文案的两格红；**session「9. 坏 payload 吃掉一个号 = 永久跳号，所以解码必须在取号之前」也红** —— 不抛了那一发就把 8 号吃掉，下一发变 9。第三红才是这一发的价值：丢牙的后果不是"报错变少"，是库里从此永久跳号 |
+| T8-M9 | `documentFromPayload(payload, where)` 里把 `where` 写死成 `'doc'`（或调用方不传） | 「抛错文案用的是**调用方**给的坐标：同一份 payload，两个标签给出两条不同的话」红；连带 `codec.test.ts` 那两条 `snapshot 行 3` 前缀红（委托把前缀吃掉了）。session「9.」不吃文案坐标，不红 —— 分工照旧 |
+| T8-M10 | `open` 里 `this.issuedTurn = loaded.header.journalTurn` 换成 `= 0` | 「8. 连投三发 ⇒ 8、9、10（起点来自库里的 journalTurn=7），且补丁与文档原样到 sink」红（1、2、3；真库里是 `appendJournal` 撞跳号）。**「4. 拿到票…fromJournal 三格读数」不红** —— 那三格读的是引擎自己的账，`issuedTurn` 是会话侧的号，两份状态各有一个证人。这一对不连带红是有意的：它说明第 ① 段"收进主进程只剩一条纪律"确实只剩一处赋值 |
+| T8-M11 | `new Autosave({ fromJournal })` 里 `rowsSinceSnapshot` 写死 0（"刚打开哪来新行"） | 「4. 拿到票 ⇒ edit、loadProject("edit")、引擎起来了，且 fromJournal 三格读数来自库里那份头」红（`rowsSinceSnapshot` 该是 2）。这一发是"每 2000 条"这个阈值**在重开之后仍然成立**的唯一凭据：T7 的阈值计数器住在引擎里，接错线就在重启后从头数 |
+| T8-M12 | `listEmergency` 末尾那句 `found.sort((a, b) => a.turn - b.turn)` 删掉 | 「按 turn 升序给出本工程的每一份；别人的、形状不认识的一个都不许混进来」红（`[10, 4, 7]`：文件名序把 `-turn-10` 排在 `-turn-4` 前）。**这就是 Step 3 那格把最大一份从 9 改成 10 的全部理由** —— 全个位数时这一发造不出红 |
+| T8-M13 | `listEmergency` 的词干筛选 `stem !== projectId` 放宽成"目录里都算" | 同一格红（B 那份混进来，且 `listEmergency(dirC, PID_B)` 那一发从 `[1]` 变 `[1, 4, 7, 10]`）；session「6. 回包逐字段同源…」不红（`readEmergency` 是假端口）。写侧与认侧同集合那条主张在 T7 有 `keep=2` 那一格，读侧的对应物就是这一格 |
+| T8-M14 | `persistErrorCode` 改成一律 `'db'`（"驱动不都说话吗"） | 「3. 读盘拒开（不带 code 的抛）⇒ reconcile；端口自己定了码 ⇒ 原样上抛、不被降级」红在第一支（T5 的三方对账不平被说成"去检查 MySQL"）。屏幕侧「`'reconcile'` 停手，`'db'` 不停手」看不见它 —— 假 api 直接给码，不经 session |
+| T8-M15 | `wrap` 里 `err instanceof SessionError ? err : …` 那一句去掉（一律重包） | 同一格红在第二支：端口自己定的 `'bad-request'` 被降级成默认码。M14 管**来源规则**，M15 管**直通通道**，两条判据在不同断言上 —— 并成一格就有一型会假绿（Step 3 的格数订正 14→16 记的是同件事） |
+| T8-M16 | `open` 开头"已有会话就拒"那一道删掉 | 「7. 会话还开着时二开 ⇒ session，并且现有会话一个资源都没动」红（`ctx.calls` 变长：第二次 `openDb`/`acquire`/`load`，而现有会话的锁被后面那发 `teardown` 放了）。这一发漏掉的不是错误码，是**连接池与锁的泄漏** |
+| T8-M17 | `submit` 里 `state.phase === 'paused'` 那道判据删掉 | 「11. 写失败 ⇒ 抢救件原样转交；丢锁 ⇒ 停写，此后 submit 报 session，且号一个都不许回收」红（丢锁后照样取号 9 进队列，而队列里的号会在别人已经占用的 turn 上被 ODKU 吞成 `already-applied`）。**`'stopped'` 那一支的对应变异不红** —— 登记在限度 ② |
+| T8-M18 | `new Autosave({ onEmergency: () => {} })`（"抢救件反正 main 会写"） | 「11.…」红（`ctx.rescued.length` 从 1 变 0）。这一发是"session 不数件、不碰 fs，原样转交"那条主张唯一的牙：钩子空了以后，`listEmergency` 在下次 `open` 里读到的是空目录 ⇒ 横幅那句"盘上留着 K 份现场"从此不说谎，因为**真的没有现场** |
+| T8-M19 | `close` 里 `req.mode === 'abandon' || autosave === null` 只留前半 | 「13. 只读会话的 graceful ⇒ 与 abandon 同路，绝不替别人宣告这库干净」红（`close:same` 出现 ⇒ 只读会话跑了 `closeProject`，替上一个编辑者写了 `clean_shutdown = 1`）。这是本表里唯一一型"绿着撒谎"的改坏：它对账可能真的平，而那条平账不是它挣来的 |
+| T8-M20 | `close` 的顺序改成先 `teardown()` 再 `closeProject(doc)`（"先放锁安全"） | 「14. graceful 平账 ⇒ 顺序是 flush→closeProject→release→end；读数原样、定时器清零」红（`order` 变 `['append:8','release','end','close:same']`）。反过来给另一个人留出"我刚写完、他还没对账"的窗口 —— T6 的 CAS 只保并发写，不保"账对完之前锁在"这件事 |
+| T8-M21 | `teardown` 末尾那发 `this.ports.emitStatus(stopped)` 删掉（"会话都拆了还给谁发"） | 「12. abandon ⇒ 不 flush、不对账、只拆；两格读数是 null 而不是 0」与「14. graceful 平账…」两格红（`ctx.statuses.at(-1)?.phase` 停在上一发）。屏幕侧那 11 格看不见：它们的 `STATUS_IDLE` 是假把式喂的。后果是横幅永远停在"saving"那一档，而库里已经不会再有东西进来 |
+| T8-M22 | `withTimeout` 摘掉，`drained = await autosave.flush()` 裸奔 | 「16. flush 挂死（库不可达）⇒ 到 CLOSE_FLUSH_TIMEOUT_MS 报 db，窗口不许被卡住」红在**超时**而不是断言（那一格 await 的 promise 永不 settle）。**读日志时别当成抖动**：`Test timed out in 5000ms` 才是它，`expect` 那几行根本走不到 |
+| T8-M23 | `ipc-persist.ts` 里 `case IPC.projectClose:` 复制粘贴漏改成 `projectOpen` | 「名册里每一条都在 main 有 case、在 preload 有 invoke（只改一边就红）」红（projectClose 那条没 case）。**五道闸门不红** —— shot 分支一行 IPC 都不发（第 ⑩ 段），这一型只有 T10/T11 的真会话看得见 |
+| T8-M24 | preload 的 `onSaveStatus` 只 `ipcRenderer.on(...)`，注销函数回空体 | 「保存状态这条事件两头都在：main 发、preload 订，且给得出注销」红；屏幕侧「保存状态驱动横幅四档；`stop()` 撤掉事件订阅**和**编辑订阅」**不红** —— 它数的是假 api 自己的 `listeners`。这正是 t8d 限度 ② 的具体化：`window.dajia` 是唯一没被任何测试构造过的边界 |
+| T8-M25 | `persist/session.ts` 顶部加一行 `import { app } from 'electron';`（或 `node:os` / `mysql2` / `node:fs`） | 「session.ts 既不碰 electron / node:fs / node:os，也不 import mysql2」红而**运行不红**（16 格全走注入端口，那三个 import 一个都不被调用）。同族先例 T7-M21；代价也一样：注释里写出 `from 'electron'` 会误红 |
+| T8-M26 | 有人把 `createDbPool` 挪进 `persist/config-store.ts` 并在那儿 `import { safeStorage } from 'electron'`（T9 会真做的事的提早上演） | 「`src/main/**` 里认识 electron 的名单逐字等于 [index.ts, ipc-persist.ts]」红。这一格就是 T9 交接里那句"必须**同时**改这一格并写明它是 spec §8.2 的例外"的牙 —— 名单比字面量，宽松判据（`length <= 3`）会把这件事说成合规 |
+| T8-M27 | `projectStore.ts` 里 `import type { SaveStatusWire }` 写成值 import | 「屏幕侧对 @dajia/protocol 只许 type-only import（zod 不许进 renderer 的 bundle）」红，而 `tsc`、`vitest`、`build` 三者全绿（值 import 完全合法，只是把 zod 拖进 renderer chunk）。同一格自带的正控制（`untypedProtocolImports("import { IPC } from '@dajia/protocol';")` 非空）是"这一格不是永远返回空数组"的凭据 |
+| T8-M28 | `dispatchBatch` 循环里那发 `set(...)` 挪回循环外（改回"一批一扳"） | editor-store「P-21：`dispatchBatch` 每应用一条扳一次；半途失败只扳已应用的那几发」红 + project-store 格 8「`dispatchBatch` 三条 = 三发账，且每发配它自己那一刻的整份快照」（标题外的注脚是"P-21 的凭据"）红（`f.submits.length` 从 3 变 1）。两档各盯一半：store 侧证扳机次数，屏幕侧证账数。**只剩一档红 ⇒ 有人把订阅改回读 `revision` 了** |
+| T8-M29 | `undo` 的只读闸门删掉（"只读会话反正栈是空的"） | 「只读挡住 `undo`/`redo`（账本关了，退了也没地方记）」红（第一支；`redo` 同型）。真正会走到这一支的是 `closeSession` 之后 —— 那一屏的栈**不空**，闸门是唯一不骗人的形状（代价登记在限度 ⑨） |
+| T8-M30 | `loadProject` 里 `viewport: null, viewportStoreyId: null` 两格删掉（"留着上一层的视口更顺"） | 「成功那一支：换 log、层跟着换、视口两格同发置 null、其余视图格清零」红。留着会得到一帧"新文档 × 旧口径"的错位图，与 `setStorey` 那条 P10 判据同一个理由 |
+| T8-M31 | `loadProject` 的守卫从 `doc.get(storeyId)?.kind !== 'storey'` 换成 `storeyId === ''` | 「拒收那一支：整个 state 一字不动（两个非法入参各判一型）」红在第二型（存在但不是层的 id 过了闸）。`?.kind` 那一句一句判两型，换成显式判空就少一型 |
+| T8-M32 | 订阅体里 `if (patch === lastSeen) return;` 那一句删掉（"每发重算一次好了"） | 格 7「视图动作一发都不发」红：`setStorey` 扳 `revision` ⇒ 订阅体跑 ⇒ 上一发的 `lastPatch` 被当新账再发一次（同一 turn 重放同一补丁）。同时「刚建好：phase off、banner null，屏幕上还是样例房且可写（⑧段那一屏）」仍绿（`phase !== 'open'` 在更前面）—— 两道的分工照登 |
+| T8-M33 | `submitOne` 里 `doc` 从订阅体给的 `state.log.document` 改成现读 `editor.getState().log.document` | 「`dispatchBatch` 三条 = 三发账，且每发配它自己那一刻的整份快照」红在后两句（三发都带最终态：`f.submits[0].doc` 里第二面墙已是 `'P-2'`）。这一发是"编码在 `await` 之前"那三行注释的唯一凭据 —— 只数条数的话它照样绿 |
+| T8-M34 | `closeSession` 里 `setReadOnly(true)` 挪进 `if (!r.ok)` 那一支 | 「`reopenAsEdit()` = 先 abandon 再 open，顺序读得出来」那格的**第二段**红（`graceful` 成功之后 `readOnly` 仍是 false，再 `dispatch` 一发出了 `f2.submits`）。放在判据之外是因为 main 那侧无论回什么会话都已拆 —— 成功那一支同样不许漏，这一格是唯一证人 |
+| T8-M35 | `reopenAsEdit` 改成只 `await open(o.projectId)`（跳过 `closeSession('abandon')`） | 「`reopenAsEdit()` = 先 abandon 再 open，顺序读得出来」红：`f.calls` 从 `['open','close:abandon','open']` 变 `['open','open']`，而第二发被 `open` 自己的 phase 闸门挡回 `'off'` + 那句"上一个工程还没收尾" ⇒ 用户按"重新接管"看到的却是"你没关"。锁也没放，重开永远拿不到票 |
+| T8-M36 | `computeBanner` 把第 1 条（`failure` 先判）挪到第 8 条之后 | 「回 `{ok:false, code:'not-configured'}` ⇒ red 横幅、phase 回 off、真源**没换手**」红（`phase === 'off'` 先回 null ⇒ 屏幕上压根没有横幅，失败一个字都不说）；「`'reconcile'` 停手，`'db'` 不停手」同型红。顺序就是优先级这一句的凭据 |
+| T8-M37 | `App.tsx` 的 `banner === null ? null : <SessionBanner/>` 换成常驻 `<div data-dajia-banner style={{height:0}}/>` | **五档 node 测试全绿**，红的是 `--prop-shot` 的 15b 探针（main 侧 throw，`bannerNodesAtPropGate` 非 0）。这一行是"DOM 侧的零节点没有 unit 证人"的示例：`⑧段` 那句只能由真窗口给 |
+| T8-M38 | `open` 里把 `editor.getState().loadProject(...)` 挪到 `put({ phase: 'open', opened: {...} })` **之后** | **本任务用例全绿** —— 两道闸门互为冗余是故意的：换手那一发原来靠 `phase !== 'open'` 挡，改序后靠 `opened === null` 挡，`f.submits.length === 0` 两版都过。写进行里是因为 Step 6 那句注释（"两道闸门都留着是对的"）没有独立证人；把它当"必须红"的判据去找，会误报成测试没写完 |
+| T8-M39 | 订阅体里 `lastSeen = patch` 挪到 null/phase 三道判据**之后**（"先判断再记账"） | **全绿** —— 那一挪的差别只在"被挡住的那一发有没有留下记性"，不改变任何外部行为。判据 2 的价值是**可读性**（每发都答得出为什么挡住），不在可判性。登记在限度 ⑩ |
+| T8-M40 | `let lastSeen: Patch \| null = editor.getState().log.lastPatch;` 初值改成 `null` | **本任务 11 格全绿**（第一发订阅时 `phase === 'off'` 就先挡了）。这一发要等到**同一进程里有第二份 store** 才可见 ⇒ 真读者是 T11 `--persist-shot` 里那第二份 store（限度 ⑪）。别为它造一格：为"两个 store 同时活"写单测等于重写一遍 `createProjectStore` |
+| T8-M41 | `PlanCanvas.tsx` 的 fit effect 依赖表把 `log` 删掉（回到 `[storeyId, setViewport]`） | **全绿**，且 `--prop-shot` 也绿 —— 五道闸门压根不打开工程，`viewport` 一直是样例房那一份。后果（`reopenAsEdit()` 之后画布永久空白）只有 T11 的 `--persist-shot` 会走到那一发（限度 ⑪）。这一行不进"必须红"的账：它是**屏幕侧**的依赖表，本任务的靶子在 node 档 |
+| T8-M42 | `open` 成功那一支里的 `useEditor.getState().setReadOnly(v.decision === 'read-only')` 摘掉，或写成死值 `setReadOnly(false)` | 格 5「read-only：闸门 + 横幅 + 双保险」红在**第二道闸门**：`readOnly` 仍是 false ⇒ `dispatch` 不再落 `只读工程：`，真源改了、订阅体看见 `phase === 'open'` 就发账 ⇒ `f.submits.length` 从 0 变 1。与 M34 是一对（M34 管"关"那一支漏抬闸，这一行管"开"那一支漏落闸），两行红在不同格 —— 少了这一行，"开"侧那道闸门就只剩横幅文案一个读者，而文案读的是 `v.decision` 不是 `readOnly`。**补在表尾**是因为 M38–M41 那四行"不红"是一组；这一行是普通可判红，别把它读进那一组 |
+
+**Task 8 登记的限度**（Step 8 汇总；写在这里是给下一个动这一族的人看的，不是待办）：
+
+① **批语义在 S1 不存在**（t8d ①）。`dispatchBatch` 半途失败会在真源上留下已应用的前几发（改前也一样，`S5` 那条命令顺序就是为它排的），本任务只保证这些发各有一发账。"一次删除要么整组进库要么整组不进"是计划 4 真源侧没排的决定。
+
+② **`submit` 的 `'stopped'` 那一支没有格打得到**（t8b ③ 的 `<待实测>`）。`stop()` 之后 `autosave` 字段已被置 `null`，正常路径走不到它；它防的是"将来有人把 `teardown` 拆成两步"。T8-M17 只证 `paused` 那一支。
+
+③ **T8 不建库**（t8c Step 3）。`dajia` 库不存在时 `openDb` 抛 `ER_BAD_DB_ERROR` ⇒ `'db'`，文案带原话。建库是 T9 连接向导的职责，那也是本计划唯一行使建库授权的地方 —— Step 8 第 7 项那条库收据就是这一条的常驻证人。
+
+④ **`ipc-persist.ts` 没有 unit 格**（t8c Step 4）。它的凭据是三条：编译期、`ipc-channels.test.ts` 的三格源码扫、真环境（五道闸门 + T10 双进程 + T11）。本文件里的 ports 实现（`openDb` / `acquire` / `emitStatus` / `writeEmergency`）在纯 node 档**一次都不被调用**，接线写错只有 T11 看得见。
+
+⑤ **`window.dajia` 是唯一没被任何测试构造过的边界**（t8d ②）。屏幕侧那 20 格测的是"store 与假 api 之间"那一层；真 preload 由 contextBridge 给那个对象，凭据只来自 `--prop-shot` 跑的真窗口。T8-M24 那一行是这个分工的图示，不是它的补丁。
+
+⑥ **`NOT_INJECTED` 那一支的触发没有覆盖**（t8d ③）。node 档永远没有 `window`，格 1 判的是 `readDajia()` 回 null，不是"Electron 里 preload 真的没注入"。那种情况下 spec §9 要的分型诊断会说什么，靠 格 2 的初始态与 格 3 的形状间接保证。
+
+⑦ **源码扫描这一族的共同代价**（t8c Step 4/5）：注释里写出被禁的那串就误红（`from 'electron'`、`createDbPool`、`password`）；多行写法 `import type {\n A,\n} from '@dajia/protocol'` 也误红。换来的是扫描器不需要 AST 依赖。改判据之前先想清楚这两型误红。
+
+⑧ **`'password'` 今天被 `ipc-channels.test.ts` 第 3 格整条禁在 preload 文本里**。T9 的配置通道必须**单独**把它摘出来并写明"只许在请求方向出现"，这条与 T8-M26 那道名单一起改 —— 两处都在 T9 的交接里，漏一处就是要么写不进去、要么把口令打进日志。
+
+⑨ **`close` 之后屏幕失去"退回去看看刚才改了什么"**（t8d ④），且没有一句话解释为什么退不动，只有 `lastError`。账本关了还能退比这个不便更危险，S1 接受。
+
+⑩ **订阅体里"先记账再判断"那一句没有可判的红**（T8-M39）。它改的是失败可读性，不是行为。别把它当测试缺口补一格 —— 真要判它，得让 `phase` 与 `opened` 在不同发上分两次变，那个形状在生产里不存在。
+
+⑪ **换手那一发的两条依赖只在真窗口里可判**（T8-M40、T8-M41）：`lastSeen` 的初值要第二份 store，`log` 进依赖表要 `reopenAsEdit()` 真的重开一个工程。两者都归 T11 的 `--persist-shot`（它构造那第二份 store，也真按"重新接管"）。T10 的 `--lock-shot` 只证两进程抢锁，别把这两个数当已经证过。
+
+⑫ **`CLOSE_FLUSH_TIMEOUT_MS = 10_000` 这个数值本身没证**。T8-M22 与格 16 吃的是常量，改数值格子跟着走 —— 假钟一拨就到。真库里 flush 要多久、10 秒够不够，只有 T11 的真进程给得出读数。
+
+⑬ **跨实体的引用/几何不变式在 `submit` 那一发不查**（t8a ⑩）。过界那一发只走 `documentFromPayload` 的逐实体 validate 与 T4 的归属守卫；整层派生复核的读者仍是 T5 的读盘与 T3 的那一档。T8 不重跑 `assertTruthSourceInvariants`（每发 O(实体数) 的第三次验同一份数据）。
+
+⑭ **真并发不在这里证**（沿用 T7 限度 1）。本任务的 16 + 20 格全是单进程、单会话、单池。两台机器同时开一个库那一型在 T10 的 `--lock-shot`，进程被 SIGKILL 那一型在 T11。
