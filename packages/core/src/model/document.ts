@@ -8,7 +8,7 @@ export const SCHEMA_VERSION = 1;
  * 每种实体必须为整数毫米的字段。含点的 x/y：spec D8 写的是"坐标与长度一律整数毫米"，
  * 只校验 *Mm 后缀会把浮点坐标留在真源里。
  */
-const INTEGER_FIELDS: Record<EntityKind, readonly string[]> = {
+export const INTEGER_FIELDS: Record<EntityKind, readonly string[]> = {
   point: ['x', 'y'],
   wall: ['thicknessMm', 'heightMm', 'elevationOffsetMm'],
   opening: ['distanceMm', 'widthMm', 'heightMm', 'sillMm'],

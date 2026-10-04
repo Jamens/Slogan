@@ -4,6 +4,7 @@ import type { Command } from '../model/command';
 import type { Document } from '../model/document';
 import type { StoreyEntity } from '../model/entity';
 import { requireStorey } from '../model/read';
+import { assertNoVerticalOverlap } from '../model/invariants';
 import { dependentsOf } from '../geom/topology';
 
 export interface StoreyCreateInput {
@@ -13,27 +14,8 @@ export interface StoreyCreateInput {
   heightMm: Mm;
 }
 
-/**
- * 竖向不重叠：楼层占用 [elevationMm, elevationMm + heightMm)。
- * 正好贴邻合法（一层的顶就是二层的地），留出空隙也合法（错层、夹层、吊顶），
- * 只有重叠是物理上不可能。负标高合法（地下室），所以符号一律不查。
- * storeyCreate 与 storeySetElevation 共用这一份：两份规则一定会漂。
- */
-function assertNoVerticalOverlap(doc: Document, candidate: StoreyEntity): void {
-  const top = candidate.elevationMm + candidate.heightMm;
-  for (const other of doc.byKind('storey')) {
-    if (other.id === candidate.id || other.projectId !== candidate.projectId) continue;
-    const otherTop = other.elevationMm + other.heightMm;
-    const from = Math.max(candidate.elevationMm, other.elevationMm);
-    const to = Math.min(top, otherTop);
-    if (from < to) {
-      throw new RangeError(
-        `楼层标高重叠：${candidate.id} 占 ${candidate.elevationMm}–${top}，` +
-          `与楼层 ${other.id} 的 ${other.elevationMm}–${otherTop} 相交（区间按半开算，贴邻合法）`,
-      );
-    }
-  }
-}
+// 竖向重叠的判据与它的注释一律在 model/invariants.ts（唯一的产地）：
+// 命令层与读盘侧共用那一份，这里不再复述区间算式。
 
 export function storeyCreate(input: StoreyCreateInput): Command {
   const elevationMm = assertMm(input.elevationMm, '楼层标高');

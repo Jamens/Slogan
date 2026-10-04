@@ -23,3 +23,5 @@ export * from './spatial/index';
 export * from './geom/ring';
 export * from './commands/column';
 export * from './commands/slab';
+export { INTEGER_FIELDS } from './model/document';
+export * from './model/invariants';
