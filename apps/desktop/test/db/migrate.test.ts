@@ -226,8 +226,11 @@ describe('库名白名单与迁移目标核对（闸在任何 SQL 之前）', ()
   });
 
   it('dropTestDatabase 的第一道闸：白名单外的名字在任何 SQL 之前抛（拆自原文第 5 格，P-48）', async () => {
-    await expect(dropTestDatabase(env, 'smartscrm')).rejects.toThrow(/不是搭家的库/);
-    // 顺序证人：闸若在 SQL 之后，这一发拿到的是 ECONNREFUSED ⇒ 断的是错误种类，不是有没有红。
+    // **P-51（复审席 I1）**：拒绝型的格子**一律不许带能连通的实例**。
+    // `dropTestDatabase` 的 SQL 是 `DROP DATABASE IF EXISTS \`${name}\`` —— 第一道闸一旦回归，
+    // 用 `env` 跑这一发就是**真的去删 `smartscrm`**（那是用户别的项目在跑的库，授权红线里点名不许碰）。
+    // 今天它空转（闸在 ⇒ 连不上也发不出），但变异棒会把闸删掉真跑一遍，格子失败之前 SQL 已经发出去了。
+    // 换成 `unreachableEnv` 判据一点没弱：闸若在 SQL 之后，拿到的是 ECONNREFUSED 而不是白名单文案 ⇒ 红。
     await expect(dropTestDatabase(unreachableEnv, 'smartscrm')).rejects.toThrow(/不是搭家的库/);
   });
 
@@ -236,12 +239,14 @@ describe('库名白名单与迁移目标核对（闸在任何 SQL 之前）', ()
     // （原文只喂 smartscrm，第一道闸就挡住了）。现在它有证人：
     // 第二道闸被删 ⇒ 这里拿到的是 ECONNREFUSED（打不通的实例）而不是白名单文案 ⇒ 红。
     // `dajia` 是白名单内的名字，只有"删库"这一侧不许它。
-    await expect(dropTestDatabase(env, 'dajia')).rejects.toThrow(/只许删 dajia_test/);
+    // 同 P-51：这一发也**只走 unreachableEnv** —— 第二道闸被删掉时它该发的是 `DROP DATABASE IF EXISTS \`dajia\``，
+    // 而 T11 之后那个库里躺着用户的真工程；判据要的是"抛在哪一层"，不是"能不能连上"。
     await expect(dropTestDatabase(unreachableEnv, 'dajia')).rejects.toThrow(/只许删 dajia_test/);
   });
 
   it('ensureDatabase 的闸：白名单外的名字在任何 SQL 之前抛（拆自原文第 5 格，P-48）', async () => {
-    await expect(ensureDatabase(env, 'ledger_db')).rejects.toThrow(/不是搭家的库/);
+    // 同 P-51：拒绝型格子不带可连通的实例（这一发的 SQL 是 `CREATE DATABASE IF NOT EXISTS`，
+    // 对 `ledger_db` 这种已存在的库是空转，但"空转"要依赖库里恰好有同名库这种盘上巧合，不值得赌）。
     await expect(ensureDatabase(unreachableEnv, 'ledger_db')).rejects.toThrow(/不是搭家的库/);
   });
 

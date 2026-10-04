@@ -31,8 +31,13 @@ describe('迁移清单的结构', () => {
     // **实测订正**（Task 2）：两条正则原来写成不带反引号的 `kind VARCHAR` / `load_bearing INT`，
     // 而 001 的 DDL 里标识符**全体带反引号**（上面那条表名判据也是这么写的）——照原文这一格永远红。
     // 改的是正则去贴 DDL，不是反过来：SQL 正文是要进 git 永不再改的那一份。
-    expect(first.sql).toMatch(/`kind` VARCHAR\(\d+\) GENERATED ALWAYS AS[\s\S]*STORED/);
-    expect(first.sql).toMatch(/`load_bearing` .*GENERATED ALWAYS AS[\s\S]*STORED/);
+    expect(first.sql).toMatch(/`kind` VARCHAR\(\d+\) GENERATED ALWAYS AS[^;]*STORED/);
+    expect(first.sql).toMatch(/`load_bearing` .*GENERATED ALWAYS AS[^;]*END\)\s*STORED/);
+    // **P-52 的收紧**（复审席 I2）：这两条原来写 `[\s\S]*STORED` —— 无上界，会**跨到下一条语句**去找
+    // `STORED`。今天靠"001 里 `STORED` 只出现在这两处"的布局巧合守牙；002 一落地（新表也带生成列）
+    // 就把假绿门打开：kind 漂成 VIRTUAL 时，后面别张表的 `STORED` 会让这一格照样绿。
+    // `[^;]*` 把匹配关在**一条语句之内**（DDL 里生成列的定义不含分号），`load_bearing` 那侧再钉住 `END)`
+    // —— CASE 的收口，保证找到的是它自己的 `STORED` 而不是别人的。
   });
 
   /**
