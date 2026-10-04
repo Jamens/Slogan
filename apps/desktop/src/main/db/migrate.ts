@@ -9,7 +9,7 @@
  * ④ 迁移正文**永远不进参数位**（它是 SQL 本身，不是数据）；唯一进参数位的是版本号/名字/校验和三元组。
  */
 import type { Pool } from 'mysql2/promise';
-import { assertDatabaseName } from './db-safety';
+import { assertDatabaseName, type AllowedDatabase } from './db-safety';
 import { MIGRATIONS, type Migration } from './migrations';
 
 export const SCHEMA_TABLE = '_migration';
@@ -17,6 +17,39 @@ export const SCHEMA_TABLE = '_migration';
 interface AppliedRow {
   version: number;
   checksum: string;
+}
+
+/**
+ * **P-46：`database` 参数是"主张"，不是路由** —— 它过去只过白名单，从不与连接实际所在的库核对，
+ * 于是"拿着连 `dajia_test` 的池声称迁 `dajia`"会把 001 打进 `dajia_test` 并**返回成功**。
+ * 这一台实例里躺着用户别的项目的 15 个库，那种"报成功而打错了库"是这台机器上最贵的一种错，
+ * 而这一档是后面 5 个任务（T3..T7）的地板 ⇒ 从这一版起它是判据。
+ *
+ * 位置（这才是重点，不是风格）：**白名单闸之后、任何读写之前**。`readApplied` 也算读写 ——
+ * 在别的库里读到的 `_migration` 没有意义，读到空还会把"这库没迁过"当成事实往下写。
+ *
+ * 代价（写明）：每次 `migrate` 多一发 `SELECT DATABASE()`。它是服务端常量投影，不走表、不走索引，
+ * 成本在一次 round-trip；与"少一类不可能的错"相比值。
+ *
+ * 两种红法分开写，因为它们指向不同的错：
+ * ① 回 NULL = 这个连接**没选中任何库**（比如 T1 那种"只连实例"的池，见 `env.test.ts` 的 P-40 段）
+ *    ⇒ 它根本不能当迁移目标，不是"名字暂未知"，不许往下走。
+ * ② 名字不一致 = 池与参数各说各话 ⇒ 文案点名两个名字，让人一眼看出连的是哪个、声称的是哪个。
+ */
+async function assertTargetDatabase(pool: Pool, database: AllowedDatabase): Promise<void> {
+  const [rows] = await pool.query('SELECT DATABASE() AS current_database');
+  const current = (rows as { current_database: string | null }[])[0]?.current_database ?? null;
+  if (current === null) {
+    throw new RangeError(
+      `无法核对迁移目标：这个连接没有选中任何库（SELECT DATABASE() 回 NULL），它不能当迁移目标：${database}`,
+    );
+  }
+  if (current !== database) {
+    throw new RangeError(
+      `迁移目标与连接实际所在的库不一致：参数说 ${database}，连接在 ${current}。` +
+        `要么换成连 ${database} 的池，要么改参数 —— 别把迁移打进 ${current} 却报 ${database} 的成功。`,
+    );
+  }
 }
 
 /**
@@ -48,7 +81,8 @@ async function readApplied(pool: Pool): Promise<Map<number, AppliedRow>> {
  *    以及"版本没记进 `_migration` 就重来一遍"这个形状。这不是缺陷，是 MySQL 的语义，
  *    照它设计比假装它能回滚要诚实。
  * ② 已应用的版本若校验和对不上 ⇒ 抛，**不修**。有人改了历史 SQL，必须人来决定。
- * ③ 库名先过白名单再动任何东西。
+ * ③ 库名先过白名单再动任何东西，**紧接着**核对 `SELECT DATABASE()` 与参数一致（P-46，见
+ *    `assertTargetDatabase`：白名单管"这个名字准不准动"，那一发管"这个连接是不是它"）。
  * ④ `_migration` 还不存在（空库）= 零条已应用，不是错误 —— 见 `schemaTableExists`。
  */
 export async function migrate(
@@ -56,7 +90,8 @@ export async function migrate(
   database: string,
   migrations: readonly Migration[] = MIGRATIONS,
 ): Promise<{ applied: number[]; alreadyApplied: number[] }> {
-  assertDatabaseName(database);
+  const target = assertDatabaseName(database);
+  await assertTargetDatabase(pool, target);
   const applied: number[] = [];
   const alreadyApplied: number[] = [];
   const seen = await readApplied(pool);

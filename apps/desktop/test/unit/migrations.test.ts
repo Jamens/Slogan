@@ -35,6 +35,25 @@ describe('迁移清单的结构', () => {
     expect(first.sql).toMatch(/`load_bearing` .*GENERATED ALWAYS AS[\s\S]*STORED/);
   });
 
+  /**
+   * **P-49 的静态那一半**（连库那一半在 `test/db/migrate.test.ts` 里读 `information_schema`）。
+   * 上面两条正则止于 `STORED`，**不看 collation**，而且 `[\s\S]*` 无上界 —— 审查 C 节点名的两个洞
+   * （kind 若写成 VIRTUAL，后面别张表的 STORED 会让它假绿；口径漂回 utf8mb4 它完全不响）。
+   * 这一格把 `kind` 那一列钉到"STORED 之后紧跟 COLLATE ascii_bin NOT NULL"，且把匹配关在一条语句之内。
+   * 注释行先剥掉：001 在 `STORED` 与 `COLLATE` 之间插了四行实测说明（C4b 的现场），那是给人读的，
+   * 不该参与"口径有没有漂"的判据。
+   */
+  it('kind 生成列的字符集口径写死成 STORED COLLATE ascii_bin（P-49 的静态证人）', () => {
+    const first = MIGRATIONS[0];
+    if (!first) throw new TypeError('没有 001 迁移');
+    const noComments = first.sql.replace(/--[^\n]*/g, '');
+    expect(noComments).toMatch(
+      /`kind` VARCHAR\(\d+\) GENERATED ALWAYS AS[^;]*?\)\s*STORED\s+COLLATE ascii_bin NOT NULL/,
+    );
+    // 反面形状：整份正文里不许出现"生成列后面接 CHARACTER SET"那种跑不通的写法（冲突 C4b 的实测结论）
+    expect(noComments).not.toMatch(/STORED\s+CHARACTER SET/);
+  });
+
   it('全仓不许出现第二个库名以外的 CREATE/DROP DATABASE（护栏唯一产地）', () => {
     for (const m of MIGRATIONS) {
       expect(m.sql).not.toMatch(/CREATE DATABASE|DROP DATABASE/i);
