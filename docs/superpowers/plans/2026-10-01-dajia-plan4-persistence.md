@@ -58,7 +58,8 @@
 | `packages/protocol/src/entity-schema.ts` | 六类实体的 zod schema（`.strict()`）+ `PatchSchema` + `JournalTurnSchema` | T3 |
 | `packages/protocol/src/command-type.ts` | `COMMAND_TYPES`（与 core 的 `CommandType` 并排的另一半） | T3 |
 | `packages/protocol/test/entity-schema.test.ts` | **字段对账**：zod shape 的键集合 == `packages/core/src/model/entity.ts` 里各 interface 的字段名（正则抠源码，命中次数不等就抛）—— 新增字段忘了登记 schema 在这一格红 | T3 |
-| `packages/core/src/model/invariants.ts` | `assertTruthSourceInvariants(doc)` + 共享版 `assertNoVerticalOverlap`（从 `commands/storey.ts` 提上来，不留第二份规则） | T3 |
+| `packages/core/src/model/invariants.ts` | `assertTruthSourceInvariants(doc)` + 共享版 `assertNoVerticalOverlap`（从 `commands/storey.ts` 提上来，不留第二份规则）。**执行期追加（P-57/P-58/P-59）**：`assertWallShape` 也从 `commands/wall.ts` 提上来（带 `label` 参）、洞顶 ≤ 宿主墙高、幽灵柱两型分账 | T3 |
+| `scripts/check-invariants-cycle.mjs` | **执行期追加**（P-57 的常驻证人）：扫 `model/invariants.ts` 的传递 import 闭包，出现 `commands/**` 即 exit 1 —— 搬迁之后「读盘门不许回指命令层」这条主张的形状 | T3 |
 | `packages/core/test/invariants.test.ts` | 计划 2 交下来的读盘清单逐条有牙（`handBuild(...)` 手搓坏文档；命令层造不出这些坏数据正是它的落点） | T3 |
 | `apps/desktop/src/main/db/codec.ts` | 磁盘 JSON ↔ core `Entity`/`Document`/`Patch`；每一行过 zod，抛错带表名与行 id | T4 |
 | `apps/desktop/src/main/db/pool.ts`（**T4 回改**） | 补 `supportBigNumbers`/`bigNumberStrings` 与 `lockWaitTimeoutMs` 透传（裁决 P-17：读路径第一次真读 BIGINT 才需要） | T4 |
@@ -138,7 +139,7 @@
 
 ---
 
-## 裁决（P-1 … P-17 + 执行期追加的 P-40 … P-54；执行中若与落地的代码冲突，按代码订正并写执行回填。P-18 … P-39 住在 Task 8 / Task 9 的文本里，随那两个任务回写并进本表）
+## 裁决（P-1 … P-17 + 执行期追加的 P-40 … P-62；执行中若与落地的代码冲突，按代码订正并写执行回填。P-18 … P-21 住在 Task 8 的段落、P-27 与 P-33 住在 Task 9 的段落 —— **P-22…P-26 / P-28…P-32 / P-34…P-39 是空号，别再往里填**；那 6 条随各自任务回写时**就地补表**，不把理由复制一份过来）
 
 | # | 决定 | 理由 | 已接受的代价 |
 |---|---|---|---|
@@ -160,9 +161,9 @@
 | **P-16** | upsert 一律用 MySQL 8.0.19+ 的 `INSERT ... AS new ON DUPLICATE KEY UPDATE x = new.x` 别名形态；`writeSnapshot` 用**裸 INSERT**，不写 ODKU | `VALUES()` 函数从 8.0.20 起废弃（仍可用但打 warning），别名形态是长期写法；快照那一格"一个 `journal_turn` 最多一行"是有语义的断言（同一发重复落盘说明 autosave 的触发判定漂了），让 `uk_project_turn` 当场抛比 ODKU 静默覆盖更容易查 | 换到 MariaDB 时别名形态要回退（S1 不换，spec §12 钉的是 MySQL 8.0.45）；重复快照在实现里成了"必炸"路径 ⇒ T7 的 autosave 必须自己记住"这个 turn 已经落过盘"，不许靠 ODKU 兜 |
 | **P-17** | `createDbPool` 在 **T4** 补两条配置：`supportBigNumbers: true` + `bigNumberStrings: false`，以及 `lockWaitTimeoutMs?: number`（透传 `sessionVariables`） | `journal_turn` / `turn` / `seq` / `updated_seq` 四列都是 BIGINT。mysql2 默认把 BIGINT 直接转 JS number，超出 2^53 静默失精；开 `supportBigNumbers` 后"安全范围内回 number、范围外回 string"，而 `MmSchema`/`JournalTurnSchema` 对 string 一律拒 ⇒ 越界变成一次抛，不是一次悄悄写歪的账。`lockWaitTimeoutMs` 唯一读者是 P-15 那一格（默认 50 秒会让测试看起来像挂死） | Task 2 已把 `pool.ts` 写完，T4 要回头改它 ⇒ 该文件的注释里"业务连接永远不开 multipleStatements"那句不许顺手删。越界那条主张本计划只到"会抛"为止，不主张"抛得好看"（真出现 2^53 号楼层需要 P-8 同款的 spec 订正） |
 
-### 执行期裁决（P-40 起；Task 1 与 Task 2 落码时由控制位追加）
+### 执行期裁决（P-40 起；Task 1 / Task 2 / Task 3 落码时由控制位追加）
 
-> 编号从 **P-40** 起，因为 **P-18 … P-39** 已经在 Task 8 / Task 9 的计划文本里被点名（散在各自 chunk 的段落里，随那两个任务的回写并进上表）。这里不回填它们，避免两份编号抢同一个格子。
+> 编号从 **P-40** 起，因为 P-18…P-39 那一段被预留给了 Task 8 / Task 9 的文本。2026-10-04 用脚本按 `P-(1[89]|2[0-9]|3[0-9])\b` 扫过 `## Task 1` 之后的全文，实数只有 **6 个号真被写过**：P-18、P-19、P-20、P-21（Task 8 的 ①②③④ 段）与 P-27、P-33（Task 9 的段落）；**其余 16 个号从未被任何一条裁决占用**。这条账目订正的依据是"编号看起来有人住"本身就是第二份真源 —— 表若声称 22 条，读它的人会去找 22 条主张。那 6 条的正文住在各自任务段落里，回写时**在本表补行、理由就地引用**，不复制。
 
 | # | 决定 | 理由 | 已接受的代价 |
 |---|---|---|---|
@@ -181,6 +182,14 @@
 | **P-52** | 两条生成列正则的无上界部分收紧：`[\s\S]*` ⇒ `[^;]*`，`load_bearing` 另钉 `END)`（CASE 的收口锚） | 复审席 I2：原判据能抓 VIRTUAL 漂移纯属"`STORED` 字面量在 `migrations.ts` 里只出现两行"的布局巧合，002 一落地就打开假绿门 | **这条收紧被 P-54 证明只关住了跨语句那一半** —— 同一条 `CREATE TABLE` 里两张生成列之间没有分号，`[^;]` 跨得过去。诚实的记法是：P-52 处理了 002 的方向，M13 实测暴露了 001 自己的方向，后者由 P-54 补 |
 | **P-53** | `load_bearing` 用 `CASE` 而不用 `CAST` 的理由，按**实测红相**改写 | 变异棒 M2：计划文本预测 `['wall',1]` 变 `['wall',0]`，真跑出来是三条探针 INSERT 的**第一条就被服务端硬拒** —— `ER_TRUNCATED_WRONG_VALUE (1292, 'Truncated incorrect INTEGER value: ''true''')`。strict mode 下既不静默给 0，也不"警告后仍成功" | 红得比预测更响：那句注释的凭据从"会算错"升级为"根本进不了库"。代价：001 从此**冻结**（校验和在运行时按 SQL 正文算，改注释即改校验和 ⇒ 已应用的 001 不许再动，后续只许加 002） |
 | **P-54** | 静态档补 `expect(first.sql).not.toMatch(/VIRTUAL/)`，把整型关掉 | 变异棒 M13 的两步对照跑（a=只改 SQL、b=连正则一起还原）给出最扎人的读数：`kind` 漂成 VIRTUAL 时，`:23`「001 建齐六张表」那一格**收紧前后都绿** —— P-52 的 `[^;]` 在同一条语句内跨到了 `load_bearing` 的 `END) STORED`。真正钉住它的是 P-49 的两个证人（静态形状格 + 连库 `EXTRA` 格），而"建齐六张表"这一格的名声比它的覆盖面大 | 用的是整型禁用（`not.toMatch(/VIRTUAL/)`）而不是"数 `STORED` 的个数"：后者在 002 加生成列那天当场假红，判据该跟着长的方向反了。控制位亲自复跑：三格同时红（新格 + P-49 静态证人 + 镜像档），还原后 6/6 绿、md5 与开局逐字节一致 |
+| **P-55** | Task 3 Step 4「竖向重叠 / 正好贴邻 / 留空隙」那一格，夹具给上层补显式 `index = 1`；**三条断言与格数一字未动** | 计划文本自己打脸：`storeyAt(id, elevation, height, index = 0, …)` 的默认值让同一格的两层**都是 `index: 0`**，而紧随其后的下一格吃的是**逐字节相同**的文档并断 `toThrow(/index 重复/)` —— 两格不可能同时成立。缺陷在夹具不在实现（席位实测的红灯：`expected [Function] to not throw an error but 'RangeError: 楼层 index 重复：…:0' was thrown`，红在"贴邻不抛"那一发）。审查席独立复算并确认 | 这一格的唯一变量回到标题声称的那件事（竖向区间的重叠 / 贴邻 / 空隙），比原文更纯。代价：`index = 1` 是夹具里的第二个自由度 —— **T4 之后复用 `storeyAt` 造多层夹具时，同一 `projectId` 下 index 必须唯一**（这条已由本格在守） |
+| **P-56** | 「storey.ts 不许留第二份重叠规则」那格的 `toContain("from '../model/invariants'")` 换成**行首锚定的值 import `toMatch`**，且**原那一行撤掉**（不许只加不删） | 子串判据证不到"这是一条 import"：复审席实测 —— 删掉 `storey.ts:7` 的 import、只在注释里留下 `from '../model/invariants'` 这句话，**旧形状绿、新形状红**。这是 T2 的 M13 / P-52 / P-54 那一族（源码扫描型判据的形状比标题窄）第二次落地。选锚定形态而不是"数 import 语句"的理由：`[^}]*` 与 `\s*` 吃掉"花括号里有别的名字""换行""行尾分号"三种常见重排，避免一次纯格式改动就假红 | 新形状仍吃不下**跨行写法**的第二份规则（第二条 `/elevationMm \+ .*heightMm/` 的 `.*` 只在同一行内贪心），限度写进格子注释而不是假装证到。同时**作废**席位报告里那句"0 命中已经要求 import 真在"的论证 —— 一条 `not` 匹配不可能要求任何东西存在，该格真正的承重是 typecheck + `commands-column-slab.test.ts` 那两发 |
+| **P-57** | `assertWallShape`（零长 + 墙厚不小于墙长）从 `commands/wall.ts` 的模块私有**搬进** `model/invariants.ts` 并导出，签名加 `label` 参（命令层传 `'该墙'`、读盘门传墙 id）；读盘门的墙循环调用它，且**不借道 `wallAxis`** | 审查席探针实测：厚 5000 装 4000 长（[A]）与厚 = 长的边界（[B]）**静默过读盘门** —— 派生层 `geom/outline.ts:112-116` 的四件守卫（星形接头、同向重叠、近平行无接缝点、轮廓翻面）不含它，`assertNoFlip` 只比 trim 和与轴长，够不着自由端墙。而 T3 的 doc block 当时正声称派生层覆盖它 ⇒ 一句谎配一条盲区。搬而非另立：`model/invariants.ts → commands/wall.ts → model/invariants.ts` 会成环，反向（commands import model）是既有方向。不走 `wallAxis`：`geom/axis.ts` 自带一句零长报错，借道等于**第三份判据**、还多一次抛点与一次换算，而坐标上面已经取到 | 命令层两句文案各多了 `该墙`（盘上 8 处命令侧断言全是 `toThrow(/零长/)`、`toThrow(/不小于墙长/)` 的松正则，**没有一处逐字钉整句** —— 搬迁前后都复验过）。连带三笔：`scene-2d` 一处注释指针要跟着改（R2-2）、读盘门新增对 `geom/vec` 的 `length/sub` 依赖（闭包无环由新脚本 `scripts/check-invariants-cycle.mjs` 常驻守着）、`invariants.ts` 原先那条自己写的零长分支删除（它是文案不同的第二份判据，且审查席判它**零证人**） |
+| **P-58** | 洞顶 ≤ 宿主墙高进读盘门（`sillMm + heightMm > host.heightMm` ⇒ 抛，文案点名洞口 id / 顶标高 / 宿主墙高 / 两个加数）；同时**明写这条不主张"读盘门是写盘门的超集"** | 探针 [E]（洞高 99999 装 3000 墙）与 [F]（`sill 200 + 高 2900` 超 3000 墙顶）实测**双双放行**。而 `commands/opening.ts` 顶部**白纸黑字**把"洞顶 ≤ 宿主墙高"列为"派生抓不到的三条"之一 —— 即写盘侧知道、派生侧看不见、读盘侧此刻不管，Task 5 装上这道门之后物理上不可能的洞口会静默进画。不对称的真相：写盘侧 `assertFitsAfterInsert` 是**并入同宿主已有洞口之后**再判竖向，比按裸字段判更严 ⇒ 两处判据故意不同强度 | 读盘门与写盘门对同一族错误给**两族文案**（T5 的重放路径要按两族写断言，不能假设一个正则吃两边）；读盘门这一发只挡"字段本身就装不下"那一型，挡不住"两个洞并入后超高"那一型 —— 后者只有写盘门看得见，登记为已知残余 |
+| **P-59** | 幽灵柱两型**分账**：`assertNoGhostColumn`（`geom/topology.ts` 那份产地，禁动几何面）拦「同层、同坐标、**不同点 id**」；读盘门另补一发「同一枚 `(storeyId, pointId)` 落点只准挂一根柱」拦「**同一枚点**两柱」，键的形状照 `seenIndex` 那条既有判据 | 第一轮只加了前者，而审查席探针 [C] 点名的正是后者 —— `exceptPointId` 按**点 id** 排除自己，对手挂同一枚点时被当"自己"排掉，那一型**仍然放行**。`commands/wall.ts` 注释明说柱不进派生表、`SpatialIndex` 只装墙与洞口 ⇒ 视图与索引对这一型永远是瞎的，而读盘门是 Task 5 唯一装上去的放行证。夹具可达性实测：`Document.replaceEntities` 的 validate 只查 id 形状与整数毫米、零跨实体检查 ⇒ 这一型手搓得出来，**不是"构造层面不可达"** | 两型各一次 O(columns) 扫描（合起来 O(columns²) 那一发是 loads 时的一次性成本，与派生层同一量级）；报错文案在判决给的 `${storeyId}:${pointId}` 键之外多带了被拒柱的 id —— 复审席裁"不回撤"（消息里"哪根柱被拒"真实存在，且有证人消费它） |
+| **P-60** | `assertTruthSourceInvariants` 函数头那段"本门覆盖 / 归派生层"的**清单升为合同**：每次往读盘门加或删判据，都要把清单两向核对一遍（声称覆盖但代码没有 = 谎；代码有但清单没写 = 过谦），并把"两向核对"固定为复审席的一问 | C1 的根因不是缺判据，是**一句注释让下一个任务把它当放行证**：原文"几何退化…invariants 里一条都不重算"同时犯了两向的错 —— 承诺了派生层没有的三条，又没写代码里已有的那条零长分支（`invariants.ts` 自己重算了，注释说没重算）。落码后的清单按事实分成两栏，各条都能指到具体判据与具体格子 | 清单是注释，注释不进测试 ⇒ 唯一牙是复审席那一问与 P-57 的循环检查脚本；`geom/outline.ts:112-116` 那份四件清单是派生层的合同，两处若漂移只有人工两向核对能抓（登记为限度） |
+| **P-61** | I2 的补法裁成**行为探针**，不新增源码扫描格：每类每枚 `*Id` / `*Ids` 字段逐一 `safeParse`（非 V7 串必拒 **且** 合法 id 必收），`StoreySchema.index` / `loadBearing` / `material` / `category` 各一发，`EntitySchema` 的 discriminant 另发 | 审查席 §5 item 7 那一族"降成 `z.string()` / `z.number()` 之后**零红**"只有行为探针接得住；名字级 pin（键集合逐字对账）钉的是字段名，不是 validator。"必收"那半发是新加的：只测"坏值被拒"的循环表会把过严实现也测成绿（整格假绿的另一型）。明确**不许**为 I2 写读源码文本的格 —— 源码扫描那族刚在 T2（P-52/P-54）和 P-56 连着栽两次，能用行为证的一律用行为 | `m1`（`discriminatedUnion` vs `z.union`）的牙落在 zod 4.6.5 的具体报错形态（未知判别值 `invalid_union` 且 `path=['kind']`，plain union 的 `path` 为空）⇒ **升级 zod 若改报错形态，这一格会红**；那是设计内的钉子（它逼下一位重新核一遍 path 形状），不是脆弱 |
+| **P-62** | 控制位判决里给的**夹具配方本身要实测**，走不通就地订正并登记（本轮两处：`mm()` typeof 守卫的证人、`requireStorey` 的类别点名） | ① 判决写"`replaceEntities` 换一枚缺整数字段的实体"，实测走不通 —— `Document.replaceEntities` 先跑 `validate()`，缺字段**先红在「必须是整数毫米」**，永远到不了 `mm()`。席位改成"建好合法文档再毁掉文档内那枚实体的字段"，比判决更贴威胁模型（手搓对象不受 validate 保护 = 读盘路径的真实形状）。② 判决要求用 `/洞口\|柱\|楼板/` 分辨类别，而 `requireStorey` 的报错里**根本没有类别词** ⇒ 这是一条字面不可满足的要求；落地用每类专属幽灵层 id + `not.toMatch(/同层/)` 分账，摘掉对应那发时红在"必须同层"上，归属仍有牙 | 记账方向：判决也是文本，席位的实测才是盘。代价是**下位席位不能盲抄判决的配方** —— 每条配方落地前先跑一发可达性，做不到就回报而不是削判据（本轮两位席位都做到了这一点） |
 
 ---
 
@@ -1169,6 +1178,9 @@ EOF
 - Modify: `packages/core/src/index.ts`（导出 `INTEGER_FIELDS` 与 `invariants` 的两个符号）
 - Modify: `packages/core/src/commands/storey.ts`（删模块私有 `assertNoVerticalOverlap`，改 import 共享版；**报错文案逐字不动**，现有用例吃它）
 - Create: `packages/core/test/invariants.test.ts`
+- Modify: `packages/core/src/commands/wall.ts`（**执行期追加，P-57**：模块私有 `assertWallShape` 搬进 `model/invariants.ts` 并导出，两处调用点传 `label = '该墙'`；报错文案的两个子串 `零长` / `不小于墙长` 不许丢）
+- Create: `scripts/check-invariants-cycle.mjs`（**执行期追加**：扫 `model/invariants.ts` 的传递 import 闭包，出现 `commands/**` 即 exit 1 —— P-57 搬迁之后"读盘门不回指命令层"这条主张的常驻证人）
+- Modify: `packages/scene-2d/test/editing.test.ts`（**执行期追加，R2-2**：一处注释指针跟着 `assertWallShape` 的新产地改；断言一字未动）
 
 **Interfaces:**
 - Consumes: T1 的 zod 依赖已进 `@dajia/protocol`；`Document.entities`（`ReadonlyMap<EntityId, Entity>`，公开字段）、`read.ts` 的 `mustExist/requireWall/requirePoint/requireStorey`、`geom/axis.ts` 的 `wallAxis`、`geom/ring.ts` 的 `assertSimpleRing(label, points)`、`geom/outline.ts` 的 `deriveStoreyGeometry(doc, storeyId)`、`geom/vec.ts` 的 `vec(x, y)`
@@ -1699,6 +1711,9 @@ describe('assertTruthSourceInvariants：读盘放行证', () => {
     }
   });
 
+  // 执行期订正（P-55）：这一格的上层必须显式给 `index = 1`。原文用 `storeyAt` 的默认 `index = 0`
+  // 造两层 ⇒ 两层同为 index 0 ⇒ 下一格的「index 重复」会抢先抛，这一格永远红；而下一格吃的是
+  // 逐字节相同的文档。缺陷在夹具不在实现，三条断言与格数一字未动。
   it('楼层竖向重叠 ⇒ 抛；正好贴邻与留空隙都不抛（半开区间那三条口径在读盘侧同样成立）', () => {
     expect(() => assertTruthSourceInvariants(handBuild([storeyAt(ID.lower, 0, 3000), storeyAt(ID.upper, 3000, 3000)]))).not.toThrow();
     expect(() => assertTruthSourceInvariants(handBuild([storeyAt(ID.lower, 0, 3000), storeyAt(ID.upper, 2000, 3000)]))).toThrow(/重叠/);
@@ -1726,9 +1741,13 @@ describe('assertTruthSourceInvariants：读盘放行证', () => {
     expect(() => assertTruthSourceInvariants(doc)).toThrow(/超出宿主墙/);
   });
 
-  it('storey.ts 不许留第二份重叠规则：它必须 import 共享版，且本文件不含区间判定那几行', () => {
+  it('storey.ts 走共享判据：import 行按行首锚定钉死，且同一行内没有第二份区间判定', () => {
     const src = readFileSync(new URL('../src/commands/storey.ts', import.meta.url), 'utf8');
-    expect(src).toContain("from '../model/invariants'");
+    // 执行期换牙（P-56）：原文是 `expect(src).toContain("from '../model/invariants'")`，
+    // 那是**子串判据** —— 把 import 删掉、只在注释里留下这句话，照样绿（复审席实测复现）。
+    // 锚定形态允许花括号里有别的名字、允许换行、不吃行尾分号，但拒绝裸子串。
+    expect(src).toMatch(/^import\s*\{[^}]*\bassertNoVerticalOverlap\b[^}]*\}\s*from '\.\.\/model\/invariants'/m);
+    // 限度（登记）：`.*` 是同一行内的贪心匹配 —— 第二份规则若漂成两行写法，这一发拿不到读数。
     expect((src.match(/elevationMm \+ .*heightMm/g) ?? []).length).toBe(0);
   });
 });
@@ -1799,8 +1818,13 @@ function assertAtLeastOne(entity: Entity, fields: readonly string[]): void {
  * 引用完整性 + 同层 + 下界 + 门规 + 竖向不重叠 + `-0`：读盘侧的放行证。
  * **零层文档合法**（刚 createProject 还没画层），所以本函数不许要求"至少一层"——
  * 命令层那条"最后一层不许删"是 `storeyDelete` 的规则，不是数据规则，别在这里复制。
- * 几何退化（零长墙、墙厚不小于墙长、洞口超宿主、接头不闭合）不在这里重算：
- * 最后那一遍逐层 `deriveStoreyGeometry` 就是复用派生层那份唯一产地。
+ *
+ * 这一道门自己覆盖（**执行期订正，P-60**：原句"几何退化…不在这里重算"是谎，见 C1）：
+ * 引用解析与同层、index 唯一 + 非负安全整数、≥1 的字段、`-0`、零长墙与墙厚不小于墙长
+ * （`assertWallShape`，与命令层同一产地 = P-57）、洞口负 distance / 负 sill / 门洞 sill≠0 /
+ * 洞顶超过宿主墙高（P-58）、同层同坐标幽灵柱与同一枚落点重复的柱（P-59）、楼板环简单。
+ * 归最后一遍逐层 `deriveStoreyGeometry`（派生层是那些判据的唯一产地，这里不重算）：
+ * 接头不闭合、轮廓翻面、同向重叠、星形接头、洞口沿轴区间重叠（`assertSpansFit`）。
  */
 export function assertTruthSourceInvariants(doc: Document): void {
   const seenIndex = new Set<string>();
@@ -1881,8 +1905,11 @@ export function assertTruthSourceInvariants(doc: Document): void {
     assertSimpleRing(`楼板 ${slab.id}`, ring); // 共线 / 自交 / 顶点数退化的唯一产地
   }
 
-  // 最后一道：把派生层跑一遍。这一遍不是"顺手也算一次几何"，是**复用**已有的那套退化判据
-  // （墙厚不小于墙长、洞口超出宿主、接头闭合），invariants 里一条都不重算。
+  // 最后一道：把派生层跑一遍。这一遍**复用**的是派生层真有、这里刻意不重算的那五件（接头不闭合、
+  // 轮廓翻面、同向重叠、星形接头、洞口沿轴区间重叠）。**执行期订正（P-60）**：零长与厚 ≥ 墙长、
+  // 洞顶超墙高、幽灵柱**不在这一遍里** —— 派生层看不见它们（`geom/outline.ts` 的清单只有四件；
+  // `commands/opening.ts` 顶部自己就把"洞顶 ≤ 宿主墙高"列为派生抓不到的一条），所以由上面几个循环
+  // 显式拦。把这一遍摘掉，红的是「洞口宽 5000 装在 4000 长的宿主墙上」那一格，不是别的。
   for (const storey of doc.byKind('storey')) {
     deriveStoreyGeometry(doc, storey.id);
   }
@@ -1907,7 +1934,8 @@ npx vitest run packages/core packages/protocol > tmp/plan4-t3-focus.log 2>&1; ec
 pnpm verify > tmp/plan4-t3-verify.log 2>&1; echo "verify exit=$?"
 ```
 
-Expected: `verify exit=0`；`Test Files` **37 → 40**（+2 protocol / +1 core），`Tests` **513 → `<待实测>`**（本任务 **+22** 条：protocol 7 + 2、core 13）。既有 `commands/storey.test.ts` 与 `storey` 相关用例**一条都不许改** —— 它们跟着搬迁走。
+Expected: `verify exit=0`；`Test Files` **39 → 42**（+2 protocol / +1 core），`Tests` **523 → 560**（本任务 **+37** 条：席位 22 + 修复轮 14 + R2-1 那一发落点格 1）。
+既有 `commands-column-slab.test.ts`（**执行期订正**：原文写的 `commands/storey.test.ts` 这个文件不存在，楼层那几发住在 `commands-column-slab.test.ts`）与 `storey` 相关用例**一条都不许改** —— 它们跟着搬迁走。搬迁后的实测形状：`/标高重叠/` 在盘上是**两发断言 + 一个格标题**（原文"那三发"是超写：标题那一发断的正是"不抛"）。
 
 - [ ] **Step 7: 提交**
 
@@ -1929,15 +1957,87 @@ EOF
 
 | # | 改坏 | 预期 |
 |---|---|---|
-| T3-M1 | `PointSchema` 的 `z.strictObject` → `z.object` | 「多余字段被拒」那一格当场红（第 2 格两条 `toBe(false)` 变 true） |
+| T3-M1 | `PointSchema` 的 `z.strictObject` → `z.object` | 「多余字段被拒」那一格当场红 —— **执行期订正**：那一格只有**第一条** `toBe(false)` 会变 true（`{…POINT_OK, pointId: undefined}` 在 `strict()` 下被拒、放宽即收）；第二条打的是 `WallSchema` 的 `lengthMm`，与本变异无关。原文"两条变 true"是超写 |
 | T3-M2 | `UUID_V7_TEXT` 里 `7[0-9a-f]{3}` → `[0-9a-f]{4}` | 「V7 正则逐字符相同」红。这一格是"两份文本"这条纪律唯一的凭据 |
 | T3-M3 | `PointSchema` 的 `x: MmSchema` → `x: z.number()` | 「填 1.5 与 -0 都被拒」那一格红（行为循环，不是文本对账 —— 两型各管一头） |
 | T3-M4 | `INTEGER_FIELDS` 的 `point: ['x', 'y']` → `point: ['y']` | 「core 表 ↔ 本表」对账红（`toEqual` 逐字） |
 | T3-M5 | `invariants.ts` 的 `assertAtLeastOne` 下界 `v < 1` → `v < 0` | 「尺寸下界」那一格红 —— 这一发证明那条循环表真在逐字段判 |
-| T3-M6 | 把 `commands/storey.ts` 里那份私有规则原样抄回去（留着 import） | 「不许留第二份规则」那格红（`elevationMm + .*heightMm` 命中数 > 0）。**这一型只有静态账能抓**：两份实现行为相同，任何行为用例都过 |
-| T3-M7 | 删掉 `invariants.ts` 末尾那句逐层 `deriveStoreyGeometry` | 「墙厚不小于墙长」那一型在读盘侧变成盲区 —— 需要一条"文档里手搓一面厚 5000 的 4000 长墙"的用例先补上，Step 4 的 `BELOW_ONE` 表里带一发这种"过了下界但派生炸"的样本，摘掉派生那一遍它就红 |
+| T3-M6 | 把 `commands/storey.ts` 里那份私有规则原样抄回去（留着 import） | 「不许留第二份规则」那格红（`elevationMm + .*heightMm` 命中数 > 0）。**这一型只有静态账能抓**：两份实现行为相同，任何行为用例都过。执行期实测：抄回后命中数 **3**（`git show f5a4dde` 那份），搬迁后为 **0**。同一格的存在理由被 P-56 换过一次牙（`toContain` → 行首锚定 `toMatch`），因为原形状连"import 真在"都没证到 |
+| T3-M7 | 删掉 `invariants.ts` 末尾那句逐层 `deriveStoreyGeometry` | **执行期整行作废重写**（原预测错了两次）：① 摘掉那一遍，红的是「洞口宽 5000 装在 4000 长的宿主墙上 ⇒ 只有末尾那遍拦得住」那一格（`/超出宿主墙/` 只来自 `assertSpansFit`，洞口循环的五条都不响）；② 原文预测的"墙厚不小于墙长那一型变盲区"**在当时确实成立、但对本行声称的判据没有任何证人** —— `BELOW_ONE` 表里（连 brief 自带代码一起）不存在"过了下界但派生炸"的样本，而审查席探针 [A]/[B] 实测厚 ≥ 长的墙**派生层也看不见**。P-57 把那条判据搬进读盘门之后，这一格的名分回到它真证的事：沿轴区间重叠 |
 
 
+### Task 3 执行回填（2026-10-05，落码后）
+
+#### 提交链与格子数
+
+| 提交 | 作者 | 内容 | 文件 / 行数 | `verify` 格子数 |
+|---|---|---|---|---|
+| `f5a4dde` | 控制位 | Task 2 执行回填（**BASE**：T3 的审查包从这一发起算） | docs | 39 / 523 |
+| `15c759b` | T3 席位 | `entity-schema.ts` / `command-type.ts` / `invariants.ts` 三件新源码 + 三份测试 + 两处 export | 10 文件 / +662 −22 | 42 / **545**（+22 格：protocol 7+2、core 13） |
+| `9ca9c70` | T3 修复席 round 1 | C1 三条守卫进读盘门 + `assertWallShape` 搬迁 + I1 八条零证人 + I2 行为探针 + I4 + P-56 换牙 + m4/m6/m8 | 5 文件 / +345 −28（新增 `scripts/check-invariants-cycle.mjs`） | 42 / **559**（+14 格：core +9、protocol +5） |
+| `2bd9f66` | T3 修复席 round 2 | R2-1 同一枚落点只准一根柱 + R2-2 陈旧注释指针 | 3 文件（`invariants.ts` / `invariants.test.ts` / `editing.test.ts` 一行注释） | 42 / **560**（+1 格） |
+
+#### 闸门读数（全部控制位亲测，不采信席位的日志）
+
+```
+pnpm verify                                exit=0  Test Files 42 passed / Tests 560 passed
+node scripts/check-package-deps.mjs        exit=0  依赖方向检查通过
+node scripts/check-invariants-cycle.mjs    exit=0  model/invariants 的 import 闭包不碰 commands/**
+pnpm test:db                               exit=0  Test Files 2 passed / Tests 17 passed
+                                                    [census] version=8.0.45 max_connections=151
+只读普查（收口时）                          19 个库名，逐名等于 Task 2 的基线；dajia / dajia_test 均不存在
+```
+
+`it()` 逐档点数：`invariants.test.ts` 22 + `entity-schema.test.ts` 12 + `command-type.test.ts` 2 = **36**，全仓 `it.skip` / `it.todo` / `it.only` 于本任务靶面 **0 命中**。545 → 559 → 560 与格子点数严格吻合（+14 = 9 core + 5 protocol，+1 = R2-1 落点格）。
+
+#### 授权形态
+
+Task 3 的靶面**全在 `packages/{core,protocol}/**` 与 `scripts/`**，**MySQL 零接触** —— 上面那两发连库读数与普查是控制位为"改完读盘门之后地板仍然完整"而跑的，不是本任务的判据。建库授权（M1.3）自 Task 2 起持续有效，本轮没有动用。
+
+#### 审查发现的处置（一轮审查 + 两轮修复 + 一次范围收窄复审）
+
+审查席判 **A spec PASS / B PASS WITH CHANGES**（Critical 1 = C1，Important 5 = I1…I5，Minor 11），复审席终判 **ADDRESSED / Critical 0 / Important 0 / Minor 3**。
+
+- **C1 → P-57 + P-58 + P-59 + P-60**：三条"派生层看不见"的判据全部搬进读盘门，两处过度承诺的 doc block 改成说实话的两栏清单。
+- **I1 → 8 条零证人分支全部有牙**（每型都跑过"摘掉对应判据 ⇒ 只有对应那一发红"的双向分账）。
+- **I2 → P-61**：行为探针替代源码扫描；"必收"半发是同轮新增的形状，防过严实现把整格测成假绿。
+- **I3 → 不在 T3 射程，转为 Task 4 前置条件**（`PatchSchema` ↔ `core.Patch` 是第五份文本、今天零对账格；`PatchSchema` 唯一的消费者就是 T4 的落库单位）。
+- **I4 → 已补两半**（收 `0` / `7`，拒 `1.5` / `-1` / `2**53` / `NaN` / `Infinity` / `"7"`），**消费者仍为零** —— 格子只是幂等键的合同钉，真正的读者随 T4 的 journal 编解码出现。
+- **I5 → P-56**；**m4 → P-62 之一**；**m6 / m8** 已就地做掉。
+- 登记为**限度、不改码**：m1（zod 版本形态，见 P-61 代价栏）、m2、m3、m5（`deriveStoreyGeometry` 每次重跑全局 `deriveJoints` ⇒ O(storeys × all-walls)，归 T5）、m9（`commands/storey.ts` 那句"S1 不许出现零层项目"与 `invariants.ts` 的"零层文档合法"是命令规则 vs 数据规则，文案过写、不改）、m10（`check-package-deps.mjs` 只 grep `@dajia/*`，看不见**相对**跨包 import —— 本任务把"protocol 测试按路径读 core 源码"制度化，这道墙只画在包名那一侧）、m11（brief 自带的计数滑点：「六枚 id」实为五枚、`ID.*` 的"十枚串"实为十二枚、`commands/storey.test.ts` 不存在）。
+
+#### 文本与盘上的订正位（本处就地改，代码为准）
+
+1. 裁决表标题与 `> 编号从 P-40 起` 那段：**P-18…P-39 只有 6 个号真被写过**（P-18/P-19/P-20/P-21 在 Task 8，P-27/P-33 在 Task 9），**16 个是空号** —— 原文"随那两个任务的回写并进本表"是超写，改为"回写时就地补表、理由不复制"。
+2. Task 3 Files 列表补三项（`commands/wall.ts` 搬迁、`scripts/check-invariants-cycle.mjs`、`scene-2d/test/editing.test.ts` 注释指针）。
+3. Step 4「竖向重叠」那格上方补 P-55 的夹具订正说明（盘上多三行 `index = 1`）。
+4. `invariants.ts` 函数头与末尾派生注释两块代码文本按落地的实话重写（P-60）—— 这两块是计划文本里唯一"教席位怎么写注释"的地方，留着谎就会长回盘上。
+5. Step 4 的 P-56 那一格整块替换为落地形状（锚定 `toMatch` + 限度注释），并写明**作废**"0 命中已经要求 import 真在"那条论证。
+6. Step 6 期望数：`37 → 40 / 513 → <待实测> / +22` 改成 `39 → 42 / 523 → 560 / +37`；`commands/storey.test.ts` 改成 `commands-column-slab.test.ts`；"那三发 `/标高重叠/`"改成"两发断言 + 一个格标题"。
+7. 变异表 **T3-M1** 与 **T3-M7** 两行按实测重写（M1 只红第一条 `toBe(false)`；M7 的预测错了两次，"厚 ≥ 长"那一型当时**派生层与读盘门双双看不见**，P-57 之后才成立）。**T3-M6** 补命中数 3 → 0 的实测与换牙记录。
+
+#### 变异实跑（判据有牙的凭据，三席各自跑）
+
+- 修复席 round 1（`cp` 备份 + md5 还原，未用 git）：core 侧**同摘 12 发** ⇒ `9 failed | 13 passed`（红的恰是 9 发新格）；protocol 侧**逐枚削弱 5 发** ⇒ `5 failed | 7 passed`（红的恰是 5 发新格）。
+- 修复席 round 2：① 摘新落点判据 ⇒ 只红新格，且红相是 `没抛：这一格要求检查器抛`（**静默放行实锤**）；② 摘 `assertNoGhostColumn` ⇒ 只红旧幽灵柱格（`invariants.test.ts:234`）。两向分账成立。
+- 复审席自跑 5 发（不采信上两位的读数）：落点判据、墙循环 `assertWallShape`、`ColumnSchema.pointId → z.string()`、"删 import 只留注释句"那一型（**旧 `toContain` 假绿复现、新锚定独红**）、`assertNoGhostColumn` —— **全有牙，零"该红没红"**。
+- 审查席的只读探针（`tmp/review-t3-probe.log`）在 P-57/P-58/P-59 之后逐一复查：[A] 厚 5000/长 4000、[B] 厚 = 长、[C] 同点双柱、[E] 洞高 99999、[F] `200 + 2900` 超墙顶 —— 五型**全部改为当场抛**；[D] 洞口沿轴重叠仍由 `assertSpansFit` 接住（派生那一遍挣到了它的钱，也只需要它挣这一件事）。
+
+#### 登记的限度（改码不划算，改判据不许）
+
+1. 读盘门**不是**写盘门的超集，也不打算做成：P-58 那条不对称是刻意的（写盘侧并入已有洞口之后更严），两侧文案两族。
+2. 源码扫描那一族（P-56、`check-package-deps` 的相对 import 盲区 m10）永远可能被**刻意写进注释的文本**骗过；换牙只是把"无意的漂"与"刻意的骗"分开。
+3. `geom/outline.ts:112-116` 的四件清单与 `invariants.ts` 的门内清单是**两份合同**，靠人工两向核对同步（复审席已把这一问固定进射程）。
+4. R2-1 之后仍有一型未关：同一枚点上两柱**其中一根来自别的 `projectId`** —— 落点键含 `storeyId`，跨工程不可能同层，判据不必为它加长。
+5. `check-invariants-cycle.mjs` 证的是 import 闭包无环，**不证**运行时初始化顺序；本轮 `INTEGER_FIELDS` / `deriveStoreyGeometry` 都只在函数体内取用，这一点由 typecheck + 全量 560 格的全绿复跑支撑，不由脚本支撑。
+
+#### 给 T4 及之后每一棒的须知（复审席第五节，控制位照收）
+
+1. **解码必须落 JS number**：`mm()` 的 `typeof` 守卫现在是合同，字符串形态的毫米值会被点名拒掉（`<kind> <id>.<field> 必须是数字毫米，收到 …`）。编解码侧不许把 BIGINT 的字符串回值直接喂进实体。
+2. **往返哨兵**：T4 的 codec 往返格要带一发"厚 / 长 / 洞顶"三样的哨兵文档（P-57/P-58 的三份文案各红一次才算真跑到了读盘门）。
+3. **I3 前置**：`PatchSchema` ↔ `core.Patch` 的对账格**归 T4 建**（`readFileSync('../../core/src/model/patch.ts')` + 键集合格），别让它继续做第五份无人核对的文本。
+4. **`JournalTurnSchema` 的第一个消费者在 T4**：那一格幂等键的合同钉今天零读者，T4 落地 journal 写入之后要让它红得起来（`turn` 传字符串 / 负数 / `2**53` 三型）。
+5. **禁止 catch-all 静默跳过闸门**：读盘门的抛是 `RangeError` / `TypeError` 两族，重放路径不许写 `catch { /* 脏数据跳过 */ }`。
 ## Task 4: 编解码与写路径（`codec.ts` + `repository.ts`）
 
 **Files:**
