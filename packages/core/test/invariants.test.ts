@@ -223,7 +223,7 @@ describe('assertTruthSourceInvariants：读盘放行证', () => {
     expect(() => assertTruthSourceInvariants(doc)).toThrow(/distanceMm 不能为负/);
   });
 
-  it('幽灵柱：同层、同坐标、不同点 id 的两根柱 ⇒ 抛（柱不进派生表也不进索引，这一发是读盘侧唯一凭据；同一枚点挂两柱那一型仍放行 —— exceptPointId 按点 id 排除自己，登记为残余）', () => {
+  it('幽灵柱：同层、同坐标、不同点 id 的两根柱 ⇒ 抛（柱不进派生表也不进索引，这一发是读盘侧唯一凭据；R2-1 后"同一枚点挂两柱"那一型也被关住了，但它红在另一句上 —— 见下一格，两型红相分开钉）', () => {
     const doc = handBuild([
       storeyAt(ID.lower, 0, 3000),
       pointAt(ID.pa, ID.lower, 0, 4000),
@@ -233,6 +233,37 @@ describe('assertTruthSourceInvariants：读盘放行证', () => {
     ]);
     expect(() => assertTruthSourceInvariants(doc)).toThrow(/已有柱/);
     expect(() => assertTruthSourceInvariants(doc)).toThrow(new RegExp(ID.column2));
+    // 两型分账：这一型的对手是**另一枚点**，本门那条落点唯一判据（`${storeyId}:${pointId}` 键）
+    // 对它不响 —— 摘掉 assertNoGhostColumn 只红这一格，摘掉落点判据只红下一格。
+    expect(messageOf(() => assertTruthSourceInvariants(doc))).not.toMatch(/同一枚落点/);
+  });
+
+  it('同一枚落点挂两根柱（同一 pointId、同层）⇒ 抛在读盘门自有的落点唯一判据上：geom/topology 那句"该坐标已有柱"在这一型上是瞎的（exceptPointId 按点 id 排除，对手被当成"自己"），所以这一型必须有独立证人', () => {
+    const doc = handBuild([
+      storeyAt(ID.lower, 0, 3000),
+      pointAt(ID.pa, ID.lower, 0, 4000), // 全场只有一枚落点
+      columnAt(ID.column, ID.pa),
+      columnAt(ID.column2, ID.pa), // 第二根柱挂在同一枚点 id 上
+    ]);
+    // 夹具可达性自检（R2-1 的反向核验）：这手搓文档**造得出来** ——
+    // `Document.replaceEntities` 的 validate 只查 id 形状（UUIDv7）与 INTEGER_FIELDS 整数毫米，
+    // 对"两柱共用同一枚点"全盲，也没有任何跨实体唯一性检查。于是拦它的只能是读盘门。
+    expect(doc.get(ID.column2)).toBeDefined();
+    const msg = messageOf(() => assertTruthSourceInvariants(doc));
+    expect(msg).toMatch(/柱/);
+    expect(msg).toMatch(/同一枚落点/);
+    expect(msg).toContain(ID.lower); // 键带得出归属：楼层 id
+    expect(msg).toContain(ID.pa); // 键带得出归属：共用的那枚落点 id
+    expect(msg).toContain(ID.column2); // 拒的是后到的那根柱（byKind 按 id 升序，…0011 后到）
+    expect(msg).not.toMatch(/该坐标已有柱/); // 与上一格（不同 id 同坐标）的红相分开
+    // 反向：同一枚点上一根柱完全合法 —— 防"过严实现把落点判据扩成一柱一落点也不红"的假绿。
+    expect(() =>
+      assertTruthSourceInvariants(handBuild([
+        storeyAt(ID.lower, 0, 3000),
+        pointAt(ID.pa, ID.lower, 0, 4000),
+        columnAt(ID.column, ID.pa),
+      ])),
+    ).not.toThrow();
   });
 
   it('点引用一枚不存在的楼层 ⇒ 抛（point 循环那发 requireStorey 是唯一拦截者：没有任何构件引用这枚点，派生层对孤儿点永远是瞎的）', () => {

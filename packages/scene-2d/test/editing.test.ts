@@ -989,7 +989,7 @@ describe('新建回执与探针', () => {
     const defaults = newWallDefaults(log.document, storeyId);
     const wallsBefore = log.document.byKind('wall').length;
     // 起点恒复用 (0,0) 那枚端点（`pressAtOrigin` 按在它上面），终点是草稿的 `end.mm`。
-    // 这张手抄表只记命令层那两条守卫（手抄自 `commands/wall.ts` 的 `assertWallShape`）：
+    // 这张手抄表只记命令层那两条守卫（产地是 `model/invariants.ts` 的 `assertWallShape`，`commands/wall.ts` 调的就是这一份）：
     //   ① 两端点量化后重合 ⇒ 零长墙；② `thicknessMm >= lengthMm` ⇒ 轮廓自相交。
     // 其余四道（墙厚/墙高为正、楼层存在、跨层复用点）在这份夹具上**结构性不可能**触发：
     // 240 与 3000 是常量、`storeyId` 就是刚建的那层、`field` 只收本层的点。

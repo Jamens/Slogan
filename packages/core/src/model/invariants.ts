@@ -103,7 +103,9 @@ function assertAtLeastOne(entity: Entity, fields: readonly string[]): void {
  * 这一道门自己覆盖：引用解析与同层、index 唯一 + 非负安全整数、≥1 的字段、`-0`、
  * 零长墙与墙厚不小于墙长（`assertWallShape`，与命令层同一产地）、洞口负 distance /
  * 负 sill / 门洞 sill≠0 / 洞顶超过宿主墙高、同层同坐标幽灵柱（`assertNoGhostColumn`，
- * 与命令层同一产地）、楼板环简单（`assertSimpleRing`）。
+ * 与命令层同一产地）、同一枚落点上挂了两根柱（本门自有的 `(storeyId, pointId)` 唯一判据 ——
+ * `assertNoGhostColumn` 的 `exceptPointId` 按点 id 排除，那一型只有这里拦得住）、
+ * 楼板环简单（`assertSimpleRing`）。
  * 归最后一遍逐层 `deriveStoreyGeometry`（派生层是那些判据的唯一产地，这里不重算）：
  * 接头不闭合、轮廓翻面、同向重叠、星形接头、洞口沿轴区间重叠（`assertSpansFit`）。
  */
@@ -174,6 +176,7 @@ export function assertTruthSourceInvariants(doc: Document): void {
     }
   }
 
+  const seenPointLanding = new Set<string>();
   for (const column of doc.byKind('column')) {
     assertNoNegativeZero(column);
     assertAtLeastOne(column, ['widthMm', 'depthMm', 'heightMm']);
@@ -182,11 +185,22 @@ export function assertTruthSourceInvariants(doc: Document): void {
     if (at.storeyId !== column.storeyId) {
       throw new TypeError(`柱 ${column.id} 在楼层 ${column.storeyId}，落点 ${at.id} 在楼层 ${at.storeyId}：必须同层`);
     }
+    // 同一枚落点上只准一根柱：与 storey 循环的 seenIndex 同一形状（同层 + 落点 id 唯一）。
+    // 这一型是下面 assertNoGhostColumn 够不着的那半边 —— 它的 exceptPointId 按**点 id** 排除，
+    // 两根柱挂在同一枚点上时对手被当成"自己"排掉了，坐标那条判据永远不响。
+    const landingKey = `${column.storeyId}:${column.pointId}`;
+    if (seenPointLanding.has(landingKey)) {
+      throw new RangeError(
+        `柱 ${column.id} 的落点重复：同一枚落点 ${landingKey}（楼层 + 落点 id）上已挂过一根柱，一根落点只准承载一根柱`,
+      );
+    }
+    seenPointLanding.add(landingKey);
     // 幽灵柱：柱与板不进派生表、SpatialIndex 只装墙与洞口，重影柱在视图与索引里都看不见，
     // 命令层那条"同层同坐标只准一根柱"必须在这里再判一次。判据共用 geom/topology 那份产地。
     // 代价：每根柱扫全层柱，O(columns²)，与派生层同一量级、loads 时的一次性成本。
-    // 残余盲区（登记）：exceptPointId 按点 id 排除，挂在**同一枚点**上的重影柱互相都算排除，
-    // 这一型仍放行 —— 能拦的是"不同 id、同坐标"那一型（命令层造不出前者，读盘手搓能）。
+    // 覆盖面分工（两型各有证人，摘掉任一条判据只红对应那一发）：
+    // · 不同点 id、同坐标 ⇒ 下面这句（geom/topology 按坐标判）。
+    // · 同一枚点 id 挂两根柱 ⇒ 上面那句（本门自有判据，geom/topology 因 exceptPointId 语义瞎掉）。
     assertNoGhostColumn(doc, column.storeyId, { x: at.x, y: at.y }, column.pointId);
   }
 
@@ -206,9 +220,9 @@ export function assertTruthSourceInvariants(doc: Document): void {
 
   // 最后一道：把派生层跑一遍。这一遍覆盖的是派生层自己的那五道守卫 —— 接头不闭合、轮廓翻面、
   // 同向重叠、星形接头、洞口沿轴区间重叠（assertSpansFit），那份判据以派生层为唯一产地，
-  // invariants 里一条都不重算；零长与厚 ≥ 墙长、洞顶超墙高、幽灵柱**不在这一遍里**，
-  // 是上面各循环里的显式条目（派生层看不见它们：outline.ts 的四道守卫不含厚/长，
-  // 竖向与柱更不进派生表）。
+  // invariants 里一条都不重算；零长与厚 ≥ 墙长、洞顶超墙高、幽灵柱与同一枚落点重复的柱
+  // **都不在这一遍里** —— 是上面各循环里的显式条目（派生层看不见它们：outline.ts 的四道守卫
+  // 不含厚/长，竖向与柱更不进派生表）。
   for (const storey of doc.byKind('storey')) {
     deriveStoreyGeometry(doc, storey.id);
   }
