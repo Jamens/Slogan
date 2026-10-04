@@ -66,7 +66,7 @@
 | `apps/desktop/src/main/db/repository.ts` | `createProject` / `appendJournal` / `writeSnapshot` / `loadProject` / `closeProject` —— 唯一会写库的地方 | T4–T5 |
 | `apps/desktop/src/main/db/reconcile.ts` | 收尾三方对账的**纯函数**（`diffDocAgainstElement` / `diffStoreyProjection` / `diffStoreyIdColumn` / `reconcileProjection` / `formatMismatches`）+ `storeyIdOf`（写列与审列共用那一份规则，从 `repository.ts` 的模块私有版搬进来）+ `MISMATCH_REPORT_CAP`。不 import DB / electron / zod ⇒ 住在这里才有 CI 那一档 | T5 |
 | `apps/desktop/test/unit/codec.test.ts` | 纯内存往返：六类实体逐字回来、`canonical()` 逐字节相同、多余字段/浮点/`-0` 三型在读取侧拒、抛错文案带表名与行 id（**不连库 ⇒ CI 有牙**） | T4 |
-| `apps/desktop/test/unit/entity-shape.test.ts` | **编译期双向可赋值** `EntityShape ↔ Entity`（`tsc -p tsconfig.test.json` 才看得见的那一型漂移） | T4 |
+| `apps/desktop/test/unit/entity-shape.test.ts` | **编译期双向可赋值** `EntityShape ↔ Entity`（只有**编译期**看得见的那一型漂移 —— 而 `verify` 的 typecheck 面里就有 `tsc -p tsconfig.test.json`，口径见 P-63） | T4 |
 | `apps/desktop/test/db/repository.test.ts` | 三张表 + `storey` 投影逐行对账、`updated_seq` = 该发 `command_log.seq`、`turn` 幂等、跳号回滚、**外部行锁掐断半途 ⇒ 全无账 ⇒ 释放后重发成功**（P-15）、归属 guard、remove 撞空行、重复快照撞唯一键、盘上 `-0`/超安全整数的读数（实测钉死） | T4 |
 | `apps/desktop/test/unit/reconcile.test.ts` | 三对各自的空/少行/多行/字段漂、`-0` 与键序两条口径、报告上限"只列 12 条但把总数说全"、输出顺序确定（**不连库 ⇒ CI 有牙**，第 ⑤ 段把纯函数单拆一个文件的全部理由） | T5 |
 | `apps/desktop/test/db/journal.test.ts` | 加载 = 最近快照 + 重放其后（快照压在第 3 / 第 5 发的 off-by-one 各一型）、`seq` 可带洞而 `turn` 不可（缺号拒开：中缺与尾缺两位证人）、`schema_version` 三处不符 + `payload.project_id` 别工程 ⇒ 拒开、BIGINT 越界的 `typeof` 读数、`clean_shutdown` 的四种告别方式、`closeProject` 三方对账（不平 ⇒ 抛且不许落 1） | T5 |
@@ -139,7 +139,7 @@
 
 ---
 
-## 裁决（P-1 … P-17 + 执行期追加的 P-40 … P-62；执行中若与落地的代码冲突，按代码订正并写执行回填。P-18 … P-21 住在 Task 8 的段落、P-27 与 P-33 住在 Task 9 的段落 —— **P-22…P-26 / P-28…P-32 / P-34…P-39 是空号，别再往里填**；那 6 条随各自任务回写时**就地补表**，不把理由复制一份过来）
+## 裁决（P-1 … P-17 + 执行期追加的 P-40 … P-67；执行中若与落地的代码冲突，按代码订正并写执行回填。P-18 … P-21 住在 Task 8 的段落、P-27 与 P-33 住在 Task 9 的段落 —— **P-22…P-26 / P-28…P-32 / P-34…P-39 是空号，别再往里填**；那 6 条随各自任务回写时**就地补表**，不把理由复制一份过来）
 
 | # | 决定 | 理由 | 已接受的代价 |
 |---|---|---|---|
@@ -190,6 +190,11 @@
 | **P-60** | `assertTruthSourceInvariants` 函数头那段"本门覆盖 / 归派生层"的**清单升为合同**：每次往读盘门加或删判据，都要把清单两向核对一遍（声称覆盖但代码没有 = 谎；代码有但清单没写 = 过谦），并把"两向核对"固定为复审席的一问 | C1 的根因不是缺判据，是**一句注释让下一个任务把它当放行证**：原文"几何退化…invariants 里一条都不重算"同时犯了两向的错 —— 承诺了派生层没有的三条，又没写代码里已有的那条零长分支（`invariants.ts` 自己重算了，注释说没重算）。落码后的清单按事实分成两栏，各条都能指到具体判据与具体格子 | 清单是注释，注释不进测试 ⇒ 唯一牙是复审席那一问与 P-57 的循环检查脚本；`geom/outline.ts:112-116` 那份四件清单是派生层的合同，两处若漂移只有人工两向核对能抓（登记为限度） |
 | **P-61** | I2 的补法裁成**行为探针**，不新增源码扫描格：每类每枚 `*Id` / `*Ids` 字段逐一 `safeParse`（非 V7 串必拒 **且** 合法 id 必收），`StoreySchema.index` / `loadBearing` / `material` / `category` 各一发，`EntitySchema` 的 discriminant 另发 | 审查席 §5 item 7 那一族"降成 `z.string()` / `z.number()` 之后**零红**"只有行为探针接得住；名字级 pin（键集合逐字对账）钉的是字段名，不是 validator。"必收"那半发是新加的：只测"坏值被拒"的循环表会把过严实现也测成绿（整格假绿的另一型）。明确**不许**为 I2 写读源码文本的格 —— 源码扫描那族刚在 T2（P-52/P-54）和 P-56 连着栽两次，能用行为证的一律用行为 | `m1`（`discriminatedUnion` vs `z.union`）的牙落在 zod 4.6.5 的具体报错形态（未知判别值 `invalid_union` 且 `path=['kind']`，plain union 的 `path` 为空）⇒ **升级 zod 若改报错形态，这一格会红**；那是设计内的钉子（它逼下一位重新核一遍 path 形状），不是脆弱 |
 | **P-62** | 控制位判决里给的**夹具配方本身要实测**，走不通就地订正并登记（本轮两处：`mm()` typeof 守卫的证人、`requireStorey` 的类别点名） | ① 判决写"`replaceEntities` 换一枚缺整数字段的实体"，实测走不通 —— `Document.replaceEntities` 先跑 `validate()`，缺字段**先红在「必须是整数毫米」**，永远到不了 `mm()`。席位改成"建好合法文档再毁掉文档内那枚实体的字段"，比判决更贴威胁模型（手搓对象不受 validate 保护 = 读盘路径的真实形状）。② 判决要求用 `/洞口\|柱\|楼板/` 分辨类别，而 `requireStorey` 的报错里**根本没有类别词** ⇒ 这是一条字面不可满足的要求；落地用每类专属幽灵层 id + `not.toMatch(/同层/)` 分账，摘掉对应那发时红在"必须同层"上，归属仍有牙 | 记账方向：判决也是文本，席位的实测才是盘。代价是**下位席位不能盲抄判决的配方** —— 每条配方落地前先跑一发可达性，做不到就回报而不是削判据（本轮两位席位都做到了这一点） |
+| **P-63** | **全局口径订正**：`pnpm verify` **确实**编译 `apps/desktop/test/**`（连 `test/db/**` 一起）。"第三发 `tsc` 才是唯一编译证人"那句话作废，六处文本（文件结构表 T4 行、Task 2 Step 6 的说明块、Task 2 执行回填的闸门行、Task 4 的 Step 8 M6 预检、Task 4 变异表 M6 行、Task 5 Step 5 的括号理由）就地改口；单跑那一发保留，但**理由只能写成"日志聚焦 / 不跑全量也能单独证编译"** | 控制位读脚本实测的链路（不采信任何席位的转述）：`verify = typecheck && lint:deps && test` ⇒ root `typecheck` 串里有 `pnpm --filter @dajia/desktop typecheck` ⇒ desktop 的 `typecheck` 末尾就是 `tsc --noEmit -p tsconfig.test.json` ⇒ 那份 tsconfig 的 `include` 是 `["test","src/main","src/preload"]`（整个 `test` 目录，不限 `unit`）。这条约束自 **Task 1 的 `92240d8`** 起就不成立，而它被复述进了 Task 2/4/5 的派发词与六处计划文本 —— 也就是说**后续每一棒都会照着它多写一条不存在的前提** | 判据只变硬不变软：db 测试文件的类型错现在挡 CI，本地没有 MySQL 也得让 `test/db/**` 编译过。代价是**账要重记**：之前所有"这一型只有 `tsc` 看得见"的表述都得换成"只有**编译期**看得见，而 `verify` 里就有编译期"；T4 的 M6 行因此同时挨了两刀（编译面 + protocol 档会红，见回填第 5 条）。**不**因此删掉任何一发独立 `tsc` —— 它便宜、且失败时日志只有一档 |
+| **P-64** | `element.updated_seq` 的判据钉成**逐实体 upsert 的真形状**：`DISTINCT = 2`、`seq1` 只被楼层那一发覆盖（1 行）、`seq2` 覆盖墙 + 两枚柱（3 行）、`1 + 3 = 4` 等于投影总行数。brief Step 6 原文的 `DISTINCT=1` / `count(seq2)=4` **与同一节 Step 7 自己写的逐实体 `patch.upsert` 自相矛盾** | 席位实测 + 审查席独立探针复现（`seq1 storey / seq2 wall+2pts / distinct=2`）。原写法要真成立，得把写路径改成"一发只碰一行"或"整层重述" —— 那是为了凑一条抄错的期望而削实现 | 语义从此被断言钉住：**每行 `updated_seq` = 最后修改这一行的那发 `command_log.seq`**（不是"这发事务的 seq"，也不是"最大 seq"）。T5 的 `closeProject()` 要把 `updated_seq` JOIN 回 `command_log.turn` 做三方对账，靠的正是这条被钉住的语义。代价：这一格绑住"哪些实体在同一发里被 upsert"，T7/T8 若改命令的补丁形状（比如让楼层删除连带重述墙），这一格会红 —— 那是**该红的** |
+| **P-65** | `multipleStatements` **只准住在迁移连接**：`createDbPool` 默认 `?? false`，业务池永远单语句。测试夹具里那个池按用途分两个 —— 迁池带 `multipleStatements: true`，业务池不带 | brief Step 6 的夹具照抄 `createDbPool(env)` 没补这条 ⇒ `migrate` 的多语句脚本当场 1064、`repository.test.ts` **整档 20 格 skip**。补的是夹具不是判据，且审查席实测业务池叠 `SELECT 1; SELECT 2` 被服务端 1064 拒 —— 这道墙没被 `pool.on('connection')` 顺手开掉（handler 只发单条 `SET SESSION`） | 多语句是注入面与"半途留下几条语句"的放大器，产品路径一条都不需要它。**代价**：夹具从此有两个池，读代码的人要明白"为什么同一个库连两遍"；`repository.test.ts` 的档头注释写了这条分工。T5/T6/T7 的 db 档沿用同一形态，**不许**图省事把业务池改成多语句 |
+| **P-66** | `pool.on('connection')` 那颗地雷按**运行时**写：监听器收到的是 callback 连接，一律单参数 fire-and-forget（`void conn.query(sql)`），**不许**对它 `.then()`/`await`。`sessionVariables` 在 mysql2 全包（lib + typings）零命中 ⇒ 走 brief 预先授权的兜底分支，不是偷懒 | 类型声明把 promise 池的 `'connection'` 事件回调参数标成 PoolConnection（promise 型）⇒ `conn.query(sql).then()` **过 tsc**，运行时却在监听器里抛、打断 `getConnection` ⇒ 整套连库测试表现为挂死。这类"编译过、运行时炸、症状在别处"的形状只能靠注释 + 实测钉死（`pool.ts:20-23,71` 两段注释记的就是这一发） | 生效性**没有常驻读数证人**：审查席那次 `@@innodb_lock_wait_timeout = 1` 是已撤的自证探针。漂了（SQL 拼错 / 事件名改错）的形状不是假绿 —— 是那一发慢到 InnoDB 默认 50 秒、红在 60 秒 `testTimeout` 上，症状从"快失败"变成"像挂死"。登记为限度，T6 的锁档天生要读服务端时钟，把那发变成常驻读数是自然的补位点 |
+| **P-67** | **T4-M7 由"已知限度"改判为"有牙变异"**，并订正报告：删 `asJsonValue` 的 `typeof raw === 'string'` 那一支实测 **9 格红**（`codec.test.ts` 的直接格 + 三发从字符串解的 `canonical()` 往返 + 第 13 格往返哨兵，exit=1），**不是**"没有任何用例变红"。代码一字未改（两支都在、两支都被覆盖），改的是账 | brief M7 的"If A 档 = `object` ⇒ 零红"把**连库读路径**（Step 1 实测 A 档 = `object`）与**纯文本 unit 路径**（`codec.test.ts` 全程喂 string）混为一谈 —— 前者确实抓不到，后者正是那一支的常驻证人。哨兵格跟着红，说明它兜的不只是"decode 必须先成功" | 记账方向同 P-62：**判据的效力以实测为准，不以写作时的推演为准**；连"限度"这个分类本身也要实测才能登记。代价是 T4 报告与 §5 那段"不靠变异证，只靠注释"的表述要一起订正，别留着让 T5 席位以为 `asJsonValue` 无覆盖 |
 
 ---
 
@@ -1078,7 +1083,7 @@ npx tsc --noEmit -p apps/desktop/tsconfig.test.json; echo "typecheck exit=$?"
 
 Expected（**2026-10-04 落码后按实测回填**）：`verify exit=0`，`Test Files` **37 → 39**（+`migrations.test.ts`、+`migrations-sql-mirror.test.ts`）、`Tests` **517 → 523**（+5 静态 +1 镜像，但 517 是 T1 那两步账的终点，原文写的 513 早已被 P-43 抬高）。`pnpm test:db` exit=0，**2 文件 / 17 条**（`env.test.ts` 3 + `migrate.test.ts` 14）。
 
-> **第三发 `tsc` 不是可选的**：`pnpm verify` 的 typecheck 面**不吃 `apps/desktop/test/**`**（P-1 打开跨包 import 口子时登记的连带），所以"测试文件里的类型错"只有这一发看得见。本轮它 exit=0，后续任务的 db 档改动必须把它一起跑。
+> **第三发 `tsc` 保留，但它不是唯一证人**（2026-10-05 按盘上订正，见 P-63）：`pnpm verify` 的 typecheck 面**确实**吃 `apps/desktop/test/**` —— root `typecheck` 串里有 `pnpm --filter @dajia/desktop typecheck`，desktop 那一发的末尾就是 `tsc --noEmit -p tsconfig.test.json`，而那份 tsconfig 的 `include` 是整个 `test` 目录（含 `test/db`，不限 `unit`）。本计划原先那句"测试文件里的类型错只有这一发看得见"自 Task 1 的 `92240d8` 起就不成立。这一发留着只有两个理由：日志聚焦，以及不跑全量时也能单独证编译。本轮它 exit=0，后续任务的 db 档改动仍把它一起跑。
 
 **跑完必须确认 `dajia_test` 已被 afterAll 删掉**：
 
@@ -1125,7 +1130,7 @@ EOF
 | `e1e6275` | 控制位 | 复审席两笔收口（P-51 安全、P-52 假绿） |
 | `ce2e94b` | 控制位 | 变异棒两条实测回灌（P-53 红相、P-54 假绿），含 `migrations.ts`/`001_init.sql` 的注释同步 |
 
-闸门读数（控制位独占复跑，每一笔收口后各一次，全部 `exit=0`）：`pnpm verify` **39 文件 / 523 条**；`npx tsc --noEmit -p apps/desktop/tsconfig.test.json` **exit=0**（`verify` 不吃 `test/`，这一发才算编译）；`pnpm test:db` **2 文件 / 17 条**，普查行照旧 `[census] version=8.0.45 max_connections=151`。**下一棒的起点是 39 / 523 / db 2 / 17。**
+闸门读数（控制位独占复跑，每一笔收口后各一次，全部 `exit=0`）：`pnpm verify` **39 文件 / 523 条**；`npx tsc --noEmit -p apps/desktop/tsconfig.test.json` **exit=0**（这一发只是把 typecheck 面里 `test/**` 那一块单独跑一遍、日志聚焦；`verify` 本身也编译 `test/**`，口径订正见 P-63）；`pnpm test:db` **2 文件 / 17 条**，普查行照旧 `[census] version=8.0.45 max_connections=151`。**下一棒的起点是 39 / 523 / db 2 / 17。**
 
 **授权兑现的形态**：这一档是本计划第一次真行使「允许建 `dajia` 和 `dajia_test`」—— 实际建过的只有 `dajia_test`（`beforeAll` 建、`afterAll` 删），`dajia` **一次都没被建、没被删、也没被连过**（P-48 那一格走的是打不通的实例）。20+ 次只读普查逐名等于基线 19 名，15 个用户库一个不少。
 
@@ -2038,6 +2043,7 @@ Task 3 的靶面**全在 `packages/{core,protocol}/**` 与 `scripts/`**，**MySQ
 3. **I3 前置**：`PatchSchema` ↔ `core.Patch` 的对账格**归 T4 建**（`readFileSync('../../core/src/model/patch.ts')` + 键集合格），别让它继续做第五份无人核对的文本。
 4. **`JournalTurnSchema` 的第一个消费者在 T4**：那一格幂等键的合同钉今天零读者，T4 落地 journal 写入之后要让它红得起来（`turn` 传字符串 / 负数 / `2**53` 三型）。
 5. **禁止 catch-all 静默跳过闸门**：读盘门的抛是 `RangeError` / `TypeError` 两族，重放路径不许写 `catch { /* 脏数据跳过 */ }`。
+
 ## Task 4: 编解码与写路径（`codec.ts` + `repository.ts`）
 
 **Files:**
@@ -2621,7 +2627,7 @@ Run: `npx vitest run apps/desktop/test/unit/entity-shape.test.ts > tmp/t4-shape.
 npx tsc --noEmit -p apps/desktop/tsconfig.test.json > tmp/t4-tsc.log 2>&1; echo "exit=$?"
 ```
 
-Expected: `exit=0`。**然后当场证一次它能红**（M6，做完立刻 `cp` 还原 + md5 核对）：把 `packages/protocol/src/entity-schema.ts` 里 `OpeningSchema` 的 `category: z.enum(['door', 'window'])` 改成 `category: z.string()`，重跑上面这条 `tsc` ⇒ 必须 `exit=1` 且报在 `entity-shape.test.ts` 与 `codec.ts`；同时 `npx vitest run packages/protocol/test/entity-schema.test.ts` 必须**照旧全绿**（证明这一型只有编译期看得见）。两组读数写进执行回填。
+Expected: `exit=0`。**然后当场证一次它能红**（M6，做完立刻 `cp` 还原 + md5 核对）：把 `packages/protocol/src/entity-schema.ts` 里 `OpeningSchema` 的 `category: z.enum(['door', 'window'])` 改成 `category: z.string()`，重跑上面这条 `tsc` ⇒ 必须 `exit=1` 且报在 `entity-shape.test.ts` 与 `codec.ts`；同时 `npx vitest run apps/desktop/test/unit/codec.test.ts apps/desktop/test/unit/entity-shape.test.ts` 必须**照旧全绿** —— 那才是"枚举漂移在 vitest 层不可见"的证人。**两处订正（2026-10-05 实测，见 P-63 与执行回填第 5 条）**：① 原文还要求 `packages/protocol/test/entity-schema.test.ts` "照旧全绿"，实测**两格红**（`:147` 只认 door/window、`:189` 的行为探针），因为 P-61 给 protocol 补的正是行为探针；② "只有编译期看得见"里的"只有"不再指那发独立 `tsc` —— `verify` 的 typecheck 面里就有它。修正后的主张：**这一型只有编译期 + protocol 行为探针看得见**。实测报点是 `codec.ts(48,56,88)` 与 `entity-shape.test.ts(94)`。两组读数写进执行回填。
 
 - [ ] **Step 5: `pool.ts` 补 P-17 的两条配置**
 
@@ -3409,8 +3415,8 @@ EOF
 | T4-M3 | 删掉 `storey` 投影那一段 | 「四处同时有账」红在 `count('storey')`。**登记一条限度**：把那一段**挪到 `commit()` 之后**这一型本任务抓不到（失败路径走不到那一发）；处置是 T5 的 `closeProject()` 逐行对账 |
 | T4-M4 | `catch` 里去掉 `await conn.rollback()` | 「半途掐断」那一格的重发红：未回滚的事务被下一次 `BEGIN` 隐式提交 ⇒ `INSERT` 撞 `uk_project_turn` ⇒ 拿不到 `'applied'` |
 | T4-M5 | `finally` 里去掉 `conn.release()` | 同一格红在**超时**（`connectionLimit: 1`，重发拿不到连接）。读数时先在 `tmp/t4-repo.log` 里确认它卡在 `getConnection`，别把它当"MySQL 慢"放过 |
-| T4-M6 | `OpeningSchema.category` 的 `z.enum(['door','window'])` → `z.string()` | Task 3 的行为与对账用例**全绿**；只有 `npx tsc --noEmit -p apps/desktop/tsconfig.test.json` 红（报在 `entity-shape.test.ts` 与 `codec.ts` 两处）。**这一型只有编译期看得见** —— Step 4 那一档存在的全部理由 |
-| T4-M7 | `asJsonValue` 删掉 `typeof raw === 'string'` 那一支 | 若 Step 1 的 A 档 = `string`：「canonical() 逐字节相同」当场红（把整串当对象喂 zod）。若 A 档 = `object`：这一发**没有任何用例变红** ⇒ 登记为已知限度（那一支的存在理由写在注释里，不靠变异证，也不许反过来把它删了"保持精简"） |
+| T4-M6 | `OpeningSchema.category` 的 `z.enum(['door','window'])` → `z.string()` | **实测三处同红 / 一处绿**（2026-10-05）：`tsc -p tsconfig.test.json` exit=1，报在 `codec.ts(48,56,88)` + `entity-shape.test.ts(94)`；`packages/protocol/test/entity-schema.test.ts` **两格红**（`:147` / `:189`，P-61 的行为探针）；`pnpm verify` 跟着红（它的 typecheck 面里就有那发 tsc，P-63）；只有 desktop 侧 runtime 16 格**全绿** ⇒ "枚举漂移在 vitest 层不可见"这一半成立。**原文两处不准**：① "Task 3 的用例全绿"（protocol 档会红，见回填第 5 条）；② "只有 `tsc` 看得见"（"只有"的是编译期这一**层**，不是那**一发**）。Step 4 那一档仍是全部理由 —— 没有它，这一型在 runtime 确实无人值守 |
+| T4-M7 | `asJsonValue` 删掉 `typeof raw === 'string'` 那一支 | **实测 9 格红**（`codec.test.ts`：直接格 `asJsonValue('{"a":1}')` + 三发从字符串解的 `canonical()` 往返 + 第 13 格往返哨兵，exit=1）⇒ **有牙**，不是限度（P-67）。原文"若 A 档 = `object` 则没有任何用例变红"把**连库读路径**（A 档实测 = `object`）与**纯文本 unit 路径**（`codec.test.ts` 全程喂 string）混为一谈。那一支照旧不许为"保持精简"删掉 —— 现在它有一整档用例守着，删了会听见 |
 | T4-M8 | `encodeDocument` 去掉 `.sort(byId)` | 「entities 按 id 升序」那一格红。注意 `canonical()` 自己排序，所以"往返逐字节相同"**不会**红 —— 这就是第 9 格要单独钉形状的原因 |
 | T4-M9 | `decodeDocument` 的重复 id 检查删掉 | 「同一 id 出现两次 ⇒ 抛」红：`Map.set` 静默取后者，`decode` 不抛且 `entities.size` 变小 |
 | T4-M10 | `writeSnapshot` 的裸 `INSERT` 换成 `... AS new ON DUPLICATE KEY UPDATE payload = new.payload` | 「同一 turn 两份快照 ⇒ 抛」红（拿不到抛）。这一发就是 P-16 选型的凭据 |
@@ -3419,6 +3425,80 @@ EOF
 | T4-M13 | `repository.test.ts` 里把 `SELECT DATABASE()` 的期望值从 `'dajia_test'` 改成 `'dajia'` | 当场红 —— 证明这一格真在读连接指向的库。**反向那一发（把 `createDbPool({ ...env, database: DATABASE })` 改回 `createDbPool(env)`）本计划禁止真跑**：`migrate` 的 `CREATE TABLE` 不带库限定，跟着连接的默认库走 ⇒ 会把表建进 `dajia`（那正是这条守卫存在的理由） |
 | T4-M14 | `clearAll()` 改成只 `DELETE FROM \`element\``（不清 project） | 「project 行落账」或「同一个 id 建两次」红：跨用例的状态泄漏就是"上一发用例替下一发铺好数据"那种查不清的红。这一发证明 `beforeEach` 真在守事 |
 
+
+### Task 4 执行回填（2026-10-05，落码后）
+
+#### 提交链与格子数
+
+| 提交 | 作者 | 内容 | 文件 / 行数 | `verify` 格子数 |
+|---|---|---|---|---|
+| `fd9d2c0` | 控制位 | Task 3 执行回填（**BASE**：T4 的审查包从这一发起算） | docs | 42 / 560 |
+| `fe2ecf3` | T4 席位 | `codec.ts` / `repository.ts` / `pool.ts` 两条配置 / `entity-schema.ts` 三出口 + 三份测试 | 7 文件 / +1262 −1 | 44 / **576**（+2 文件：`codec.test.ts` 13 格、`entity-shape.test.ts` 3 格） |
+
+单发提交、信息逐字对 brief Step 9，且 body 里自己记了三处"brief 与盘上冲突以代码为准"（夹具池 `multipleStatements`、`updated_seq` 真形状、楼层归属正则去空格）与 `pool.on('connection')` 那颗地雷的修法。`it()` 逐档点数：`codec.test.ts` 13 + `entity-shape.test.ts` 3 = **16** ⇒ 560 + 16 = 576 严格吻合；`repository.test.ts` 20 格全在 db 档 ⇒ 17 + 20 = **37** 同样吻合。靶面无 `it.skip` / `it.todo` / `it.only`。
+
+#### 闸门读数（全部控制位亲测，不采信席位的日志）
+
+```
+pnpm verify                                exit=0  Test Files 44 passed / Tests 576 passed
+pnpm test:db                               exit=0  Test Files 3 passed / Tests 37 passed
+                                                    env 3 + migrate 14 + repository 20
+                                                    [census] version=8.0.45 max_connections=151
+                                                    [t4] snapshot payload typeof = object
+npx tsc --noEmit -p apps/desktop/tsconfig.test.json
+                                           exit=0
+node scripts/check-package-deps.mjs        exit=0  依赖方向检查通过
+node scripts/check-invariants-cycle.mjs    exit=0  model/invariants 的 import 闭包不碰 commands/**
+只读普查（收口时）                          19 个库名，逐名等于 Task 2 的基线；dajia 一次未建、未连、未删
+```
+
+**下一棒的起点是 44 / 576 / db 3 / 37。**
+
+审查席自己另跑了一遍同一组闸门（`verify` 44 / 576、db 3 / 37、tsc 0、deps 0、连库前后各一发普查共 5 次读数全等于 19 名），与控制位读数逐条一致；`leak-check.mjs` scanned=325 / unreadable=0，**唯一命中仍是 `docs/.../dajia-s1-design.md`**（即 spec §12 记凭据的那份原文本身），T4 改动的 7 个文件与 `tmp/*.log` **零命中**。全程没有把口令敲进任何命令行、代码、日志或提交。
+
+#### 六处文本与盘上的不一致（本节正文已按盘上订正，代码块保留原样、以文件为准）
+
+1. **Step 6 夹具池缺 `multipleStatements`** ⇒ 迁移那趟多语句脚本 1064、`repository.test.ts` 整档 20 格 skip。补的是夹具的**迁池**，业务池保持单语句（→ **P-65**）。
+2. **`updated_seq` 的期望 `DISTINCT=1` / `count(seq2)=4` 与同一节 Step 7 自己写的逐实体 `patch.upsert` 矛盾** ⇒ 钉成真形状 `DISTINCT=2` / `seq1`→1 行 / `seq2`→3 行 / 合计 4（→ **P-64**）。
+3. **楼层归属正则多一个空格**：生产文案是 `${what}属于工程`（`repository.ts:34`，"属于"前无空格），Step 6 的 `/楼层 \S+ 属于工程/` 抓不到 ⇒ 落地 `/楼层 \S+属于工程/`（`repository.test.ts:354`），"楼层 + id + 属于工程"三段同现的强度不变。文档级正则那个空格本来就有，未动。
+4. **Step 8 的计数预估（42 文件）与盘上差两档**：T3 的基线本身已高于 brief 写作时的假设，加上控制位前置条件追加的两格（`codec.test.ts` 第 13 格往返哨兵、`entity-shape.test.ts` 第 3 格 I3 源文本对账）。以盘上 **44 / 576** 为准，没回头动判据凑数。
+5. **brief 的 M6 预检要求 `packages/protocol/test/entity-schema.test.ts` "照旧全绿"—— 不成立**：实测 `category: z.enum` → `z.string` 让那一档**两格红**（`:147` 只认 door/window、`:189` P-61 补的行为探针）。成立的是另一半：desktop 侧 runtime 16 格全绿 ⇒ **枚举漂移在 vitest 层不可见**；编译侧 `tsc -p tsconfig.test.json` exit=1，精准报在 `codec.ts(48,56,88)` 与 `entity-shape.test.ts(94)`。修正后的主张是"只有**编译期 + protocol 行为探针**看得见"。
+6. **`M7` 从"已知限度"改判为"有牙"**：删 `asJsonValue` 的 string 支实测 9 格红（→ **P-67**）。同时撤回"M6 只有第三发 `tsc` 看得见"里的"只有"—— `verify` 的 typecheck 面自 Task 1 的 `92240d8` 起就在编译 `test/**`（→ **P-63**，六处文本已就地改口）。
+
+#### Step 1 四件实测事实的落点
+
+- JSON 列读回是 **`object`**（不是 string）⇒ `codec.ts:23` 的 `asJsonValue` 主路按 object 写，`:24` 的 string 支是兜底，兜底那一支现在有 9 格站着（P-67）。
+- MySQL 把存进去的 **`-0` 归一成 `0`** ⇒ `-0` 的判据只能住在 `codec.test.ts` 的纯文本格，不经库（库那头测不出来，服务端已经吃掉了符号）。
+- **MySQL 重排 JSON 对象键序** ⇒ 全计划的"逐字节相同"一律是 **`canonical()` 相同**；`codec.ts:64` 的注释与 `codec.test.ts` 第 2/3 格、`writeSnapshot` 那一格都按这条口径写，谁把它写成"和盘上字节比"就是假判据。
+- `LONGLONG` 越 `2^53`：`supportBigNumbers` 关 ⇒ 静默失精成 `number`（`9007199254740993` → `…992`）；开 ⇒ 回精确 `string`。盘上取 `pool.ts:47-48` 的 `supportBigNumbers: true` + `bigNumberStrings: false`（P-17）。
+
+#### 审查发现的处置（一轮审查，无修复轮）
+
+审查席判 **A spec PASS / B PASS WITH CHANGES**（Critical 0 / Important 1 / Minor 3），四笔席位争议**全部同意**（更贴真相，非削判据）：夹具池补 `multipleStatements`、`updated_seq` 钉真值、正则去空格、"protocol 照旧全绿"据实订正。
+
+- **Important（M7 的账记错）→ P-67**：纯纠偏，源码零改动。
+- **Minor（"verify 不编译 `test/**`"过期）→ P-63**：那句话挂在 P-1 的代价栏名下（Task 2 Step 6 原文写"P-1 打开跨包 import 口子时登记的连带"），而 **P-1 本体并没有这条主张** —— 它是从"三处要跟着动"里长出来的推论。已订正到派发词与计划文本两侧。
+- **Minor（BIGINT → string → zod 抛只到注释）→ 本节限度第 2 条**，接线归 T5。
+- 审查席额外自证的两件事（不算 finding，是判据凭据）：① 一支**自设计的破坏形状探针**走盘上真实 `ProjectRepository` / `createDbPool`，实测外部行锁掐断后 `command_log WHERE turn=3` = 0、**已写下去的 `element` 行被回滚 = 0**、`storey` = 1，释放后同 turn 重发成功 ⇒ brief ② 的"半途掐断全无账"是活体证据而不是纸面断言；② `I3` 源文本对账格逐条静态解剖（`[^}]*` 只截接口体、`^[ \t]*readonly…:` 行首锚定带 `m` 无 `s`、两侧硬编码 `['remove','upsert']` + 交叉相等）⇒ **真对账，非 `toContain`**，P-56 那一族的教训在这一格落到了地上。
+- 写侧不跑 `assertTruthSourceInvariants`（`repository.ts` / `codec.ts` grep 零命中）⇒ brief ③ 守住；唯一的 `catch {}` 是 `repository.ts:174-179` 回滚吞二次错（brief ②/④ 明许、M4 背书），真因照旧 rethrow。
+
+#### 登记的限度（改码不划算，改判据不许）
+
+1. **`SET SESSION innodb_lock_wait_timeout` 的生效性没有常驻读数证人** —— 审查席那次 `@@innodb_lock_wait_timeout = 1` 是已撤的自证探针，盘上只留 `pool.ts:20-23,71` 两段注释。漂了的形状不是假绿，是那一发慢到默认 50 秒、红在 60 秒 `testTimeout` 上（症状从"快失败"变成"像挂死"）。T6 补位（P-66 代价栏）。
+2. **"BIGINT 越界 → string → 喂进 zod 抛"只有 `pool.ts:43-44` 的注释背书**：T4 不把 BIGINT 列读回 codec，`codec.test.ts` 第 5 格那枚 `9007199254740993` 钉的是安全整数**上界**拒绝（JS 里已失精为 `number`），不是 string 类型拒绝 ⇒ 接线在 T5 的 `loadProject`。
+3. **`codec` 的拒绝文案偏粗**：第 4/5/6/11 格只 `/解不出实体/`，不点名漂在哪字段。不是零判据 —— "必收"那半发由第 1 格八实体正向往返 + 第 2/3 格 `canonical()` + 第 13 格哨兵兜住（"过严实现拒一切"当场红），欠的只是诊断粒度。
+4. **`'同一 turn 重发'` 格的 `toEqual(before)` 只比 `{id, updated_seq}` 不比 payload**（`repository.test.ts:259-`）⇒ "用相同数据重刷同一 turn"不红，但那行为本身幂等无害；这一格靠**返回值** `already-applied` 有牙（M2 摘掉 `<=` 就红），不靠 payload。
+5. **T4-M3 的后半仍未关**："把 `storey` 投影挪到 `commit()` 之后"这一型本任务抓不到（失败路径走不到那一发），处置是 T5 的 `closeProject()` 逐行对账 —— 这是计划里**故意留给下一棒的读者**，不是漏网。
+
+#### 给 T5 及之后每一棒的须知
+
+1. **口径改了**（P-63）：派发词里不再写"`pnpm verify` 不吃 `apps/desktop/test/**`"。单跑 `npx tsc -p apps/desktop/tsconfig.test.json` 仍然保留，理由只剩"日志聚焦 + 不跑全量"。
+2. **落盘 turn 集恒等于连续区间 `{1..journal_turn}`，且 `count(command_log) == journal_turn`**（跳号 guard + 全事务原子性；半途失败的 turn 既不涨计数器也不留行 —— 审查席探针实证）。`loadProject` 可以放心把 `journal_turn` 当"文档停在哪"的唯一坐标。
+3. **`element.updated_seq` = 最后碰这一行的 `command_log.seq`**（P-64 钉住的语义），BIGINT 列在 `supportBigNumbers` 下 2^53 内回 `number`；`command_log` 带 `(seq, turn, actor, payload=patch)` 且 `uk_project_turn` 保证 turn 唯一；`writeSnapshot` 是**裸 INSERT**（P-16）。三方对账（快照 + 重放 ↔ `element` 投影 ↔ `storey` 投影）有唯一收敛依据。
+4. **两件 T4 故意留的读者归 T5**：① `closeProject()` 做 `element`↔`storey` 逐行对账；② 把 `updated_seq` JOIN 回 `command_log.turn`，并对 BIGINT 读数做 `Number()`（越界 → string → zod 抛那一发的接线在这里，不在 T4）。
+5. **夹具池 / 业务池的分工照抄 T4**（P-65）：多语句只给迁池。别为了让测试好写把业务池改成 `multipleStatements: true`。
+6. **`storeyAt` 类夹具的 `index` 唯一性**（P-55 的连带）：同一 `projectId` 下楼层 `index` 必须唯一，多层夹具记得显式给 `index = 1 / 2`，否则红在"index 重复"而不是你想证的那件事。
+7. **测试配方先测可达性**（P-62 的连带）：控制位给的配方落地前先跑一发，走不通就回报并订正，不许削判据、不许按文本盲抄。
 
 ## Task 5: 读路径与收尾对账（`loadProject` + `closeProject` + `reconcile.ts`）
 
@@ -4783,7 +4863,7 @@ Expected: `exit=0`，**31 条**全绿。`journal_turn 超出 JS 安全整数` �
 ```
 
 Run: `npx tsc --noEmit -p apps/desktop/tsconfig.test.json > tmp/t5-tsc.log 2>&1; echo "exit=$?"`
-Expected: `exit=0`。（这一发不是仪式：`tsconfig.test.json` 覆盖 `test/**`，本任务两个测试文件里的编译期主张只有它能看见 —— T4 的 M6 已经验证过这一点。）
+Expected: `exit=0`。（这一发**不是唯一证人**：`verify` 的 typecheck 面同样编译 `test/**`，口径见 P-63。单跑它的理由是本任务两个测试文件里全是编译期主张，日志聚焦且不跑全量 —— T4 的 M6 实测报在 `codec.ts` 与 `entity-shape.test.ts`，正是这一型。）
 
 - [ ] **Step 6: 全量复跑与计数**
 
