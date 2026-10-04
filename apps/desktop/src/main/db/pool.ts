@@ -44,6 +44,16 @@ export function createDbPool(env: MysqlEnv, opts: PoolOptions = {}): Pool {
     // 而 string 过不了 MmSchema / JournalTurnSchema ⇒ 越界变成一次抛，不是一次悄悄写歪的账。
     // Step 1 的 D 档读数就是这两行的凭据（关着时 9007199254740993 → 失精 number，开着 → 精确 string）；
     // 第 2 格把它钉成断言。本仓库这四列的实际取值都远小于 2^53 ⇒ 常态回 number，两条配置只在越界处起作用。
+    // 读数口径现在有两格读者：T4 的 BIGINT 字面量探针（repository.test.ts 的「越界的 LONGLONG 回 string」），
+    // 与 T5 的 `asSafeInt64`（journal.test.ts 的「journal_turn 超出 JS 安全整数」那一格）。
+    // brief 说"这两格的牙都在这两行配置上，关掉就红在那一格" —— 实测只对它一半，两格各有各的漂法：
+    // ①关掉下面这两行（T5-M7pool）：红的是 **T4 那一格**（`typeof` 从 string 变回 number），
+    //   journal 那一格反而**不红**：9007199254740993 失精成 2^53，而 2^53 也不是安全整数，
+    //   `asSafeInt64` 的第二支照样抛 ⇒ 它测不出配置被关掉（`tmp/t5-mut-T5-M7pool-journal+repo.log`）。
+    // ②只删 `asSafeInt64` 的 string 支（T5-M7 的字面删法）：**53 格全绿**，因为第二支
+    //   `Number.isSafeInteger` 已经把 string 挡在外面（它不是 number）。要打出这一支得把整个函数
+    //   变成 `return Number(raw)`（T5-M7b），那一发才红在 journal 那一格上。
+    // 留这一格不是嫌 brief 啰嗦：它是"配置 + 两道守卫"三者关系唯一的实测记录，摘掉任一条的另一条会顶上来。
     supportBigNumbers: true,
     bigNumberStrings: false,
   });

@@ -1,7 +1,33 @@
 import type { Pool } from 'mysql2/promise';
-import type { Document, Entity, EntityId, Patch } from '@dajia/core';
+import {
+  Document,
+  SCHEMA_VERSION,
+  applyPatch,
+  assertTruthSourceInvariants,
+  type EntityId,
+  type Patch,
+} from '@dajia/core';
 import { JournalTurnSchema } from '@dajia/protocol';
-import { encodeDocument, encodeEntity, encodePatch } from './codec';
+import {
+  decodeDocument,
+  decodeEntity,
+  decodePatch,
+  encodeDocument,
+  encodeEntity,
+  encodePatch,
+} from './codec';
+// `storeyIdOf` 住在 ./reconcile：T4 里它是模块私有的，T5 把它挪过来改成 import ——
+// 写这一列（appendJournal）与审这一列（closeProject 的三方对账）必须共用同一份规则，两份一定会漂
+// （同 T3 的 assertNoVerticalOverlap 那条理由）。
+// 代价（T5-M14 登记的限度）：列由这份规则写、又由同一份规则自比，规则自己漂了对账看不见 ⇒
+// 外部证人 = test/db/repository.test.ts 的「楼层那一行的 storey_id 是 NULL」那一格（它直接读列的实测值）。
+import {
+  formatMismatches,
+  reconcileProjection,
+  storeyIdOf,
+  type ElementRowView,
+  type StoreyRowView,
+} from './reconcile';
 
 export type JournalOutcome = 'applied' | 'already-applied';
 
@@ -24,21 +50,96 @@ function hdr(res: unknown): { affectedRows: number; insertId: number } {
   return { affectedRows: Number(h.affectedRows ?? 0), insertId: Number(h.insertId ?? 0) };
 }
 
-/** 楼层实体自己就是层，`element.storey_id` 对它为空；别的四类都带着 storeyId。 */
-function storeyIdOf(entity: Entity): EntityId | null {
-  return entity.kind === 'storey' ? null : entity.storeyId;
-}
-
 function notThisProject(what: string, got: EntityId, want: EntityId): RangeError {
   return new RangeError(
     `${what}属于工程 ${got}，这个仓库绑的是 ${want}：一份文档不能写进两个工程的账`,
   );
 }
 
+/** 打开工程的两种意图：`edit` 参与写（锁行 + 抹 `clean_shutdown`），`read` 只旁观（T6 拿不到锁那一支）。 */
+export type OpenIntent = 'edit' | 'read';
+
+export interface ProjectHeader {
+  readonly projectId: EntityId;
+  readonly name: string;
+  readonly schemaVersion: number;
+  readonly journalTurn: number;
+  /** 翻 0 **之前**读到的那一格：false = 上一会话没告别。T8 的恢复横幅只读这一格。 */
+  readonly wasCleanShutdown: boolean;
+}
+
+export interface LoadOutcome {
+  readonly doc: Document;
+  readonly header: ProjectHeader;
+  readonly snapshot: { readonly seq: number; readonly turn: number } | null;
+  /** 重放了几发、首尾 seq。洞在 seq 上（P-6），所以 fromSeq/toSeq 只作报告用，不作判据用。 */
+  readonly replayed: {
+    readonly rows: number;
+    readonly fromSeq: number | null;
+    readonly toSeq: number | null;
+  };
+}
+
+export interface CloseReport {
+  readonly elementRows: number;
+  readonly storeyRows: number;
+}
+
+interface ProjectRow {
+  readonly name: string;
+  readonly schema_version: number | string;
+  readonly journal_turn: number | string;
+  readonly clean_shutdown: number | string;
+}
+interface SnapshotRow {
+  readonly seq: number | string;
+  readonly journal_turn: number | string;
+  readonly schema_version: number | string;
+  readonly payload: unknown;
+}
+interface LogRow {
+  readonly seq: number | string;
+  readonly turn: number | string;
+  readonly payload: unknown;
+}
+interface ElementDbRow {
+  readonly id: string;
+  readonly storey_id: string | null;
+  readonly payload: unknown;
+}
+interface StoreyDbRow {
+  readonly id: string;
+  readonly index_no: number | string;
+  readonly elevation_mm: number | string;
+  readonly height_mm: number | string;
+}
+
 /**
- * 唯一的写库出口。**只有写**：读路径（`loadProject` = 快照 + 重放）与 `closeProject` 在 T5。
- * 拆成两个任务是故意的 —— 写路径每一发都要能独立证"要么全写要么全无"，
- * 读路径要证的是"盘上的账能自洽地还原成一份文档"，两批用例混在一个文件里只会互相遮蔽。
+ * BIGINT 列的读数口径（P-17）。`supportBigNumbers: true` + `bigNumberStrings: false` 之下：
+ * 安全范围内是 number，范围外是 **string**。所以"string 就是越界"这一支必须先判，
+ * 不能先 `Number()` —— 那样 9007199254740993 会静默变成 …92 并通过 `isSafeInteger`，
+ * 于是"越界会抛"这句主张悄悄失效（T5-M7 打的就是这一支）。
+ *
+ * `clean_shutdown` 不走这里：它只有 0/1 两个值，用 `Number(...) === 1` 归一即可，
+ * 越界的 0/1 列不成立。查询结果的本地接口一律写成"裸形状"再 `as`，不 `extends RowDataPacket`
+ * —— T4 用的是这个形状，别在同一个文件里混两种。
+ */
+function asSafeInt64(raw: unknown, label: string): number {
+  if (typeof raw === 'string') {
+    throw new RangeError(`${label} = ${raw} 超出 JS 安全整数范围：这一列存进 JS 必然失精，拒开`);
+  }
+  if (typeof raw !== 'number' || !Number.isSafeInteger(raw)) {
+    throw new RangeError(`${label} 的读数 ${String(raw)} 不是安全整数，拒开`);
+  }
+  return raw;
+}
+
+/**
+ * 盘上那份账的唯一出入口：写（`createProject` / `appendJournal` / `writeSnapshot`）、
+ * 读（`loadProject` = 工程头 + 最近快照 + 其后日志重放）、收尾（`closeProject` 的三方对账）。
+ * 写路径与读路径分成两批用例（`test/db/repository.test.ts` / `test/db/journal.test.ts`）是故意的 ——
+ * 写路径每一发要独立证"要么全写要么全无"，读路径要证的是"盘上的账能自洽地还原成一份文档"，
+ * 两批用例混在一个文件里只会互相遮蔽。
  */
 export class ProjectRepository {
   constructor(
@@ -198,5 +299,234 @@ export class ProjectRepository {
       'INSERT INTO `snapshot` (`project_id`, `journal_turn`, `schema_version`, `payload`) VALUES (?, ?, ?, ?)',
       [this.projectId, t, doc.schemaVersion, encodeDocument(doc)],
     );
+  }
+
+  /**
+   * 读路径 = 工程头 + 最近一份快照 + 其后所有日志正向重放（Architecture ③），三发读与那一发写
+   * **同在一个事务、同一个快照**里。
+   * `edit` 支先 `FOR UPDATE` 锁 project 行 —— 与 `appendJournal` 同一个首锁，加锁顺序一致 ⇒ 不会互相咬成死锁。
+   * `read` 支不锁行也不写：T6 拿不到锁的那个实例走的就是这一支（旁观者参与抹 `clean_shutdown`
+   * 就是把没在编辑的人的告别信号写脏）。
+   *
+   * 投影（`element` / `storey`）**不参与加载**：Architecture ④ 写死它是投影不是加载源。把它升格成加载源，
+   * "库里存了什么"就有两个答案（日志说做过、投影说没做），而这两个答案漂开时恰好是本计划最难查的一型。
+   */
+  async loadProject(intent: OpenIntent): Promise<LoadOutcome> {
+    const conn = await this.pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const select =
+        'SELECT `name`, `schema_version`, `journal_turn`, `clean_shutdown` FROM `project` WHERE `id` = ?';
+      const [projectRows] = await conn.query(intent === 'edit' ? `${select} FOR UPDATE` : select, [
+        this.projectId,
+      ]);
+      const project = (projectRows as ProjectRow[])[0];
+      if (!project) {
+        throw new RangeError(
+          `工程 ${this.projectId} 不在库里：要么它从没建过，要么它已经被删；不能凭空开一份文档当它是读来的`,
+        );
+      }
+      const schemaVersion = asSafeInt64(project.schema_version, 'project.schema_version');
+      // 两处常量当前同值，读的是 Document 那个（Document.create 的默认参数就是它）；
+      // CORE_SCHEMA_VERSION 是 index 的再导出，这里同时用两个就是留两个产地。
+      if (schemaVersion !== SCHEMA_VERSION) {
+        throw new RangeError(
+          `工程 ${this.projectId} 的 schema_version 是 ${String(schemaVersion)}，这份程序只认 ${String(
+            SCHEMA_VERSION,
+          )}：S1 没有迁移路径，硬读会得到一份没人验过的文档`,
+        );
+      }
+      const journalTurn = asSafeInt64(project.journal_turn, 'project.journal_turn');
+      const wasCleanShutdown = Number(project.clean_shutdown) === 1;
+
+      const [snapshotRows] = await conn.query(
+        'SELECT `seq`, `journal_turn`, `schema_version`, `payload` FROM `snapshot` WHERE `project_id` = ? ORDER BY `seq` DESC LIMIT 1',
+        [this.projectId],
+      );
+      const snap = (snapshotRows as SnapshotRow[])[0];
+      let doc: Document;
+      let snapshot: { seq: number; turn: number } | null = null;
+      let replayFrom = 0;
+      if (snap) {
+        const snapSeq = asSafeInt64(snap.seq, 'snapshot.seq');
+        const snapTurn = asSafeInt64(snap.journal_turn, `snapshot 行 ${String(snapSeq)} 的 journal_turn`);
+        const snapSchema = asSafeInt64(
+          snap.schema_version,
+          `snapshot 行 ${String(snapSeq)} 的 schema_version`,
+        );
+        if (snapSchema !== schemaVersion) {
+          throw new RangeError(
+            `snapshot 行 ${String(snapSeq)} 的 schema_version 是 ${String(snapSchema)}，工程头记的是 ${String(
+              schemaVersion,
+            )}：同一份快照的列上与工程上说的不是同一个版本，拒开`,
+          );
+        }
+        const decoded = decodeDocument({ table: 'snapshot', id: String(snapSeq) }, snap.payload);
+        if (decoded.schemaVersion !== schemaVersion) {
+          throw new RangeError(
+            `snapshot 行 ${String(snapSeq)} 的 payload 写着 schemaVersion ${String(
+              decoded.schemaVersion,
+            )}，工程头记的是 ${String(schemaVersion)}：列与正文各说各话时以工程头为准，拒开`,
+          );
+        }
+        if (decoded.projectId !== this.projectId) {
+          throw new RangeError(
+            `snapshot 行 ${String(snapSeq)} 的 payload 写的是工程 ${decoded.projectId}，` +
+              `而这条快照挂在工程 ${this.projectId} 上：两份账指认的不是同一个工程，拒开`,
+          );
+        }
+        doc = decoded;
+        snapshot = { seq: snapSeq, turn: snapTurn };
+        replayFrom = snapTurn;
+      } else {
+        doc = Document.create(this.projectId, schemaVersion);
+      }
+
+      const [logRows] = await conn.query(
+        'SELECT `seq`, `turn`, `payload` FROM `command_log` WHERE `project_id` = ? AND `turn` > ? ORDER BY `seq` ASC',
+        [this.projectId, replayFrom],
+      );
+      let prevTurn = replayFrom;
+      let replayedRows = 0;
+      let fromSeq: number | null = null;
+      let toSeq: number | null = null;
+      for (const row of logRows as LogRow[]) {
+        const seq = asSafeInt64(row.seq, 'command_log.seq');
+        const turn = asSafeInt64(row.turn, `command_log 行 ${String(seq)} 的 turn`);
+        // turn 必须逐发连着（appendJournal 就是这么写的：跳号当场抛）。缺号说明日志被删过或插过，
+        // 而"少重放几发得到的文档"是一份形状完全正常的坏文档 —— 正是本计划要拦的那一型。
+        if (turn !== prevTurn + 1) {
+          throw new RangeError(
+            `command_log 缺号：行 ${String(seq)} 的 turn 是 ${String(turn)}，上一发读到 ${String(
+              prevTurn,
+            )}（工程 ${this.projectId}，快照 turn ${String(replayFrom)}）：` +
+              `中间那些发去哪了没查清之前，不能当它是完整的`,
+          );
+        }
+        prevTurn = turn;
+        const patch = decodePatch({ table: 'command_log', id: String(seq) }, row.payload);
+        try {
+          doc = applyPatch(doc, patch).doc;
+        } catch (err) {
+          // 坐标必须落在这一句里：一份盘上有几百发补丁，"重放失败"四个字帮不了任何人。
+          throw new RangeError(
+            `重放 command_log 行 ${String(seq)}（turn ${String(turn)}）失败：${String(err)} —— ` +
+              `快照与日志这两本账已经接不上，拒开`,
+          );
+        }
+        replayedRows += 1;
+        if (fromSeq === null) fromSeq = seq;
+        toSeq = seq;
+      }
+      // 读到尾还不够，尾必须落在工程头记的那一格：少就是"头寸比账本大"（尾被删），
+      // 多就是"账本比头寸大"（头寸没跟上）。两种都拒。
+      if (prevTurn !== journalTurn) {
+        throw new RangeError(
+          `重放读到 turn ${String(prevTurn)}，project.journal_turn 记的是 ${String(journalTurn)}：` +
+            `工程 ${this.projectId} 的这两本账对不上，拒开`,
+        );
+      }
+
+      // 唯一的放行证（T3）。放在这里而不是 codec：解码只管形状，这里才知道一共读了几层、引用闭不闭。
+      assertTruthSourceInvariants(doc);
+
+      if (intent === 'edit') {
+        // 不加 affectedRows 断言。理由不是 brief 那句"重复打开时 0→0 返回 0"（实测它不成立：
+        // 同一条 UPDATE 还写 `updated_at = NOW(3)`，头寸没变但行确实变了 ⇒ affectedRows 照样是 1，
+        // T5-M15 加上断言后 53 格全绿，`tmp/t5-mut-T5-M15-journal+repo.log`）。
+        // 成立的那条更简单：这一发本来就不许失败，失败已经由"它抛在事务里、由 catch 回滚"负责；
+        // 拿 affectedRows 当判据只会把语义押在 updated_at 上 —— 哪天它被挪出这条语句，
+        // 断言立刻把"重复打开"这条正当路径变成红，而它什么坏东西都没拦住。
+        await conn.query(
+          'UPDATE `project` SET `clean_shutdown` = 0, `updated_at` = NOW(3) WHERE `id` = ?',
+          [this.projectId],
+        );
+      }
+      await conn.commit();
+      return {
+        doc,
+        header: {
+          projectId: this.projectId,
+          name: project.name,
+          schemaVersion,
+          journalTurn,
+          wasCleanShutdown,
+        },
+        snapshot,
+        replayed: { rows: replayedRows, fromSeq, toSeq },
+      };
+    } catch (err) {
+      try {
+        await conn.rollback();
+      } catch {
+        // 同 appendJournal：吞掉第二个错误，否则调用方读到的是"回滚失败"，真因反而看不见。
+      }
+      throw err;
+    } finally {
+      conn.release();
+    }
+  }
+
+  /**
+   * 收尾：三方对账（文档 ↔ element ↔ storey）通过才把 `clean_shutdown` 落回 1。
+   * 不平 ⇒ 抛且不落 1 ⇒ 下次打开出恢复告知。真源永远是 `command_log`，投影由下一次写入重建。
+   * `doc` 由 renderer 在收尾时递过来（P-9 说的是 main 不**拥有**文档对象图，不是它一辈子不许看见文档；
+   * emergency 快照走的是同一条路，P-10）。
+   */
+  async closeProject(doc: Document): Promise<CloseReport> {
+    if (doc.projectId !== this.projectId) {
+      throw notThisProject('文档', doc.projectId, this.projectId);
+    }
+    const conn = await this.pool.getConnection();
+    try {
+      await conn.beginTransaction();
+      const [locked] = await conn.query(
+        'SELECT `id` FROM `project` WHERE `id` = ? FOR UPDATE',
+        [this.projectId],
+      );
+      if ((locked as unknown[]).length === 0) {
+        throw new RangeError(`工程 ${this.projectId} 不在库里：没有可收尾的账`);
+      }
+      const [elementRows] = await conn.query(
+        'SELECT `id`, `storey_id`, `payload` FROM `element` WHERE `project_id` = ?',
+        [this.projectId],
+      );
+      const [storeyRows] = await conn.query(
+        'SELECT `id`, `index_no`, `elevation_mm`, `height_mm` FROM `storey` WHERE `project_id` = ?',
+        [this.projectId],
+      );
+      const elements: ElementRowView[] = (elementRows as ElementDbRow[]).map((r) => ({
+        id: r.id as EntityId,
+        storeyId: r.storey_id as EntityId | null,
+        entity: decodeEntity({ table: 'element', id: r.id }, r.payload),
+      }));
+      const storeys: StoreyRowView[] = (storeyRows as StoreyDbRow[]).map((r) => ({
+        id: r.id as EntityId,
+        indexNo: asSafeInt64(r.index_no, `storey 行 ${r.id} 的 index_no`),
+        elevationMm: asSafeInt64(r.elevation_mm, `storey 行 ${r.id} 的 elevation_mm`),
+        heightMm: asSafeInt64(r.height_mm, `storey 行 ${r.id} 的 height_mm`),
+      }));
+      const mismatches = reconcileProjection(doc, elements, storeys);
+      if (mismatches.length > 0) {
+        // 回滚交给下面那个 catch，这里不重复一发 —— 重复会让"谁在回滚"有两个答案。
+        throw new RangeError(formatMismatches(this.projectId, mismatches));
+      }
+      // 同样不许加 affectedRows 断言：收过尾的工程再收一次是 1→1。
+      await conn.query(
+        'UPDATE `project` SET `clean_shutdown` = 1, `updated_at` = NOW(3) WHERE `id` = ?',
+        [this.projectId],
+      );
+      await conn.commit();
+      return { elementRows: elements.length, storeyRows: storeys.length };
+    } catch (err) {
+      try {
+        await conn.rollback();
+      } catch {
+        /* 同 loadProject：吞掉第二个错误，真因不能被"回滚失败"盖住。 */
+      }
+      throw err;
+    } finally {
+      conn.release();
+    }
   }
 }
