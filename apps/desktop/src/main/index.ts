@@ -1,3 +1,10 @@
+/**
+ * 工程持久化（计划 4）的主进程侧代码全部住在 `src/main/db/`：`db-safety.ts` 是库名白名单
+ * （不在名单里的库名在建连接**之前**就抛）、`env.ts` 只从环境变量读连接参数、
+ * `pool.ts` / `migrate.ts` / `database.ts` 分别是连接池、迁移 runner 与建库删库。
+ * **本文件目前一行都不 import 它们**：接线（IPC、启动时恢复未合并片段）是 Task 8 那一档的活，
+ * 这句话留在这里是为了让"目录已经在了、入口还没接"这件事不用下一个人重新发现。
+ */
 import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
