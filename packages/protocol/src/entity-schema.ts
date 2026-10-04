@@ -131,3 +131,42 @@ export const INTEGER_FIELDS_SHAPE: Record<string, readonly string[]> = {
   column: ['widthMm', 'depthMm', 'heightMm'],
   slab: ['thicknessMm', 'elevationOffsetMm'],
 };
+
+/**
+ * 快照 payload 的**盘上契约**。住在这里而不是 `codec.ts`：`apps/desktop` 没有 zod 依赖，
+ * pnpm 的严格 node_modules 也让它解析不到 protocol 的那一份 —— zod 只能住在有它的那个包里。
+ * 三个 `parse*` 出口把 `ZodError` 在这里就收成一个普通 `TypeError`，边界另一侧只见文本。
+ */
+export const DocumentPayloadSchema = z.strictObject({
+  projectId: EntityIdSchema,
+  schemaVersion: z
+    .number()
+    .refine((v) => Number.isSafeInteger(v) && v >= 1, 'schemaVersion 必须是正整数'),
+  entities: z.array(EntitySchema),
+});
+
+export type DocumentPayloadShape = z.output<typeof DocumentPayloadSchema>;
+export type PatchShape = z.output<typeof PatchSchema>;
+
+function issueText(err: z.ZodError): string {
+  return err.issues.map((i) => `${i.path.join('.') || '(根)'}: ${i.message}`).join('; ');
+}
+
+/** `where` 由调用方给（表名 + 行 id，或 T8 的 IPC 通道名）；文案形状是 codec.test.ts 的正则吃的样子。 */
+export function parseEntityShape(where: string, value: unknown): EntityShape {
+  const r = EntitySchema.safeParse(value);
+  if (!r.success) throw new TypeError(`${where} 解不出实体：${issueText(r.error)}`);
+  return r.data;
+}
+
+export function parsePatchShape(where: string, value: unknown): PatchShape {
+  const r = PatchSchema.safeParse(value);
+  if (!r.success) throw new TypeError(`${where} 解不出补丁：${issueText(r.error)}`);
+  return r.data;
+}
+
+export function parseDocumentPayload(where: string, value: unknown): DocumentPayloadShape {
+  const r = DocumentPayloadSchema.safeParse(value);
+  if (!r.success) throw new TypeError(`${where} 解不出文档快照：${issueText(r.error)}`);
+  return r.data;
+}
