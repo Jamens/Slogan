@@ -12,7 +12,17 @@ let close: () => Promise<void> = async () => {};
 
 beforeAll(async () => {
   const env = readMysqlEnv();
-  const pool = createPool({ ...env, connectionLimit: 1 });
+  // **`database` 不进连接**（裁决 P-40）：本任务连的是实例本身，建库排在 Task 2。
+  // 写成 `{ ...env }` 会让 mysql2 在建连时自己发 `USE dajia_test` ⇒ 库还没建就当场红，
+  // "不建库、不建表、不写一行"这句注释于是会变成一条永远跑不绿的判据。
+  // 显式列四件套而不是 omit 解构：`noUnusedLocals` 那侧少一个解释成本。
+  const pool = createPool({
+    host: env.host,
+    port: env.port,
+    user: env.user,
+    password: env.password,
+    connectionLimit: 1,
+  });
   close = () => pool.end();
   (globalThis as { __pool?: Pool }).__pool = pool;
 });
@@ -29,14 +39,19 @@ describe('MySQL 环境事实（spec §12 的凭据化）', () => {
       "SELECT VERSION() AS v, @@character_set_server AS cs, @@collation_server AS col, " +
         '@@lower_case_table_names AS lctn, @@max_connections AS maxc',
     );
-    const got = (rows as Record<string, string>[])[0];
+    // **回值的形状本身也是这一格学到的东西**（裁决 P-41）：`VERSION()` 是字符串，两个 `@@` 整数
+    // 变量在 mysql2 下回 JS number —— 实测 2026-10-04：`lctn` 回的是数字 1，不是 '1'。
+    // 所以这里不许把整行 cast 成 `Record<string, string>` 假装它全是字符串（那正是下一行原来写错的原因），
+    // 而是整数一律过 `Number()`、字符串那一发过 `String()`。
+    const got = (rows as Record<string, string | number>[])[0];
     if (!got) throw new TypeError('SELECT 没回行');
     expect(got.cs).toBe('utf8mb4');
     expect(got.col).toBe('utf8mb4_0900_ai_ci');
-    // 生成列与 id 列的 collation 都要跟着这个口径走（混着 JOIN 会报 Illegal mix of collations）
-    expect(got.lctn).toBe('1');
+    // 生成列与 id 列的 collation 都要跟着这个口径走（混着 JOIN 会报 Illegal mix of collations）。
+    // 断"恰好等于 1"而不是"非零"：库名大小写不敏感是 T2 那六张表与生成列设计的前提。
+    expect(Number(got.lctn)).toBe(1);
     expect(Number(got.maxc)).toBeGreaterThanOrEqual(151);
-    expect(got.v.split('.')[0]).toBe('8');
+    expect(String(got.v).split('.')[0]).toBe('8');
     process.stdout.write(`[census] version=${got.v} max_connections=${got.maxc}\n`);
   });
 
