@@ -33,6 +33,12 @@ describe('迁移清单的结构', () => {
     // 改的是正则去贴 DDL，不是反过来：SQL 正文是要进 git 永不再改的那一份。
     expect(first.sql).toMatch(/`kind` VARCHAR\(\d+\) GENERATED ALWAYS AS[^;]*STORED/);
     expect(first.sql).toMatch(/`load_bearing` .*GENERATED ALWAYS AS[^;]*END\)\s*STORED/);
+    // **P-54（变异棒 M13 的实测）**：上面 `kind` 那条 `[^;]*` 只关得住**跨语句**的漂移，关不住
+    // **同一条 CREATE TABLE 里跨列**的 —— `kind` 改成 VIRTUAL 之后，它仍能一路吃到
+    // `load_bearing` 自己的 `END) STORED`，于是这一格假绿（M13 亲眼看见：收紧前后都不红）。
+    // 补这一发反面断言把整型漏洞关掉：001 里**一个 VIRTUAL 都不许有**。
+    // 为什么不用"数 STORED 的个数 == 2"：002 加生成列的那天它就会假红，那是判据该跟着长的方向，反了。
+    expect(first.sql).not.toMatch(/VIRTUAL/);
     // **P-52 的收紧**（复审席 I2）：这两条原来写 `[\s\S]*STORED` —— 无上界，会**跨到下一条语句**去找
     // `STORED`。今天靠"001 里 `STORED` 只出现在这两处"的布局巧合守牙；002 一落地（新表也带生成列）
     // 就把假绿门打开：kind 漂成 VIRTUAL 时，后面别张表的 `STORED` 会让这一格照样绿。

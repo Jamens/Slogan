@@ -34,7 +34,10 @@ CREATE TABLE IF NOT EXISTS `element` (
     -- ascii_bin 推导出 ascii，information_schema 回值实测 charset=ascii / collation=ascii_bin，
     -- 于是 'wall' 与 'WALL' 在索引里就是两个值（生成列要的就是这个二进制比较口径）。
     COLLATE ascii_bin NOT NULL,
-  -- MySQL 对 JSON 布尔取出来的是 'true'/'false' 串，CAST 成数字会得到 0 —— 必须显式 CASE。
+  -- MySQL 从 JSON 取布尔给的是 'true'/'false' 串，直接 CAST 成数字拿不到 1/0：
+  -- 实测（8.0.45，tmp/p52-mut-M2-db.log）把下面这条换成 CAST(JSON_UNQUOTE(JSON_EXTRACT(payload, '$.loadBearing')) AS UNSIGNED)
+  -- 之后 INSERT 当场被 ER_TRUNCATED_WRONG_VALUE(1292) 硬拒 —— 不是当初推演的"静默得到 0"。
+  -- 两种读数都不能要，所以布尔必须显式 CASE。
   `load_bearing` INT GENERATED ALWAYS AS (
     CASE JSON_EXTRACT(`payload`, '$.loadBearing')
       WHEN CAST('true' AS JSON) THEN 1
