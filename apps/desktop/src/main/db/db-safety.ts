@@ -1,6 +1,7 @@
 /**
  * 用户给的授权原话：「允许在 MySQL 建 `dajia` 和 `dajia_test` 库」。
- * 那台实例里另有 14 个用户的库（spec §12 实测：含 smartscrm、smartscrm_react、flowmart、ledger_db…），
+ * 那台实例里另有一批用户的库（spec §12 写作时是 18 个 / 用户库 14 个；2026-10-05 的只读普查是 19 个库名 = 4 系统 + 15 用户，
+ * 含 smartscrm、smartscrm_react、flowmart、ledger_db…，数量会长但白名单不会变宽），
  * 而 `CREATE DATABASE` / `DROP DATABASE` 这类语句连不上"参数化"——一旦名字进错，删掉的是别人一天的工作。
  * 所以所有会建/删/连库的函数第一行都调这里，且**在建连接之前**抛。
  *

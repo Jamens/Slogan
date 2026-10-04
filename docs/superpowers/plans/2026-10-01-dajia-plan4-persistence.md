@@ -18,7 +18,7 @@
 
 - **每一个连库的测试文件自己把库名钉成字面量 `dajia_test`**（`createDbPool({ ...readMysqlEnv(), database: 'dajia_test' })`），并在用例第一条就断言 `SELECT DATABASE()` 等于它。理由不是洁癖：`env.database` 允许是 `dajia`（那是应用运行时的合法取值），而测试若照抄它，配错一个环境变量就把 `migrate`/`insert` 打进用户的真工程库，且**一句错都不报**。这条守卫的变异样本见 T4-M13（反向那一本计划禁止真跑，理由写在表里）。
 - **MySQL 授权在本计划首次生效，且只在这一计划生效。** 用户 2026-09-25 的原话：**「允许在 MySQL 建 `dajia` 和 `dajia_test` 库」**。执行前盘上事实：`dajia` 与 `dajia_test` **从未建过**，本仓库至今零 DB 写入（spec §12「未验证」那条到今天还成立）。授权覆盖 Task 2 起的建库建表写入；**不覆盖**任何其他库。
-- **这台 MySQL 实例里有用户的别的库**（spec §12 实测 18 个，其中 14 个用户库，含 `smartscrm`、`smartscrm_react`、`flowmart`、`ledger_db`）。因此本计划第一个任务交付的不是业务代码，是**护栏**：`assertDatabaseName()` 只放行 `dajia` / `dajia_test`，其余一律抛，且**在建连接之前**抛。这条护栏有真牙（Task 1 的用例：拿 `smartscrm` 去调它必须红）。此后每一个会写库的文件都必须先过它。
+- **这台 MySQL 实例里有用户的别的库**（spec §12 写作时 18 个 / 用户库 14 个；**2026-10-05 只读普查 = 19 个库名 = 4 系统 + 15 用户**，含 `smartscrm`、`smartscrm_react`、`flowmart`、`ledger_db`；数量会长，所以每一棒的普查判据是"**逐名等于基线、一个用户库都不能少**"，不是"数够多少个"）。因此本计划第一个任务交付的不是业务代码，是**护栏**：`assertDatabaseName()` 只放行 `dajia` / `dajia_test`，其余一律抛，且**在建连接之前**抛。这条护栏有真牙（Task 1 的用例：拿 `smartscrm` 去调它必须红）。此后每一个会写库的文件都必须先过它。
 - **口令不落任何进仓文件。** spec §12 里那对本地凭据只用于本机跑 `pnpm test:db` 与新闸门时的环境变量；测试代码与计划文本里**不许抄口令**，执行回填里也不许。缺环境变量时 `pnpm test:db` 必须以点名缺哪个变量的方式**响亮失败**（exit ≠ 0），**不许 `skip`** —— 静默跳过的集成测试等于没有测试，本仓反复罚的就是这一型。
 - **push 由用户本人执行**（spec §13）。破坏性 git（`reset --hard`、force-push、改已提交、`--no-verify`、`branch -D`）需明确指示。任何席位**不许 `git checkout`/`switch`/`restore`/`stash`/`reset`/`clean`**（本仓是单 checkout，切分支会把在跑的席位的工作悄悄挪到另一条分支上，已发生过）。
 - **renderer 永不接触数据库**（spec §4.3）。写路径只有：renderer → preload 窄接口 → main `mysql2` 池 → repository。
