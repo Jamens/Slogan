@@ -114,7 +114,9 @@
 
 **工作树与工具链**：分支 `main`，`git status --porcelain` 空，本地领先 `origin/main`（**push 归用户**）；Node v24.14.1、pnpm 11.18.0、vitest 5.0.1（`npm view vitest version` = 5.0.3，未升）；`npm view zod version` = **4.6.5**、`npm view mysql2 version` = **3.24.5**（两者今天都还没装：`grep -rn "mysql\|zod"` 在仓库里**零命中**）。
 
-**MySQL**（今日只读探测）：`node` 的 `net.connect(3306, '127.0.0.1')` 回 **OPEN**；本机 `which mysql` 无 —— **mysql CLI 不在 PATH**，所以任何"用命令行客户端手敲 SQL"的写法在这台机器上跑不通，运维通路只能是 `pnpm db:sql` 导出。`dajia` / `dajia_test` 是否已存在**未核**（要连库，Task 1 第一步就核并把结果落盘）。spec §12 那五条服务端参数（utf8mb4 / utf8mb4_0900_ai_ci / `lower_case_table_names=1` / `max_connections=151` / 8.0.45）由 Task 1 的 `env.test.ts` 变成会红的断言。
+**MySQL**（2026-10-01 只读探测）：`node` 的 `net.connect(3306, '127.0.0.1')` 回 **OPEN**；本机 `which mysql` 无 —— **mysql CLI 不在 PATH**，所以任何"用命令行客户端手敲 SQL"的写法在这台机器上跑不通，运维通路只能是 `pnpm db:sql` 导出。spec §12 那五条服务端参数（utf8mb4 / utf8mb4_0900_ai_ci / `lower_case_table_names=1` / `max_connections=151` / 8.0.45）由 Task 1 的 `env.test.ts` 变成会红的断言。
+
+**2026-10-04 补测（Task 1 落码之后，本计划第一次真连库）**：凭据通路打通（`DAJIA_MYSQL_*` 五个变量由运行时环境提供，值不进仓库、不进日志，见执行回填），`pnpm test:db` **exit=0 / 1 文件 / 3 条**，普查行原样 `[census] version=8.0.45 max_connections=151` ⇒ 上面那五条参数从"备忘"升格为**实测为真**。同一次只读探测对 `dajia` / `dajia_test` 的答案：**两库都不存在**（本机用户库现测 15 个，spec §12 当年记 14 —— 是别的工程涨的，与搭家无关，不订正 spec）。⇒ 本计划「授权与红线」里"从未建过、零 DB 写入"这句话在 2026-10-04 仍然成立，**第一次 `CREATE DATABASE` 排在 Task 2**。
 
 **代码形状**（本计划要接的每一个口子）：
 
@@ -136,7 +138,7 @@
 
 ---
 
-## 裁决（P-1 … P-17；执行中若与落地的代码冲突，按代码订正并写执行回填）
+## 裁决（P-1 … P-17 + 执行期追加的 P-40 … P-43；执行中若与落地的代码冲突，按代码订正并写执行回填。P-18 … P-39 住在 Task 8 / Task 9 的文本里，随那两个任务回写并进本表）
 
 | # | 决定 | 理由 | 已接受的代价 |
 |---|---|---|---|
@@ -158,6 +160,17 @@
 | **P-16** | upsert 一律用 MySQL 8.0.19+ 的 `INSERT ... AS new ON DUPLICATE KEY UPDATE x = new.x` 别名形态；`writeSnapshot` 用**裸 INSERT**，不写 ODKU | `VALUES()` 函数从 8.0.20 起废弃（仍可用但打 warning），别名形态是长期写法；快照那一格"一个 `journal_turn` 最多一行"是有语义的断言（同一发重复落盘说明 autosave 的触发判定漂了），让 `uk_project_turn` 当场抛比 ODKU 静默覆盖更容易查 | 换到 MariaDB 时别名形态要回退（S1 不换，spec §12 钉的是 MySQL 8.0.45）；重复快照在实现里成了"必炸"路径 ⇒ T7 的 autosave 必须自己记住"这个 turn 已经落过盘"，不许靠 ODKU 兜 |
 | **P-17** | `createDbPool` 在 **T4** 补两条配置：`supportBigNumbers: true` + `bigNumberStrings: false`，以及 `lockWaitTimeoutMs?: number`（透传 `sessionVariables`） | `journal_turn` / `turn` / `seq` / `updated_seq` 四列都是 BIGINT。mysql2 默认把 BIGINT 直接转 JS number，超出 2^53 静默失精；开 `supportBigNumbers` 后"安全范围内回 number、范围外回 string"，而 `MmSchema`/`JournalTurnSchema` 对 string 一律拒 ⇒ 越界变成一次抛，不是一次悄悄写歪的账。`lockWaitTimeoutMs` 唯一读者是 P-15 那一格（默认 50 秒会让测试看起来像挂死） | Task 2 已把 `pool.ts` 写完，T4 要回头改它 ⇒ 该文件的注释里"业务连接永远不开 multipleStatements"那句不许顺手删。越界那条主张本计划只到"会抛"为止，不主张"抛得好看"（真出现 2^53 号楼层需要 P-8 同款的 spec 订正） |
 
+### 执行期裁决（P-40 起；Task 1 落码时由控制位追加）
+
+> 编号从 **P-40** 起，因为 **P-18 … P-39** 已经在 Task 8 / Task 9 的计划文本里被点名（散在各自 chunk 的段落里，随那两个任务的回写并进上表）。这里不回填它们，避免两份编号抢同一个格子。
+
+| # | 决定 | 理由 | 已接受的代价 |
+|---|---|---|---|
+| **P-40** | Task 1 的只读普查**只连实例**：`createPool` 只取 `host/port/user/password` 四件套，`database` **不进连接入参** | Step 6 的散文（"连的是实例本身，`database` 只用来核对白名单"）与它自己给的代码（`createPool({ ...env })`）互相打脸：`env` 带着 `database` ⇒ mysql2 建连时自己发 `USE dajia_test`。而库在 Task 2 才建，于是"本任务不建库、不建表、不写一行"这句注释成了一条**永远跑不绿的判据**。真凭据下第一次 run 才看得见（`Unknown database 'dajia_test'`） | 修完只是"能跑"，判据本身一字未减；`database` 白名单那一格（格 2）职责不变，`env.database` 仍被 `assertDatabaseName` 过一遍。**这条改判反而加强了主张**：现在"零写入"是"两库都不存在的实例上跑得绿"的事实，不再是一句注释。同族普查已做：`grep -n "\.\.\.env"` 扫过 Task 2/4/5/6/7 的 brief，那些 `{ ...env, database }` 全部合法（它们连的就是自己建的库），只有 Task 1 这一处是"连实例却带库名" |
+| **P-41** | 普查那五发参数一律按**驱动真实回值形状**断：整数两发过 `Number()`、字符串那一发过 `String()`；行 cast 从 `Record<string, string>` 改成 `Record<string, string \| number>` | 实测（2026-10-04 第一次真连库）`@@lower_case_table_names` 回 JS **number 1**，而 brief 写 `expect(got.lctn).toBe('1')` —— 同一发 `SELECT` 里的 `max_connections` 却已经 `Number()` 包过了，两行本身就不自洽。根因是那个 cast 假装整行都是字符串，typecheck 于是**站在错的那一边** | `String(got.v)` 放弃了"VERSION() 必须是字符串"这条附带形状断言（登记为限度，不是待办）。`lctn` 的断言从"等于 '1'"改成"恰好等于 1"，**没有变弱**：面对 number 1 的 `toBe('1')` 本来就是一副空牙 |
+| **P-42** | `pnpm test` 的基线文件数订正：**35 → 36**（Task 1 之后），不是 Step 8 原写的 37；后续任务的起点跟着改 | 原文把 `packages/protocol` 那 1 文件算成"这一档新增的"，可 35 的基线里本来就含它（25 core + 7 scene-2d + 2 `scripts/test` + 1 protocol = 35，与「现状事实」表逐字一致）⇒ 净增只有 `db-safety.test.ts`。审查席用 `git ls-tree` 在 `e548174` / `df961e6` 各枚举一遍全集独立复核，两边逐名相同 | 计划第 5 行早就点名过这一型（"按盘上实测重数，别为了凑数去动判据"），这次是控制位自己写的数字踩上去的。**判据的牙未动**：`Tests` +4 与 Step 3 那发"文件被发现但模块缺失"的红，两处独立证据仍夹住 include 生效 |
+| **P-43** | 「缺环境变量必须响亮失败」这条红线需要一个 **CI 通道里的证人**：把 `env.test.ts` 的第 3 格（假 `env` 入参，不连库）复制一份进 `apps/desktop/test/unit/` | 审查席独立发现：该判据目前**只住在 `test/db`**，而 db 档不进 `verify`（CI 既无 MySQL 也无口令）⇒ 有人把 `readMysqlEnv` 改回"没配就返回默认参数"（变异 M3 那一型）时，`pnpm test` 抓不到，红线在 CI 上是零覆盖。那一格本来就是纯函数测试（喂假 `env` 对象），搬过去不需要任何凭据 | 两处同一判据 ⇒ 一份行为两份用例。这是有意的：被复制的那一格守的是红线，不是实现细节；改判据时两格会一起红，正是想要的连带。**不**把 `readMysqlEnv` 的整个测试面搬到 unit —— 只有这一格不依赖连接 |
+
 ---
 
 ## Task 1: 依赖接入、测试双通道、库名护栏与只读普查
@@ -173,6 +186,7 @@
 - Create: `apps/desktop/src/main/db/env.ts`
 - Create: `apps/desktop/test/unit/db-safety.test.ts`
 - Create: `apps/desktop/test/db/env.test.ts`
+- Create: `apps/desktop/test/unit/env.test.ts`（**4 格，Task 1 落码后由裁决 P-43 追加**：`readMysqlEnv` 的"缺变量就点名抛"是红线级判据，而它原先只住在 `test/db/**` —— db 档不进 `verify`，等于这条红线在 CI 上零覆盖。这一格喂假 `env` 对象、不连库，所以搬进 unit 零成本。**`test/db/env.test.ts` 那一份不删**，理由见 P-43 的代价栏）
 
 **Interfaces:**
 - Consumes: 无（本任务是地基）
@@ -402,7 +416,9 @@ export function readMysqlEnv(env: NodeJS.ProcessEnv = process.env): MysqlEnv {
 
 ```ts
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { createPool } from 'mysql2/promise';
+// `type Pool` 与值 import 混在一条里：这一发同时就是 P-12 想要的 TS 侧实测
+// （`verbatimModuleSyntax` + 无 `esModuleInterop` 下，`mysql2/promise` 的值与类型都拿得到）。
+import { createPool, type Pool } from 'mysql2/promise';
 import { readMysqlEnv } from '../../src/main/db/env';
 import { assertDatabaseName } from '../../src/main/db/db-safety';
 
@@ -415,9 +431,19 @@ let close: () => Promise<void> = async () => {};
 
 beforeAll(async () => {
   const env = readMysqlEnv();
-  const pool = createPool({ ...env, connectionLimit: 1 });
+  // **`database` 不进连接**（裁决 P-40）：本任务连的是实例本身，建库排在 Task 2。
+  // 写成 `{ ...env }` 会让 mysql2 在建连时自己发 `USE dajia_test` ⇒ 库还没建就当场红，
+  // 上面那句"不建库、不建表、不写一行"于是成了一条永远跑不绿的判据。
+  // 显式列四件套而不是 omit 解构：`noUnusedLocals` 那侧少一个解释成本。
+  const pool = createPool({
+    host: env.host,
+    port: env.port,
+    user: env.user,
+    password: env.password,
+    connectionLimit: 1,
+  });
   close = () => pool.end();
-  (globalThis as { __pool?: typeof pool }).__pool = pool;
+  (globalThis as { __pool?: Pool }).__pool = pool;
 });
 
 afterAll(async () => {
@@ -426,20 +452,25 @@ afterAll(async () => {
 
 describe('MySQL 环境事实（spec §12 的凭据化）', () => {
   it('服务端参数与 spec §12 记的逐字一致（改了就红，别把设计建在飘的地上）', async () => {
-    const pool = (globalThis as { __pool?: never }).__pool;
+    const pool = (globalThis as { __pool?: Pool }).__pool;
     if (!pool) throw new TypeError('普查用的池没建起来');
     const [rows] = await pool.query(
       "SELECT VERSION() AS v, @@character_set_server AS cs, @@collation_server AS col, " +
         '@@lower_case_table_names AS lctn, @@max_connections AS maxc',
     );
-    const got = (rows as Record<string, string>[])[0];
+    // **回值的形状本身也是这一格学到的东西**（裁决 P-41）：`VERSION()` 是字符串，两个 `@@` 整数
+    // 变量在 mysql2 下回 JS number —— 实测 2026-10-04：`lctn` 回的是数字 1，不是 '1'。
+    // 所以不许把整行 cast 成 `Record<string, string>` 假装它全是字符串（那正是判据原来写错的原因），
+    // 而是整数一律过 `Number()`、字符串那一发过 `String()`。
+    const got = (rows as Record<string, string | number>[])[0];
     if (!got) throw new TypeError('SELECT 没回行');
     expect(got.cs).toBe('utf8mb4');
     expect(got.col).toBe('utf8mb4_0900_ai_ci');
-    // 生成列与 id 列的 collation 都要跟着这个口径走（混着 JOIN 会报 Illegal mix of collations）
-    expect(got.lctn).toBe('1');
+    // 生成列与 id 列的 collation 都要跟着这个口径走（混着 JOIN 会报 Illegal mix of collations）。
+    // 断"恰好等于 1"而不是"非零"：库名大小写不敏感是 T2 那六张表与生成列设计的前提。
+    expect(Number(got.lctn)).toBe(1);
     expect(Number(got.maxc)).toBeGreaterThanOrEqual(151);
-    expect(got.v.split('.')[0]).toBe('8');
+    expect(String(got.v).split('.')[0]).toBe('8');
     process.stdout.write(`[census] version=${got.v} max_connections=${got.maxc}\n`);
   });
 
@@ -486,7 +517,15 @@ pnpm verify > tmp/plan4-t1-verify.log 2>&1; echo "verify exit=$?"
 node scripts/check-package-deps.mjs
 ```
 
-Expected: `verify exit=0`；`Test Files` 从 **35** 涨到 **37**（`+apps/desktop/test/unit/db-safety.test.ts` 与 `packages/protocol` 那 1 文件不变 —— 若这里只涨 1，说明 include 那行没吃到新目录）；`Tests` 从 **509** 涨到 **513**。`lint:deps` 必须照旧静默（`zod`/`mysql2` 是 npm 依赖，不是 `@dajia/*` 边）。
+Expected: `verify exit=0`；`Test Files` 从 **35** 涨到 **36**（本任务只新增 `apps/desktop/test/unit/db-safety.test.ts` 一个文件 —— `test/db/env.test.ts` 不在 `pnpm test` 的射程里）。`Tests` 从 **509** 涨到 **513**（正是 `db-safety.test.ts` 那 4 条）。
+
+> **这一发的原数字是错的，2026-10-04 由 Task 1 落地时订正**：原文写"涨到 **37**，若只涨 1 说明 include 那行没吃到新目录"。它把 `packages/protocol` 那 1 文件当成"这一档会新增的"，可 35 的基线里**本来就含**它（25 core + 7 scene-2d + 2 `scripts/test` + 1 protocol = 35，与「现状事实」表逐字一致）⇒ 净增只有一个文件。**审查席独立复核过这笔账**（`git ls-tree` 在 `e548174` 与 `df961e6` 各枚举一遍文件全集，两边逐名相同）。判据的牙没动：`Tests` +4 与 Step 3 那发"文件被发现但模块缺失"的红，两处独立证据仍然夹住 include 生效。
+>
+> 这正是本计划第 5 行警告的那一型（"按盘上实测重数，别为了凑数去动判据"）。**后续任务的 `Test Files` 起点是 37 / `Tests` 起点是 517** —— 但那两个数是**两步**涨出来的，不是本任务的：35 → **36**（Task 1 自己的 `db-safety.test.ts`，+4 条 = 513）→ **37**（裁决 P-43 追加的 `apps/desktop/test/unit/env.test.ts`，+4 条 = 517，它是审查席发现"缺环境变量响亮失败"这条红线在 CI 通道零覆盖之后补的证人，见本节末 Step 6 那一档的 P-40/P-41 订正与执行回填）。
+>
+> **别把 37 当巧合**：原文那个"37"是幻影（算重了 `packages/protocol` 那一格），实测的 37 是"36 + P-43 的一格"。**同一份账重算两遍得到同一个数，不等于同一件事** —— 后续席位照抄前请认这条路径。T2 那一档写的是 `37 → <待实测>`，那一处的 37 现在**恰好是对的**（起点没变，只是理由换了）。
+
+`lint:deps` 必须照旧静默（`zod`/`mysql2` 是 npm 依赖，不是 `@dajia/*` 边）。
 
 - [ ] **Step 9: 提交（代码棒只提交 src 与 test 与配置，`docs/` 归控制位）**
 
