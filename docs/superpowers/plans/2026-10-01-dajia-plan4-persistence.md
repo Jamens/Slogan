@@ -11804,6 +11804,8 @@ EOF
 
 ## Task 9: 连接配置、分型诊断与首屏（`config-store.ts` + `diagnostics.ts` + `admin.ts` + 向导面板 + `install-mysql.md`）
 
+> **本节的读法（写给下一个翻到这一页的人，不是写给席位的工作项）**：Task 9 的正文是七块写作分块 `t9a`…`t9g` 拼起来的，顺序就是步骤顺序 —— `t9a` = Files / Interfaces / 口径 ①–⑨ + Step 1–2，`t9b` = Step 3–4，`t9c` = Step 5–6，`t9d` = Step 7，`t9e` = Step 8，`t9f` = Step 9，`t9g` = Step 10。所以本节里出现"见 t9d 第 ⑤ 段""t9a Files 第 29 行"这类引用时，**它指的就是本节内对应步骤的那一段**，不必另找文件；`①②③…` 是那一块内部的小节号（粗体行）。Task 8 那一节同一条规矩。
+
 **Files:**
 - Modify: `packages/protocol/src/ipc.ts`（`IPC` 从 **5 条到 11 条**：T8 那四条与 `ping` 一字不动，新增 5 条请求 + 1 条事件）
 - Modify: `packages/protocol/src/persist-schema.ts`（**只追加**：连接配置 / 工程列表 / 新建 / 试连那几张表 + 十一个 `parse*` + `UI_COMMAND_EVENT` + `INVOKE_CHANNELS` 扩到 8 条。T8 已写下的每一张表一个字节不动 —— 理由见第 ④ 段）
@@ -11822,7 +11824,7 @@ EOF
 - Modify: `apps/desktop/src/main/ipc-persist.ts`（`dispatch` 五个新 `case` + `loadConfig` 从 `readMysqlEnv()` 换成 `config-store` + `errorCode` 加一支 + `safeStorageCipher` 那八行适配器 + 端口一次性装配（`adminWiring`）—— 本任务唯一新增的 electron 用法，P-27。原预估的"三个新真端口"挪到 `persist/admin-ports.ts`，P-38）
 - Modify: `apps/desktop/src/main/index.ts`（交互分支新增 `attachInteractiveUi`：原生「工程」菜单 + `did-finish-load` 后那一发 `send(UI_COMMAND_EVENT, 'startup')`，函数第一道判据是 `--shot` 早退（P-35）；**五个 shot 分支一字不动**，见第 ③ 段）
 - Modify: `apps/desktop/src/preload/index.ts`（`DajiaApi` 从 5 件到 11 件：5 新请求方法 + `onUiCommand`，T8 实测底座是五件，见 t8c 第 ⑤ 段）
-- Modify: `apps/desktop/src/renderer/src/stores/projectStore.ts`（`ProjectPhase` 加 `'config' | 'list'` + 六个新动作 + 四格新状态；T8 那四个动作与 `computeBanner` 的优先级一字不动）
+- Modify: `apps/desktop/src/renderer/src/stores/projectStore.ts`（`ProjectPhase` 加 `'config' | 'list'` + 六个新动作 **`probe` / `openWizard` / `openList` / `list` / `saveConfig` / `testCfg`**（Step 9 第 ① 段定名；新建工程不是第七个动作，它是 `list()` 之前那一发 `api.createProject`，`'creating'` 只是 `busy` 的一枚取值）+ 四格新状态 `config` / `projects` / `testResult` / `busy`；T8 那四个动作与 `computeBanner` 的优先级一字不动）
 - Modify: `apps/desktop/src/renderer/src/panels.tsx`（`ConnectionWizard` + `ProjectPicker`；**`STOREY_TAB_HEIGHT_PX = 32` 与 `VIEW_PAD_PX = 60` 与 `PROP_PANEL_WIDTH_PX = 260` 三个数不许动**）
 - Modify: `apps/desktop/src/renderer/src/App.tsx`（只在 `phase` 是 `'config' | 'list'` 时叠一层，其余一律 `<>{children}{banner}</>`）
 - Create: `apps/desktop/test/unit/diagnostics.test.ts`（**8 格**）
@@ -11838,6 +11840,8 @@ EOF
 - Create: `docs/install-mysql.md`（spec §13.4 那一页图文安装说明；验收 6 的一半）
 
 > **格数与文件数按预估写，落盘后以实测为准并改计划文本**（同 T8 第 ⑥ 段那条教训）：预估 `pnpm test` 从 35 文件 / 509 条变成 **40 文件 / 576 条**（新增 5 个 unit/protocol 测试文件：10 + 8 + 6 + 10 + 14 = 48 格新写，加 session +4、project-store +7、persist-boundary +6、ipc-channels +2 ⇒ 48 + 4 + 7 + 6 + 2 = **67** 格；另有两格是改写不增数）；`pnpm test:db` 从 6 文件变 **8 文件**（`projects.test.ts` 6 格 + `admin-ports.test.ts` 5 格 ⇒ **+11 格**）。admin 那一档的 14 与 projects 那一档的 6 都是 t9d 落盘时订正过的数（原预估 12 与 5），`persist-boundary` 与 `ipc-channels` 的 +6 / +2 是 t9e 落盘时按三步实测格数订正的数（原预估 +4 / +1），算术随它们一起改。
+>
+> **这三个绝对数（35 / 509 → 40 / 576）到 2026-10-05 已经过期两轮**：它们是 2026-10-04 写作时的盘上读数，而 Task 1–5 落码后盘上是 **45 文件 / 593 格**（db 档 4 / 70）。⇒ **验收不许按 576 那个字面量判**，Step 10 第 ② 段把它改成了公式（`派发时实测 + 5 文件 / + 67 格`，db `+ 2 文件 / + 11 格`）；本节其余各处出现"576 / 573 / 509"的地方（Step 4、Step 8 ⑧、Step 10 第 ① 段的表）一律读作"写作当时的样本"，不是判据。这一句本身就是 T4/T5 那条"计划数与实测不符时改文本不改判据"的纪律在本任务的应用。
 
 **Interfaces:**
 - Consumes（名字逐字，不许另起一套）:
@@ -15873,7 +15877,7 @@ export type ProjectPhase = 'off' | 'opening' | 'open' | 'closed' | 'config' | 'l
 | `saveConfig(input)` | 向导「保存」 | `busy='saving'` ⇒ `saveConfig(input)` ⇒ 成功回 `ConfigValue` 直接写 `config` | 失败 ⇒ `config` 保持旧值（**不许写半成品**），`failure` 记原话 |
 | `testCfg(input)` | 向导「测试连接」 | `busy='testing'` ⇒ `testConnection(input)` ⇒ 写 `testResult` | `ConnectionTestValue` 的 6 个错误kind 全部**原样进面板**，屏幕侧不翻译（`DIAGNOSTIC_TEXT` 是唯一文案产地，t9b） |
 
-`createProject(name)` 走第 7 个动作位？**不走**：t9a 的 Interfaces 只给了六个，新建工程那一发在屏幕侧的动作名叫 `createProj(name)` 会多出第七个 —— 落地时它归在 `list()` 同族：`busy='creating'` ⇒ `createProject(name)` ⇒ 成功后 `list()`。⇒ **六个动作的名单是 `probe` / `openWizard` / `openList` / `list` / `saveConfig` / `testCfg`，`creating` 只是 `busy` 的一枚取值，动作本体是 `list()` 之前的那一发 `api.createProject`。** 这一句是本步对 t9a 的一处收窄（t9a 只写"六个新动作"没点名），落盘后要在 t9a 的 Interfaces 行补上这六个名字。
+`createProject(name)` 走第 7 个动作位？**不走**：t9a 的 Interfaces 只给了六个，新建工程那一发在屏幕侧的动作名叫 `createProj(name)` 会多出第七个 —— 落地时它归在 `list()` 同族：`busy='creating'` ⇒ `createProject(name)` ⇒ 成功后 `list()`。⇒ **六个动作的名单是 `probe` / `openWizard` / `openList` / `list` / `saveConfig` / `testCfg`，`creating` 只是 `busy` 的一枚取值，动作本体是 `list()` 之前的那一发 `api.createProject`。** 这一句是本步对 Files 行的一处收窄 —— **2026-10-05 拼接时已经回写进 Files 那一行**（六个名字与四格状态都在了），落地的席位不必再改计划文本，只需按这六个名字写代码。
 
 **`'startup'` 之后要不要顺手 `listProjects()`**（t9e 交接第 2 条留的开放项）⇒ **定稿：只有 `state === 'ready'` 那一支发。** 理由照 t9e：非 ready 时列表必然失败，多发一发只会让横幅在两种失败形状之间打架。这一条的凭据是第 ④ 段格 2 与格 3（两格各自断"发了一次"与"一次都没发"）。
 
