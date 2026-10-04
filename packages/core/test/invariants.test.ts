@@ -7,11 +7,13 @@ import { readFileSync } from 'node:fs';
 import {
   assertTruthSourceInvariants,
   Document,
+  INTEGER_FIELDS,
   storeyCreate,
   TransactionLog,
   wallCreate,
   type Entity,
   type EntityId,
+  type EntityKind,
   type PointEntity,
   type SlabEntity,
   type StoreyEntity,
@@ -31,6 +33,11 @@ const ID = {
   opening: '0193aa00-0000-7000-8000-000000000009',
   column: '0193aa00-0000-7000-8000-00000000000a',
   slab: '0193aa00-0000-7000-8000-00000000000b',
+  column2: '0193aa00-0000-7000-8000-000000000011',
+  ghostPoint: '0193aa00-0000-7000-8000-00000000000d',
+  ghostOpening: '0193aa00-0000-7000-8000-00000000000e',
+  ghostColumn: '0193aa00-0000-7000-8000-00000000000f',
+  ghostSlab: '0193aa00-0000-7000-8000-000000000010',
 } satisfies Record<string, EntityId>;
 
 const storeyAt = (id: EntityId, elevationMm: number, heightMm: number, index = 0, projectId: EntityId = ID.project): StoreyEntity =>
@@ -41,6 +48,8 @@ const wallAt = (storeyId: EntityId, startId: EntityId, endId: EntityId, thicknes
   ({ kind: 'wall', id: ID.wall, storeyId, startId, endId, thicknessMm, heightMm: 3000, elevationOffsetMm: 0, loadBearing: true, material: 'brick' });
 const slabOf = (ids: readonly EntityId[], storeyId: EntityId = ID.lower): SlabEntity =>
   ({ kind: 'slab', id: ID.slab, storeyId, boundaryPointIds: [...ids], thicknessMm: 120, elevationOffsetMm: 0 });
+const columnAt = (id: EntityId, pointId: EntityId, storeyId: EntityId = ID.lower): Entity =>
+  ({ kind: 'column', id, storeyId, pointId, widthMm: 400, depthMm: 400, heightMm: 3000, loadBearing: true, material: 'concrete' });
 
 /** 最小正例宿主：一层 + 不共线三点（板退化那一格在它上面换顶点坐标）。 */
 const HOSTS: Entity[] = [
@@ -68,6 +77,16 @@ function handBuild(entities: readonly Entity[]): Document {
   const map = new Map<EntityId, Entity>();
   for (const e of entities) map.set(e.id, e);
   return Document.replaceEntities(Document.create(ID.project), map);
+}
+
+/** 捕获检查器抛出的消息；没抛就立刻让这一格红（不许把"放行"当成通过）。 */
+function messageOf(fn: () => void): string {
+  try {
+    fn();
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+  throw new Error('没抛：这一格要求检查器抛');
 }
 
 describe('assertTruthSourceInvariants：读盘放行证', () => {
@@ -141,9 +160,11 @@ describe('assertTruthSourceInvariants：读盘放行证', () => {
     // 【对 brief 的实测订正，见 task-3-report.md 的 brief 缺陷 B1】
     // brief 原文这三发的上层都写作 `storeyAt(ID.upper, …)`（不传 index），而夹具里
     // `storeyAt(id, elevationMm, heightMm, index = 0, …)` 的默认 index 就是 0 —— 于是
-    // 第 545 行（本格第一发，断言 not.toThrow）与第 552 行（下一格第一发，断言 toThrow(/index 重复/)）
-    // 喂给检查器的是**逐字节相同的文档**（两层的 projectId 同为 ID.project、index 同为 0），
+    // 本格（「楼层竖向重叠 ⇒ 抛；正好贴邻与留空隙都不抛」的第一发，断言 not.toThrow）与
+    // 下一格（「楼层 index 重复 / 负 index / 归属别的工程 ⇒ 三发各抛一处」的第一发，断言
+    // toThrow(/index 重复/)）喂给检查器的是**逐字节相同的文档**（两层的 projectId 同为 ID.project、index 同为 0），
     // 同一份数据不可能既不抛又抛 index 重复：任何实现都至少违背其中一格，所以缺陷在夹具而不在实现。
+    // （m8：这里按**格子标题**引用，不引 brief 的行号 —— 那份 781 行的文本一改排，行号就漂。）
     // 现在的写法：只给上层补一个显式 `index = 1`（其余参数、三条断言一字未动），
     // 于是这一格的唯一变量回到它标题声称的那件事 —— 竖向区间的重叠/贴邻/空隙。
     expect(() => assertTruthSourceInvariants(handBuild([storeyAt(ID.lower, 0, 3000), storeyAt(ID.upper, 3000, 3000, 1)]))).not.toThrow();
@@ -172,9 +193,125 @@ describe('assertTruthSourceInvariants：读盘放行证', () => {
     expect(() => assertTruthSourceInvariants(doc)).toThrow(/超出宿主墙/);
   });
 
-  it('storey.ts 不许留第二份重叠规则：它必须 import 共享版，且本文件不含区间判定那几行', () => {
+  it('墙形状退化进读盘门（C1：assertWallShape 从命令层搬进来后的读盘证人）：厚 5000 装 4000 长墙抛、厚=长 4000 的 `>=` 边界也抛、不同 id 同坐标的两点抛在「零长」且文案带得出墙 id', () => {
+    // 这三发钉的是搬进来的那一份判据：摘掉墙循环里的 `assertWallShape(...)` 调用，
+    // 前两发会被派生层**放行**（审查席探针 [A][B]），第三发会红在 geom/axis 的
+    // 「轴线无方向」那句上 —— 所以零长那一发吃 `两端点量化后同为` 这个独有子串。
+    expect(() => assertTruthSourceInvariants(handBuild([...HOSTS, wallAt(ID.lower, ID.pa, ID.pb, 5000)]))).toThrow(/不小于墙长/);
+    expect(() => assertTruthSourceInvariants(handBuild([...HOSTS, wallAt(ID.lower, ID.pa, ID.pb, 4000)]))).toThrow(/不小于墙长/);
+    const zeroDoc = handBuild([
+      storeyAt(ID.lower, 0, 3000),
+      pointAt(ID.pa, ID.lower, 0, 0),
+      pointAt(ID.pb, ID.lower, 0, 0), // 不同 id、同坐标：引用与同层判据对它全盲，只有这一发拦得住
+      wallAt(ID.lower, ID.pa, ID.pb, 240),
+    ]);
+    expect(() => assertTruthSourceInvariants(zeroDoc)).toThrow(/零长/);
+    expect(() => assertTruthSourceInvariants(zeroDoc)).toThrow(/两端点量化后同为/);
+    expect(() => assertTruthSourceInvariants(zeroDoc)).toThrow(new RegExp(ID.wall));
+  });
+
+  it('洞顶标高超过宿主墙高 ⇒ 抛（派生层只算沿轴区间，竖向这条必须在读盘门显式拦：窗台 200 + 高 2900 超 3000 墙高）', () => {
+    // 摘掉 opening 循环末尾那条竖向判据，这一发会被整道门放行（审查席探针 [F]）——
+    // 竖向不进派生表，没有任何后补的产地会响。
+    const doc = handBuild([...HOSTS_WITH_WALL, { kind: 'opening', id: ID.opening, storeyId: ID.lower, hostWallId: ID.wall, distanceMm: 1000, widthMm: 900, heightMm: 2900, sillMm: 200, category: 'window' as const }]);
+    expect(() => assertTruthSourceInvariants(doc)).toThrow(/顶标高/);
+    expect(() => assertTruthSourceInvariants(doc)).toThrow(/超过宿主墙高/);
+  });
+
+  it('洞口 distanceMm 为负 ⇒ 抛在它自己那句上（与 sillMm 那条分开钉：「门必须 sillMm = 0」格里 openingAt(-1, …) 的 -1 落的是 sill，摘掉 distance 这行不会牵动它）', () => {
+    const doc = handBuild([...HOSTS_WITH_WALL, { kind: 'opening', id: ID.opening, storeyId: ID.lower, hostWallId: ID.wall, distanceMm: -1, widthMm: 900, heightMm: 2100, sillMm: 0, category: 'door' as const }]);
+    expect(() => assertTruthSourceInvariants(doc)).toThrow(/distanceMm 不能为负/);
+  });
+
+  it('幽灵柱：同层、同坐标、不同点 id 的两根柱 ⇒ 抛（柱不进派生表也不进索引，这一发是读盘侧唯一凭据；同一枚点挂两柱那一型仍放行 —— exceptPointId 按点 id 排除自己，登记为残余）', () => {
+    const doc = handBuild([
+      storeyAt(ID.lower, 0, 3000),
+      pointAt(ID.pa, ID.lower, 0, 4000),
+      pointAt(ID.pb, ID.lower, 0, 4000), // 与 pa 同坐标、不同 id
+      columnAt(ID.column, ID.pa),
+      columnAt(ID.column2, ID.pb),
+    ]);
+    expect(() => assertTruthSourceInvariants(doc)).toThrow(/已有柱/);
+    expect(() => assertTruthSourceInvariants(doc)).toThrow(new RegExp(ID.column2));
+  });
+
+  it('点引用一枚不存在的楼层 ⇒ 抛（point 循环那发 requireStorey 是唯一拦截者：没有任何构件引用这枚点，派生层对孤儿点永远是瞎的）', () => {
+    const doc = handBuild([storeyAt(ID.lower, 0, 3000), pointAt(ID.pa, ID.ghostPoint, 0, 0)]);
+    expect(() => assertTruthSourceInvariants(doc)).toThrow(/楼层 不存在/);
+    expect(() => assertTruthSourceInvariants(doc)).toThrow(new RegExp(ID.ghostPoint));
+  });
+
+  it('洞口 / 柱 / 楼板各引用一枚不存在的楼层 ⇒ 三发各被自己那发 requireStorey 拦下：消息带得出该类专属的幽灵层 id、且不是下游同层判据（摘掉对应那行，这一发会红在「必须同层」的文案上）', () => {
+    const msgOpening = messageOf(() =>
+      assertTruthSourceInvariants(handBuild([
+        ...HOSTS_WITH_WALL,
+        { kind: 'opening', id: ID.opening, storeyId: ID.ghostOpening, hostWallId: ID.wall, distanceMm: 1000, widthMm: 900, heightMm: 2100, sillMm: 0, category: 'door' as const },
+      ])),
+    );
+    expect(msgOpening).toMatch(/不存在/);
+    expect(msgOpening).toContain(ID.ghostOpening); // 「洞口」那一发点名：幽灵层 id 只有它自己的 requireStorey 会带出
+    expect(msgOpening).not.toMatch(/同层/); // 摘掉 opening 循环的 requireStorey：会落到「洞口与宿主必须同层」
+
+    const msgColumn = messageOf(() =>
+      assertTruthSourceInvariants(handBuild([...HOSTS, columnAt(ID.column, ID.pc, ID.ghostColumn)])),
+    );
+    expect(msgColumn).toMatch(/不存在/);
+    expect(msgColumn).toContain(ID.ghostColumn); // 「柱」那一发点名
+    expect(msgColumn).not.toMatch(/同层/); // 摘掉 column 循环的 requireStorey：会落到「柱与落点必须同层」
+
+    const msgSlab = messageOf(() =>
+      assertTruthSourceInvariants(handBuild([...HOSTS, slabOf([ID.pa, ID.pb, ID.pc], ID.ghostSlab)])),
+    );
+    expect(msgSlab).toMatch(/不存在/);
+    expect(msgSlab).toContain(ID.ghostSlab); // 「楼板」那一发点名
+    expect(msgSlab).not.toMatch(/同层/); // 摘掉 slab 循环的 requireStorey：会落到顶点那条「必须同层」
+  });
+
+  it('`-0` 按类逐字段全拒：六类 × INTEGER_FIELDS 里每个整数字段各一发（旧版只有墙那一发有证人，其余五类的 assertNoNegativeZero 摘掉都不红）', () => {
+    // 每类一个合法基准实体，叠在 HOSTS_WITH_WALL 上（同 id 覆盖同号），坏的那一格永远是唯一变量。
+    // storey 钉的是 lower 自己（同 id 覆盖）：若钉后到的 upper，`elevationMm: -0` 会让 lower 迭代里
+    // 的 assertNoVerticalOverlap 先抛「标高重叠」，证人红在错的门上。
+    const baseFactories: Record<EntityKind, () => Entity> = {
+      storey: () => storeyAt(ID.lower, 0, 3000),
+      point: () => pointAt(ID.pa, ID.lower, 0, 0),
+      wall: () => wallAt(ID.lower, ID.pa, ID.pb, 240),
+      opening: () => ({ kind: 'opening', id: ID.opening, storeyId: ID.lower, hostWallId: ID.wall, distanceMm: 1000, widthMm: 900, heightMm: 2100, sillMm: 0, category: 'door' }),
+      column: () => columnAt(ID.column, ID.pc),
+      slab: () => slabOf([ID.pa, ID.pb, ID.pc]),
+    };
+    for (const kind of Object.keys(INTEGER_FIELDS) as EntityKind[]) {
+      for (const field of INTEGER_FIELDS[kind]) {
+        const entity = { ...baseFactories[kind](), [field]: -0 } as unknown as Entity;
+        const doc = handBuild([...HOSTS_WITH_WALL, entity]);
+        // 钉的是 assertNoNegativeZero 那句独有文案（`<字段> 不接受 -0`），不是裸 /-0/：
+        // id 里就带「-0」子串，裸匹配会被任何一句带 id 的消息假绿。
+        expect(() => assertTruthSourceInvariants(doc)).toThrow(new RegExp(`${field} 不接受 -0`));
+      }
+    }
+  });
+
+  it('楼层 index 是正数但不安全（2**53）⇒ 抛在「必须为非负整数」那句上：与「index 重复」分得开（摘掉 Number.isSafeInteger 半边，这一发会被放行）', () => {
+    const doc = handBuild([storeyAt(ID.lower, 0, 3000, 2 ** 53)]);
+    expect(() => assertTruthSourceInvariants(doc)).toThrow(/必须为非负整数/);
+    expect(() => assertTruthSourceInvariants(doc)).not.toThrow(/index 重复/);
+  });
+
+  it('mm() 字段缺失不许悄悄放行：typeof 守卫当场抛并点名实体 id + 字段名（走 replaceEntities 会先红在 document.validate 的「必须是整数毫米」，所以证人先建好文档、再毁掉文档里那枚实体对象的字段）', () => {
+    const doc = handBuild([...HOSTS_WITH_WALL]);
+    const wall = doc.get(ID.wall) as WallEntity;
+    delete (wall as unknown as { thicknessMm?: number }).thicknessMm;
+    expect(() => assertTruthSourceInvariants(doc)).toThrow(/必须是数字毫米/);
+    expect(() => assertTruthSourceInvariants(doc)).toThrow(new RegExp(`${ID.wall}\\.thicknessMm`));
+  });
+
+  it('storey.ts 走共享判据：import 行按行首锚定钉死，且同一行内没有第二份区间判定', () => {
     const src = readFileSync(new URL('../src/commands/storey.ts', import.meta.url), 'utf8');
-    expect(src).toContain("from '../model/invariants'");
+    // P-56：旧的 toContain("from '../model/invariants'") 是整文件子串匹配，注释里写一句路径
+    // 都能假绿 —— 换成行首起锚、花括号不跨语句的形状（Task 2 变异棒 `[^;]*` 跨列假绿的同族教训）。
+    expect(src).toMatch(/^import\s*\{[^}]*\bassertNoVerticalOverlap\b[^}]*\}\s*from '\.\.\/model\/invariants'/m);
+    // 第二发的 0 计数保留，但它真正证的只有「同一行内没有第二份区间判定」：
+    // 正则不带 s 旗标，`.` 不跨行 ⇒ **跨行写法的复述（把 `elevationMm +` 与 `heightMm` 拆到两行）
+    // 不在这一发的射程内** —— 这一限度在此登记。真调用点的牙在 commands-column-slab.test.ts 的两发。
     expect((src.match(/elevationMm \+ .*heightMm/g) ?? []).length).toBe(0);
   });
 });

@@ -1,6 +1,7 @@
 import { uuidv7, type EntityId } from '../ids';
 import { assertMm, positiveMm, quantizeMm, type Mm } from '../units/mm';
 import { requirePoint, requireStorey, requireWall } from '../model/read';
+import { assertWallShape } from '../model/invariants';
 import { endPointId, otherEnd, wallAxis, type WallEnd } from '../geom/axis';
 import { length, sub, vec } from '../geom/vec';
 import {
@@ -64,18 +65,9 @@ function resolveEnd(doc: Document, ref: PointRef, storeyId: EntityId): ResolvedE
   return { id: null, x: quantizeMm(ref.x), y: quantizeMm(ref.y) };
 }
 
-/** 轮廓能不能成立。文案与计划 1 逐字相同 —— commands.test.ts 的 /零长/、/不小于墙长/ 靠它。 */
-function assertWallShape(thicknessMm: Mm, x0: Mm, y0: Mm, x1: Mm, y1: Mm): void {
-  if (x0 === x1 && y0 === y1) {
-    throw new RangeError(`零长墙：两端点量化后同为 (${x0}, ${y0})`);
-  }
-  const lengthMm = length(sub(vec(x1, y1), vec(x0, y0)));
-  if (thicknessMm >= lengthMm) {
-    throw new RangeError(
-      `墙厚 ${thicknessMm} 不小于墙长 ${Math.round(lengthMm)}，轮廓会自相交`,
-    );
-  }
-}
+// 墙轮廓退化（零长 / 厚 ≥ 轴长）的判据与文案产地已搬进 `model/invariants.ts` 的
+// `assertWallShape`（Plan 4 Task 3 修复轮 C1）：命令层这两处调用与读盘门的墙循环共用
+// 那一份。label 在这里一律传 '该墙'（构造期墙还没有 id）。
 
 export function wallCreate(input: WallCreateInput): Command {
   const thicknessMm = positiveMm(assertMm(input.thicknessMm, '墙厚'), '墙厚');
@@ -88,6 +80,7 @@ export function wallCreate(input: WallCreateInput): Command {
   // 两端都是字面量时构造期就能判；只要有一端复用，坐标在文档里，只能等 build 再判。
   if (!isExistingPoint(startRef) && !isExistingPoint(endRef)) {
     assertWallShape(
+      '该墙',
       thicknessMm,
       quantizeMm(startRef.x),
       quantizeMm(startRef.y),
@@ -101,7 +94,7 @@ export function wallCreate(input: WallCreateInput): Command {
       requireStorey(doc, input.storeyId);
       const a = resolveEnd(doc, input.start, input.storeyId);
       const b = resolveEnd(doc, input.end, input.storeyId);
-      assertWallShape(thicknessMm, a.x, a.y, b.x, b.y);
+      assertWallShape('该墙', thicknessMm, a.x, a.y, b.x, b.y);
       const upsert: Entity[] = [];
       const startId = a.id ?? uuidv7();
       if (a.id === null) {

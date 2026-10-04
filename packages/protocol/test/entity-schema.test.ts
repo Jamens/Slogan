@@ -7,6 +7,7 @@ import {
   ColumnSchema,
   EntitySchema,
   INTEGER_FIELDS_SHAPE,
+  JournalTurnSchema,
   OpeningSchema,
   PatchSchema,
   PointSchema,
@@ -66,6 +67,28 @@ const SLAB_OK = { kind: 'slab', id: A, storeyId: B, boundaryPointIds: [C, D, E],
 const VALID_BY_KIND: Record<string, Readonly<Record<string, unknown>>> = {
   point: POINT_OK, wall: WALL_OK, opening: OPENING_OK, storey: STOREY_OK, column: COLUMN_OK, slab: SLAB_OK,
 };
+
+/**
+ * 行为探针的结构视图：六枚 ZodObject 在 strict 下合不成一个数组元素类型（见第 2 格头注），
+ * 这里只声明用到的两个成员（`.shape` 取字段名、`.safeParse` 吃任意值）。
+ * I2 的口径：**用行为补，不用源码扫描补** —— 每枚 `*Id`/`*Ids` 字段现场注入非法值与合法值各一发。
+ */
+interface IdProbeSchema {
+  readonly shape: Record<string, unknown>;
+  safeParse: (data: unknown) => { success: boolean };
+}
+const ID_PROBES: ReadonlyArray<{
+  readonly kind: string;
+  readonly schema: IdProbeSchema;
+  readonly ok: Readonly<Record<string, unknown>>;
+}> = [
+  { kind: 'point', schema: PointSchema, ok: POINT_OK },
+  { kind: 'wall', schema: WallSchema, ok: WALL_OK },
+  { kind: 'opening', schema: OpeningSchema, ok: OPENING_OK },
+  { kind: 'storey', schema: StoreySchema, ok: STOREY_OK },
+  { kind: 'column', schema: ColumnSchema, ok: COLUMN_OK },
+  { kind: 'slab', schema: SlabSchema, ok: SLAB_OK },
+];
 
 describe('实体 schema ↔ core 真源对账', () => {
   // `.shape` 六个调用点全部写开：`pairs` 那种数组形状会让 TS 拿到一个 ZodObject 联合类型，
@@ -132,5 +155,72 @@ describe('实体 schema ↔ core 真源对账', () => {
     expect(PatchSchema.safeParse({ upsert: [POINT_OK], remove: ['not-a-uuid'] }).success).toBe(false);
     // 数组里的 kind 判别也认：discriminatedUnion 对"合法形状但未知 kind"必须拒，不是放行
     expect(PatchSchema.safeParse({ upsert: [{ ...POINT_OK, kind: 'beam' }], remove: [] }).success).toBe(false);
+  });
+
+  it('每类每枚 *Id / *Ids 字段逐一过行为探针：非 V7 串必拒、合法 id 必收（第 1 格的键集合对账钉不住 validator —— 摘掉任何一枚 EntityIdSchema 换 z.string()，这一格当场红在对应那发上；"必收"半发防过严实现把整格假绿）', () => {
+    for (const { kind, schema, ok } of ID_PROBES) {
+      const idFields = Object.keys(schema.shape).filter(
+        (key) => key === 'id' || key.endsWith('Id') || key.endsWith('Ids'),
+      );
+      if (idFields.length === 0) {
+        throw new Error(`${kind}: 没筛到任何 *Id 字段 —— 筛选条件漂了，这一格在空转`);
+      }
+      for (const field of idFields) {
+        if (!(field in ok)) {
+          throw new Error(`${kind}.${field} 不在合法样例里：筛选条件与夹具漂开了`);
+        }
+        const bad = field.endsWith('Ids') ? ['not-a-uuid', E] : 'not-a-uuid';
+        expect(schema.safeParse({ ...ok, [field]: bad }).success).toBe(false);
+        const good = field.endsWith('Ids') ? [E, D, C] : C;
+        expect(schema.safeParse({ ...ok, [field]: good }).success).toBe(true);
+      }
+    }
+  });
+
+  it('StoreySchema.index 行为探针：1.5 / -1 / 2**53 各拒，0 与 7 各收（摘掉 refine 或把 index 降成 z.number()，红在这里而不是只有名字对账）', () => {
+    for (const bad of [1.5, -1, 2 ** 53]) {
+      expect(StoreySchema.safeParse({ ...STOREY_OK, index: bad }).success).toBe(false);
+    }
+    for (const good of [0, 7]) {
+      expect(StoreySchema.safeParse({ ...STOREY_OK, index: good }).success).toBe(true);
+    }
+  });
+
+  it('loadBearing / material / category 行为探针：错型、空串、带空白、超长、表外值各拒（ColumnSchema.material 降成 z.string() 以前零红 —— 这一格补上它的证人）', () => {
+    for (const bad of ['true', 1, null]) {
+      expect(WallSchema.safeParse({ ...WALL_OK, loadBearing: bad }).success).toBe(false);
+      expect(ColumnSchema.safeParse({ ...COLUMN_OK, loadBearing: bad }).success).toBe(false);
+    }
+    for (const bad of ['', ' concrete', 'concrete ', 'x'.repeat(33)]) {
+      expect(ColumnSchema.safeParse({ ...COLUMN_OK, material: bad }).success).toBe(false);
+    }
+    expect(ColumnSchema.safeParse({ ...COLUMN_OK, material: '混凝土' }).success).toBe(true);
+    expect(OpeningSchema.safeParse({ ...OPENING_OK, category: 'doorx' }).success).toBe(false);
+    expect(OpeningSchema.safeParse({ ...OPENING_OK, category: 'window' }).success).toBe(true);
+  });
+
+  it('EntitySchema 判别探针：kind "wall" 配洞口字段 ⇒ 拒；未知 kind ⇒ 拒且报错点名 kind 槽位（path 恰为 ["kind"]）—— z.union 的报错 path 为空，这一发就是 discriminatedUnion vs union（m1）的证人', () => {
+    const mixed = EntitySchema.safeParse({ kind: 'wall', id: A, storeyId: B, hostWallId: C, distanceMm: 1000, widthMm: 900, heightMm: 2100, sillMm: 0, category: 'door' });
+    expect(mixed.success).toBe(false);
+    const unknown = EntitySchema.safeParse({ kind: 'furniture', id: A });
+    expect(unknown.success).toBe(false);
+    // 两种联合对**合法数据**接受集合相同，光看 success 分不出来（m1 的旧零红）；
+    // zod 4.6.5 实测报错形状不同：discriminated 的未知判别 path=["kind"]，plain union 是 path=[]。
+    // 换成 z.union 后下面这一发当场红。（报错形状是运行时行为，不是源码文本 —— 与 P-56 同族教训的口径一致。）
+    const issues = unknown.success === false ? unknown.error.issues : [];
+    expect(
+      issues.some((issue) => issue.code === 'invalid_union' && issue.path.length === 1 && issue.path[0] === 'kind'),
+    ).toBe(true);
+  });
+
+  // I4：JournalTurnSchema 的消费者在 T4 的 journal 编解码 —— **本任务不新增消费者**，
+  // 这两格（连同上面的判别探针里 remove 数组的口径）只是合同钉：摘掉 refine 现在就该红。
+  it('JournalTurnSchema（幂等键，仍无消费者、格子只是合同钉）：收 0 与 7；拒 1.5 / -1 / 2**53 / NaN / Infinity / "7"', () => {
+    for (const good of [0, 7]) {
+      expect(JournalTurnSchema.safeParse(good).success).toBe(true);
+    }
+    for (const bad of [1.5, -1, 2 ** 53, Number.NaN, Number.POSITIVE_INFINITY, '7']) {
+      expect(JournalTurnSchema.safeParse(bad).success).toBe(false);
+    }
   });
 });
