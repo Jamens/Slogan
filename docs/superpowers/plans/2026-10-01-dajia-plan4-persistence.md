@@ -8343,8 +8343,31 @@ Expected：
 >
 > **盘上读数**：`pnpm verify` exit=0，`Test Files 47`、`Tests 634`（T6 收口时是 46 / 603 ⇒ **+1 / +31**，含 core 7 + autosave 24）。`npx tsc --noEmit -p apps/desktop/tsconfig.json` exit=0。Step 5/6/6b 尚未落码，故本棒不与下面第 1 条的 `+3 / +41` 对账。
 
+> **Step 5 执行回填（2026-10-06）**
+>
+> **已落码**：`persist/emergency.ts`（159 行 / 7 个出口）。**已落格**：`emergency.test.ts` 6 格（3 describe，真 fs 但落 `os.tmpdir()`，`afterAll` 整棵删）、`persist-boundary.test.ts` 2 格。
+>
+> **规格的三处缺陷（落码时订正）**：
+>
+> ① **抄写遗漏：`rmSync` 用了没import。** 规格给的 import 行是 `{ mkdirSync, readdirSync, writeFileSync }`，而 `pruneEmergency` 里用了 `rmSync` ⇒ `ReferenceError: rmSync is not defined`，「裁剪」那格红。已补。
+>
+> ② **`turn` 在 strict 下过不了（TS18046 / TS2322）。** `guardName` 形参声明是 `unknown`。`isEntityId` 是真守卫（`value is EntityId`）所以 `projectId` 能收窄，但 **`Number.isSafeInteger` 返回普通 `boolean`、不是类型守卫** —— 过了那关 `turn` 仍是 `unknown`，返回处 `{ projectId, turn }` 报 unknown 不能赋给 number。已在守卫之后显式 `turn as number` 收窄，并把"为什么不重复校验"写进注释。**这一条对后续 T8/T9 写任何"参数声明为 unknown 便于过界校验"的守卫都适用。**
+>
+> ③ **三个代码块顺序与直觉相反**：先给 `emergency.test.ts`、再给 `persist-boundary.test.ts`、**最后才是 `emergency.ts` 的实现**。照"先实现后测试"去读会认错 —— 第一次提取就是把实现当成了 boundary 测试。
+>
+> **三发变异棒实测**：
+>
+> | 变异 | 红格 | 打中的格 |
+> |---|---|---|
+> | `autosave.ts` 加 `import { app } from 'electron'` | 1 | `autosave 既不 import electron 也不 import node:fs` |
+> | `emergency.ts` 加 `import { app } from 'electron'` | 1 | `emergency 允许碰 fs 但不许认识 electron` |
+> | `pruneEmergency` 去掉工程分桶（全部归一个桶） | 1 | `keep=2 时每个工程各留两份最新的` |
+>
+> **注意 `lint:deps` 看不见 P-2 那条边界**：那个脚本数的是**包与包之间**的边，`apps/desktop` 内部 `persist/**` 谁 import 谁不在它的口径里。两条防线互补——包外的（`persist` 不许 import `@dajia/scene-2d` 之类）归 `lint:deps`，包内的（不许 import `electron` / `node:fs`）归 `persist-boundary.test.ts`。
+>
+> **盘上读数**：`pnpm verify` exit=0，`Test Files 49`、`Tests 642`（Step 4 时 47 / 634 ⇒ **+2 / +8**）。`npx tsc --noEmit -p apps/desktop/tsconfig.json` exit=0。仓库内无抢救件残留（`find . -name "*-turn-*.json"` 空）。Step 6 / 6b 尚未落码，故本棒不与下面第 1 条的 `+3 / +41` 对账。
+
 ```bash
-pnpm verify > tmp/t7-verify.log 2>&1; echo "exit=$?"
 sed 's/\x1b\[[0-9;]*m//g' tmp/t7-verify.log | grep -E "^ *(Test Files|Tests) "
 pnpm test:db > tmp/t7-db.log 2>&1; echo "exit=$?"
 sed 's/\x1b\[[0-9;]*m//g' tmp/t7-db.log | grep -E "^ *(Test Files|Tests) |FAIL"
