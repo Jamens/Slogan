@@ -266,7 +266,7 @@ S1 内部里程碑:
 | M1.0 | pnpm workspace、electron-vite、TS strict、依赖 lint、CI | ✅ |
 | M1.1 | `@dajia/core`:实体模型、command 层与撤销、几何派生、属性测试 | ✅ |
 | M1.2 | `@dajia/scene-2d`:三层 canvas、拉墙/拖点/删除、吸附、属性面板 | ✅ |
-| M1.3 | 持久化:迁移、repository、工程锁、自动保存与崩溃恢复 | 🔄 进行中 |
+| M1.3 | 持久化:迁移、repository、工程锁、自动保存与崩溃恢复 | 🔄 T1–T6 落码,T7(保存引擎)未开始 |
 | M1.4 | `@dajia/drawing`:图面 IR、图框、线型表、三道尺寸线、A3 排版 | ⬜ |
 | M1.5 | 自研 PDF 后端 + 中文字体嵌入 + 比例尺自检 | ⬜ |
 | M1.6 | `@dajia/scene-3d` M1 形态:只读拉伸体 + 选中双向同步 | ⬜ |
