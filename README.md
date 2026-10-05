@@ -151,7 +151,11 @@ CI 的 ubuntu runner 没有 MySQL,也没有口令。所以:
 | protocol | 3 | 17 | zod shape 与 core 接口对账 |
 | scripts | 2 | 0 | 闸门基线 + 依赖守卫 |
 | **合计** | **46** | **603** | |
-| desktop db | 5 | — | 真 MySQL,**不计入上表** |
+| desktop db | 5 | 100 | 真 MySQL,**不计入上表** |
+
+`pnpm test:db` 最近一次实跑(2026-10-06,MySQL 8.0.45):**5 文件 / 100 条全绿,零skip**,
+14.16s。分层:migrate 14 / journal 34 / locks 29 / repository 20 / env 3。
+跑完 `dajia` 与 `dajia_test` **无残留**,15 个用户库逐名等于基线。
 
 核心不变式用属性测试锁住:
 
@@ -220,6 +224,19 @@ dajia
 - 不许`git checkout` / `switch` / `restore` / `stash` / `reset` / `clean`(单checkout 仓库,切分支会悄悄挪走在跑的工作)
 - 跑闸门一律重定向取 exit:`pnpm verify > tmp/x.log 2>&1; echo exit=$?`,**绝不 `| tail`**(管道吃 CJK 行)
 - 一次性脚本与日志写进 `.superpowers/sdd/<日期-计划名>/`(该目录被自身 `.gitignore` 的 `*` 忽略);`tmp/` 只放 `*.log`
+
+### 跑库测试需要的环境变量
+
+```bash
+export DAJIA_MYSQL_HOST=127.0.0.1
+export DAJIA_MYSQL_PORT=3306
+export DAJIA_MYSQL_USER=root
+export DAJIA_MYSQL_PASSWORD=<本机口令,不要写进仓库>
+export DAJIA_MYSQL_DATABASE=dajia_test   # 连库测试只碰这一个库
+pnpm test:db > tmp/testdb.log 2>&1; echo "exit=$?"
+```
+
+口令只作为环境变量传入。`dajia` 与 `dajia_test` 由测试自建自清。
 
 ### 三个容易踩的坑
 
