@@ -68,13 +68,13 @@ core  ←  drawing  ←  { desktop（导出入口）, scene-3d（M1.6 之后）}
 | `packages/drawing/src/ir.ts` | 图面 IR 的类型与构造助手 | 5 |
 | `packages/drawing/src/plan.ts` | 平面图内容：墙/洞口/柱/板 → IR 图元 | 11 |
 | `packages/drawing/src/dimensioning.ts` | 尺寸链收集 + 三道分道 + 45° 端点符号 + 断线（**合一**） | 17 |
-| `packages/drawing/src/frame.ts` | A3 横式图框 + 标题栏 | 6 |
+| `packages/drawing/src/frame.ts` | A3 横式图框 + 标题栏 | 10 |
 | `packages/drawing/src/section/clip.ts` | 剖切线对 core 几何求交（D3：只轮廓） | 7 |
-| `packages/drawing/src/annotate.ts` | 指北针 + 标高符号 | 4 |
+| `packages/drawing/src/annotate.ts` | 指北针 + 标高符号 | 5 |
 | `packages/drawing/test/*.test.ts` | 上述各模块的 vitest（纯 node，不连库） | — |
 | `apps/desktop/src/main/draw/export-plan.ts` | **唯一** Electron 出口：拼图面 IR → 存盘 | 4（unit） |
 
-合计 **80 格**（unit 档，不连库；**2026-10-06 四次订正**：79 → 78（`linetypes` 原写 8 实测 7，L5 是变异靶而非独立判据）→ 79（T4 补 P3b / P7b，实测 11）→ 80（T5 给「去重那型」单独立了C1d 变体靶，实测 17）。**已落 46 格**（T2 11 + T3 7 + T4 11 + T5 17）。
+合计 **81 格**（unit 档，不连库；**2026-10-06 五次订正**：79 → 78（`linetypes` 原写 8 实测 7，L5 是变异靶）→ 79（T4 补 P3b / P7b，实测 11）→ 80（T5 加C1d 变体靶，实测 17）→ **81（T6 补 F3b / F3c / N4b 三格，实测 15）**）。**已落 61 格**（T2 11 + T3 7 + T4 11 + T5 17 + T6 15）。
 
 ---
 
@@ -184,7 +184,7 @@ export function deriveStoreyGeometry(doc: Document, storeyId: EntityId): StoreyG
 - `M1` 变异的靶（**唯一允许改形状的一族**）：任一条尺寸的**数值文字**必须等于该两轴网点距离 × 比例，判据用 `scaleAndRound(distanceMm, 100)` 那个函数算出来逐字比
 - `M2` 文字纸面高固定 **2.5mm**（spec §7）
 
-### `frame.ts`（6 格）
+### `frame.ts` + `annotate.ts`（**15 格**，2026-10-06 实测：6 + 4 → 15，两个文件合测）
 
 - `F1` A3 横式尺寸 **420 × 297mm**（逐字，这是硬门）
 - `F2` 装订边 25mm、其余边距**有值且可测**（图面留白 = 纸面减去图框，不是 `0` 也不是"自动"）
@@ -383,7 +383,32 @@ export function deriveStoreyGeometry(doc: Document, storeyId: EntityId): StoreyG
 
 **盘上**：`pnpm verify` exit=0，**`Test Files 53` / `Tests 690`**（T4 时 52 / 673 ⇒ +1 / +17）；`pnpm typecheck` exit=0；`tsc -p packages/drawing` exit=0。`test:db` 未跑（T5 不碰连库档），仍 6 / 110。
 
-**待办**：T6 `frame.ts` + `annotate.ts` 10 格 → T7 `section/clip.ts` 7 格 → T8 `export-plan.ts` 4 格 + 全量。
+### T6（图框 + 标注，2026-10-06）
+
+**落码**：`frame.ts`（10 格）+ `annotate.ts`（5 格）+ `frame-annotate.test.ts`。**首跑 14 绿 1 红**，只红在 F1。
+
+**① 幅面与边距是常量而不是参数（B2 的兑现）。** A3 横式 420×297 是**硬门**。看着"做成参数更灵活"，但那会让**每一个下游**（尺寸线分道起点、剖切裁剪、导出页数）都多一个要传递的量，而 S1 只有一个取值。**一个只有一种取值的参数不是参数，是第二份真源。** `SHEETS` 是幅面的唯一产地。四边留白有**具体值**（装订边 25、其余 10），不是 0 也不是"自动"——"自动"意味着后端各自决定，而那样两张图的留白会不一样。
+
+**② 标题栏五格是闭集**（F3 / F3b），**日期与设计人是入参**（F3c）—— 不在 `frame.ts` 里取 `new Date()`，否则同 doc 连跑两次产出不同字节，T8 的 E2（字节稳定）会红。
+
+**③ 符号尺寸是图面规范量，与模型和图幅都无关**（N4 / N4b）。指北针画在哪个角、标高是 0 还是 30000，都不改变符号自己的纸面大小。**写成"随图幅缩放"，A3 和 A1 上的同一符号就不同样** —— 那是纸面上最刺眼的不一致之一。
+
+**④ 判据钉"形状特征"而不钉"长得像"**（N1 / N2）：钉「有一个 45° 斜线段 + 一个闭合多边形」、「等腰直角（腰相等、斜边 = 腰 × √2）」—— 都是**可算**的量。钉"看起来像指北针"要做像素比对，那是 S3 视觉回归的活（S1 不做预览层）。
+
+**⑤ 坐标出口收成单一出口**（照 T5 立的规矩）：两个文件里凡是算坐标的地方都走 `p(x, y)` / `box(...)`，不散写算式。
+
+**变异实测**：
+
+| 变异 | 红格 | 打中的格 |
+|---|---|---|
+| A3 宽 420 写成 400 | **1** | F1 正是那格 |
+| 让指北针尺寸随坐标缩放 | **1** | N4 正是那格 |
+
+**F1 那个读数值得记一笔**：它只红 1 格，F2 没跟着红 —— F2 用的是 `A3_LANDSCAPE_MM.width - MARGINS_MM.right` **同一个常量**，两边一起变、断言仍自洽。这是"两处引用同一常量"的必然结果，**形态是对的**：F1 管绝对尺寸（420 逐字）、F2 管关系（图框 = 纸面 − 留白）。**不该指望改一个常量红两格。**
+
+**盘上**：`pnpm verify` exit=0，**`Test Files 54` / `Tests 705`**（T5 时 53 / 690 ⇒ +1 / +15）；`pnpm typecheck` exit=0；`pnpm lint:deps` exit=0。`test:db` 未跑（T6 不碰连库档），仍 6 / 110。
+
+**待办**：T7 `section/clip.ts` 7 格 → T8 `export-plan.ts` 4 格 + 全量。
 
 **需人工验证、本计划不打勾的项**（沿用 spec §10 的口径）：
 
