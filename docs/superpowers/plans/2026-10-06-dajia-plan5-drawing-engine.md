@@ -64,7 +64,7 @@ core  ←  drawing  ←  { desktop（导出入口）, scene-3d（M1.6 之后）}
 | `packages/drawing/tsconfig.json` | **新建**（现在没有，`pnpm typecheck` 串里也没有这个包 —— 见 §五的顺带修） | — |
 | `packages/drawing/src/index.ts` | 现有 1 行占位，扩成逐名出口 | — |
 | `packages/drawing/src/units.ts` | **比例与纸面换算的唯一产地**（模型 mm → 纸面 mm） | 6 |
-| `packages/drawing/src/linetypes.ts` | 线型表（纸面语义）+ `toScreenLineType()` 映射 | 8 |
+| `packages/drawing/src/linetypes.ts` | 线型表（纸面语义）+ `toScreenLineType()` 映射 | 7 |
 | `packages/drawing/src/ir.ts` | 图面 IR 的类型与构造助手 | 5 |
 | `packages/drawing/src/plan.ts` | 平面图内容：墙/洞口/柱/板 → IR 图元 | 10 |
 | `packages/drawing/src/dimensioning/chains.ts` | 从轴网点收集尺寸链 | 7 |
@@ -75,7 +75,7 @@ core  ←  drawing  ←  { desktop（导出入口）, scene-3d（M1.6 之后）}
 | `packages/drawing/test/*.test.ts` | 上述各模块的 vitest（纯 node，不连库） | — |
 | `apps/desktop/src/main/draw/export-plan.ts` | **唯一** Electron 出口：拼图面 IR → 存盘 | 4（unit） |
 
-合计 **79 格**（unit 档，不连库）。
+合计 **78 格**（unit 档，不连库；2026-10-06 由 79 订正为 78 —— `linetypes` 那栏原写 8 格，实测 7 格，因为 L5 是变异靶而非独立判据）。
 
 ---
 
@@ -127,13 +127,13 @@ export type PaperOp =
 - `U5` 纸面 → 模型（逆换算）**本计划不实现**（S2 才需要反向），但要有一格说明"故意没有"的注释与占位
 - `U6` 比例常数**唯一产地**是 `units.ts`；`plan.ts` / `dimensioning/` 里不许出现字面量 `100`（变异样本：把 `units.ts` 的 `SCALE_DENOMINATOR` 改成 50，`plan.test.ts` 必须红）
 
-### `linetypes.ts`（8 格）
+### `linetypes.ts`（**7 格**，2026-10-06 实测订正：L5 是变异靶不是独立一格）
 
 - `L1` 五档纸面线宽逐字：`[0.18, 0.25, 0.35, 0.5, 0.7]`，各线型的**默认档**有唯一映射
 - `L2` 四种线型的**虚线节奏**（dash / gap，单位纸面 mm）是纸面量，**不随比例变**（建筑制图的虚线长度是图面规范，不是模型量）—— 判据：同一线型在 1:100 下的 dash/gap 与表里逐字相同
 - `L3` `toScreenLineType()` 映射：`solid→solid`、`dashed→dashed`、`dash-dot→dash-dot`、**`center→dash-dot`**（中心线在屏幕上与轴线同一族；映射表只有一份且两族各留一格对账）
 - `L4` 映射表是**闭集**：多一个线型名或映射到未列出的线型，判据红
-- `L5` 变异样本：`toScreenLineType` 里把 `center` 映成 `solid` ⇒ `linetypes.test.ts` 红
+- `L5` **变异靶（不是独立一格）**：`toScreenLineType` 里把 `center` 映成 `solid` ⇒ **`L3` 那格**红。实测读数见 §九（2026-10-06：1 格红，打中的正是 L3）
 - `L6` 线型表**不许含颜色**（`grep` 源码：没有 `#` / `rgb` 字样）—— 颜色是屏幕域的
 - `L7` 变异样本：给 `Pen` 的 `widthMm` 传 `0.3`（不在五档里）⇒ 抛（线宽只有五个合法值，不是任意正数）
 - `L8` 判据钉住"`Pen` 的三个字段一起决定渲染"：同 `layer` 不同 `widthMm` 必须产出两条不同的 `PaperOp`
@@ -285,16 +285,36 @@ export function deriveStoreyGeometry(doc: Document, storeyId: EntityId): StoreyG
 
 **③ 「IR 与格式无关」是判出来的**：一格扫 `ir.ts` 源码文本，命中颜色字面量 / `rgb(` / `opacity` / `fontFamily` / `<svg` / `BT`+`Tf` 等 PDF 算子 / 位图 / base64 任一即红。`Pen` 严格三字段（layer / widthMm / lineType）。
 
-**变异实测**：
+**T2 变异实测**：
 
 | 变异 | 红格 | 打中的格 |
 |---|---|---|
 | `SCALE_DENOMINATOR` 100 → 50 | **3** | U1 / U2 / U3 |
 | 给 `Pen` 加一个 `color` 字段 | **1** | `IR 的 Pen 只有三个字段` |
 
-**盘上**：`pnpm verify` exit=0，**`Test Files 50` / `Tests 655`**（T1 时 49 / 644 ⇒ +1 / +11）；`pnpm typecheck` exit=0（**含 T1 新接的 drawing 串**）；`tsc -p packages/drawing/tsconfig.json` exit=0。`test:db` 本棒未跑（T2 不碰连库档），仍为 6 / 110。
+**T2 盘上**：`pnpm verify` exit=0，**`Test Files 50` / `Tests 655`**（T1 时 49 / 644 ⇒ +1 / +11）；`pnpm typecheck` exit=0（**含 T1 新接的 drawing 串**）；`tsc -p packages/drawing/tsconfig.json` exit=0。`test:db` 本棒未跑（T2 不碰连库档），仍为 6 / 110。
 
-**待办**：T3 `linetypes.ts` 8 格 → T4 `plan.ts` 10 格 → T5 `dimensioning/` 16 格 → T6 `frame.ts` + `annotate.ts` 10 格 → T7 `section/clip.ts` 7 格 → T8 `export-plan.ts` 4 格 + 全量。**§二 写的 79 格是编写期预估**（含本棒已落的 11 格），每棒结束按盘上实测重数并回填，不许追幻影差异。
+### T3（线型表，2026-10-06）
+
+**落码**：`linetypes.ts` + `linetypes.test.ts` **7 格**（§二 原写 8，见下）。这是决策 A1/A2 第一次落到代码上。
+
+**① 格数按实测订正：8 → 7。** §二 与 §四 把 `linetypes.ts` 写成 8 格，实测 **7 格** —— **L5 是变异靶不是独立一格**（它的形态是"改 `center` 映射看 L3 红"，本身不产格子）。合计 79 → **78 格**。按 §六 的规矩「执行时每棒按盘上实测重数并把真数写进回填，**不许追幻影差异**」处理。
+> **给 T4 起的同类提醒**：§四 里凡是写着"变异样本 / 变异靶"的条目，都**不计入格数**。数格数时先分清哪些条目产出 `it()`、哪些只是"改这里看那里红"。
+
+**② 注释里也不能出现"颜色"这个词。** L6 那格扫的是 `linetypes.ts` **自己的源码**，正则含 `\bcolor\b` / `\bink\b` —— 所以实现里讨论"为什么不用颜色"时**不能把那个词写进注释**，否则本格误红。第一版注释里写了"颜色"，已改成描述性的说法。
+
+**③ `noUnusedLocals` 抓到测试里一个未用 import**（`TS6133: 'PaperOp'`）—— 已清。**这是 T1 那个缺口补上之后的第一个实际收益**：drawing 包现在也享受 `noUnusedLocals`，而 T1 之前它连 typecheck 都不进。
+
+**变异实测**：
+
+| 变异 | 红格 | 打中的格 |
+|---|---|---|
+| `center` 映成 `solid`（L5 的靶） | **1** | L3 正是那格 |
+| 放行任意线宽（`includes` 检查换成 `false`） | **1** | L7 正是那格 |
+
+**盘上**：`pnpm verify` exit=0，**`Test Files 51` / `Tests 662`**（T2 时 50 / 655 ⇒ +1 / +7）；`pnpm typecheck` exit=0；`tsc -p packages/drawing` exit=0。`test:db` 未跑（T3 不碰连库档），仍 6 / 110。
+
+**待办**：T4 `plan.ts` 10 格 → T5 `dimensioning/` 16 格 → T6 `frame.ts` + `annotate.ts` 10 格 → T7 `section/clip.ts` 7 格 → T8 `export-plan.ts` 4 格 + 全量。**§二 写的 78 格是编写期预估**（含已落的 11 + 7 = 18 格），每棒结束按盘上实测重数并回填。
 
 **需人工验证、本计划不打勾的项**（沿用 spec §10 的口径）：
 
