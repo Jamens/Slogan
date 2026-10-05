@@ -144,7 +144,7 @@
 
 ---
 
-## 裁决（P-1 … P-17 + 执行期追加的 P-40 … P-67；执行中若与落地的代码冲突，按代码订正并写执行回填。P-18 … P-21 住在 Task 8 的段落、**P-22 … P-39 住在 Task 9 的段落（2026-10-05 拼接后实测：这 22 个号全部有正文，没有空号了）**；随各自任务回写时**就地补表**，不把理由复制一份过来）
+## 裁决（P-1 … P-17 + 执行期追加的 P-40 … P-74；执行中若与落地的代码冲突，按代码订正并写执行回填。P-18 … P-21 住在 Task 8 的段落、**P-22 … P-39 住在 Task 9 的段落（2026-10-05 拼接后实测：这 22 个号全部有正文，没有空号了）**；随各自任务回写时**就地补表**，不把理由复制一份过来）
 
 | # | 决定 | 理由 | 已接受的代价 |
 |---|---|---|---|
@@ -168,7 +168,7 @@
 
 ### 执行期裁决（P-40 起；Task 1 / Task 2 / Task 3 落码时由控制位追加）
 
-> 编号从 **P-40** 起，因为 P-18…P-39 那一段被预留给了 Task 8 / Task 9 的文本。2026-10-04 那次按 `P-(1[89]|2[0-9]|3[0-9])\b` 扫描的结论（"实数只有 6 个号真被写过，其余 16 个是空号"）**到 2026-10-05 已过期**：Task 9 的文本拼接进本文件之后重扫，`P-18`…`P-39` 这 **22 个号全部有正文** —— Task 8 段（本行以下第一段起）四条：P-18、P-19、P-20、P-21；Task 9 段十八条：P-22…P-39（`P-19` / `P-27` / `P-33` 在 Task 9 段里还被引用，但它们的正文各只有一处产地）。复扫命令留在这里，下一个人不必再猜（行号是 2026-10-05 拼接后的实测：Task 8 起 `8013`、Task 9 起 `11800`，本文件现长 16098 行 —— 文本再长就要跟着改这两个数）：`awk 'NR>=8013 && NR<11800' docs/superpowers/plans/2026-10-01-dajia-plan4-persistence.md | grep -o 'P-[0-9]\+' | sort -u` 与 `awk 'NR>=11800' … | grep -o 'P-[0-9]\+' | sort -u` 各一发。那条教训本身**不改**："编号看起来有人住"本身就是第二份真源 —— 表若声称 22 条而盘上只有 6 条，读它的人会去找那 16 条不存在的主张。这 22 条的正文住在各自任务段落里，回写时**在本表补行、理由就地引用**，不复制。
+> 编号从 **P-40** 起，因为 P-18…P-39 那一段被预留给了 Task 8 / Task 9 的文本。2026-10-04 那次按 `P-(1[89]|2[0-9]|3[0-9])\b` 扫描的结论（"实数只有 6 个号真被写过，其余 16 个是空号"）**到 2026-10-05 已过期**：Task 9 的文本拼接进本文件之后重扫，`P-18`…`P-39` 这 **22 个号全部有正文** —— Task 8 段（本行以下第一段起）四条：P-18、P-19、P-20、P-21；Task 9 段十八条：P-22…P-39（`P-19` / `P-27` / `P-33` 在 Task 9 段里还被引用，但它们的正文各只有一处产地）。复扫命令留在这里，下一个人不必再猜（行号是 2026-10-05 的**复量**：Task 6 起 `5017`、Task 7 起 `5964`、Task 8 起 `8429`、Task 9 起 `12273`，本文件现长 16573 行 —— 这几个数是 Task 5 执行回填（77 行）、T4 须知那条订正（1 行）与裁决表 P-68…P-74 那七行落盘之后重量的；上一版记的 `4938` / `5885` / `8348` / `12192` 与 `16492` 是回填之前的坐标，更早那版的 `8013` / `11800` / `16098` 则把 Step 6b 那 200 行漏在了前面；文本再长就要跟着改这几个数，`grep -n "^## Task [6-9]"` 一发就能全量重取）：`awk 'NR>=8429 && NR<12273' docs/superpowers/plans/2026-10-01-dajia-plan4-persistence.md | grep -o 'P-[0-9]\+' | sort -u` 与 `awk 'NR>=12273' … | grep -o 'P-[0-9]\+' | sort -u` 各一发（**读它的人注意**：这两发列的是"出现过的号"，含引用；正文产地要按下一句那样逐号看）。那条教训本身**不改**："编号看起来有人住"本身就是第二份真源 —— 表若声称 22 条而盘上只有 6 条，读它的人会去找那 16 条不存在的主张。这 22 条的正文住在各自任务段落里，回写时**在本表补行、理由就地引用**，不复制。**另有两个号表内没有行**（2026-10-05 实测：`^\| \*\*P-\d+\*\* \|` 扫全表得 40…66、68…70、72…74，缺 67 与 71）：P-67 的正文在 Task 4 执行回填第 6 条，P-71 的正文在 Task 6 第 ⑦ 段 —— 不是漏写，是就地登记，找行的人别再扫一遍表。
 
 | # | 决定 | 理由 | 已接受的代价 |
 |---|---|---|---|
@@ -199,7 +199,12 @@
 | **P-64** | `element.updated_seq` 的判据钉成**逐实体 upsert 的真形状**：`DISTINCT = 2`、`seq1` 只被楼层那一发覆盖（1 行）、`seq2` 覆盖墙 + 两枚柱（3 行）、`1 + 3 = 4` 等于投影总行数。brief Step 6 原文的 `DISTINCT=1` / `count(seq2)=4` **与同一节 Step 7 自己写的逐实体 `patch.upsert` 自相矛盾** | 席位实测 + 审查席独立探针复现（`seq1 storey / seq2 wall+2pts / distinct=2`）。原写法要真成立，得把写路径改成"一发只碰一行"或"整层重述" —— 那是为了凑一条抄错的期望而削实现 | 语义从此被断言钉住：**每行 `updated_seq` = 最后修改这一行的那发 `command_log.seq`**（不是"这发事务的 seq"，也不是"最大 seq"）。T5 的 `closeProject()` 要把 `updated_seq` JOIN 回 `command_log.turn` 做三方对账，靠的正是这条被钉住的语义。代价：这一格绑住"哪些实体在同一发里被 upsert"，T7/T8 若改命令的补丁形状（比如让楼层删除连带重述墙），这一格会红 —— 那是**该红的** |
 | **P-65** | `multipleStatements` **只准住在迁移连接**：`createDbPool` 默认 `?? false`，业务池永远单语句。测试夹具里那个池按用途分两个 —— 迁池带 `multipleStatements: true`，业务池不带 | brief Step 6 的夹具照抄 `createDbPool(env)` 没补这条 ⇒ `migrate` 的多语句脚本当场 1064、`repository.test.ts` **整档 20 格 skip**。补的是夹具不是判据，且审查席实测业务池叠 `SELECT 1; SELECT 2` 被服务端 1064 拒 —— 这道墙没被 `pool.on('connection')` 顺手开掉（handler 只发单条 `SET SESSION`） | 多语句是注入面与"半途留下几条语句"的放大器，产品路径一条都不需要它。**代价**：夹具从此有两个池，读代码的人要明白"为什么同一个库连两遍"；`repository.test.ts` 的档头注释写了这条分工。T5/T6/T7 的 db 档沿用同一形态，**不许**图省事把业务池改成多语句 |
 | **P-66** | `pool.on('connection')` 那颗地雷按**运行时**写：监听器收到的是 callback 连接，一律单参数 fire-and-forget（`void conn.query(sql)`），**不许**对它 `.then()`/`await`。`sessionVariables` 在 mysql2 全包（lib + typings）零命中 ⇒ 走 brief 预先授权的兜底分支，不是偷懒 | 类型声明把 promise 池的 `'connection'` 事件回调参数标成 PoolConnection（promise 型）⇒ `conn.query(sql).then()` **过 tsc**，运行时却在监听器里抛、打断 `getConnection` ⇒ 整套连库测试表现为挂死。这类"编译过、运行时炸、症状在别处"的形状只能靠注释 + 实测钉死（`pool.ts:20-23,71` 两段注释记的就是这一发） | 生效性**没有常驻读数证人**：审查席那次 `@@innodb_lock_wait_timeout = 1` 是已撤的自证探针。漂了（SQL 拼错 / 事件名改错）的形状不是假绿 —— 是那一发慢到 InnoDB 默认 50 秒、红在 60 秒 `testTimeout` 上，症状从"快失败"变成"像挂死"。登记为限度，T6 的锁档天生要读服务端时钟，把那发变成常驻读数是自然的补位点 |
-| **P-67** | **T4-M7 由"已知限度"改判为"有牙变异"**，并订正报告：删 `asJsonValue` 的 `typeof raw === 'string'` 那一支实测 **9 格红**（`codec.test.ts` 的直接格 + 三发从字符串解的 `canonical()` 往返 + 第 13 格往返哨兵，exit=1），**不是**"没有任何用例变红"。代码一字未改（两支都在、两支都被覆盖），改的是账 | brief M7 的"If A 档 = `object` ⇒ 零红"把**连库读路径**（Step 1 实测 A 档 = `object`）与**纯文本 unit 路径**（`codec.test.ts` 全程喂 string）混为一谈 —— 前者确实抓不到，后者正是那一支的常驻证人。哨兵格跟着红，说明它兜的不只是"decode 必须先成功" | 记账方向同 P-62：**判据的效力以实测为准，不以写作时的推演为准**；连"限度"这个分类本身也要实测才能登记。代价是 T4 报告与 §5 那段"不靠变异证，只靠注释"的表述要一起订正，别留着让 T5 席位以为 `asJsonValue` 无覆盖 |
+| **P-68** | **T5-M16 从"限度（本任务用例全绿）"改判为"测到了一件不是它想测的事"**：去掉 `loadProject` 的 `beginTransaction`/`commit` ⇒ 实测 **`journal.test.ts` 33 格全红**（每格 4,00x ms 超时），不是全绿。限度陈述重写为三句：① 红；② 红因是**连接饥饿**（三发读改走 `this.pool.query`，而 `loadProject` 已经用 `getConnection()` 占住了 `connectionLimit: 1` 的唯一连接 ⇒ 向池再要一条永远等不到）；③ brief 想证的"两次读之间被并发写入切碎"（快照隔离）**仍然没有任何证人** | brief:1424 登记的预期与盘上相反；若照抄，下一个人会以为"去掉事务测不出来"，而实际上去掉事务会把整个 db 档打死。两份独立读数：席位 03:02 的 `tmp/t5-mut-T5-M16-journal-fast.log` 与控制位复打的 `tmp/vb-mut-T5-M16-journal-fast.log`（复核棒），红因一致 | 快照隔离这条性质在 node 档从此**明写无人证过**（不是"证过且绿"），凭据只能等 T10 的两个真进程；`journal-fast` 那一型（全档超时）之后**必须点名一次库面**，盘上有过一次 02:58 留 `dajia_test`、02:59 由 `t5-drop-stray.mjs` 收回的记录 ⇒ 已写进 T6/T7 派发词的变异棒纪律 |
+| **P-69** | `element.updated_seq` 的**生产路径读者本计划到 T5 仍未兑现**：`repository.ts` 只有写侧两处（`appendJournal` 的 INSERT/ODKU），全仓读它的一律是 T4 的探针格。T4 交接表承诺的"② 把 `updated_seq` JOIN 回 `command_log.turn`"**不随 T5 闭合**，读者改挂 **T7**（保存前判"这一行是不是我这一发写的"是它最自然的消费点）；T7 落地时若仍无读者，则在收尾章节登记为限度 | 审查席与复核棒各自独立 grep 得到同一形状（写侧 `:249/:251`，读侧零处）。控制位回填草稿一度写着「P-64 留的债在这一发闭合」—— 那句与代码相反，**在并进计划之前就改掉**（截至 `87f9358` 计划正文零命中那句，改的是草稿不是正文） | 一列 BIGINT 被持续写而没有运行时读者 = 纯开销；`task-5-verification-report.md` 另记一句有用的实测：将来真要用它做增量读，**锚点必须是 `command_log.turn`**（P-6：seq 可带洞），不能拿 seq 的算术连续性做减法 |
+| **P-70** | **快照的 `journal_turn` 列必须能自证**（T7 落地）：payload 增 `journalTurn` 一键，`loadProject` 在读快照处加一发与现有版本判据同形状的拒开。**原文那句"`writeSnapshot` 校验递进来的 turn === 正文的 turn"已按 Step 6b 的设计订正**：写侧只有**同源自构造**（同一个 `t` 同时进列与 `encodeDocument(doc, t)`），没有第二个量可比；造一个"从 `doc` 反推 turn"就是第二份真源。牙因此全部长在读侧第四条判据（见 Step 6b 第 ⑬ 段） | 现状：payload 只有 `projectId` / `schemaVersion` / `entities` 三键（`codec.ts:68-74`），**不带 turn** ⇒ 列无法自证。若某发快照的列写 5 而正文只是 turn 3 的终态，`replayFrom = snapTurn` 会**跳过 4、5**，尾判据与放行证都看不出（旧文档形状是全对的）⇒ 静默交出一份看起来正常的坏文档。本计划的三个写者都在同一事务里成对递 `(turn, doc)`，所以 T5 没有生产写者 —— 但 T7 的 autosave 一落地，这一型就从理论变成生产路径 | 改 codec 形状要动 **T4** 的 `codec.test.ts`（**订正**：原文写 T3 —— `codec.ts` 与那 12 格是 Task 4 落盘时建的，T3 交的是读盘不变式 `reconcile.ts`；这条漂了五格派发词就要跟着漂一次）（「encodeDocument 的形状就是三键」那一格必须**更新到新真相**，不许"顺手让它绿"），并配变异 T7-M25 证明新字段有牙；`journal.test.ts:317/:326` 那两发手搓快照的夹具跟着变。契约分两份的形状（线上三键 / 盘上四键，`.extend` 派生）实测登记在 **P-73**。T5 一侧本条**只登记为未设防限度**（措辞点名"列快于正文 ⇒ 静默旧文档"），已写进 `repository.ts` 的注释与 T7 的开工必读 |
+| **P-72** | Task 5 修复第一轮欠下的**三处注释/指针订正**随 **T7** 落盘（不是 T6）：① `repository.ts:531` 的「1→1」是推演不是实测（M15 同族，吃 `NOW(3)` 的毫秒运气）；② `journal.test.ts` 里"红在 `tsconfig.test.json` 525 行"这类**绝对行号指针**改成指 `it()` 标题（修复第一轮的行移已把它推歪）；③ `pool.ts:14/46/85` 的**跨文件序数指针**（"第 12 格 / 第 2 格"）改成指 `it()` 标题。全文见 Task 7 Step 6b 的「顺带订正三处」 | 审查席给的这三条都是注释与指针，语义零改动，本来谁捎都行。**不给 T6 的理由是 T6 的红线**：P-71 那两格打的正是 `repository.ts:320`，而它要求"落盘提交里 `repository.ts` 字节级零改动"—— 让 T6 顺手改 `repository.ts:531` 的注释，那条红线当场作废（diff 会带上一个 hunk，审 T6 的人再也分不清哪个 hunk 是越界）。T7 的射程本来含 `repository.ts`（P-70 的第四判据），搭它的车是零成本 | 三处改完 `pnpm verify` 的**格数必须与改前逐字相同**；动了格数就是误改判据。若 T7 的棒子把这三处漏了，控制位在 T7 的收口里补一次纯注释提交，不许挪进 T8（T8 的射程里没有 `repository.ts`） |
+| **P-73** | **`.extend` 保留 `strictObject` 的 strict 语义（2026-10-05 实测，zod `4.6.5`）**：`SnapshotPayloadSchema = DocumentPayloadSchema.extend({ journalTurn })` 直接得到"四键 + 多余键拒"，**不需要也不许**再套一层 `z.strictObject(schema.shape)`。读数逐字（探针 `.superpowers/sdd/…/probe-zod-extend.mjs`，`createRequire('…/packages/protocol/package.json')` 引 zod）：`baseRejectsExtra=false`、`extendedRejectsExtra=false`、`wrappedRejectsExtra=false`、`extendedAcceptsBoth=true`（三档 `false` 都是 `safeParse(...).success`，即**都拒**） | 控制位先写的交代里断言"`.extend` 丢 strict，所以要包一层" —— 那是**没测就写**，探针一跑就反了。写进裁决表是因为这同时是一个方法教训：形状层面的"库会怎么做"必须在**动手之前**用一次性探针量，而不是在实现现场等 `tsc`/测试红（这一型的成本是控制位一轮重写 + 派发词一次重发，不是实现者一次红）。`package.json` 里钉的是 `^4.6.5`：caret 会放行 minor/patch 的自动升级（一次 `pnpm update` 就能把它带到 4.7/4.8 而没人碰过任何代码），那一型唯一的报警就是 Step 6b 新增格 1 | 常驻证人是 Step 6b 新增格 1「盘上契约仍然 strict：多一个键就拒」——若哪天 `.extend` 的语义漂了，那一格先红，而 `wrappedRejectsExtra` 那档的冗余写法**不许**被拿来"加固"（两道工序会各自漂，且第二道没有独立信息）。契约分两份的形状本身记在 **P-70**（第 ⑫ 段） |
+| **P-74** | **文档里的一行可以是脚本的运行时接口 —— 改它之前先数清谁在读它**：2026-10-05 03:30 控制位把 spec §12 那行明文本机口令打码（响应的正是"泄漏自查每次都命中它"这条报告），而 `db-env.mjs` 第 2 版的凭据**就是从那一行现读的** ⇒ 打码之后连库靶全线 `Access denied`，四发变异（`T5-M3/M4/M5/M6`）与两发探针、两发普查当场作废。裁决三件：① **打码保留**并随 Task 5 收口提交（它清的是当前工作树的泄漏面，不是历史 —— 历史与 GitHub 上那份还在）；② `db-env.mjs` 改**两级解析**：先取操作者环境的 `DAJIA_MYSQL_PASSWORD`，否则 `git show cae3ac5:…` 从**提交对象**里按形状取，磁盘不新增明文副本，取到占位串一律抛（守卫是必须的：占位串当凭据用会把失败伪装成"口令错了"）；③ **`eval "$(node db-env.mjs)"` 那一行后面永不接重定向**，重定向只挂在闸门命令上（已写进 Task 9 Step 10 的三条规矩第 1 条） | 作废的四发由控制位亲跑补齐（`tmp/c-recheck-T5-M{3,4,5,6}.log`，各 1 红且红在原文点名的那一格，每发前后普查 `count=19 与基线逐名相等=是`，`restored-ok` 的 md5 与提交态逐字节相等）。审查席独立全仓扫过 `apps/**`、`packages/**`、`scripts/**` 与两份 vitest 配置：运行时解析 `docs/**` 取数据的同型读者**恰好两处** —— `db-env.mjs`（已 env-first）与 `seed-credential-store.mjs`（**已作废的那条路**：它要把明文凭据写进 `~/.dajia/mysql-test.json`，2026-10-05 被权限位拦下、**从未执行过**） | 用户轮换 root 口令之后：在用户级环境变量设 `DAJIA_MYSQL_PASSWORD`，然后**删掉 `db-env.mjs` 的第 ② 路**（那条路存在的唯一理由是"历史里那份明文还在"）。`seed-credential-store.mjs` **不复活、也不抄两级解析**（作废理由与"要复活先把 `HEAD:` 钉成固定提交"那道前置已写死在脚本头部）；收尾章节不再为它留账 —— 它读的是 `HEAD:<spec>`，本次打码提交一落地就只剩它自己那道占位串守卫会停手，**失败方式是抛而不是写脏凭据**。**代价**：口令没换之前，任何把历史提交里那一行清掉的动作（rebase / 改写历史 / 公开仓库）都会连带把第 ② 路打断，而症状出现在"看起来与凭据无关"的连库测试上 |
 
 ---
 
@@ -3501,6 +3506,7 @@ node scripts/check-invariants-cycle.mjs    exit=0  model/invariants 的 import �
 2. **落盘 turn 集恒等于连续区间 `{1..journal_turn}`，且 `count(command_log) == journal_turn`**（跳号 guard + 全事务原子性；半途失败的 turn 既不涨计数器也不留行 —— 审查席探针实证）。`loadProject` 可以放心把 `journal_turn` 当"文档停在哪"的唯一坐标。
 3. **`element.updated_seq` = 最后碰这一行的 `command_log.seq`**（P-64 钉住的语义），BIGINT 列在 `supportBigNumbers` 下 2^53 内回 `number`；`command_log` 带 `(seq, turn, actor, payload=patch)` 且 `uk_project_turn` 保证 turn 唯一；`writeSnapshot` 是**裸 INSERT**（P-16）。三方对账（快照 + 重放 ↔ `element` 投影 ↔ `storey` 投影）有唯一收敛依据。
 4. **两件 T4 故意留的读者归 T5**：① `closeProject()` 做 `element`↔`storey` 逐行对账；② 把 `updated_seq` JOIN 回 `command_log.turn`，并对 BIGINT 读数做 `Number()`（越界 → string → zod 抛那一发的接线在这里，不在 T4）。
+   - **2026-10-05（T5 收口）订正这两句**：① 已随 T5 落盘（`reconcile.ts` 的三方对账）。② **没随 T5 兑现** —— `updated_seq` 到 T5 仍只有写侧两处、全仓运行时读者为零 ⇒ 读者改挂 **T7**（→ **P-69**）。而"对 BIGINT 读数做 `Number()`"这半句**被 T5 的实测推翻**：越界时 mysql2 回的是**精确 string**，`Number()` 会把 `9007199254740993` 静默变成 `…92` 并通过 `Number.isSafeInteger` ⇒ 真取法是 `repository.ts:129-137` 的 `asSafeInt64`（"要么安全整数、要么抛"），下一棒的口径见 Task 5 须知第 4 条，**别自己 `Number()`**（→ P-17 / P-66 / P-68 那一族）。
 5. **夹具池 / 业务池的分工照抄 T4**（P-65）：多语句只给迁池。别为了让测试好写把业务池改成 `multipleStatements: true`。
 6. **`storeyAt` 类夹具的 `index` 唯一性**（P-55 的连带）：同一 `projectId` 下楼层 `index` 必须唯一，多层夹具记得显式给 `index = 1 / 2`，否则红在"index 重复"而不是你想证的那件事。
 7. **测试配方先测可达性**（P-62 的连带）：控制位给的配方落地前先跑一发，走不通就回报并订正，不许削判据、不许按文本盲抄。
@@ -4930,6 +4936,83 @@ EOF
 | T5-M15 | 给 `UPDATE project SET clean_shutdown = 0` 加 `affectedRows === 1` 断言 | `连开两次` 红（第二次打开是 0→0，MySQL 只数真变化的行）。这一发是第 ② 段那条实现纪律的证人，不是待修的 bug |
 | T5-M16 | 把 `loadProject` 的 `beginTransaction` 去掉，三发读改用 `this.pool.query` | 本任务用例**全绿** —— 登记的限度：能证的是"未提交的行不可见"（每发语句各自也是这个读数），不能证"两次读之间被并发写入切碎"，那要并发写者恰好落在两发读中间。事务保留的理由写在第 ② 段：`wasCleanShutdown` 的读与那一发写必须同快照，否则报的是抹完之后的值（`没告别就崩` 那一格读的就是这个先后）。不许因为"这条测不到"就把它当测试专用分支删掉 —— 它是 InnoDB 的标准读法，真读者在 T10 |
 
+### Task 5 执行回填（2026-10-05，落码 + 修复第一轮 + 复核 PASS）
+
+#### 提交链与格子数
+
+| 提交 | 作者 | 内容 | 文件 / 行数 | `verify` 格子数 |
+|---|---|---|---|---|
+| `a77997b` | 控制位 | 库普查口径订正（**BASE**：T5 的审查包从这一发起算） | docs | 44 / 576 |
+| `cae3ac5` | T5 代码棒 | `db/reconcile.ts`（新，纯函数）+ `repository.ts` 读路径与收尾 + `pool.ts` 注释 + `test/db/journal.test.ts` + `test/unit/reconcile.test.ts` | 5 文件 / +1365 −10 | 45 / **593**（+1 文件 / +17 格：`reconcile.test.ts` 17、`journal.test.ts` 33） |
+| `f9db638`、`87f9358` | 控制位 | Task 9 文本拼接与四处读者侧收口（**docs-only**，与本任务代码无关；它们是 `0bd606e` 的父提交，所以修复轮 diff 的基线是 `87f9358`） | docs | 45 / 593 |
+| `0bd606e` | T5 修复第一轮 | 审查席 3 条 Important + 复核棒 8 条 Minor 的落点：`pool.ts` / `repository.ts` / `journal.test.ts` / `reconcile.test.ts` | 4 文件 / +92 −13 | 45 / **594**（`reconcile.test.ts` 17→18）；db 档 4 / **71**（`journal.test.ts` 33→34） |
+
+`it()` 逐档点数（`0bd606e` 之后，控制位实测）：unit 侧 `reconcile` 18 + `codec` 13 + `entity-shape` 3 ⇒ 576 + 18 = **594**；db 侧 `env` 3 + `migrate` 14 + `repository` 20 + `journal` 34 = **71**（37 + 34 = 71 与 `journal+repo` 靶面 54 = 34 + 20 两处自洽）。靶面无 `it.skip` / `it.todo` / `it.only`。
+
+代码棒在 **150 轮上限**处被掐（166 次工具调用 / 58 分 34 秒），但**代码已提交、报告已落盘**（`task-5-report.md` 188 行）⇒ 控制位另派一根复核棒独立重跑变异（`tmp/vb-*.log`），再派**唯一**一个审查席（`task-5-review.md`：规格 **PASS** / 质量 **PASS WITH CHANGES**，0 Critical + 3 Important），修复轮由复核席逐条判 ADDRESSED ⇒ **PASS**（`task-5-fix1-rereview.md`）。
+
+#### 闸门读数（全部控制位亲测，不采信任何席位的日志）
+
+```
+pnpm verify                                exit=0  Test Files 45 passed / Tests 594 passed
+pnpm test:db                               exit=0  Test Files 4 passed / Tests 71 passed
+                                                    env 3 + migrate 14 + repository 20 + journal 34
+                                                    [T5] journal_turn 读数 typeof=string value=9007199254740993
+                                                    [t4] snapshot payload typeof = object
+                                                    [census] version=8.0.45 max_connections=151
+npx tsc --noEmit -p apps/desktop/tsconfig.test.json
+                                           exit=0
+node scripts/check-package-deps.mjs        exit=0  依赖方向检查通过
+node scripts/check-invariants-cycle.mjs    exit=0  model/invariants 的 import 闭包不碰 commands/**
+只读普查（收口时）                          19 个库名，逐名等于 Task 2 的基线；dajia 一次未建、未连、未删
+```
+
+日志：`tmp/t5-closeout-verify.log`、`tmp/t5-closeout-db.log`、`tmp/t5-closeout-census.log`（修复轮自己的那一串是 `tmp/t5f1-*.log`，04:24–04:26）。**下一棒的起点是 45 / 594 / db 4 / 71。**
+
+`journal_turn` 那条常驻读数（`typeof=string`）是 T4 留下的 P-66 那一族第一次出现**真读者**：BIGINT 越 `2^53` 时 mysql2 在 `supportBigNumbers: true` + `bigNumberStrings: false` 下回精确 `string`，`asSafeInt64`（`repository.ts:129-137`）把它变成"要么安全整数、要么抛"。T4 那格 `越界的 LONGLONG 回 string` 与 T5 那格 `journal_turn 超出 JS 安全整数` 是同一件事的两个坐标 —— 这条接线（P-64 的代价栏）到本任务真的闭合了。
+
+复核棒的变异读数（`task-5-verification-report.md` §3–§5）与控制位亲跑的那几发逐条一致；**审查席一次闸门都没跑**（它的 §5 红线自查明写了这点，所有红相是代码推演 + 派发词里控制位那串读数），而修复轮的复核席同样只核 diff 未复跑 ⇒ 594 / 71 这两个数**只有控制位 19:32–20:32 的那两发**（`tmp/t5-closeout-*.log`）作为凭据。全程没有把口令敲进任何命令行、代码、日志或提交。
+
+#### 文本与盘上的不一致（本节按盘上订正；Task 5 正文保留原样，以文件为准）
+
+1. **`formatMismatches` 的溢出行与"只列前 12 处"自相矛盾** ⇒ 溢出行不带 `  - ` 子弹（`reconcile.ts:195` 的前缀只归条目行、`:199` 的 `  另有 N 处未列出` 是两空格缩进），文案照留。审查席复核：`:186` 头行的 `（N 处）` 与溢出行的 N 相加等于总数 ⇒ "条数不许骗人"成立；同一格用 `startsWith('  - ')` 数行数（`reconcile.test.ts:219` 断恰好 `MISMATCH_REPORT_CAP` 行），旁边的 `:222` 那一格再断"平账时一行子弹都不产出"。**不构成发现**，不改判据。
+2. **连库那几格吃的是 `pair` 标签正则，而原文那份 `formatMismatches` 从不打标签** ⇒ 判据留着、代码补标签（`reconcile.ts:192-195`：标签给机器认、`PAIR_TEXT` 给人读，两个都在行上）。**订正**：`reconcile.ts:192` 那句"那四格"实测是**五格**（`journal.test.ts:493/:512/:524/:542/:570`）—— 序数式计数本就是 P-72 第 ③ 条要清的那一族，随 T7 的注释 pass 一起改，本发不动代码。
+3. **`element 少一行` 要求"那个 id 在文案里出现两次以上"实测不可达**（删一行非楼层 element 时"列"与"正文"一起消失，行内自比只剩一个证人）⇒ 那一格改 `>= 1` 并把第二个证人根本不存在写进标题与注释（`:524-537`），**另起一格** `删楼层的 element 行 ⇒ 两对同时报`（`:542-554`）让"两对"有真证人。强度不降：`>= 2` 那半句搬到了它真实成立的那一型上（`M11` 的证人从原文的五格涨到六格，方向对）。
+4. **原文的迁移配方字面不可达**：不带 `multipleStatements` 的池跑 `migrate` ⇒ V001 多语句 `ER_PARSE_ERROR(1064)` ⇒ 给迁移单开一条池、迁完立刻 `end()`（`journal.test.ts:155-159` 与 P-65 那条口径同族），业务两条池保持单语句。P-65 的形状在 T5 第二次现形 —— 它不是"夹具的怪癖"，是这份迁移 SQL 与 mysql2 的固定冲突，后面每一档 db 测试都会再撞一次。
+5. **`asSafeInt64` 的两道守卫互相遮蔽**：原文的字面删法（只摘 string 支，`T5-M7a`）实测 **53 格全绿**（`tmp/t5-mut-T5-M7a-journal+repo.log`）—— 第二道 `typeof !== 'number' || !Number.isSafeInteger`（`repository.ts:133`）已经把 string 挡在外面。有牙的是括号版 `M7b`（整函数变 `Number(raw)` ⇒ 1 红在 `journal_turn 超出 JS 安全整数`）。**这不是合并两道守卫的理由**，但"摘一支会红"这个预期不成立。
+6. **`pool.ts` 那两行 BIGINT 配置关掉 ⇒ 红在 T4 那格，不在 T5 那格**（`M7pool`）：`9007199254740993` 失精成 `2^53`，而 `2^53` 也不是安全整数 ⇒ `asSafeInt64` 照样抛 ⇒ T5 那一格测不出配置被关掉。`pool.ts:43-52` 的注释已按实测的"两条漂法各红在哪一格"改写（`tmp/c-recheck-T5-M7pool.log`：红在 `repository.test.ts` 的 `越界的 LONGLONG 回 string`）。
+7. **`affectedRows` 不能当这条 UPDATE 的判据**（`M15` 恒绿）：同一条语句还写 `updated_at = NOW(3)` ⇒ 重复打开时行确实变了、`affectedRows` 是 1，"连开两次"那一格根本不会红 ⇒ 决定不变（**不加断言**），理由换成实测那条，写在 `repository.ts:442-452`；`journal.test.ts:434` 的标题按复核席裁的口径改口成"它**不是**那条断言的证人"（三条断言一字未动，`task-5-fix1-rereview.md` 第 4 条确认全为上下文行）。
+8. **`M16` 的预期与盘上相反**（原文全绿 ⇒ 实测 **33 格全红**，`journal-fast` 每格 4,00x ms 超时）：去掉 begin/commit 后三发读改用 `this.pool.query`，`connectionLimit: 1` 的 `repoPool` 在持有连接时再要第二条 ⇒ 当场自锁。红是红了，但它证的是**别在持有连接时向池要第二条连接**，与快照隔离无关 ⇒ 限度照登、措辞换掉。（→ **P-68**）
+9. **`M10` 的可选补法字面不可达**（原文让换 payload 却没把头寸推到 6 ⇒ 先撞尾判据）⇒ 采纳**可达版**：新起一格 `journal.test.ts:373`（不改 `重放撞空行`）+ 同发 `UPDATE … journal_turn = 6`（`:393`）。这一格现在既在基线上绿，又是 M10 的证人（`tmp/c-recheck-T5-M10.log`：1 红在那一格），顺带钉了"拒开不留痕迹"（同格末断言 `clean_shutdown` 仍为 1）。⇒ 原文"M10 全绿"那句限度作废。
+10. **`FOR UPDATE` 那把读锁在本任务零证人**（`M9` 实测 53 格全绿，不是推的）⇒ 登记为限度，读者归 **T6**（`locks.test.ts` 的第三档池 `holderPool` 从外部锁住 `project` 行 ⇒ `loadProject(..., 'edit')` 必撞 `/Lock wait timeout/`），已编进 Task 6 正文当 **T6-M17 / T6-M18** 那对方向相反的牙。（→ **P-71**）
+11. **三处"主张超出证据"由审查席钉住**（3 条 Important，全部落进裁决表）：`updated_seq` 的**生产读者到 T5 仍未兑现**（→ **P-69**，控制位草稿那句"P-64 留的债在这一发闭合"**在并进计划之前就改掉了**）；快照 payload **不带 turn ⇒ 列无法自证**（→ **P-70**，牙设在 T7 的读侧第四判据）；`loadProject` 的**回滚在"撤销一次写"这件事上永远无可撤销之物**（所有拒开点都在抹 0 之前 ⇒ `repository.ts:450` 那句"不是由回滚兜住"与 `:455-456` 的顺序账是修复轮补的措辞，回滚证人显式归 **T6-M17**；`:192` 那句同型误归因 + 序数引用还在，随 P-72 那一 pass 一起核）。
+12. **计数漂移**：派发词预估 +16/+31 ⇒ 代码棒实测 +17/+33 ⇒ 修复轮再 +1（unit）/+1（db）。每一档都按盘上重基线（见上表），不拿预估数当判据。
+
+#### 一份控制位自己闯的祸（凭据事件，登记在册因为它改了本任务的证据面）
+
+03:30 我把 spec §12 那行明文本机口令打码（响应实现席报告 §10 第 1 条），而 **`db-env.mjs` 第 2 版的凭据就是从那一行现读的** —— 于是 03:30 之后连库的靶全数 `Access denied`：作废的日志 = `tmp/vb-mut-T5-M3/M4/M5/M6-journal+repo.log`（四发变异，各预期 1 红）＋两发探针、两发普查。修复 = `db-env.mjs` 改**两级解析**（① 操作者环境的 `DAJIA_MYSQL_PASSWORD`；② 否则 `git show cae3ac5:…` 从提交对象的历史副本按形状取，磁盘不新增明文副本；取到占位串一律抛），`probe-db.mjs` 实测恢复 `connected=true / version=8.0.45 / 15 个用户库`。那四发变异由控制位亲跑补齐（`tmp/c-recheck-T5-M{3,4,5,6}.log`，runner_exit 全 0，每发前后普查 `count=19 与基线逐名相等=是`，`restored-ok` 的 md5 与提交态逐字节相等）。
+**教训**：一个"文档里的事实记录"可以是脚本的**运行时接口**；改它的读者之前先数清谁在读它。全仓扫过的同型读者**恰好两处**（`db-env.mjs` 与 `seed-credential-store.mjs`），后者还没有 env-first 那一级 —— 已记进裁决表 **P-74**，文档打码保留并随本次收口提交，**轮换 root 口令归用户**。（Task 9 那三条规矩的第 1 条——`eval "$(node db-env.mjs)"` 后面永不接重定向——就是这一发的直接产物。）
+
+#### 登记的限度（每一条都实测过才登）
+
+1. `FOR UPDATE` 在 node 档零证人（`M9` 全绿）⇒ 读者排在 T6-M17/M18，本任务不补。
+2. `storeyIdOf` 只剩外部证人（`M14`：unit 档 2 红，红在 `storeyIdOf：楼层自己就是层` 与 `楼层行把 storey_id 写成了自己的 id`）：列由这份规则写、又由同一份规则审 ⇒ 规则本身漂了库档看不见；跨任务证人 = T4 的 `楼层那一行的 storey_id 是 NULL…`（读列值、不经过规则），那一格没并进来、没被改写。
+3. 投影**字段级**的牙只在 CI 档（`M12`/`M13` 连库档 53 全绿、unit 档 1 红 / 2 红）—— 分层设计，不是缺口：库档只证"行喂进来了"。
+4. `asSafeInt64` 两支守卫互相遮蔽（`M7a` 全绿）—— 别指望"删一支会红"。
+5. 事务在 `loadProject` 里的真正价值（两次读之间不被并发写切碎）**本任务测不到**；`M16` 那 33 格红证的是另一件事（连接饥饿）。`wasCleanShutdown` 的读与抹 0 的写同快照这条，真读者仍在 T10。
+6. `loadProject` 的 catch 回滚**没有一格写过可回滚的东西**（审查席 Important-2）：所有拒开点都排在抹 0 之前 ⇒ 那一发 rollback 目前只是形状正确。证人归 T6-M17，`repository.ts:437` 与 `:456` 的注释已按实测口径写明。
+7. `dajia_test` 是唯一落点：`dajia` 不建不连不删（归 T11），其余 15 个用户库一名未动。
+
+#### 给 T6 及之后每一棒的须知
+
+1. **落盘 turn 集恒等于 `{1..journal_turn}`** 这条合同在 T5 是被**当坐标读**的（缺号拒开、尾判据、重放过滤 `> ?`），不是复制 T4 的文本；T6/T7 继续拿它当唯一坐标。
+2. **`closeProject` 读的是快照 + 重放 ↔ `element` 投影 ↔ `storey` 投影这三方**，`clean_shutdown` 只在对账干净时落；**`updated_seq` 本任务没有生产读者**（P-69），谁要在 T7/T8 用它，先把"锚点必须是 `command_log.turn`（P-6：seq 可带洞）"那条写进判据，不要拿 seq 做算术减法。
+3. **`reconcile.ts` 是纯函数**（无 DB/electron/zod/IO），T7 的边界扫与 `check-package-deps` 都盯它；往里加 IO 要先过这两道。
+4. **`pool.ts` 的两行 BIGINT 配置 + `asSafeInt64` 的两个分支是三道守卫而不是两道**（`M7a`/`M7b`/`M7pool` 的实测关系写在 `pool.ts:43-52`）。T6 若要把 `journal_turn` 当数值比较，照 `repository.ts` 的取法，不要自己 `Number()`。
+5. **别在持有一条 `repoPool` 连接时再向同一个池要第二条**（`M16` 实测自锁，每格 4 秒超时）。T6 的两条池各 `connectionLimit: 2` + `lockWaitTimeoutSeconds: 2`，是为了让"将来有人把 CAS 改成先 `SELECT FOR UPDATE` 再 `UPDATE`"炸在 2 秒而不是挂死。
+6. **凭据源已换**：`db-env.mjs` 不再读工作树的 spec 行；任何脚本、席位、计划文本都不许从文档里取口令，也不许把打码改回去。
+7. **测试配方先测可达性**（P-62 的连带，T5 又现三次：`M10` 的补法、`M7a` 的字面删法、`M15` 的 `affectedRows`）：控制位或席位给的配方，落地前先跑一发；走不通就回报并订正，**不许削判据**。
+8. **注释与指针的三笔欠账随 T7**（P-72）而不是 T6 —— 因为 T6 的红线是落盘提交里 `repository.ts` 字节级零改动。T6 若顺手改 `repository.ts` 的任何一行（哪怕注释），那条红线当场作废、审查席再分不清哪个 hunk 是越界。
 
 ## Task 6: 工程锁（`locks.ts` —— 服务端时钟的三发 CAS）
 
@@ -4962,6 +5045,8 @@ EOF
 **⑤ 为什么判决来自写完之后的服务端读回，而不是 `affectedRows`**：MySQL 的 `affectedRows` 数的是**真发生变化的行**（T5 第 ② 段已经为 `clean_shutdown` 立过同一条纪律）。同一毫秒内用同一张票重发 `acquireLock`，写进去的 `token` / `owner` / `expires_at` 与原来的值逐字节相同 ⇒ `affectedRows` 给 0，而语义上这是 `'acquired'`（幂等），不是 `'busy'`。所以 0 之后补一发读回（`lock_token` 是不是我的票）分家；工程行不存在也从这一发读出来（`'no-project'`，不是 `'busy'`）。`releaseLock` 是唯一不需要读回的：匹配上的行必然要把非 NULL 的三列改成 NULL ⇒ 一定算变化；匹配不上只有"票不是我的"与"根本没上锁"两种，都是 `'not-mine'`。**登记的限度写在 T6-M9**：这条读回的全部可测凭据只有 `no-project` 那一格，"同毫秒重发"撞不出来。
 
 **⑥ 为什么 `appendJournal` 不校验锁**：S1 的威胁模型是「两台机器同时打开同一库」（spec §8.2 原话），不是"对抗自己的代码"。写路径认票会把锁变成 T4 那条事务的第 N 个前置条件，还会让 P-15 那格（外部行锁掐断半途）多一个失败原因混在一起。真正的闸门在调用侧：`'edit'` 意图先 `acquireLock`，拿不到就用 `'read'` 打开（T8），心跳 `'lost'` 之后 autosave 立刻停写并转只读（T7）。所以 `locks.test.ts` 明写两格相反的判据：「没拿锁也能 appendJournal」与「拿锁不动 journal_turn 与四张表」—— 两边都有人证，下一个人就不会以为 `appendJournal` 认票。
+
+**⑦ 为什么本任务还替 `repository.ts` 那把行锁作证（那两格打的不是 `locks.ts`）**：`loadProject('edit')` 的第一发 `SELECT ... FOR UPDATE`（`repository.ts:320`）与 `locks.ts` 的 CAS 是**两把不同的锁** —— 前者是 InnoDB 的行锁，后者是 `project.lock_token` 那三列的应用层票。T5 想给前者找证人，结果是 **T5-M9 恒绿**（`tmp/c-recheck-T5-M9.log` 同 `tmp/t5-mut-T5-M9-journal+repo.log`：53 格全绿）：`journal.test.ts` 的 `repoPool` 只有一条连接、串行执行，删掉 `FOR UPDATE` 没有第二个人会来抢，所以那一发什么都拦不到。它当时被登记成限度，而"归 T10 的 `--lock-shot`"那句**已被 P-71 收回** —— 真窗口那一发要等三棒之后，而 T7/T8 的并发假设全都压在这个没测过的性质上。**可达补法就在本任务手边**：`locks.test.ts` 本来就有第二个池（`holderPool` = "另一台机器"），借它把 `project` 那一行锁住不提交，`editPool`（1 条连接 + 1 秒锁等待）那一发 `loadProject('edit')` 必撞 `/Lock wait timeout/`。于是本任务交出的四张口子里多背了两格（`T6-M17` / `T6-M18` 那对方向相反的牙），代价是两格都不连 `locks.ts` 一个字。**为什么不在 T5 就补**：T5 只有一个池，第二个连接一出现，那一格测的就不再是"读路径漏没漏连接"那条纪律，而是跨连接并发 —— 形状与 T4 的 P-15 那格同族，本来就该住在有"两台机器"的那一档里。
 
 - [ ] **Step 1: 先把七件事实测掉（不许写完代码再猜）**
 
@@ -5343,7 +5428,9 @@ const OWNER_B = '机器B:2002';
 let pool: Pool;
 let holderPool: Pool;
 let rivalPool: Pool;
+let editPool: Pool;
 let repo: ProjectRepository;
+let editRepo: ProjectRepository;
 
 async function rows<T>(sql: string, params: unknown[] = []): Promise<T[]> {
   const [res] = await pool.query(sql, params);
@@ -5408,10 +5495,20 @@ beforeAll(async () => {
     { ...env, database: DATABASE },
     { connectionLimit: 2, lockWaitTimeoutSeconds: 2 },
   );
+  // 第三档池只为一格服务（P-71：`loadProject('edit')` 自己那把行锁的证人 + 回滚的证人）。
+  // 不能借用 holderPool/rivalPool：它们 `connectionLimit: 2`，漏一次 release 还有第二条连接顶着；
+  // 这一档限 1 条 + 1 秒锁等待，跟 `journal.test.ts` 的 `repoPool` 同形状 ⇒ "拒开之后同池还能再走一次"
+  // 才真的在证"那条连接带着已结束的事务回到了池里"。
+  editPool = createDbPool(
+    { ...env, database: DATABASE },
+    { connectionLimit: 1, lockWaitTimeoutSeconds: 1 },
+  );
   repo = new ProjectRepository(pool, PROJECT_ID, 'watcher');
+  editRepo = new ProjectRepository(editPool, PROJECT_ID, 'editor');
 });
 
 afterAll(async () => {
+  await editPool.end();
   await rivalPool.end();
   await holderPool.end();
   await pool.end();
@@ -5734,10 +5831,70 @@ describe('锁与写路径互不知情（第 ⑥ 段那对相反的判据）', ()
     expect((t1.patch.upsert[0] as Entity).kind).toBe('storey');
   });
 });
+
+describe('那一把行锁的两个方向（P-71：T5-M9 那发恒绿的可达补法）', () => {
+  // T5 的 T5-M9（删掉 `repository.ts:320` 的 `FOR UPDATE`）在 `journal.test.ts` 里 53 格全绿 ——
+  // 一个池、一条连接、串行执行，那把锁根本没有第二个要锁的人，所以它是**登记过的限度**。
+  // 这里补的是可达形状（照 `repository.test.ts` 的「半途被外部行锁掐断 ⇒ 全无账；释放后同 turn 重发成功（P-15…）」那一发）：
+  // 让**另一个连接**真把 `project` 那一行锁住不提交，`edit` 支的那把 `FOR UPDATE` 才撞得出来。
+  // 两格是**方向相反的一对牙**：`edit` 支必须等，`read` 支必须不等 —— 中间那个三元式只有两边都红过一次才算被钉住。
+  it('外部连接锁住 project 行 ⇒ edit 支等锁超时拒开；放锁后同池再走一次 ⇒ 读得开也收得尾', async () => {
+    const blocker = await holderPool.getConnection();
+    try {
+      await blocker.beginTransaction();
+      await blocker.query('SELECT `id` FROM `project` WHERE `id` = ? FOR UPDATE', [PROJECT_ID]);
+      // `editPool` 的 `lockWaitTimeoutSeconds: 1` ⇒ 1 秒就炸，不是 50 秒（`pool.ts` 的 connection 事件那条）。
+      await expect(editRepo.loadProject('edit')).rejects.toThrow(/Lock wait timeout/);
+      // 拒开这一发不留痕迹：`repository.ts` 的抹 0 排在所有拒开判据**之后**（`:440` 晚于 `:431`），
+      // 这一发连那一行都没读到，更轮不到它。
+      expect(await count('command_log')).toBe(0);
+      expect(
+        (await rows<{ c: number | string }>('SELECT `clean_shutdown` AS c FROM `project` WHERE `id` = ?', [PROJECT_ID]))[0]?.c,
+      ).toBe(1);
+
+      await blocker.rollback();
+      // 后半发是 `rollback()` + `release()` 的证人（`repository.ts:458-464` 那对 catch/finally）。
+      // `editPool` 只有 **1 条连接**：上一发若把事务留在半途、或没把连接放回池，这里要么卡在
+      // `getConnection`、要么再撞一次锁超时 —— 两种都红，不会静默通过。
+      const got = await editRepo.loadProject('edit');
+      expect(got.header.journalTurn).toBe(0);
+      expect(got.snapshot).toBeNull();
+      expect(got.replayed.rows).toBe(0);
+      const closed = await editRepo.closeProject();
+      expect(closed.elementRows).toBe(0);
+      expect(closed.storeyRows).toBe(0);
+      expect(
+        (await rows<{ c: number | string }>('SELECT `clean_shutdown` AS c FROM `project` WHERE `id` = ?', [PROJECT_ID]))[0]?.c,
+      ).toBe(1);
+    } finally {
+      await blocker.release();
+    }
+  });
+
+  it('同一把外部锁底下 read 支照样读得开，且一个字不写（旁观者不该被编辑者的锁饿死）', async () => {
+    const blocker = await holderPool.getConnection();
+    try {
+      await blocker.beginTransaction();
+      await blocker.query('SELECT `id` FROM `project` WHERE `id` = ? FOR UPDATE', [PROJECT_ID]);
+      // 一致性读不抢行锁 ⇒ 这一发**必须**在外部锁还握着的时候成功。T8 的"拿不到锁就用 read 打开"
+      // 全靠这一条：编辑者锁着工程，旁观者照样能看。
+      const got = await editRepo.loadProject('read');
+      expect(got.header.wasCleanShutdown).toBe(true);
+      expect(got.header.journalTurn).toBe(0);
+      // 读意图不写：`repository.ts` 那一发 UPDATE 挂在 `intent === 'edit'` 上（M8 的牙在写侧，这一格锁侧）。
+      expect(
+        (await rows<{ c: number | string }>('SELECT `clean_shutdown` AS c FROM `project` WHERE `id` = ?', [PROJECT_ID]))[0]?.c,
+      ).toBe(1);
+    } finally {
+      await blocker.rollback();
+      await blocker.release();
+    }
+  });
+});
 ```
 
 Run: `npx vitest run --config vitest.db.config.ts apps/desktop/test/db/locks.test.ts > tmp/t6-locks.log 2>&1; echo "exit=$?"`
-Expected: `exit=0`，**27 格**全绿（六档 describe 各 6/6/6/5/2/2，落盘前按 `^\s*it\(` 在本文本上数过）。两处 `[T6]` 读数（隔离级别）抄进执行回填。若 `并发 acquire` 那一格拿到 `['acquired','acquired']` ⇒ **先停下别改判据**：那说明驱动把两条语句排成了队（`connectionLimit` 或 `pool.query` 的取连接行为），读数抄进回填并把它登记成 T10 的额外凭据要求，node 侧只承认"恰好一个持有者"这一半不变式。
+Expected: `exit=0`，**29 格**全绿（七档 describe 各 6/6/6/5/2/2/2，落盘前按 `^\s*it\(` 在本文本上数过）。两处 `[T6]` 读数（隔离级别）抄进执行回填。若 `并发 acquire` 那一格拿到 `['acquired','acquired']` ⇒ **先停下别改判据**：那说明驱动把两条语句排成了队（`connectionLimit` 或 `pool.query` 的取连接行为），读数抄进回填并把它登记成 T10 的额外凭据要求，node 侧只承认"恰好一个持有者"这一半不变式。
 
 - [ ] **Step 5: 全量复跑与计数**
 
@@ -5749,7 +5906,7 @@ sed 's/\x1b\[[0-9;]*m//g' tmp/t6-db.log | grep -E "^ *(Test Files|Tests) |FAIL"
 npx tsc --noEmit -p apps/desktop/tsconfig.test.json > tmp/t6-tsc.log 2>&1; echo "exit=$?"
 ```
 
-Expected：`pnpm verify` `exit=0`，`Test Files` 比 T5 的回填值 **+1**（只多 `locks-ticket.test.ts`），`Tests` **+9**；`pnpm test:db` `exit=0`，`Test Files` **+1**、`Tests` **+27**；`tsc` `exit=0`。
+Expected：`pnpm verify` `exit=0`，`Test Files` 比 T5 的回填值 **+1**（只多 `locks-ticket.test.ts`），`Tests` **+9**；`pnpm test:db` `exit=0`，`Test Files` **+1**、`Tests` **+29**；`tsc` `exit=0`。
 `lint:deps` 照旧静默：`locks.ts` 只 import `@dajia/core` 与 `mysql2/promise`（后者只在类型位上出现，`Pool` 是 type import）。
 
 跑完确认库清干净（命令同 T5 Step 6，**从 `apps/desktop` 目录跑**）。Expected：既没有 `dajia_test` 也没有 `dajia`。
@@ -5770,6 +5927,8 @@ affectedRows 只当快路（MySQL 数真变化的行），同毫秒重发与"工
 心跳只认票不认余额，接管后原持有者 beat 得 lost、release 得 not-mine。
 两个池抢同一行有格（并发恰好一个赢家），"拿锁不动账"与"没拿锁也能写"两格把
 第 ⑥ 段那条口径钉住 —— appendJournal 不认票，闸门在调用侧（T7/T8）。
+另背两格（第 ⑦ 段）：借 holderPool 的外部行锁给 repository.ts 那把 FOR UPDATE 找到牙 ——
+edit 支必须等（T6-M17），read 支必须不等（T6-M18），T5 登记的那条限度在这里闭合。
 EOF
 )"
 ```
@@ -5798,6 +5957,8 @@ EOF
 | T6-M14 | 三发 CAS 的 WHERE 去掉 ``id` = ?`（全库一把锁） | 「锁按工程分」与「解 P1 的锁不动 P2 的锁」两格红；`locks-ticket.test.ts` 的源码扫描那一格同时红（它数的是 `UPDATE \`project\`` 后面必须跟 `` `id` = ? ``） |
 | T6-M15 | 把 `HELD` 判定搬到 JS 里（读回 `lock_expires_at` 与 `Date.now()` 比） | `locks-ticket.test.ts` 的「locks.ts 里不许出现客户机时钟」红。这一格是 P-4 那条口径唯一的常驻证人；代价是它扫的是源码文本 —— 与 T3 那条「`storey.ts` 不许留第二份重叠规则」同族，评审按同一标准看 |
 | T6-M16 | 把 `holderPool` 与 `rivalPool` 合成一个池 | 本任务用例**全绿** —— 登记的限度：排队也恰好得到一个赢家一个输家，所以「并发 acquire」证的是"只有一个持有者"这一半不变式，**不是**"真并发下 CAS 安全"那一半。后者的凭据在 T10 的 `--lock-shot`（两个真 electron 进程，P-14 那一笔账），别把这一格当它用完了 |
+| T6-M17 | `repository.ts:320` 那三式的 `FOR UPDATE` 删掉（两支都成裸 SELECT） | 「外部连接锁住 project 行 ⇒ edit 支等锁超时拒开」红（本该 1 秒炸掉的那一发照样读得开）。**这一发就是 T5 登记的那条限度在这里闭合**：T5-M9 在 `journal.test.ts` 里 53 格全绿，因为一个池一条连接没有第二个人要锁；这里多了 `holderPool` 那一发外部锁，锁才撞得出来（P-71） |
+| T6-M18 | 反过来：`repository.ts:320` 的三元式改成无条件 `${select} FOR UPDATE`（read 支也去抢锁） | 「同一把外部锁底下 read 支照样读得开，且一个字不写」红（`/Lock wait timeout/`）。**与 T6-M17 是方向相反的一对牙** —— 只有一发的话，那个三元式的另一头永远没人看过；T8 的"拿不到锁就用 read 打开"整条路径依赖的就是这一头 |
 
 
 ## Task 7: 保存引擎（`autosave.ts` + `emergency.ts` + core 的 `lastPatch`）
@@ -5811,7 +5972,12 @@ EOF
 - Create: `apps/desktop/test/unit/autosave.test.ts`（**24 格**，不连库：假钟 + 假 sink）
 - Create: `apps/desktop/test/unit/emergency.test.ts`（**6 格**，真 fs，但目录在 `os.tmpdir()`，不落进仓库）
 - Create: `apps/desktop/test/unit/persist-boundary.test.ts`（**2 格**，扫 `persist/**` 的 import 边界：P-2 那条口径的常驻证人）
-- Create: `apps/desktop/test/db/autosave-journal.test.ts`（**7 格**，真库 + 真 `ProjectRepository` 当 sink）
+- Create: `apps/desktop/test/db/autosave-journal.test.ts`（**9 格**，真库 + 真 `ProjectRepository` 当 sink：Step 6 写 7 格，Step 6b 再追加 2 格）
+- Modify: `packages/protocol/src/entity-schema.ts` + `src/index.ts`（Step 6b：`SnapshotPayloadSchema` / `parseSnapshotPayload`，`DocumentPayloadSchema` 一个字节不动，P-70）
+- Modify: `apps/desktop/src/main/db/codec.ts`（Step 6b：`encodeDocument` 加必填第二参、新增 `decodeSnapshot`、`decodeDocument` 降级为委托，P-70）
+- Modify: `apps/desktop/src/main/db/repository.ts`（Step 6b：`writeSnapshot` 递 turn、`loadProject` 加第四条拒开判据；另含 P-72 的三处注释订正。**语义只加不减**，Step 6 之前它归 T5）
+- Modify: `apps/desktop/test/unit/codec.test.ts`（Step 6b：形状格更新到新真相 + 新增 2 格）
+- Modify: `apps/desktop/test/db/journal.test.ts`（Step 6b：夹具补第二实参 + 新增 1 格）
 
 **Interfaces:**
 - Consumes:
@@ -5829,6 +5995,10 @@ EOF
   - `interface EmergencyPayload { projectId; turn; error; doc; patch }`
   - `writeEmergencySnapshot(userDataDir: string, input: EmergencyInput): EmergencyWrite`（`EmergencyWrite = { ok: true; path: string } | { ok: false; error: string; path: string | null }` —— 失败分支的 `path` 是**尽力算出的**落点：守卫那两刀（词干非 UUIDv7、turn 非法）发生在算路径之前，那两种情形它确实是 `null`，其余失败（底下不是目录、盘写满）都有路径可报，T9 的诊断要把"写到了哪"给用户看。`pruneEmergency(userDataDir, keep): string[]`、`emergencyFileName(projectId, turn)`、`const EMERGENCY_DIR_NAME = 'emergency'`、`const EMERGENCY_KEEP = 20`
   - core：`TransactionLog` 的 `get lastPatch(): Patch | null`
+  - Step 6b 追加（P-70 的公开面，T8 的委托与 T9 的诊断都从这里取，不许另起一套）：
+    - protocol：`SnapshotPayloadSchema` / `type SnapshotPayloadShape` / `parseSnapshotPayload(where, value)`（文案前缀沿用 `解不出文档快照：`）
+    - codec：`encodeDocument(doc, journalTurn)`（**第二参必填**）、`decodeSnapshot(ref, raw): SnapshotBody { doc; journalTurn }`、`decodeDocument(ref, raw): Document`（一行委托）
+    - repository：`loadProject` 的拒开判据由三条变**四条**（版本列 → 版本正文 → 工程归属 → **turn 自证**），新增那句文案以 `不是同一发，拒开` 结尾
 
 **① 为什么 `lastPatch` 长在 core，而不是 renderer 每次重算 `cmd.build(doc)`**：`build` 是闭包，它读的是**当时**那份文档；要拿到"刚才那一发到底改了什么"就得把命令对象留着不放（撤销栈顶上那份是 `undoStack` 的，不是"最后一次应用的那一发"，`undo` 之后两者不同）。更要紧的是计划 4 的账本形状：裁决 P-5 说 undo 与 redo **各产出一发新的 `command_log`**，所以持久化侧要的那一发在 `undo()` 里是 `invertPatch(entry.patch, entry.previous)` 的返回值 —— 它只在 `TransactionLog` 内部出现过，外面没人能重算。重算一份是第二份真源（D2b 的同一把尺），留一个 getter 不是。
 
@@ -7487,7 +7657,7 @@ describe('persist 档的 import 边界（P-2）', () => {
 Run: `npx vitest run apps/desktop/test/unit/persist-boundary.test.ts > tmp/t7-boundary.log 2>&1; echo "exit=$?"`
 Expected: `exit=0`，**2 格**全绿（它没有红-绿两步：Step 4/5 落完盘它就已经成立；先跑它是为了在 `emergency.ts` 还没写时看到 `no such file`，那一步与 `autosave.ts` 一起发生在 Step 4/5 的间隙里，不作为独立步骤要求）。
 
-- [ ] **Step 6: 连库那一档 —— `apps/desktop/test/db/autosave-journal.test.ts`（7 格）**
+- [ ] **Step 6: 连库那一档 —— `apps/desktop/test/db/autosave-journal.test.ts`（本步 7 格；Step 6b 再往同一文件追加 2 格 ⇒ 最终 9 格）**
 
 夹具照 T6 的 `locks.test.ts`：库名由本文件写死、`beforeAll` 自建自清、`beforeEach` 清 `project`（FK 全带 `ON DELETE CASCADE`，级联把四张表一起带走）。与 T6 不同的一层：这一档要的是**真 repository 当 sink**，所以只有一个池 —— 引擎的串行性由引擎保证（unit 档「队列串行」那一格已经证过"同一时刻只有一发在飞"），这里不需要两个池抢同一行。
 
@@ -7919,7 +8089,235 @@ Expected: 先红在 `Cannot find module '../../src/main/persist/autosave'`（Ste
 - 「真故障重试：turn 序列仍然连着…」那一格若 `rescued` 长度是 2：`FlakySink` 的 `failed` 计数被写成"按 turn 失败"而不是"按次数失败"了。它要的是第 4 发失败两次、第三次放行。若 `files` 是两份而 `rescued` 一份，那是 `pruneEmergency` 之外的另一条路（同一 turn 覆盖写）被改成了带时间戳的文件名 —— 别那么改，T7 ⑦ 段的份数主张就靠覆盖写成立。
 
 Run: `pnpm test:db > tmp/t7-db-all.log 2>&1; echo "exit=$?"`
-Expected: `exit=0`。这一发是**全套连库档一起跑**（`env` 3 + `migrate` + `database` + `repository` 20 + `journal` + `locks` 27 + `autosave-journal` 7），它盯的是"新加的这一档没把别人的夹具带脏" —— 各档共用同一个 `dajia_test`，且各自 `beforeAll` 建 / `afterAll` 删，两个 `dropTestDatabase` 并发会互相踩。T2 建 `vitest.db.config.ts` 时钉的 `fileParallelism: false` 是这一格能成立的前提，本档是它的第二个证人。
+Expected: `exit=0`。这一发是**全套连库档一起跑**（`env` 3 + `migrate` + `database` + `repository` 20 + `journal` + `locks` 29 + `autosave-journal` 9），它盯的是"新加的这一档没把别人的夹具带脏" —— 各档共用同一个 `dajia_test`，且各自 `beforeAll` 建 / `afterAll` 删，两个 `dropTestDatabase` 并发会互相踩。T2 建 `vitest.db.config.ts` 时钉的 `fileParallelism: false` 是这一格能成立的前提，本档是它的第二个证人。
+
+- [ ] **Step 6b: 让快照那一列能自证（P-70）+ 给 `updated_seq` 钉上读者（P-69）**
+
+这一步不在"保存引擎"的主干路上，它是 Task 5 收口时欠下的两笔账：**`snapshot.journal_turn` 那一列无法自证正文写到第几发**（P-70），以及 **`element.updated_seq` 写而不读**（P-69）。两笔都在 T5 的代码里登记成了"归 T7"的注释（`repository.ts:382-387`），而 T7 是这条路上第一个**生产写者**（`Autosave` 真的会递 `(turn, doc)` 给 `writeSnapshot`），所以牙长在这里。
+
+**先实测两档，再动代码**（一次性脚本写进 SDD 工作区，不落仓目录；读数抄进报告与执行回填。纪律照 T4/T6 Step 1：**实测与预期不同 ⇒ 改实现与注释，不改判据形状**）：
+
+```
+H 档：`DocumentPayloadSchema.extend({ journalTurn: JournalTurnSchema })` 在装的这版 zod 上**是否保留 strict**。
+      取四键产物、多塞一个 `extra: 1`，`safeParse` 必须 success=false。
+      若 `.extend` 把 strictness 丢了 ⇒ 不许改成"手写四键的非 strict 对象"，而是手写四键的
+      `z.strictObject({...})`，并把 `schemaVersion` 那段 refine 提成模块私有的 `SchemaVersionField`
+      常量给两份契约共用（复制那段 refine 文本 = 第二份真源，它漂的时候没人红）。
+I 档：`JournalTurnSchema` 能不能直接当 payload 字段用（它在 `entity-schema.ts:140` 的同一族位置上
+      已经有 `EntityIdSchema` 用着 ⇒ 预期能）。若它带 brand / 转换，产物里的 `journalTurn` 类型与
+      `SnapshotPayloadShape` 的推断要一起看清，`codec.ts` 的返回类型按实测写。
+```
+
+**⑫ 为什么"盘上契约"是"线上契约 + 一个键"，而不是给 `Document` 加一个 turn、也不是让 IPC 也带上 turn**：`Document` 是内核形状，它不认识"这是第几发的终态"这件事（那一发是账本的概念，不是文档的概念 —— 同一份文档可以从任意一发重放出来，`canonical()` 里没有 turn 的位子）。让 renderer 递来的文档带上 turn 更糟：P-18 定了 **turn 由主进程分配**，发送方没有合法的数可填，只能填一个占位值 —— 那正是本步要消灭的那一型（一个说不清来源的 turn）。所以分两份契约：`DocumentPayloadSchema` 三键 = 线上（renderer ↔ main，文档的**内容**），`SnapshotPayloadSchema` 四键 = 盘上（快照行的**正文**）。两份不是两个真源：后者由前者的 `.extend` 派生，`schemaVersion` 那把尺只有一个产地。
+
+**⑬ 为什么写侧只有"同源自构造"、没有运行时比对**：`writeSnapshot(turn, doc)` 只有**一个** `t`：它同时进列和进 `encodeDocument(doc, t)`。"校验递进来的 turn === 正文的 turn"这一句在写侧没有第二个量可比 —— 造一个（比如从 `doc` 反推 turn）就是第二份真源。牙因此长在读侧：`loadProject` 拿着列与正文**两个**读数比对他们。写侧漂了的凭据是"读侧当场拒开"，不是"写侧抛在一个不可能的分支上"。代价登记在本任务末尾的限度第 8 条（控制位已落笔），裁决记在 **P-70** 的决定栏。
+
+**要改的六个文件与逐字形状**（`packages/core/**`、`renderer/**` 依旧不许碰）：
+
+1. `packages/protocol/src/entity-schema.ts` —— 在 `DocumentPayloadSchema` / `DocumentPayloadShape` 之后追加，**既有那三行 `strictObject` 一个字节不动**：
+
+```ts
+/**
+ * 快照 payload 的**盘上契约** = 线上契约 + `journalTurn`（P-70）。
+ * 用 `.extend` 而不是重写四键：`schemaVersion` 那段 refine 复制一份就是第二份真源，
+ * 而它漂的时候没人红。`SnapshotPayloadSchema` 只服务于 `snapshot` 表；
+ * 线上（T8 的 IPC）继续用 `DocumentPayloadSchema` —— renderer 没有合法的 turn 可填（P-18）。
+ */
+export const SnapshotPayloadSchema = DocumentPayloadSchema.extend({
+  journalTurn: JournalTurnSchema,
+});
+
+export type SnapshotPayloadShape = z.output<typeof SnapshotPayloadSchema>;
+
+export function parseSnapshotPayload(where: string, value: unknown): SnapshotPayloadShape {
+  const r = SnapshotPayloadSchema.safeParse(value);
+  if (!r.success) throw new TypeError(`${where} 解不出文档快照：${issueText(r.error)}`);
+  return r.data;
+}
+```
+
+（文案前缀 `解不出文档快照：` **逐字沿用**：`codec.test.ts` 与 T5 的格都吃这句正则，换词等于改判据。`packages/protocol/src/index.ts` 的出口把这三个名字并进去，写法照盘上现物。）
+
+2. `apps/desktop/src/main/db/codec.ts` —— `encodeDocument` 加**必填**第二参，新增 `decodeSnapshot`，`decodeDocument` 降级成一行委托：
+
+```ts
+/** 快照正文里除了文档本身，还要说"这份正文是写到第几发的"（P-70）。 */
+export interface SnapshotBody {
+  readonly doc: Document;
+  readonly journalTurn: number;
+}
+
+export function encodeDocument(doc: Document, journalTurn: number): string {
+  return JSON.stringify({
+    projectId: doc.projectId,
+    schemaVersion: doc.schemaVersion,
+    journalTurn,
+    entities: [...doc.entities.values()].sort(byId),
+  });
+}
+
+/** 读快照：验的是**盘上契约**（四键），缺 `journalTurn` 当场抛而不是当它是 null。 */
+export function decodeSnapshot(ref: RowRef, raw: unknown): SnapshotBody {
+  const payload = parseSnapshotPayload(where(ref), asJsonValue(raw));
+  return { doc: documentOf(ref, payload), journalTurn: payload.journalTurn };
+}
+
+/** 只要正文的调用方（`repository.ts` 的重放循环之外都算）用它；快照读侧用 `decodeSnapshot`。 */
+export function decodeDocument(ref: RowRef, raw: unknown): Document {
+  return decodeSnapshot(ref, raw).doc;
+}
+```
+
+   `documentOf(ref, payload)` 是本文件**新提的模块私有助手**：把现在 `decodeDocument` 里那段"建 Map + 重复 id 当场抛"的循环整体搬进去，签名 `function documentOf(ref: RowRef, payload: SnapshotPayloadShape): Document`，抛错文案 `${where(ref)} 的 entities 里实体 ${entity.id} 出现两次：一份快照不许有重复 id` **逐字保留** —— 这是"改写没把 T4 的牙弄丢"的第一证人，也是 T8 委托那一步的落点（T8 之后它变成 `documentFromPayload(payload, where)`，同一循环、参数顺序不同，见本步末尾的「给 T8 的交代」）。
+
+`decodeDocument` 保留成一行委托（`return decodeSnapshot(ref, raw).doc;`）：`repository.test.ts:451` 与 `codec.test.ts` 里那几处"只要正文"的调用方靠它才不用跟着改 —— 别把它删了再全文件补 `.doc`，那是把一次契约变更摊成十处噪声。
+
+3. `apps/desktop/src/main/db/repository.ts` —— 两改：
+   - `writeSnapshot`（`:295` 那一发）里 `encodeDocument(doc)` ⇒ `encodeDocument(doc, t)`，并把 `:306-311` 那段注释补一句：「列与正文的 turn 同源于同一个 `t`（P-70）：写侧没有第二份可比，牙在读侧那条判据上」。
+   - `loadProject` 的快照段（`:368` 那一发）`decodeDocument(...)` ⇒ `decodeSnapshot(...)`，并在**已有三条判据之后**追加第四条：
+
+```ts
+        if (body.journalTurn !== snapTurn) {
+          throw new RangeError(
+            `snapshot 行 ${String(snapSeq)} 的 payload 写着 journalTurn ${String(body.journalTurn)}，` +
+              `列上记的是 ${String(snapTurn)}：快照的正文与列说的不是同一发，拒开`,
+          );
+        }
+```
+
+   **判据顺序是凭据不是偏好**：版本列 → 版本正文 → 工程归属 → turn 自证。新增那一发必须放最后 —— `journal.test.ts:317/:326` 那两格（版本列不符 / 工程归属不符）的期望文案靠前面两支先命中；把它挪到前面，那两格会红在**新文案**上，等于用一发改掉两格的证人。
+   同时把 `:382-387` 那段"设牙在 T7"的登记注释**改成已兑现的口径**（保留"这一列把快照的列当成正文"的理由与"列快于正文 ⇒ 静默少重放"那一型描述，把"本发没有牙"换成"牙在上一段的第四条判据"）。
+
+4. `apps/desktop/test/unit/codec.test.ts`（不连库档，5 处 `encodeDocument` 调用点 + 1 处手搓 payload + 形状格）：
+   - 调用点（盘上 `:118/:183/:226/:232/:247`，动手前先 `grep -n "encodeDocument(" apps/desktop/test/unit/codec.test.ts` 复核行号）各补第二个实参 —— 往返格给 `11`，别给 `0`（`0` 不是合法 turn，`JournalTurnSchema` 会拒，那会让"往返"格红在契约而不是红在 codec）。
+   - `:201-205` 那发手搓的重复 id payload 补 `journalTurn: 7`（**它必须补**：缺键会在 strictObject 上先抛「解不出文档快照」，那一格就再也吃不到"出现两次"那句文案了 —— 这正是新契约的副作用，别用"放松契约"绕开它）。
+   - `:177` 的「encodeDocument 的形状就是三键」——**这一格按 P-70 的要求更新到新真相，不许顺手让它绿**：标题改成「两份契约：线上三键、盘上四键，且 entities 按 id 升序」，判据三句：`Object.keys(DocumentPayloadSchema.shape).sort()` 仍是 `['entities','projectId','schemaVersion']`；`Object.keys(SnapshotPayloadSchema.shape).sort()` 是 `['entities','journalTurn','projectId','schemaVersion']`；`Object.keys(JSON.parse(encodeDocument(docOf(ALL), 42)))` **逐字节等于** `['projectId','schemaVersion','journalTurn','entities']`（键序是产物形状的一部分，T8 的委托要吃它）。
+   - 新增格 1「盘上契约仍然 strict：多一个键就拒」：取 `encodeDocument(docOf(ALL), 7)` 的产物、加一个 `extra: 1`，`expect(() => decodeSnapshot(SNAP, text)).toThrow(/^snapshot 行 3 解不出文档快照：/)`。它是 **H 档实测的常驻证人** —— 若哪天 `.extend` 的 strictness 漂了，只有这一格会红。
+   - 新增格 2「缺 `journalTurn` 的旧三键 payload ⇒ 拒开」：`decodeSnapshot(SNAP, JSON.stringify({ projectId: PID, schemaVersion: SCHEMA_VERSION, entities: [...] }))` ⇒ 抛同一句前缀。**这一格就是"有人把 `journalTurn,` 那一行删掉"的牙**（T7-M25 的靶）。
+5. `apps/desktop/test/db/journal.test.ts`（连库档，+1 格）：先按第 4 条同型订正 `:317/:326` 两发的 `encodeDocument(...)` 补第二实参（给 `5`，与那一发的列同值 —— 它们要继续只因自己的原因红），再追加：
+
+```ts
+  it('快照的列与正文说的是不同的一发 ⇒ 拒开（列快于正文、正文快于列两个方向各一发）', async () => {
+    // P-70 的那一型，也是本计划最难查的一型：列写 5、正文只到 turn 3 ⇒ 下面那条
+    // `AND turn > replayFrom` 会跳过 4 与 5 ⇒ 交出一份"形状全对"的旧文档。
+    // 上面三条判据（版本列 / 版本正文 / 工程归属）一条都不管这根 turn 轴，所以它必须有自己的一条。
+    const house = await writeHouse(); // 它已经建过工程并写了五发；**别再调一次 createProject**（撞主键会红在错误的原因上）
+    await pool.query('DELETE FROM `snapshot`');
+    await pool.query(
+      'INSERT INTO `snapshot` (`project_id`, `journal_turn`, `schema_version`, `payload`) VALUES (?, ?, ?, ?)',
+      [PROJECT_ID, 5, SCHEMA_VERSION, encodeDocument(at(house, 3), 3)],
+    );
+    await expect(repo.loadProject('read')).rejects.toThrow(/不是同一发，拒开/);
+
+    await pool.query('DELETE FROM `snapshot`');
+    await pool.query(
+      'INSERT INTO `snapshot` (`project_id`, `journal_turn`, `schema_version`, `payload`) VALUES (?, ?, ?, ?)',
+      [PROJECT_ID, 3, SCHEMA_VERSION, encodeDocument(at(house, 5), 5)],
+    );
+    await expect(repo.loadProject('read')).rejects.toThrow(/不是同一发，拒开/);
+    // 反向对照：列与正文同一发时必须正常打开 —— 否则这一格证的是别的东西（夹具歪了、
+    // 或者前面的判据抢了它），不是 P-70 那一型。
+    await pool.query('DELETE FROM `snapshot`');
+    await pool.query(
+      'INSERT INTO `snapshot` (`project_id`, `journal_turn`, `schema_version`, `payload`) VALUES (?, ?, ?, ?)',
+      [PROJECT_ID, 5, SCHEMA_VERSION, encodeDocument(at(house, 5), 5)],
+    );
+    const ok = await repo.loadProject('read');
+    expect(ok.header.journalTurn).toBe(5);
+    expect(ok.replayed.rows).toBe(0);
+  });
+```
+
+   （夹具纪律：正文**必须**用 `writeHouse()` 之后 `at(house, n)` 取的真文档，不许用 `Document.create` 手搓一份 —— 那样"正文是 turn 3 的终态"这句话没有对应物，判据就成了同义反复。`at()` / `writeHouse()` / `pool` / `repo` 都是本文件已有的东西，一格之内不要建两次工程。）
+
+6. `apps/desktop/test/db/autosave-journal.test.ts`（连库档，Step 6 的 7 格之后**再追加 2 格 ⇒ 本文件最终 9 格**；import 行把 `decodeDocument` 那处补成 `decodeSnapshot`）：
+
+```ts
+  it('引擎落下的每一份快照都自证：列上的 `journal_turn` 逐行等于正文里的 `journalTurn`（P-70 在生产路径上的凭据）', async () => {
+    // 「八发连着落…」那一格证的是序列 [3,6,8]；这一格证的是成对：列与正文不许各说各话。
+    // 判据取实现之外的第二条路：直接 SELECT 列 + 解码正文，而不是问引擎"你以为你写了什么"。
+    const rs = await rows<{ journal_turn: number | string; payload: unknown }>(
+      'SELECT `journal_turn`, `payload` FROM `snapshot` ORDER BY `journal_turn` ASC',
+    );
+    expect(rs.length).toBeGreaterThan(0);
+    for (const r of rs) {
+      const turn = Number(r.journal_turn);
+      const body = decodeSnapshot({ table: 'snapshot', id: String(turn) }, r.payload);
+      expect(body.journalTurn).toBe(turn);
+    }
+  });
+
+  it('`updated_seq` 说的是"哪一发写了我"：被碰的那一行等于这一发的 seq，没被碰的那一行留在旧 seq（P-69）', async () => {
+    // 这一列由 T4 写、到本发为止一个读者都没有（P-69 的原文）。这一格是它的**第一个读者**，
+    // 而且故意用**部分覆盖**的序列：全表每发都被重写的话，"没碰的那行不许动"这条主张看不出来。
+    // 夹具直接用 buildEntries()：1 建下层、2 建墙 A、6 只改墙 A 的承重 ⇒ 八发落完，
+    // 楼层行的 updated_seq 必须还停在第 1 发的 seq 上，墙 A 的那一行停在第 6 发。
+    const entries = buildEntries();
+    for (const entry of entries) {
+      expect(await repo.appendJournal(entry)).toBe('applied');
+    }
+    const seqAt = async (turn: number): Promise<number> => {
+      const rs = await rows<{ seq: number | string }>(
+        'SELECT `seq` FROM `command_log` WHERE `project_id` = ? AND `turn` = ?',
+        [PROJECT_ID, turn],
+      );
+      const only = rs[0];
+      if (!only || rs.length !== 1) throw new TypeError(`第 ${turn} 发的 command_log 不是一行`);
+      // P-17：seq 在 supportBigNumbers 下既可能是 number 也可能是 string，出口一律 Number()。
+      return Number(only.seq);
+    };
+    const updatedSeq = async (id: EntityId): Promise<number> => {
+      const rs = await rows<{ updated_seq: number | string }>(
+        'SELECT `updated_seq` FROM `element` WHERE `project_id` = ? AND `id` = ?',
+        [PROJECT_ID, id],
+      );
+      const only = rs[0];
+      if (!only || rs.length !== 1) throw new TypeError(`element 表上没有这一行，或不止一行`);
+      return Number(only.updated_seq);
+    };
+    const lower = firstUpsertId(atTurn(entries, 1).patch, 'storey');
+    const wallA = firstUpsertId(atTurn(entries, 2).patch, 'wall');
+    expect(await updatedSeq(lower)).toBe(await seqAt(1)); // 只在第 1 发被写过，后面七发都没碰它
+    expect(await updatedSeq(wallA)).toBe(await seqAt(6)); // 第 2 发写、第 6 发改写 ⇒ 记最后一次
+  });
+```
+
+   （`buildEntries()` / `atTurn()` / `firstUpsertId()` / `rows()` 都是 Step 6 已有的助手，一个都不新造；`firstUpsertId` 在 Step 6 的夹具里已经定义过，直接用它。`EntityId` 走本文件已有的 import。）
+
+**顺带订正三处（P-72 —— 只改注释与行号引用；语义、判据、正则、期望字面量一个都不许动）**：
+- `repository.ts:531` 附近「收过尾的工程再收一次是 1→1」：那是**推演不是实测**（M15 同族，也吃 `NOW(3)` 的毫秒运气）。措辞改成实测口径，或直接标注"未实测"。
+- `journal.test.ts` 里「`tsconfig.test.json` 会红在 525 行」这类**绝对行号指针**（修复第一轮的行移把它推歪了）：改成被指那一格的 `it()` 标题。
+- `pool.ts:14/46/85` 的「第 12 格 / 第 2 格」这类**跨文件序数指针**：改成被指格的 `it()` 标题；同一文件内的序数引用可以留。
+   三处改完 `pnpm verify` 的**格数必须与改前逐字相同**（只改注释时格数不变；若格数动了，就是误改了判据）。
+
+**给 T8 的四处订正（本步不动 T8 的代码；四处**已经写进 Task 8 的正文**，锚点逐条列在下面 —— 写进正文而不是只留这一句，是因为执行 T8 的棒子只吃 Task 8 的 brief，看不见这一段）**：
+1. **委托的形状**（锚点：Task 8 第 ② 段的 `document-wire.ts` 代码块、第 ③ 段的改动 1/2/3、`document-wire.test.ts` 第 4 格与新增第 5 格、变异表 T8-M7 与 T8-M43）：`payloadFromDocument(doc)` **保持一参、三键**（线上契约，P-18），四键那份另起一个名字 —— `snapshotPayloadFromDocument(doc, journalTurn): SnapshotPayloadShape`，键序 `projectId, schemaVersion, journalTurn, entities`；两者共用同一个模块私有 `sortedEntities(doc)`，于是**排序与键序只有一个产地**。codec 的 `encodeDocument(doc, turn)` = `JSON.stringify(snapshotPayloadFromDocument(doc, turn))`，`decodeSnapshot(ref, raw)` = `{ doc: documentFromPayload(parseSnapshotPayload(where(ref), asJsonValue(raw)), where(ref)), journalTurn: 同一份 parse 的结果 }`，`decodeDocument` 是 `decodeSnapshot(...).doc` 一行。`documentFromPayload` 的参数只声明 `DocumentPayloadShape`，四键那份是它的结构超集，**照样收**（新增第 5 格最后一句钉的就是这一点），`journalTurn` 它一个字段都不读。改动 2 里补了一句：Step 6b 的 `documentOf` 与 `byId` 一起删（`noUnusedLocals` 会报，"留着以后用"不成立）。
+2. **`.extend` 住在 protocol，不在 desktop**：`SnapshotPayloadSchema = DocumentPayloadSchema.extend({ journalTurn: JournalTurnSchema })`（`DocumentPayloadSchema` 之后、既有那三键一个字节不动），`SnapshotPayloadShape` 跟着导出，`packages/protocol/src/index.ts` 的出口并入，写法照盘上现物。**H 档控制位已亲测（探针在 SDD 工作区 `probe-zod-extend.mjs`；它用 `createRequire('D:/ReactElectron/packages/protocol/package.json')` 引 zod —— ESM 按脚本自身位置解析，仓外脚本 `import 'zod'` 会 `ERR_MODULE_NOT_FOUND`。读数逐字，2026-10-05 复跑）**：`zodVersion` = `4.6.5`、`baseRejectsExtra` = `false`（三键契约 `safeParse({a:1,extra:3}).success`）、`extendedRejectsExtra` = `false`（四键契约**同样拒** ⇒ **`.extend` 保留 strict**）、`wrappedRejectsExtra` = `false`（再套一层 `z.strictObject(schema.shape)` 也拒，但那是冗余的第二道工序 —— **不需要也不该套**）、`extendedAcceptsBoth` = `true`。这条实测的**常驻证人**是 Step 6b 新增格 1「盘上契约仍然 strict：多一个键就拒」——将来谁升 zod 把这语义升掉了，那一格先红。
+3. **`turn` 的来源一个字都没动**（P-18 仍然成立，本步没给它加例外）：`SubmitRequestSchema` **不加 `journalTurn`**，`dajia:journal:submit` 的载荷照旧 `{ projectId, patch, doc }`，`DocumentPayloadSchema` 保持三键 —— renderer 手上没有一个合法的 turn 可填（它不知道主进程下一个号是多少，填任何数都是猜，而那正是本步要消灭的形状）。列与正文同源发生在 **main 侧的一行链**上：`session.submit` 的 `const turn = this.issuedTurn + 1`（`:9448`）→ `autosave.submit({ turn, patch, doc })`（`:9450`）→ 引擎的 `sink.writeSnapshot(turn, doc)` → `repository.writeSnapshot` 里那**同一个** `t` 同时进列与 `encodeDocument(doc, t)`。这条链一个环节都不必经 renderer，所以 T8 的契约不需要改；第 1 条的 `snapshotPayloadFromDocument` 就是它最里侧的产地。P-18 的代价照旧：屏幕上的"保存到第几发"只读 `SaveStatus.lastTurn`。
+4. **`encodeDocument` / `decodeDocument` 的调用方逐个点名**（少点一个就是编译红或运行时 `解不出文档快照` 当场炸，而这些地方 `journal_turn` 与 `payload` 本来就在同一个结果集里，不需要多一次查询）。2026-10-05 以 `grep -rn "encodeDocument(\|decodeDocument(" apps/desktop/src apps/desktop/test packages/*/src packages/*/test` 实测的**全名单**（原本写在这里的 `src/main/index.ts` 的 `houseSeedProbe` / 探针键 `seedPayloadBytesMatch` **在仓里不存在** —— `grep -rn "houseSeedProbe\|seedPayloadBytesMatch" docs apps packages` 只命中本计划的这一行，`grep -n snapshot apps/desktop/src/main/index.ts` 空输出；凭印象的一条已删，改为下面这份）：`src/main/db/repository.ts` 的 `writeSnapshot`（`:302`，补第二实参 `t`）与 `loadProject`（`:366`，改 `decodeSnapshot` 并接第四条判据）、`test/unit/codec.test.ts`（`:118/:183/:226/:232/:247` 五发补第二实参，`:126-136` 与 `:200-207` 两发手搓 payload 补 `journalTurn` 键）、`test/db/journal.test.ts`（`:317/:326` 两发裸 INSERT）、`test/db/repository.test.ts:451`（「快照落盘后 canonical() 逐字节回来…」那一格：它写走 `repo.writeSnapshot(2, final)`、读走 `decodeDocument`，而 `decodeDocument` 本步之后仍然在（一行委托），所以它**一格都不许改** —— 它**必须继续绿**，因为它是"列上写 2、正文里也写 2、读回来还是同一份文档"这条同源自构造在真库上的现成证人；它要是红了，说明第 6 条那两处改法把写侧与读侧改不同步了）。T8 之后再加上 `test/unit/document-wire.test.ts` 的那两发委托格。**T8 落盘时这份名单要重跑一遍 `grep`** —— 新增的读点只会出现在新代码里，行号也会漂。
+5. **变异表加的是 T8-M43**（不是原先写的 T8-M14 —— 那个号已经被 `persistErrorCode` 占了，2026-10-05 数过本表实到 M42）：靶是 `snapshotPayloadFromDocument` 里 `journalTurn,` 那一行，读数要分清"红在解析"与"红在判据"是两条不同的文案。它与本步的 T7-M25 是同一条主张在两个时期的两个靶子，先例是 T4-M9 那次挪靶。
+
+**Step 6b 的复跑读数（追加在 Step 7 的 Expected 之后，与 Step 6b 自己的三条 Expected 同口径，不许只报好看的那一条）**：
+1. `pnpm verify`：`Test Files` **+3**（`autosave.test.ts` / `emergency.test.ts` / `persist-boundary.test.ts`；`transaction.test.ts`、`codec.test.ts`、`document-wire.test.ts` 都是改不是增文件）、`Tests` **+41** = core 7 + autosave 24 + emergency 6 + 边界 2 + codec 2。**若只涨 39**：`persist-boundary.test.ts` 那两格没被 include 收进来（P-53 的老坑）或 Step 6b 的两格没写；**若涨 41 而 Test Files 只 +2**：边界那两格被并进 `emergency.test.ts` 了，不要那样留。
+2. `pnpm test:db`：`Test Files` **+1**、`Tests` **+10** = autosave-journal 9 + journal 1（T6 落盘后 `locks` 那一档是 29）。
+3. 两处**改写而不是新增**的格必须报改写前后两句标题：`codec.test.ts:177`（旧「encodeDocument 的形状就是三键」⇒ 新「两份契约：payload 三键、快照四键…」）与「快照里同一 id 出现两次 ⇒ 抛」（判据加 `body.doc` 一层，文案一字不动）。旧标题还在 ⇒ 形状那一格没跟上真相，T7-M25 就少了半个证人。
+
+```bash
+npx vitest run --config apps/desktop/vitest.config.ts apps/desktop/test/unit/codec.test.ts > tmp/t7b-unit.log 2>&1; echo "exit=$?"
+npx vitest run --config vitest.db.config.ts apps/desktop/test/db/journal.test.ts apps/desktop/test/db/autosave-journal.test.ts > tmp/t7b-db.log 2>&1; echo "exit=$?"
+```
+
+Expected：
+1. `codec.test.ts` 先红在「缺 `journalTurn` 的旧三键 payload ⇒ 拒开」（codec 还没改时 `decodeSnapshot` 不存在 ⇒ 整个文件红在 import），实现落盘后**该文件格数 = 盘上现数 + 2**。
+2. `journal.test.ts` +1 格、`autosave-journal.test.ts` 由 7 变 9 格；新格先红在「不是同一发，拒开」被前面的判据抢掉或 `loadProject` 正常返回 —— 两种红都说明第 3 条那发还没落。
+3. 复跑一次全量：`pnpm verify` `exit=0` 且 `Tests` 相对 Step 4/5 的落点 **+2**（`codec.test.ts` 的两格；第 177 格是改写，不减不加）；`pnpm test:db` `exit=0` 且 `Tests` **+3**（journal 1 + autosave-journal 2），`Test Files` 不变。
+4. 普查库名清单一次（同 T5/T6 那一发）：19 个用户库逐名等于基线，`dajia_test` 收尾时不在清单里。
+
+**⑭ 为什么 `updated_seq` 的读者是一格测试而不是生产代码**：P-69 原本把"保存前判这一行是不是我这一发写的"当成它的自然消费点，但 T7 落地后逐个看过去，生产路径上没有一处**需要**它：引擎数的是 `rowsSinceSnapshot`（自己的计数器），读路径重放的是 `command_log`，投影（含这一列）在 Architecture ④ 里明令**不参与加载**。硬造一个生产读者（比如让 `closeProject` 拿它做第四本账）等于给一条本来只服务诊断的列加语义 —— 加了就得测，测了就得对账，而对账口径已经有三本。所以本步把它钉成**测试读者**：语义有常驻证人，"改坏会红"（T7-M27），并且如实登记为限度。
+
+**本步登记的限度**（**控制位已直接写进本任务末尾「Task 7 登记的限度」的第 8、9 两条**，编号接在 7 之后 —— 棒子这一处什么都不用做：限度住在计划文本里，不在代码里，报告里也不需要抄一份）：
+- 快照的 `journalTurn` 在写侧是**同源自构造**，没有运行时比对（第 ⑬ 段）⇒ "写侧递错 turn"这一型只能由读侧拒开来发现，也就是说它必须经过一次 `loadProject` 才暴露；写完立刻读的那条路（`autosave` 的 `flush` ⇒ T8 的关窗）会暴露，写完不读则一路静默到下次打开。
+- `element.updated_seq` **在生产路径上仍然没有读者**（第 ⑭ 段）。它的语义由 autosave 的 db 档那一格钉着；T9 的诊断或 T11 若真要用它，读者在那里落地，否则本条随收尾章节一起留档。
 
 - [ ] **Step 7: 全量复跑与计数**
 
@@ -7934,8 +8332,8 @@ git status --porcelain
 
 Expected：
 
-1. `pnpm verify` `exit=0`。`Test Files` 比 T6 的回填值 **+3**（`autosave.test.ts`、`emergency.test.ts`、`persist-boundary.test.ts`；`packages/core/test/transaction.test.ts` 是改不是增），`Tests` **+39** —— 拆开是 core `lastPatch` 7 + autosave 24 + emergency 6 + 边界 2。**若只涨 37**：多半是 `persist-boundary.test.ts` 没被 include 收进来（它落在 `apps/desktop/test/unit/`，T1 改的那条 include 覆盖它）；**若涨 39 而 `Test Files` 只 +2**：说明边界那两格被并进了 `emergency.test.ts`，不要那样留 —— 它盯的是三个文件而不是一个模块的行为。
-2. `pnpm test:db` `exit=0`，`Test Files` **+1**、`Tests` **+7**（T6 的回填值是 `locks` 27 那一档）。这一发必须**全套连库档一起跑**：`autosave-journal.test.ts` 与 `repository/journal/locks` 四档共用同一个 `dajia_test`，各自 `beforeAll` 建 / `afterAll` 删。`vitest.db.config.ts` 里 T1 钉的 `fileParallelism: false` 是这一发能成立的前提（本档是它的第二个证人：第一个证人是 `locks.test.ts`，那时只有一档碰库）。
+1. `pnpm verify` `exit=0`。`Test Files` 比 T6 的回填值 **+3**（`autosave.test.ts`、`emergency.test.ts`、`persist-boundary.test.ts`；`packages/core/test/transaction.test.ts` 是改不是增），`Tests` **+41** —— 拆开是 core `lastPatch` 7 + autosave 24 + emergency 6 + 边界 2 + Step 6b 的 codec 2。**若只涨 39**：多半是 `persist-boundary.test.ts` 没被 include 收进来（它落在 `apps/desktop/test/unit/`，T1 改的那条 include 覆盖它），或 Step 6b 那两格被并进了别的文件；**若涨 41 而 `Test Files` 只 +2**：说明边界那两格被并进了 `emergency.test.ts`，不要那样留 —— 它盯的是三个文件而不是一个模块的行为。
+2. `pnpm test:db` `exit=0`，`Test Files` **+1**、`Tests` **+10**（`autosave-journal` 9 + Step 6b 给 `journal.test.ts` 的那 1 格；T6 的回填值是 `locks` 29 那一档）。这一发必须**全套连库档一起跑**：`autosave-journal.test.ts` 与 `repository/journal/locks` 四档共用同一个 `dajia_test`，各自 `beforeAll` 建 / `afterAll` 删。`vitest.db.config.ts` 里 T1 钉的 `fileParallelism: false` 是这一发能成立的前提（本档是它的第二个证人：第一个证人是 `locks.test.ts`，那时只有一档碰库）。
 3. `npx tsc --noEmit -p apps/desktop/tsconfig.test.json` `exit=0`。这一发不是仪式：`harness` 的 `Partial<AutosaveOptions>`、`FakeSink implements JournalSink`、db 档 `FlakySink implements JournalSink` 三处形状主张只有它能看见 —— **`FlakySink` 少实现 `writeSnapshot` 时只有这里是红的**，vitest 会把它当"少一个方法也没关系"的鸭子类型跑绿。
 4. `lint:deps` 照旧静默，且**它本来也看不见本任务的边界**：那个脚本数的是包与包之间的边，而 `apps/desktop` 内部 `persist/**` 谁 import 谁不在它的口径里。于是 P-2 有两条互补的防线：包外的（`persist` 不许 import `@dajia/scene-2d` 之类）归 `lint:deps`，包内的（不许 import `electron` / `node:fs`）归 `persist-boundary.test.ts`。
 5. `git status --porcelain` 里**不许出现** `emergency/` 目录或任何 `*-turn-<n>.json`：Step 5 的抢救件全写在 `os.tmpdir()` 下并由 `afterAll` 整棵删掉。真出现了就是 `userDataDir` 被写成了仓库路径 —— 那是测试自己的缺陷，先修测试再谈落盘。
@@ -7953,7 +8351,10 @@ git add packages/core/src/model/transaction.ts packages/core/test/transaction.te
   apps/desktop/src/main/persist/emergency.ts \
   apps/desktop/test/unit/autosave.test.ts apps/desktop/test/unit/emergency.test.ts \
   apps/desktop/test/unit/persist-boundary.test.ts \
-  apps/desktop/test/db/autosave-journal.test.ts
+  apps/desktop/test/db/autosave-journal.test.ts \
+  packages/protocol/src/entity-schema.ts packages/protocol/src/index.ts \
+  apps/desktop/src/main/db/codec.ts apps/desktop/src/main/db/repository.ts \
+  apps/desktop/test/unit/codec.test.ts apps/desktop/test/db/journal.test.ts
 git commit -m "$(cat <<'EOF'
 feat(persist): 保存引擎 —— 两条阈值、同 turn 一次抢救、锁没了就停手
 
@@ -7968,6 +8369,11 @@ EmergencyWrite，任何一型失败都不抛 —— 抢救这条路上抛错的�
 
 core：TransactionLog.lastPatch 让 undo/redo 那一发在持久化侧可见（P-5）；
 persist-boundary.test.ts 是 P-2 与"数值唯一产地"两条主张的常驻证人。
+
+Step 6b（P-70 / P-69）：快照的盘上契约多出 journalTurn（由线上契约 .extend 派生，refine 不复制），
+writeSnapshot 把同一个 t 同时递进列与正文，loadProject 的第四条判据比对二者 —— 列快于正文那一型
+从此不能静默交出一份形状全对的旧文档。element.updated_seq 的第一个读者是 autosave 的 db 档：
+被碰的行等于这一发的 seq，没碰的行留在旧 seq。
 EOF
 )"
 ```
@@ -8003,7 +8409,10 @@ EOF
 | T7-M21 | `autosave.ts` 顶部加一行 `import { app } from 'electron';`（或把 `LOCK_HEARTBEAT_INTERVAL_MS` 换成字面量 `5000`） | 「autosave.ts 既不 import electron 也不 import node:fs…」红，而**运行不会红**：`electron` 在纯 node 下解析成一串路径，常量值又一模一样。这一发是 P-2 与"数值唯一产地"两条主张唯一的常驻证人；代价是它扫源码文本，注释里写出 `from 'electron'` 会误红 |
 | T7-M22 | core `undo()` 里 `this.lastPatchApplied = inverse` 换成 `entry.patch` | 「lastPatch：undo 记的是**逆补丁**，不是 undoStack 顶上那份原件」红；db 档「undo 与 redo 各产出一发新账…」红在 `loaded.doc.canonical()` —— 撤销那一发写进库的是正向补丁，重放回到撤销**之前** |
 | T7-M23 | `dispatch` 在 `cmd.build(doc)` **之前**就刷 `lastPatchApplied` | 「lastPatch：build 抛错之后停在上一发，失败的补丁绝不进账」红 —— 失败的补丁进账，`command_log` 与抢救件就会记一份根本没发生过的改动 |
-| T7-M24 | `EmergencyPayload` 去掉 `patch` 字段 | `npx tsc --noEmit -p apps/desktop/tsconfig.test.json` 红（「append 抛 ⇒ failed…」里 `rescued[0]?.patch` 那一句取不到），且 T8 接 `writeEmergencySnapshot` 时 `EmergencyInput` 少一件的形状会变 —— 抢救件保整份状态、补丁需要基线，这条分工写在 Step 5 的注释里 |
+| T7-M24 | `EmergencyPayload` 去掉 `patch` 字段 | `npx tsc --noEmit -p apps/desktop/tsconfig.test.json` 红（「append 抛 ⇒ failed…」里 `rescued[0]?.patch` 那一句取不到），且 T8 接 `writeSnapshot` 时 `EmergencyInput` 少一件的形状会变 —— 抢救件保整份状态、补丁需要基线，这条分工写在 Step 5 的注释里 |
+| T7-M25 | `encodeDocument` 里 `journalTurn,` 那一行删掉（回到三键产物）——**T8 之后靶挪**到 `src/shared/document-wire.ts` 的 `payloadFromDocument`（同 T4-M9 那次挪靶的先例，跑的时候按当时落盘的那一份改） | 预期**红成一片而不是红在一处**：`decodeDocument` 走的是 `SnapshotPayloadSchema`（四键必填），凡是"写快照之后再 `loadProject` 读回来"的格全红 —— `codec.test.ts` 的往返格、`journal.test.ts` 里带快照的读路径格、`autosave-journal.test.ts` 的「八发连着落…」与 Step 6b 的自证格。**它不红在哪同样要报**：委托字节相等那一格（两侧同源，一起漂）与 `codec.test.ts` 第 9 格（它比的是 protocol 的两张形状表，不比 codec 的产物）。逐字抄红格名单，**不许因为"红太多"去放宽任何一格** —— 这一发证的正是"codec 的产物形状是四键契约的公共地基" |
+| T7-M26 | `loadProject` 里第四条判据 `body.journalTurn !== snapTurn` 那一句删掉 | Step 6b 那两格各红一半：「列快于正文 ⇒ 拒开」红（不再拒，静默少重放两发）；「正文快于列 ⇒ 同样拒开」也红（同一句判据的两型）。若只红一半 ⇒ 另一型的夹具实际写出了同值的列与正文，**修夹具不修判据** |
+| T7-M27 | 投影写入里 `updated_seq` 那一列不再被赋值（ODKU 去掉 `updated_seq` = `new`.`updated_seq`，或写死初值） | Step 6b 的 P-69 那一格红（被碰的 `wall` 行停在 `seq(2)` 而不是 `seq(6)`）。**`repository.test.ts` 与 `journal.test.ts` 全绿** —— 这正是 P-69 登记的那件事：这一列在生产路径上没有读者，唯一的证人是这一格。恒绿的部分要如实写进报告，别当成"变异没生效" |
 
 **Task 7 登记的限度**（写在计划里，是给下一个动这一档的人看的，不是待办）：
 
@@ -8014,6 +8423,8 @@ EOF
 5. **`userDataDir` 底下不是目录时 `err.code` 的具体值未实测**（`ENOTDIR` / `EPERM` / `EACCES` 之一）。判据**故意不加** `/ENOTDIR/`：三条或在一起的判据等于没有判据，而那一格盯的是"返回而不抛"。跑完把实际值抄进执行回填，只作记录。
 6. **db 档「八发连着落：日志 1..8…」那一格那对 `[3, 6, 8]` 依赖一个形状**：八发在同一个同步 `for` 里投完，于是 `submit` 撤了八次空闲钟、`armIdle` 只在队列排空后重新排 —— 40ms 的窗口最早也从第八发落地之后才开始计。若 T8 的接线改成"每发之间 await 一次 IPC"，这一格会漂；那时候要改的是判据（只断 `includes(8)`），**不是**把 `idleSnapshotMs` 调大。
 7. **`pause` 那一格用的是 120ms 观察窗口**（证"不发生"没法用 `waitUntil`）。慢机上这个窗口只会更宽裕（pause 已经把三个定时器都撤了，窗口里没有任何东西会敲第二下），但它是本任务唯一一处"以固定时间当判据"的地方 —— 记在这里，红了先查是不是有人往 `pause` 里漏回了定时器，再怀疑窗口值。
+8. **快照的 `journalTurn` 在写侧是同源自构造，没有运行时比对**（Step 6b 第 ⑬ 段）。"写侧递错 turn"这一型只能由**读侧拒开**发现，也就是说它必须经过一次 `loadProject` 才暴露：写完立刻读的那条路（T8 的关窗 `flush` ⇒ 下次打开）会暴露，写完不读则一路静默到下次打开。写侧那道"校验递进来的 turn === 正文的 turn"被明确**不写**：`writeSnapshot` 只有一个 `t`，它同时进列与正文，没有第二个量可比；造一个（从 `doc` 反推 turn）就是第二份真源。凭据是 T7-M25（产物少那一键 ⇒ 红成一片）与 T8-M43（委托之后同一个主张换靶）。
+9. **`element.updated_seq` 在生产路径上仍然没有读者**（Step 6b 第 ⑭ 段，P-69 的落地结果）。它的语义由 autosave 连库档那一格钉着（测试读者），"改坏会红"只有 T7-M27 —— 而那一发**故意**让 `repository.test.ts` / `journal.test.ts` 全绿：那两片绿就是这条限度本身的证据，别把它读成"变异没生效"。T9 的诊断或 T11 若真要用它，读者在那里落地，否则本条随收尾章节一起留档。
 
 ## Task 8: IPC 契约与会话接线（`persist-schema.ts` + `session.ts` + `ipc-persist.ts` + `projectStore.ts`）
 
@@ -8024,9 +8435,9 @@ EOF
 - Modify: `packages/protocol/src/index.ts`（把 `persist-schema` 的出口并进去，写法照盘上现物）
 - Create: `packages/protocol/test/persist-schema.test.ts`（**10 格**）
 - Create: `apps/desktop/src/shared/document-wire.ts`（第 ② 段：为什么是"第三个目录"）
-- Modify: `apps/desktop/src/main/db/codec.ts`（`encodeDocument` / `decodeDocument` 改成委托，P-19）
+- Modify: `apps/desktop/src/main/db/codec.ts`（`encodeDocument` / `decodeSnapshot` / `decodeDocument` 改成委托，P-19 + Step 6b 的 P-70：产物是**四键**、解析走 `parseSnapshotPayload`）
 - Modify: `apps/desktop/tsconfig.json`（`include` 加 `"src/shared"`）
-- Create: `apps/desktop/test/unit/document-wire.test.ts`（**7 格**）
+- Create: `apps/desktop/test/unit/document-wire.test.ts`（**8 格**）
 - Create: `apps/desktop/src/main/persist/session.ts`（编排，electron-free / fs-free）
 - Create: `apps/desktop/test/unit/fake-timer.ts`（把 T7 内联在 `autosave.test.ts` 里的 `FakeTimer` 与 `tick()` 搬进来：假钟现在有两个读者，复制第二份的话"到点顺序"这件事会有两个答案）
 - Modify: `apps/desktop/test/unit/autosave.test.ts`（删掉那段内联假钟、改成 `import { FakeTimer, tick } from './fake-timer'`；**24 格与判据一字不动**，搬完之后原样复跑）
@@ -8051,14 +8462,14 @@ EOF
   - T1：`readMysqlEnv(env?)` / `interface MysqlEnv { host; port; user; password; database: 'dajia' | 'dajia_test' }` / `assertDatabaseName(db)`
   - T2：`createDbPool(env, opts?)` / `migrate(pool, database, migrations?)`
   - T3：`EntityIdSchema` / `JournalTurnSchema` / `EntitySchema` / `PatchSchema`（都在 `packages/protocol/src/entity-schema.ts`）；core 的 `assertTruthSourceInvariants(doc)`（T5 在 `loadProject` 里已经调过，T8 一处都不重调，见第 ⑩ 段）
-  - T4：`DocumentPayloadSchema` / `type DocumentPayloadShape` / `type PatchShape` / `parseDocumentPayload` / `parsePatchShape`；`class ProjectRepository`（`constructor(pool, projectId, actor)`、`appendJournal(entry): Promise<'applied'|'already-applied'>`、`writeSnapshot(turn, doc)`）；`type JournalEntry { turn; patch; doc }`
+  - T4 + Step 6b：`DocumentPayloadSchema` / `type DocumentPayloadShape`（线上三键）/ `SnapshotPayloadSchema` / `type SnapshotPayloadShape`（盘上四键，`.extend` 派生）/ `type PatchShape` / `parseDocumentPayload` / `parseSnapshotPayload` / `parsePatchShape`；`class ProjectRepository`（`constructor(pool, projectId, actor)`、`appendJournal(entry): Promise<'applied'|'already-applied'>`、`writeSnapshot(turn, doc)` —— **签名一个字没动**，turn 与正文的同源在 codec 里，会话侧不必知道）；`type JournalEntry { turn; patch; doc }`
   - T5：`type OpenIntent = 'edit' | 'read'` / `interface ProjectHeader { projectId; name; schemaVersion; journalTurn; wasCleanShutdown }` / `interface LoadOutcome { doc; header; snapshot: { seq; turn } | null; replayed: { rows; fromSeq; toSeq } }` / `interface CloseReport { elementRows; storeyRows }` / `loadProject(intent)` / `closeProject(doc)`
   - T6：`newLockTicket({ projectId, owner })` / `acquireLock(pool, ticket, ttlMs?)` / `heartbeat(pool, ticket, ttlMs?)` / `releaseLock(pool, ticket)` / `LOCK_TTL_MS`
   - T7：`class Autosave`（`submit` / `flush` / `pause` / `resume` / `stop` / `settled` / `status`）、`type SaveStatus`、`type AutosavePhase`、`realTimer`、`writeEmergencySnapshot(userDataDir, input)`、`EMERGENCY_DIR_NAME`、`emergencyFileName(projectId, turn)`、`describeError(err)`、core 的 `get lastPatch(): Patch | null`
   - 现成屏幕侧：`useEditor`（`log` / `storeyId` / `viewport` / `viewportStoreyId` / `revision` / `lastError` / `setViewport` / `setStorey` / `setTool` / `dispatch` / `dispatchBatch` / `undo` / `redo` / `reportPaintError`）、`TransactionLog` 的公开 `constructor(doc: Document)`、core 的 `Document.get/byKind/entities/create/replaceEntities`、scene-2d 的 `storeyTabsOf(doc, projectId)` / `fitStorey(doc, storeyId, wPx, hPx, padPx)` / `demoHouse()`（`projectStore.open()` 要知道开在哪一层：`storeyTabsOf` 是"该显示哪层"的唯一产地，Step 6 ④ 段）
 - Produces（T9/T10/T11 只能从这里取）:
   - protocol：`IPC` 五条通道（`ping` / `projectOpen` / `projectClose` / `journalSubmit` / `saveStatus`）、`PERSIST_ERROR_CODES`（闭集 **7** 个）/ `type PersistErrorCode` / `FailureReplySchema` / `type PersistFail` / `type IpcResult<T>`；`OpenRequestSchema`+`OpenValueSchema`、`SubmitRequestSchema`+`SubmitValueSchema`、`CloseRequestSchema`+`CloseValueSchema`、`SaveStatusSchema`、`ProjectHeaderWireSchema`、`EmergencyRefSchema`、`OpenDecisionSchema` 与各自的 `type`；`parseOpenRequest` / `parseSubmitRequest` / `parseCloseRequest` / `parseOpenValue` / `parseSubmitValue` / `parseCloseValue` / `parseSaveStatus`；名册 `INVOKE_CHANNELS`（`readonly IpcChannel[]`，三条）/ `SAVE_STATUS_EVENT`（一条 `IpcChannel`）；`issueText`（导出）
-  - `apps/desktop/src/shared/document-wire.ts`：`payloadFromDocument(doc): DocumentPayloadShape`、`documentFromPayload(payload, where): Document`
+  - `apps/desktop/src/shared/document-wire.ts`：`payloadFromDocument(doc): DocumentPayloadShape`（**线上三键，一参**）、`snapshotPayloadFromDocument(doc, journalTurn): SnapshotPayloadShape`（**盘上四键**；唯一读者是 `codec.encodeDocument`）、`documentFromPayload(payload, where): Document`（两种形状都收，`journalTurn` 不读）
   - session：`class ProjectSession`，`constructor(ports: PersistPorts)`，`open(projectId): Promise<OpenValue>` / `submit(req): SubmitValue`（**同步**，第 ① 段的取号纪律要求它不能有 `await`）/ `close(req): Promise<CloseValue>` / `status(): SaveStatus | null` / `get active(): boolean` / `get decision(): OpenDecision | null`；`const CLOSE_FLUSH_TIMEOUT_MS = 10_000`（唯一读者是 `close` 里那一发 `withTimeout`）；`interface PersistPorts { userDataDir; timer; loadConfig(); openDb(env, projectId); acquire(db, projectId); readEmergency(userDataDir, projectId); writeEmergency(payload); emitStatus(status) }`（八个键，`owner` 不在里面 —— 拼票是 `ipc-persist.ts` 的事，session 不认识 `node:os`）、`interface DbHandle { repo; raw: unknown; end() }`（`raw` 是连接本体的不透明把手，session 一个字段都不读）、`interface LockHandle { beat(); release() }`、`interface SessionRepo extends JournalSink { loadProject; closeProject }`、`class SessionError extends Error { code: PersistErrorCode }`
   - emergency 追加：`interface EmergencyFound { readonly turn: number; readonly path: string }` 与 `listEmergency(userDataDir, projectId): EmergencyFound[]`（读盘、除"空 `userDataDir`"那一刀之外不抛、按 turn 升序；与 protocol 的 `EmergencyRef` 结构同型，`session.ts` 的端口直接吃它）
   - preload：`DajiaApi = { ping; openProject; submitJournal; closeProject; onSaveStatus }`
@@ -8072,7 +8483,7 @@ EOF
 **②（裁决 P-19）`payload ↔ Document` 的构造只有一个产地：`apps/desktop/src/shared/document-wire.ts`。**
 T8 之后有**两边**都要把一份 `DocumentPayloadShape` 变成 core 的 `Document`：main 侧（`submit` 要把 renderer 递来的文档交给 `writeSnapshot(turn, doc)` 与 `closeProject(doc)`；`loadProject` 的产物要编码回线上）与 renderer 侧（打开工程时要把回包变成 `new TransactionLog(doc)` 的起点）。`Document` 的构造口径不是一行：`Document.create` 认 `isEntityId`、`replaceEntities` 逐实体 validate（UUID + 该 kind 的整数毫米名单），而**重复 id 必须当场抛**（"同一份快照存着同一 id 的两个真值"那一型，`Map.set` 会静默取后者 ⇒ `canonical()` 从此说谎）。renderer 自己再写一遍这个循环，就是 D2b 明令禁止的第二份真源，且第一份漂了没人红。
 所以：`documentFromPayload(payload, where)` 与 `payloadFromDocument(doc)` 住在一个**谁都能相对 import 的目录**（`src/shared`，第三个目录）。不放 `src/main/**`：renderer 不许认识 main。不放进 `@dajia/core`：core 不许认识"盘上/线上一份 payload"这种外壳形状（`codec.ts` 里那句"为一次排序给 core 加导出 = 多一条只服务于磁盘的 API"是同一个理由，而这里要加的是一条**边界形状**的 API，比那次更该留在 desktop 侧）。
-T4 的 `decodeDocument` / `encodeDocument` 改成**委托**它：`decodeDocument(ref, raw)` = `documentFromPayload(parseDocumentPayload(where(ref), asJsonValue(raw)), where(ref))`，抛错文案 `${where} 的 entities 里实体 X 出现两次：一份快照不许有重复 id` **逐字保留**（`where` 由调用方递，前缀照样是 `snapshot 行 3`），T4 `codec.test.ts` 那两格正则一字不动地继续成立。
+T4 的 `decodeDocument` / `encodeDocument` 改成**委托**它：`decodeSnapshot(ref, raw)` = `{ doc: documentFromPayload(parseSnapshotPayload(where(ref), asJsonValue(raw)), where(ref)), journalTurn: 同一份 parse 的结果 }`（Step 6b 之后 codec 只有这一条读路径，`decodeDocument` 是它的一行委托），抛错文案 `${where} 的 entities 里实体 X 出现两次：一份快照不许有重复 id` **逐字保留**（`where` 由调用方递，前缀照样是 `snapshot 行 3`），T4 `codec.test.ts` 那两格正则一字不动地继续成立。
 代价照登记：`apps/desktop/tsconfig.json` 的 `include` 多一条 `"src/shared"`（漏了就等于那个目录不进 typecheck，红要等运行时）；**T4 的变异样本 T4-M9 从此挪靶** —— 删重复 id 检查要删 `src/shared/document-wire.ts` 那一处，`codec.ts` 里已经没有可删的牙了。这一条挪动在 Step 2 落，并同步在计划文件里 T4 变异表那一行末尾追加一句"（T8 之后靶在 `src/shared/document-wire.ts`）"。
 
 **③（裁决 P-20）spec §9 那句「IPC 边界 zod 校验 + 结构化错误码」落成的形状：入站验请求、出站验值、错误码闭集、事件只带 `SaveStatus`。**
@@ -8577,7 +8988,7 @@ Expected: 先红（`persist-schema.ts` 还没写）⇒ 写完后 **exit=0 / 10 �
 
 ```ts
 import { Document, type Entity, type EntityId } from '@dajia/core';
-import type { DocumentPayloadShape } from '@dajia/protocol';
+import type { DocumentPayloadShape, SnapshotPayloadShape } from '@dajia/protocol';
 
 /**
  * 与 `core/model/document.ts`、`main/db/reconcile.ts` 里那两个同名的模块私有比较符各写一份。
@@ -8592,14 +9003,43 @@ function byId(a: { id: EntityId }, b: { id: EntityId }): number {
 }
 
 /**
- * 唯一的"文档 → 边界形状"出口。编码 = 序列化，**不是校验**：`JSON.stringify(-0)` 是 `"0"`，
+ * 唯一的"文档 → 边界形状"出口**有两条**，共用这一个排序产地（P-70）：
+ * 线上三键（`payloadFromDocument`，renderer ↔ main）与盘上四键（`snapshotPayloadFromDocument`，快照正文）。
+ * 键序与 entities 的升序**只有一个产地** —— `codec.test.ts` 里「两份契约」那一格吃的是字节序，
+ * T7 的 codec 字面量与这里的两个出口必须同一个序；两处各写一份的话，谁改谁红在另一处。
+ */
+function sortedEntities(doc: Document): Entity[] {
+  return [...doc.entities.values()].sort(byId);
+}
+
+/**
+ * 线上形状（三键）。**不许加 `journalTurn`**：P-18 定了 turn 由主进程分配，发送方没有合法的数可填
+ * （T7 的 Step 6b 把这条写进了 `DocumentPayloadSchema` 的注释，这里是它的代码侧）。
+ * 编码 = 序列化，**不是校验**：`JSON.stringify(-0)` 是 `"0"`，
  * 挡 `-0`/浮点/多余字段是读取侧 zod 的活（T4 ② 段同一条口径，别在这里加第二道）。
  */
 export function payloadFromDocument(doc: Document): DocumentPayloadShape {
   return {
     projectId: doc.projectId,
     schemaVersion: doc.schemaVersion,
-    entities: [...doc.entities.values()].sort(byId),
+    entities: sortedEntities(doc),
+  };
+}
+
+/**
+ * 盘上形状（四键，P-70）：`journalTurn` 与 `entities` 由**同一个调用**给出，
+ * 这正是"列与正文同源自构造"的产地（`repository.writeSnapshot(turn, doc)` 里那一个 `t`）。
+ * 这里不校验 turn：编码不是校验（同一口径），必填与 `>=1` 由 `SnapshotPayloadSchema` 在读取侧拦。
+ */
+export function snapshotPayloadFromDocument(
+  doc: Document,
+  journalTurn: number,
+): SnapshotPayloadShape {
+  return {
+    projectId: doc.projectId,
+    schemaVersion: doc.schemaVersion,
+    journalTurn,
+    entities: sortedEntities(doc),
   };
 }
 
@@ -8607,6 +9047,9 @@ export function payloadFromDocument(doc: Document): DocumentPayloadShape {
  * 唯一的"边界形状 → 文档"出口，main 与 renderer 共用这一份。
  * `where` 由调用方给（`snapshot 行 3` / `IPC dajia:journal:submit`），抛错文案的前缀归调用方的坐标 ——
  * 与 T4 的 `codec.ts` 完全一致，所以 `codec.test.ts` 那两格正则一字不动地继续成立。
+ *
+ * 参数只声明三键（`DocumentPayloadShape`），因此**两种形状都收**：盘上那份四键是它的结构超集，
+ * 多出来的 `journalTurn` 由调用方自己比对（`decodeSnapshot` 的第四条判据），这里一个字段都不读。
  */
 export function documentFromPayload(payload: DocumentPayloadShape, where: string): Document {
   const next = new Map<EntityId, Entity>();
@@ -8633,38 +9076,45 @@ export function documentFromPayload(payload: DocumentPayloadShape, where: string
 
 **③ `apps/desktop/src/main/db/codec.ts` 改成委托（只动三个位置）**
 
-改动 1 —— import 两行换成三行（`Document` 从值 import 降为 type import，`EntityId` 整个不再需要：它唯一的用处是那个搬走的 `Map<EntityId, Entity>`；`Entity` 留着，`encodeEntity` / `decodeEntity` 还在用它）：
+改动 1 —— import 换三行（`Document` 从值 import 降为 type import，`EntityId` 整个不再需要：它唯一的用处是那个搬走的 `Map<EntityId, Entity>`；`Entity` 留着，`encodeEntity` / `decodeEntity` 还在用它）。**`parseDocumentPayload` 从这一行里出去**（Step 6b 之后 codec 只吃盘上那一纸契约，三键的解析器在 codec 里没有读者了；留着会被 `noUnusedLocals` 当场报出来 —— 那是"委托没走回头路"的第一证人）：
 
 ```ts
 import type { Document, Entity, Patch } from '@dajia/core';
-import { parseDocumentPayload, parseEntityShape, parsePatchShape } from '@dajia/protocol';
-import { documentFromPayload, payloadFromDocument } from '../../shared/document-wire';
+import { parseEntityShape, parsePatchShape, parseSnapshotPayload } from '@dajia/protocol';
+import { documentFromPayload, snapshotPayloadFromDocument } from '../../shared/document-wire';
 ```
 
-改动 2 —— 删掉模块私有的 `byId`（`noUnusedLocals` 会立刻为它报错，所以它**必须**被删，而不是留着"以后也许用得上"）。
+改动 2 —— 删掉模块私有的 `byId` **与 Step 6b 留下的 `documentOf`**（两者的循环/比较都搬进了 `document-wire`；`noUnusedLocals` 会立刻为它们报错，所以它们**必须**被删，而不是留着"以后也许用得上"）。`SnapshotBody` 那个 interface **留着**，它是 `decodeSnapshot` 的返回形状。
 
-改动 3 —— `encodeDocument` / `decodeDocument` 两个函数体替换为：
+改动 3 —— `encodeDocument` / `decodeSnapshot` / `decodeDocument` 三个函数体替换为：
 
 ```ts
 /**
- * 落盘形状与线上形状同一个产地（`src/shared/document-wire.ts`，裁决 P-19）：这里只补"变成字符串"这一步。
- * 这条委托有两个证人：`codec.test.ts` 第 9 格（`encodeDocument` 的产物与形状表逐字节比，**原样留着**）
- * 与 `document-wire.test.ts` 第 4 格（`encodeDocument(doc)` 逐字节等于 `JSON.stringify(payloadFromDocument(doc))`）。
+ * 落盘形状与线上形状同一个产地（`src/shared/document-wire.ts`，裁决 P-19 + P-70）：这里只补"变成字符串"这一步。
+ * 这条委托有三个证人：`codec.test.ts` 第 9 格（`encodeDocument` 的产物与 T4 形状表逐字节比，**原样留着**）、
+ * 它的「两份契约：线上三键、盘上四键」那一格（四键的**键序**，`encodeDocument(doc, 42)` 的产物字节），
+ * 与 `document-wire.test.ts` 第 4 格（逐字节等于 `JSON.stringify(snapshotPayloadFromDocument(doc, turn))`）。
  */
-export function encodeDocument(doc: Document): string {
-  return JSON.stringify(payloadFromDocument(doc));
+export function encodeDocument(doc: Document, journalTurn: number): string {
+  return JSON.stringify(snapshotPayloadFromDocument(doc, journalTurn));
+}
+
+/** 解码 + 把列上那个 turn 一起交出去：第四条判据（`loadProject`）吃的是这里的 `journalTurn`。 */
+export function decodeSnapshot(ref: RowRef, raw: unknown): SnapshotBody {
+  const at = where(ref);
+  const payload = parseSnapshotPayload(at, asJsonValue(raw));
+  return { doc: documentFromPayload(payload, at), journalTurn: payload.journalTurn };
 }
 
 /** 只解码、不验不变式：引用与几何的放行证在 T5 的 `loadProject`（那里才知道一共读了几层）。 */
 export function decodeDocument(ref: RowRef, raw: unknown): Document {
-  const at = where(ref);
-  return documentFromPayload(parseDocumentPayload(at, asJsonValue(raw)), at);
+  return decodeSnapshot(ref, raw).doc;
 }
 ```
 
-`RowRef` / `where` / `asJsonValue` / `encodeEntity` / `decodeEntity` / `encodePatch` / `decodePatch` 一字不动。**`decodeDocument` 里那段重复 id 的循环整体搬走**：它现在住在 `documentFromPayload`，文案逐字保留（`${where} 的 entities 里实体 X 出现两次：一份快照不许有重复 id`），所以 `codec.test.ts` 吃这条文案的正则一格都不用改 —— 这是"委托没把牙弄丢"的第一证人。
+`RowRef` / `where` / `asJsonValue` / `encodeEntity` / `decodeEntity` / `encodePatch` / `decodePatch` / `SnapshotBody` 一字不动。**Step 6b 的 `documentOf` 里那段重复 id 的循环整体搬走**：它现在住在 `documentFromPayload`，文案逐字保留（`${where} 的 entities 里实体 X 出现两次：一份快照不许有重复 id`），所以 `codec.test.ts` 吃这条文案的正则一格都不用改 —— 这是"委托没把牙弄丢"的第一证人。
 
-**④ `apps/desktop/test/unit/document-wire.test.ts`（7 格，不连库）**
+**④ `apps/desktop/test/unit/document-wire.test.ts`（8 格，不连库）**
 
 ```ts
 import { describe, expect, it } from 'vitest';
@@ -8678,7 +9128,11 @@ import {
   type WallEntity,
 } from '@dajia/core';
 import { encodeDocument } from '../../src/main/db/codec';
-import { documentFromPayload, payloadFromDocument } from '../../src/shared/document-wire';
+import {
+  documentFromPayload,
+  payloadFromDocument,
+  snapshotPayloadFromDocument,
+} from '../../src/shared/document-wire';
 
 /**
  * 夹具手写，不走命令：这一族判的是形状与字节，"几何成不成立"归 T3 的读盘不变式与 T5 的 loadProject。
@@ -8723,7 +9177,7 @@ function doc(insertion: readonly Entity[]): Document {
 
 const DOC = doc([wall, storey, point2, point]);
 
-describe('payloadFromDocument：形状与顺序', () => {
+describe('payloadFromDocument / snapshotPayloadFromDocument：形状与顺序', () => {
   it('往返逐字节同源，且四件事实都活着（三键、按 id 升序、空文档、字段值）', () => {
     const payload = payloadFromDocument(DOC);
     expect(Object.keys(payload).sort()).toEqual(['entities', 'projectId', 'schemaVersion']);
@@ -8748,8 +9202,21 @@ describe('payloadFromDocument：形状与顺序', () => {
     expect(back.canonical()).toBe(empty.canonical());
   });
 
-  it('`encodeDocument(doc)` 与 `JSON.stringify(payloadFromDocument(doc))` 逐字节相同（委托没漂）', () => {
-    expect(encodeDocument(DOC)).toBe(JSON.stringify(payloadFromDocument(DOC)));
+  it('`encodeDocument(doc, turn)` 与 `JSON.stringify(snapshotPayloadFromDocument(doc, turn))` 逐字节相同（委托没漂）', () => {
+    expect(encodeDocument(DOC, 11)).toBe(JSON.stringify(snapshotPayloadFromDocument(DOC, 11)));
+  });
+
+  it('两份形状只差 `journalTurn` 一键，`entities` 是同一串字节（排序与键序只有一个产地，P-70）', () => {
+    const wire = payloadFromDocument(DOC);
+    const snap = snapshotPayloadFromDocument(DOC, 11);
+    expect(Object.keys(wire).sort()).toEqual(['entities', 'projectId', 'schemaVersion']);
+    // 键序按**产物**比、不 sort：这一串字节就是 `encodeDocument` 的产物形状，与 codec.test.ts
+    // 「两份契约」那一格吃的是同一个序 —— 两处各写一份的话，改动其中一处另一处必须红。
+    expect(Object.keys(snap)).toEqual(['projectId', 'schemaVersion', 'journalTurn', 'entities']);
+    expect(JSON.stringify(snap.entities)).toBe(JSON.stringify(wire.entities));
+    // 四键那份照样过 `documentFromPayload`（codec 的 decodeSnapshot 就靠这一句成立）：
+    // 三键参数是它的结构子集，多出来的 turn 这里一个字段都不读。
+    expect(documentFromPayload(snap, 'test').canonical()).toBe(DOC.canonical());
   });
 });
 
@@ -8780,7 +9247,7 @@ describe('documentFromPayload：过界那一步的牙', () => {
 ```
 
 Run: `npx vitest run apps/desktop/test/unit/document-wire.test.ts apps/desktop/test/unit/codec.test.ts > tmp/t8-wire.log 2>&1; echo "exit=$?"`
-Expected: `exit=0`，`document-wire.test.ts` **7 passed**，`codec.test.ts` 的格数**一格不减**（T4 的计划数是 12；执行时以盘上实测为准并把两个数写进回填）。第 4 格红而第 1 格绿 ⇒ 委托写反了（`encodeDocument` 还在自己拼对象）；`codec.test.ts` 那两条读重复 id 文案的格红 ⇒ `where` 没传给 `documentFromPayload`。
+Expected: `exit=0`，`document-wire.test.ts` **8 passed**（Step 6b 之后第 4 格吃的是四键生产者，末尾新增的第 5 格吃"两份形状只差一键"），`codec.test.ts` 的格数**一格不减**（T4 的计划数是 12；Step 6b 又加了两格 —— 执行时以盘上实测为准并把两个数写进回填）。第 4 格红而第 1 格绿 ⇒ 委托写反了（`encodeDocument` 还在自己拼对象）；`codec.test.ts` 那两条读重复 id 文案的格红 ⇒ `where` 没传给 `documentFromPayload`。
 
 再单独量一次编译（`import type` 有没有漏写、`Entity ↔ EntityShape` 那一支对称不对称，只有 `tsc` 看得见）：
 
@@ -11733,7 +12200,7 @@ EOF
 | T8-M4 | `SaveStatusSchema` 里 `pauseReason` 加 `.optional()` | 「SaveStatus 的键集合与 phase 取值 == autosave.ts 里那一份（源码对账）」红（"少任意一格也拒"那个 `for` 循环）。**`tsc` 不红**（`SaveStatusWire` 跟着变 optional，`projectStore` 的读点照编）、**五道闸门不红** —— 这一发是那一格存在的全部理由：autosave 加了字段而 UI 永远看不见，编译期是看不见的 |
 | T8-M5 | `fail()` 的模板从 `${where} 解不开${what}：` 改成 `${what} 解不开：` | 「parse 出口的文案 = `<通道名> 解不开<那一句>：<点号路径>: …」红（正则 `^dajia:project:open 解不开…` 落空）。那串前缀是 T9 分型诊断的唯一线索：没有它，日志里三行"解不开请求"分不出是哪条通道 |
 | T8-M6 | `INVOKE_CHANNELS` 摘掉 `IPC.projectClose`（"反正 close 走同一个 handler"） | protocol 侧「名册三条 + 事件那一条 == IPC 里除 ping 的全部（漏登记即红）」红；desktop 侧「名册里每一条都在 main 有 case、在 preload 有 invoke（只改一边就红）」也红（`INVOKE_CHANNELS.length === 3` 那发正控制）。**`tsc` 不红**（只是数组短一条）⇒ 名册这类"清单"的牙只能在扫源码的档里 |
-| T8-M7 | `payloadFromDocument` 去掉按 id 升序（"Map 的插入序本来就是稳的"） | 「换个插入序得到**同一串字节**（排序是"字节稳定"的产地，不是 Map 的副产品）」红；「`encodeDocument(doc)` 与 `JSON.stringify(payloadFromDocument(doc))` 逐字节相同（委托没漂）」同型红；**`codec.test.ts` 第 9 格跟着红**（它拿 `encodeDocument` 的产物与 T4 形状表逐字节比）—— 三处证人，最后一处是 T4 那档在 T8 之后继续上岗的凭据 |
+| T8-M7 | `payloadFromDocument` 去掉按 id 升序（"Map 的插入序本来就是稳的"）——**改这一行就等于改 `sortedEntities`**，两个出口一起漂 | 「换个插入序得到**同一串字节**（排序是"字节稳定"的产地，不是 Map 的副产品）」红；「`encodeDocument(doc, turn)` 与 `JSON.stringify(snapshotPayloadFromDocument(doc, turn))` 逐字节相同（委托没漂）」同型红；**`codec.test.ts` 第 9 格跟着红**（Step 6b 之后它拿 `encodeDocument(doc, 42)` 的产物与**两张**形状表逐字节比）；「两份形状只差 `journalTurn` 一键…」也红（`snap.entities` 与 `wire.entities` 不再同串字节）—— 四处证人，最后一处是 T4 那档在 T8 之后继续上岗的凭据 |
 | T8-M8 | `documentFromPayload` 里重复 id 那道 `if` 删掉（"Map.set 取后者，反正不炸"） | 「重复 id 当场抛，文案与 T4 读盘那一条逐字相同（T4-M9 挪靶之后唯一的产地）」红；`codec.test.ts` 吃那条文案的两格红；**session「9. 坏 payload 吃掉一个号 = 永久跳号，所以解码必须在取号之前」也红** —— 不抛了那一发就把 8 号吃掉，下一发变 9。第三红才是这一发的价值：丢牙的后果不是"报错变少"，是库里从此永久跳号 |
 | T8-M9 | `documentFromPayload(payload, where)` 里把 `where` 写死成 `'doc'`（或调用方不传） | 「抛错文案用的是**调用方**给的坐标：同一份 payload，两个标签给出两条不同的话」红；连带 `codec.test.ts` 那两条 `snapshot 行 3` 前缀红（委托把前缀吃掉了）。session「9.」不吃文案坐标，不红 —— 分工照旧 |
 | T8-M10 | `open` 里 `this.issuedTurn = loaded.header.journalTurn` 换成 `= 0` | 「8. 连投三发 ⇒ 8、9、10（起点来自库里的 journalTurn=7），且补丁与文档原样到 sink」红（1、2、3；真库里是 `appendJournal` 撞跳号）。**「4. 拿到票…fromJournal 三格读数」不红** —— 那三格读的是引擎自己的账，`issuedTurn` 是会话侧的号，两份状态各有一个证人。这一对不连带红是有意的：它说明第 ① 段"收进主进程只剩一条纪律"确实只剩一处赋值 |
@@ -11769,6 +12236,7 @@ EOF
 | T8-M40 | `let lastSeen: Patch \| null = editor.getState().log.lastPatch;` 初值改成 `null` | **本任务 11 格全绿**（第一发订阅时 `phase === 'off'` 就先挡了）。这一发要等到**同一进程里有第二份 store** 才可见 ⇒ 真读者是 T11 `--persist-shot` 里那第二份 store（限度 ⑪）。别为它造一格：为"两个 store 同时活"写单测等于重写一遍 `createProjectStore` |
 | T8-M41 | `PlanCanvas.tsx` 的 fit effect 依赖表把 `log` 删掉（回到 `[storeyId, setViewport]`） | **全绿**，且 `--prop-shot` 也绿 —— 五道闸门压根不打开工程，`viewport` 一直是样例房那一份。后果（`reopenAsEdit()` 之后画布永久空白）只有 T11 的 `--persist-shot` 会走到那一发（限度 ⑪）。这一行不进"必须红"的账：它是**屏幕侧**的依赖表，本任务的靶子在 node 档 |
 | T8-M42 | `open` 成功那一支里的 `useEditor.getState().setReadOnly(v.decision === 'read-only')` 摘掉，或写成死值 `setReadOnly(false)` | 格 5「read-only：闸门 + 横幅 + 双保险」红在**第二道闸门**：`readOnly` 仍是 false ⇒ `dispatch` 不再落 `只读工程：`，真源改了、订阅体看见 `phase === 'open'` 就发账 ⇒ `f.submits.length` 从 0 变 1。与 M34 是一对（M34 管"关"那一支漏抬闸，这一行管"开"那一支漏落闸），两行红在不同格 —— 少了这一行，"开"侧那道闸门就只剩横幅文案一个读者，而文案读的是 `v.decision` 不是 `readOnly`。**补在表尾**是因为 M38–M41 那四行"不红"是一组；这一行是普通可判红，别把它读进那一组 |
+| T8-M43 | `snapshotPayloadFromDocument` 里 `journalTurn,` 那一行删掉（四键产物退化成三键 —— Step 6b 的 T7-M25 换了靶子：codec 委托之后这一行才是产地） | 「`encodeDocument(doc, turn)` 与 `JSON.stringify(snapshotPayloadFromDocument(doc, turn))` 逐字节相同（委托没漂）」红（两侧同源、**一起漂**，所以它不红 —— 红的是下面三处，逐字抄名单）：`codec.test.ts` 第 9 格的键序断言、新增第 5 格「两份形状只差 `journalTurn` 一键…」（`Object.keys(snap)` 少一项），以及凡是"写快照之后 `loadProject` 读回来"的连库格（`journal.test.ts` 带快照的读路径格、`autosave-journal.test.ts` 的「八发连着落…」与 Step 6b 的自证格）—— 它们红在**解析**那一句（`解不出文档快照`，四键必填），不是红在第四条判据（`不是同一发，拒开`）。**这一发的读数要分清这两条文案**：红在解析说明产物少了那一键；红在判据说明 turn 递错了。两者是不同的病，别在回填里写成同一条 |
 
 **Task 8 登记的限度**（Step 8 汇总；写在这里是给下一个动这一族的人看的，不是待办）：
 

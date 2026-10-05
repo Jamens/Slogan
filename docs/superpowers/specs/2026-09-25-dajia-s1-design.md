@@ -231,7 +231,7 @@ dajia
 **已在 2026-09-25 实测验证**：
 
 - Node v24.14.1；pnpm 11.18.0；git 2.53.0.windows.2
-- MySQL **8.0.45** 监听 `127.0.0.1:3306`，`root` / `1234560` **登录成功**
+- MySQL **8.0.45** 监听 `127.0.0.1:3306`，`root` / `<本机口令，不写进文档>` **登录成功**
 - 服务端参数：`character_set_server=utf8mb4`、`collation_server=utf8mb4_0900_ai_ci`、`lower_case_table_names=1`、`max_connections=151`
 - 该实例现有 18 个数据库（其中 `mysql`、`information_schema`、`performance_schema`、`sys` 为系统库，用户库 14 个，含 `smartscrm`、`smartscrm_react`、`flowmart`、`ledger_db` 等），搭家使用独立的 `dajia` 与 `dajia_test`，不触碰其余
 - `npm` 上包名 `dajia` 未被占用（`zhujia` 已占用，故排除）
