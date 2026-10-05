@@ -20,7 +20,7 @@
 | **A2** | `drawing` 自己一套 `PaperLineType` + 一处**显式映射** `toScreenLineType()`，两族各留一格钉住映射 | 见 A1。映射是显式的、可测的；隐式共用会在将来某次"顺手统一"里悄悄改变屏幕观感 | — |
 | **A3** | `drawlist` 的 `Pen` 增一个**可选** `paperWidthMm`，屏幕侧忽略它 | 不碰现有判据；导出侧读它。这是"屏幕与交付物共用同一份几何，但线宽不是几何"这条 spec 判断的落地形状 | 改这里要重跑 T3 的五道真窗口闸门（`--shot` 等，判据字面量一字不动） |
 | **B1** | 只做 **1:100** | spec §11 验收标准写的是 1:100。1:50 留 S2 | — |
-| **B2** | 只做 **A3 横式**；A1/A2/竖式留 S2 | spec §7 写"A1/A2/A3 横竖"是 S2「多图纸成册」的承诺，S1 兑现它属于过度承诺 | — |
+| **B1a** | **B1 是产品范围约束，不是 API 约束**：`requireScale(50)` 与 `mmToPaperMm(x, 50)` **合法**（`units.ts` 收窄只挡 `0` / 负数 / NaN / 非整数 / Infinity），S2 要做 1:50 时不必改签名 | 2026-10-06 执行 T2 时发现：§一 B1 说"只做 1:100"，而 §四 U4 那格我写了 `expect(requireScale(50)).toBe(50)` —— 两者字面矛盾。查清后认定**不冲突**：B1 管的是"S1 不做 1:50 那一档图幅排版"，`requireScale` 管的是"这个分母能不能算"。锁死分母会让 S2 来改签名，而那时改签名的成本远大于现在多放行一个合法值。**执行者若发现别处也有这层张力，按这条口径判。** | 若将来有人读B1 当成"分母只许 100"，会去改 `requireScale` 把它锁死 ⇒ S2 开工时必须先解冻 || **B2** | 只做 **A3 横式**；A1/A2/竖式留 S2 | spec §7 写"A1/A2/A3 横竖"是 S2「多图纸成册」的承诺，S1 兑现它属于过度承诺 | — |
 | **C1** | 三道尺寸线**从轴网点收集** | 建筑制图惯例是轴线。链是通的：`PointEntity { storeyId, x, y }` → `StoreyEntity { projectId }`；core 已有 `incidentWallEnds(doc, pointId)` 可数一根点的墙端。**注意 `PointEntity` 没有 `projectId`**（spec §5.1 说它经 `storeyId` 关联），所以取 projectId 必须走 `storeyId → StoreyEntity → projectId`，不许直接读 | — |
 | **C2** | 三道道间距**固定纸面毫米**（7 / 5 / 5），spec 的"按图面留白自动分道"降级为"**溢出时加一道**" | 固定值可测；"自动分道"是未定义算法，且它是 spec §7 里少数没有给出判据的句子。**这是本计划对 spec 的一处收窄，执行时需在报告里显式记一笔** | 保留自动分道 ⇒ 判据不可写 |
 | **C3** | 尺寸端点符号长度**固定纸面 2mm** | 建筑制图惯例，且可测（进打印实测误差 ≤ 0.5mm 那条验收） | — |
@@ -261,6 +261,40 @@ export function deriveStoreyGeometry(doc: Document, storeyId: EntityId): StoreyG
 2. 同一份 doc 连跑两次，产出的**字节逐字相同**
 3. `pnpm typecheck`（含新的 drawing 串）/ `pnpm verify` / `pnpm test:db` 全绿
 4. `drawing` 包的 import 边界由一格常驻证人钉住（不 import electron / 不 import scene-2d）
+
+---
+
+## 九、执行回填
+
+### T1（包地基，2026-10-06）
+
+**先证红的两半**（本棒的全部凭据）：改**之前**往 `drawing/src/index.ts` 写两个类型错（`const PROBE: number = 'x'` / `const ALSO_PROBE: string = 42`），`pnpm typecheck` **exit=0**、日志零个 drawing 报错 ⇒ 证明 §五 那个缺口是真的；改**之后**同样两个错 ⇒ **exit=1**，报 `(4,14) TS2322` 与 `(5,14) TS2322`，行号精确。
+
+新建 `packages/drawing/tsconfig.json`（照 scene-2d 形状）；根 `typecheck` 串加一发。**格数一格未动**（49 / 644、6 / 110）—— T1 只改配置不加格，这正是 §六 给 T1 的退出条件。
+
+**两件确认过没改的事**：① `ALLOWED_DEPS` 里 `drawing: ['core']` 已是 §二 要的形状，不必动（`lint:deps` exit=0）；② `vitest.config.ts` 的 `packages/*/test/**/*.test.ts` 收得到 drawing 的测试（落了个占位格跑通后删掉）。
+
+### T2（units + ir，2026-10-06）
+
+**落码**：`units.ts`（换算唯一产地）+ `ir.ts`（图面 IR）+ `units-ir.test.ts` **11 格**。
+
+**① U3 判据的前提是错的，已实测订正。** 原文写的是 `expect(String(30 / 100)).not.toBe(String(mmToPaperMm(30)))` —— 它红了，而**红的原因是判据错不是实现错**。实测：**整数 mm 除以 100 在 JS 里是移位，`30/100 === 0.3` 逐字相同**，裸除法在「1:100 + 整数模型值」这条主路上**一个尾巴都不出**。`toFixed(2)` 真正防的是主路之外的边：纸面尺寸（A3 的 420/297）、S2 的 1:50 下非整数模型值。已把判据改成钉「收口是换算路径上的唯一产地」这个真实形状（用分母 1 把收口单独拎出来验：`33.333333333333336 → 33.33`、`1 分母下 1/3 → 0.33`）。
+> **给 T3 起的教训**：判据要钉真实的形状，不是钉一个听起来合理的担忧。本仓已栽过两次同型的（T7 的 `toEqual(undefined)` 恒绿、T7 的"空栈那格拿逆补丁比原件"）。**写完一格先问：它红的时候，实现坏在哪一行？答不上来就是判据自己错。**
+
+**② §一 B1 与 §四 U4 字面矛盾，已立决策 B1a 消解。** B1「只做 1:100」是**产品范围**约束（不做 1:50 那一档图幅排版）；`requireScale` 只管「这个分母能不能算」，`requireScale(50)` / `mmToPaperMm(x, 50)` **合法**。锁死分母会让 S2 开工时来改签名，而那时改签名比现在多放行一个合法值贵得多。**若将来有人把 B1 读成「分母只许 100」去改 `requireScale`，那是本条要拦的事。**
+
+**③ 「IR 与格式无关」是判出来的**：一格扫 `ir.ts` 源码文本，命中颜色字面量 / `rgb(` / `opacity` / `fontFamily` / `<svg` / `BT`+`Tf` 等 PDF 算子 / 位图 / base64 任一即红。`Pen` 严格三字段（layer / widthMm / lineType）。
+
+**变异实测**：
+
+| 变异 | 红格 | 打中的格 |
+|---|---|---|
+| `SCALE_DENOMINATOR` 100 → 50 | **3** | U1 / U2 / U3 |
+| 给 `Pen` 加一个 `color` 字段 | **1** | `IR 的 Pen 只有三个字段` |
+
+**盘上**：`pnpm verify` exit=0，**`Test Files 50` / `Tests 655`**（T1 时 49 / 644 ⇒ +1 / +11）；`pnpm typecheck` exit=0（**含 T1 新接的 drawing 串**）；`tsc -p packages/drawing/tsconfig.json` exit=0。`test:db` 本棒未跑（T2 不碰连库档），仍为 6 / 110。
+
+**待办**：T3 `linetypes.ts` 8 格 → T4 `plan.ts` 10 格 → T5 `dimensioning/` 16 格 → T6 `frame.ts` + `annotate.ts` 10 格 → T7 `section/clip.ts` 7 格 → T8 `export-plan.ts` 4 格 + 全量。**§二 写的 79 格是编写期预估**（含本棒已落的 11 格），每棒结束按盘上实测重数并回填，不许追幻影差异。
 
 **需人工验证、本计划不打勾的项**（沿用 spec §10 的口径）：
 
