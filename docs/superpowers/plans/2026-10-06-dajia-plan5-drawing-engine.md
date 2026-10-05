@@ -66,7 +66,7 @@ core  ←  drawing  ←  { desktop（导出入口）, scene-3d（M1.6 之后）}
 | `packages/drawing/src/units.ts` | **比例与纸面换算的唯一产地**（模型 mm → 纸面 mm） | 6 |
 | `packages/drawing/src/linetypes.ts` | 线型表（纸面语义）+ `toScreenLineType()` 映射 | 7 |
 | `packages/drawing/src/ir.ts` | 图面 IR 的类型与构造助手 | 5 |
-| `packages/drawing/src/plan.ts` | 平面图内容：墙/洞口/柱/板 → IR 图元 | 10 |
+| `packages/drawing/src/plan.ts` | 平面图内容：墙/洞口/柱/板 → IR 图元 | 11 |
 | `packages/drawing/src/dimensioning/chains.ts` | 从轴网点收集尺寸链 | 7 |
 | `packages/drawing/src/dimensioning/render.ts` | 三道尺寸线分道 + 45° 端点符号 | 9 |
 | `packages/drawing/src/frame.ts` | A3 横式图框 + 标题栏 | 6 |
@@ -75,7 +75,7 @@ core  ←  drawing  ←  { desktop（导出入口）, scene-3d（M1.6 之后）}
 | `packages/drawing/test/*.test.ts` | 上述各模块的 vitest（纯 node，不连库） | — |
 | `apps/desktop/src/main/draw/export-plan.ts` | **唯一** Electron 出口：拼图面 IR → 存盘 | 4（unit） |
 
-合计 **78 格**（unit 档，不连库；2026-10-06 由 79 订正为 78 —— `linetypes` 那栏原写 8 格，实测 7 格，因为 L5 是变异靶而非独立判据）。
+合计 **79 格**（unit 档，不连库；**2026-10-06 三次订正**：79 → 78（`linetypes` 原写 8 实测 7，L5 是变异靶而非独立判据）→ 79（T4 执行时给 `plan.ts` 补了 P3b / P7b 两格，实测 11）。**已落 29 格**（T2 11 + T3 7 + T4 11）。
 
 ---
 
@@ -162,6 +162,8 @@ export function deriveStoreyGeometry(doc: Document, storeyId: EntityId): StoreyG
 - `P8` 楼层标题（每层标高文字）属 `annotation`，且**取 `StoreyEntity.elevationMm` 不取真源的派生**
 - `P9` 变异样本：把层顺序写成 `['structure','opening',...]` 但产出时按 `annotation` 先画 ⇒ `plan.test.ts` 红（P7 的对账型）
 - `P10` 空层（`deriveStoreyGeometry` 返回 0 面墙）⇒ 产出**空**图元数组，不抛（导出单层的工程是合法的）
+- `P3b` **（2026-10-06 执行 T4 时补）** 洞口正压墙端时**不产零长空壳** —— core 的 `piecesFromSpans` 明确"零长段跳过"，drawing 侧照原样透出，而不是自己补一个 `[3600,3600]` 的退化多边形
+- `P7b` **（2026-10-06 执行 T4 时补）** `structure` 层**必须有图元**，且 `frame` / `section` 在 `plan.ts` 里不许出现 —— 只钉"层号单调不减"允许了 `[4,4,4,4]`（全标 annotation）这一型，那不是单调性坏掉而是**结构层空着**，图已经错了
 
 ### `dimensioning/chains.ts` + `render.ts`（16 格，本计划最费时的一族）
 
@@ -315,6 +317,42 @@ export function deriveStoreyGeometry(doc: Document, storeyId: EntityId): StoreyG
 **盘上**：`pnpm verify` exit=0，**`Test Files 51` / `Tests 662`**（T2 时 50 / 655 ⇒ +1 / +7）；`pnpm typecheck` exit=0；`tsc -p packages/drawing` exit=0。`test:db` 未跑（T3 不碰连库档），仍 6 / 110。
 
 **待办**：T4 `plan.ts` 10 格 → T5 `dimensioning/` 16 格 → T6 `frame.ts` + `annotate.ts` 10 格 → T7 `section/clip.ts` 7 格 → T8 `export-plan.ts` 4 格 + 全量。**§二 写的 78 格是编写期预估**（含已落的 11 + 7 = 18 格），每棒结束按盘上实测重数并回填。
+
+### T4（平面图内容，2026-10-06）
+
+**落码**：`plan.ts` + `plan.test.ts` **11 格**（§二 原写 10 —— 实测 11，多出的那格是「P3 边界：洞口正压墙端时不产零长空壳」，执行时发现这一型值得单独立格，已补进 §四）。
+
+**① 最重要的一条：本模块不重算任何几何。** 墙轮廓取 `deriveStoreyGeometry(doc, storeyId).walls[].corners`；**墙身被洞口切成的分段取同一份返回值的 `pieces`**（`WallPiece { wallId, fromMm, toMm }`，core 的 `piecesFromSpans` 已算好）；板的多边形直接读 `SlabEntity.boundaryPointIds`。**实测确认 P5 那条注释成立**：洞口越界由 core 的 `assertSpansFit` 在同一路径上抛、零长空壳 core 也不产 ⇒ **drawing 侧不需要重算**。
+
+**② 变异实测抓到一条判据的第四种形态。** 两发变异：
+
+| 变异 | 红格 | 打中的格 |
+|---|---|---|
+| 不吃 `pieces`、自己按墙算整段（第二份几何派生） | **7** | P1 / P2 / P3 等 |
+| 墙身全标成 `annotation` 层 | **4** | P1 / P6 / **P7** |
+
+第二发暴露了 **P7 的缺口**：它原本只钉"层号单调不减"，而全标成 annotation 时序列是 `[4,4,4,4]` —— **仍然单调**，可图已经错了（结构层空着）。已给 P7 补两道：`structure` 层必须有图元；`frame` / `section` 在本模块不许出现（那是 T6 / T7 的活）。补后同一变异打红 4 格。
+
+> **§九 常设提醒（现已四种形态，执行者按此自查）**：
+> 1. **红得太早**（T7 两次 + T2 一次）：判据的前提错，实现是对的。问"它红的时候实现坏在哪一行"。
+> 2. **恒绿**（T7 一次）：天平两端都落在同一个值上。问"没有这个功能时它会红吗"。
+> 3. **判据自伤**（T3 一次）：源码扫描型判据扫到了注释。写这类判据先想"本文件注释里会不会出现那些词"。
+> 4. **过宽、打不红**（T4 这一次）：变异打下去还是绿的 ⇒ 判据允许了不该允许的形态。补判据，别换实现。
+> 5. **多出来/少一格**（T3 的 8→7、T4 的 10→11）：按实测重数，**不许追幻影差异**（也不许为了对上计划数改判据）。
+
+**③ 两处判据我写错了，实现一直是对的**：
+
+| 判据 | 我写的 | 实测 | 错在哪 |
+|---|---|---|---|
+| P1 | x 跨度 `38.4` | `36` | 这堵墙沿 x 方向、法向是 y ⇒ **240 的厚度落在 y 上**，x 跨度就是 3600/100。已改成 x 钉 36、y 钉 2.4 |
+| P3 | `[[0,500],[500,1400],[1400,3600]]` | `[[0,500],[1400,1800],[3000,3600]]` | 实心段是**洞口之间的空隙**；我把门后的空隙当成了整段 |
+
+**④ tsc 抓到 3 处凭印象编的 API**（T1 那个缺口补上后的第二个实际收益）：`ColumnEntity` 是 `pointId`（不是 `centerPointId`）且有 `depthMm`（**各向异性**，不是正方形）；`SlabEntity` 是 `boundaryPointIds: EntityId[]`（**多边形**）；`Document` 只有 `get` / `byKind` / `entities` / 静态 `create` / 静态 `replaceEntities`，**没有 `pipe` 也没有 `getPoint`**。全部按盘上真身改写。
+> **给 T5–T8 的提醒**：写 drawing 代码前**先 grep 实体的真实字段**。本仓的实体字段名（如 `PointEntity` 没有 `projectId`）猜错率很高，而错的时候 tsc 会抓 —— **前提是 drawing 在 typecheck 串里**（T1 补的）。
+
+**盘上**：`pnpm verify` exit=0，**`Test Files 52` / `Tests 673`**（T3 时 51 / 662 ⇒ +1 / +11）；`pnpm typecheck` exit=0；`tsc -p packages/drawing` exit=0。`test:db` 未跑（T4 不碰连库档），仍 6 / 110。
+
+**待办**：T5 `dimensioning/` 16 格（本计划最费时的一族）→ T6 `frame.ts` + `annotate.ts` 10 格 → T7 `section/clip.ts` 7 格 → T8 `export-plan.ts` 4 格 + 全量。
 
 **需人工验证、本计划不打勾的项**（沿用 spec §10 的口径）：
 
