@@ -8379,6 +8379,29 @@ Expected：
 >
 > Step 6b 尚未落码，故本棒不与下面第 2 条的 `+1 / +10` 对账。
 
+> **Step 6b 执行回填（2026-10-06）**
+>
+> **H / I 两档先实测，再动代码**（纪律照 T4/T6 Step 1：实测与预期不同 ⇒ 改实现与注释，**不改判据形状**）。zod 实测 **4.6.5**：
+> - **H 档**：`.extend` **保留 strict** —— 四键产物加 `extra: 1` 报 `: Unrecognized key: "extra"`；三键被四键 schema 拒（`journalTurn: expected number, received undefined`）；四键被三键 schema 拒。⇒ 走规格的主路用 `.extend`，**不需要**手写四键 `z.strictObject`、不需要提 `SchemaVersionField`。
+> - **I 档**：`JournalTurnSchema` 能直接当字段，产物是 `number` 无 brand 无转换。附带读数：它**接受 `0`**（收 0、拒负数/小数/字符串/null）—— 与注释「非负安全整数」一致，turn=0 是第一发之前，合法。
+>
+> **已落码 / 落格**：`entity-schema.ts` 加 `SnapshotPayloadSchema` / `SnapshotPayloadShape` / `parseSnapshotPayload`；`codec.ts` 的 `encodeDocument` 加**必填**第二参、新增 `decodeSnapshot` 与新提的模块私有 `documentOf`、`decodeDocument` 降级成一行委托；`repository.ts` 的 `writeSnapshot` 递 `t` + `loadProject` 第四条判据。格数：`codec.test.ts` +2（15）、`journal.test.ts` +1（35）、`autosave-journal.test.ts` +2（9）。
+>
+> **规格漏列的三处连带（四键契约的必然结果，照「改实现不改判据形状」补键，没有放松契约）**：规格只点了「重复 id」那一处手搓 payload 要补 `journalTurn`，实际还有**键序被打乱**与**往返哨兵**两处也手搓了三键。另有 `autosave-journal.test.ts` 既有那格（`(turn, doc)` 同源）用了 `decodeDocument`，`decodeDocument` 降级成委托后它要跟着改成 `decodeSnapshot(...).doc`。**教训：契约从三键变四键时，`grep` 出来的手搓 payload 一定比规格列的更多** —— 逐个补，别只补被点名的那一处。
+>
+> **第四条的判据顺序是凭据不是偏好**（变异实测证明）：删掉第四条判据 ⇒ **只 1 格红**（正是「不是同一发，拒开」），其余 34 格全绿 ⇒ 它既没抢前面三条判据的位置，单独删掉也立刻有人喊。
+>
+> **变异实测**：
+>
+> | 变异 | 红格 | 打中的格 |
+> |---|---|---|
+> | `encodeDocument` 删掉 `journalTurn,` 那一行（T7-M25 的靶） | **6** | 连「重放 0 发」都塌 —— 判据咬得很实 |
+> | 删掉 `loadProject` 第四条判据 | **1** | 正是「不是同一发，拒开」 |
+>
+> **P-72 三处注释订正已完成**（只改注释与行号引用，语义/判据/正则/期望字面量一个都没动）：`repository.ts` 的「1→1」标注**未实测**并写明真要判「确实写了」该读 `wasCleanShutdown`；`pool.ts` 三处「第 12 格 / 第 2 格」改成被指格的 `it()` 标题；`journal.test.ts` 一处绝对行号改成「红在本格」。**改后格数逐字不变（644 / 110）**，证明没误改判据。
+>
+> **盘上读数（与本棒三条Expected 逐条对齐）**：`pnpm verify` exit=0，`Test Files 49` / `Tests 644`（Step 5 时 642 ⇒ **+2**）；`pnpm test:db` exit=0，`Test Files 6`（**不变**）/ `Tests 110`（Step 6 时 107 ⇒ **+3**）；`tsc -p apps/desktop/tsconfig.json` 与 `tsconfig.test.json` 均 exit=0。**T7 全部 Step 落完**，下面第 1/2 条的对账口径至此成立：verify 自 T6 收口 46/603 起**+3 文件 / +41 条**，test:db 自 5/100 起 **+1 文件 / +10 条**。
+
 ```bash
 sed 's/\x1b\[[0-9;]*m//g' tmp/t7-verify.log | grep -E "^ *(Test Files|Tests) "
 pnpm test:db > tmp/t7-db.log 2>&1; echo "exit=$?"
