@@ -141,20 +141,20 @@ CI 的 ubuntu runner 没有 MySQL,也没有口令。所以:
 
 ## 测试现状
 
-`pnpm verify` 当前:**46 文件 / 603 条全绿**(Node 24.14.1 实测,2026-10-06)。
+`pnpm verify` 当前:**49 文件 / 644 条全绿**(Node 24.14.1 实测,2026-10-06)。
 
 | 层 | 文件 | 条数 | 手段 |
 |---|---|---|---|
-| core | 26 | 339 | vitest + fast-check 属性测试 |
+| core | 26 | 346 | vitest + fast-check 属性测试 |
 | scene-2d | 7 | 172 | 逻辑单测(视口变换、吸附优先级) |
-| desktop unit | 8 | 75 | 不连库的部分 |
+| desktop unit | 10 | 91 | 不连库的部分 |
 | protocol | 3 | 17 | zod shape 与 core 接口对账 |
-| scripts | 2 | 0 | 闸门基线 + 依赖守卫 |
-| **合计** | **46** | **603** | |
-| desktop db | 5 | 100 | 真 MySQL,**不计入上表** |
+| scripts | 2 | 18 | 闸门基线 + 依赖守卫 |
+| **合计** | **49** | **644** | |
+| desktop db | 6 | 110 | 真 MySQL,**不计入上表** |
 
-`pnpm test:db` 最近一次实跑(2026-10-06,MySQL 8.0.45):**5 文件 / 100 条全绿,零skip**,
-14.16s。分层:migrate 14 / journal 34 / locks 29 / repository 20 / env 3。
+`pnpm test:db` 最近一次实跑(2026-10-06,MySQL 8.0.45):**6 文件 / 110 条全绿,零skip**。
+分层:migrate 14 / journal 35 / locks 29 / repository 20 / autosave-journal 9 / env 3。
 跑完 `dajia` 与 `dajia_test` **无残留**,15 个用户库逐名等于基线。
 
 核心不变式用属性测试锁住:
@@ -266,7 +266,7 @@ S1 内部里程碑:
 | M1.0 | pnpm workspace、electron-vite、TS strict、依赖 lint、CI | ✅ |
 | M1.1 | `@dajia/core`:实体模型、command 层与撤销、几何派生、属性测试 | ✅ |
 | M1.2 | `@dajia/scene-2d`:三层 canvas、拉墙/拖点/删除、吸附、属性面板 | ✅ |
-| M1.3 | 持久化:迁移、repository、工程锁、自动保存与崩溃恢复 | 🔄 T1–T6 落码,T7(保存引擎)未开始 |
+| M1.3 | 持久化:迁移、repository、工程锁、自动保存与崩溃恢复 | 🔄 T1–T7 落码,剩 T8(IPC 接线)/ T9(连接配置与首屏) |
 | M1.4 | `@dajia/drawing`:图面 IR、图框、线型表、三道尺寸线、A3 排版 | ⬜ |
 | M1.5 | 自研 PDF 后端 + 中文字体嵌入 + 比例尺自检 | ⬜ |
 | M1.6 | `@dajia/scene-3d` M1 形态:只读拉伸体 + 选中双向同步 | ⬜ |
