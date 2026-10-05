@@ -8367,6 +8367,18 @@ Expected：
 >
 > **盘上读数**：`pnpm verify` exit=0，`Test Files 49`、`Tests 642`（Step 4 时 47 / 634 ⇒ **+2 / +8**）。`npx tsc --noEmit -p apps/desktop/tsconfig.json` exit=0。仓库内无抢救件残留（`find . -name "*-turn-*.json"` 空）。Step 6 / 6b 尚未落码，故本棒不与下面第 1 条的 `+3 / +41` 对账。
 
+> **Step 6 执行回填（2026-10-06）**
+>
+> **已落格**：`test/db/autosave-journal.test.ts` 415 行 / 7 格（1 describe）。**这是 T1–T7 里唯一一档真引擎接真库**，替不了的三件事：① 引擎递给 `writeSnapshot` 的 `(turn, doc)` 同源（假 sink 只数调用次数看不见内容，差一发的错配只有真编码-真解码往返才抓得到）；② `already-applied` 由真库 `journal_turn` 判出 ⇒ 行数计数器不推进；③ 真故障重试后 turn 序列仍连着且一个 turn 只落一份抢救件。
+>
+> **规格踩了 T6 已经踩过并记在案的同一个坑**：它把 `migrate(pool, DATABASE)` 压在**业务池**上 ⇒ MySQL 报「near 'CREATE TABLE IF NOT EXISTS \`project\`('」语法错。`001_init.sql` 是多语句 DDL，而业务池不开 `multipleStatements`（P-65）。**`locks.test.ts` 的注释里已写着答案**（"brief 原稿把这发直接压在业务池上，实测 SQL 语法错"），本棒照那个形状另开一个用完即关的 `migratePool`。**这一条值得单独立规矩：T9 之后若再有测试要在真库上建表，先查 `locks.test.ts` 的 `beforeAll` 形状，不要照 brief 原稿。**
+>
+> **一处被牵连的防线缺口（本棒补上）**：规格的 `afterAll` 是 `rmSync(emergencyDir, ...)` 无条件删。上面那个语法错让 `beforeAll` 中途抛，`emergencyDir` 停在 `''`，而 **`rmSync('')` 把空串解析成 cwd** —— 在本仓库就是整棵目录树。它被 WorkBuddy 的 safe-delete 守卫拦下才没出事（仓库已核完好），但 **"靠外部守卫兜住自己的 bug"不是防线**。已改为显式判空（`pool` 同理），让失败路径不可能碰到仓库目录。**教训：夹具变量初始化失败时的清理路径是独立的一类风险，与被测逻辑无关但后果更大。**
+>
+> **盘上读数**：`pnpm test:db` exit=0，**`Test Files 6` / `Tests 107`**（Step 5 时 5 / 100 ⇒ +1 / +7）。`npx tsc --noEmit -p apps/desktop/tsconfig.test.json` exit=0（`FlakySink implements JournalSink` 的形状主张只有它能看见）。`pnpm verify` exit=0，49 / 642（与 Step 5 同 —— **库测试不进 verify，这一条正好对账**）。库自清：19 个库、`dajia` / `dajia_test` 无残留、15 个用户库逐名等于基线。仓库内无抢救件残留。
+>
+> Step 6b 尚未落码，故本棒不与下面第 2 条的 `+1 / +10` 对账。
+
 ```bash
 sed 's/\x1b\[[0-9;]*m//g' tmp/t7-verify.log | grep -E "^ *(Test Files|Tests) "
 pnpm test:db > tmp/t7-db.log 2>&1; echo "exit=$?"
