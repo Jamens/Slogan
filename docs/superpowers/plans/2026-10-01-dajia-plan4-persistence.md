@@ -8321,6 +8321,28 @@ Expected：
 
 - [ ] **Step 7: 全量复跑与计数**
 
+> **Step 1–4 执行回填（2026-10-06）**
+>
+> **已落码**：`transaction.ts` 加 `lastPatch` 三处赋值点；`persist/describe-error.ts`（15 行）；`persist/autosave.ts`（458 行）。**已落格**：`transaction.test.ts` +7（15 格）、`autosave.test.ts` 24 格（5 个 describe）。
+>
+> **两处规格自身的问题（Step 1–2 落码时订正）**：
+>
+> ① **Step 1 预期 7 红 8 绿，实测首跑只 5 红。** `redo 之后又是正向补丁` 与 `build 抛错之后停在上一发` 两格的天平两端都落在 `undefined` 上（`expect(log.lastPatch).toEqual(forward)` 而 `forward` 也是 `undefined`），于是"没有 lastPatch"与"lastPatch 正确"给出同一结果 —— **规格自己踩了它反复罚的"判据在功能缺失时成立"那一型**。已给两格各补一道"它必须是一个真补丁"的守卫（`if (!x) throw new TypeError(...)`），补后 7 红 8 绿，每格都因"不是真补丁"而红。
+>
+> ② **Step 1「空栈那格」把逆补丁与原件比。** 计划原文 `expect(log.lastPatch).toEqual(patch)` 里 `patch` 取自 dispatch（正向 x=100），而该行之前刚 `undo()` 成功 —— 按 P-5 口径 `lastPatch` 是**逆补丁**（x=0），必然红。"不刷"要验的是"空栈那次调用没有改变 `lastPatch`"，不是"undo 之后仍等于 dispatch 那发"，两件事被写成了一行。已改为与"刚才那次成功落地后的值"比，并显式钉住"成功落地会刷"（undo ⇒ x=0、redo ⇒ x=100）作为前提。
+>
+> **三发变异棒实测（Step 4落码后，全部先红后绿）**：
+>
+> | 变异 | 红格数 | 打中的格 |
+> |---|---|---|
+> | 摘掉 `kick()` 里的 chain 挂链（`void this.drain()`） | **6** | `队列串行` 及快照/重试那一族 |
+> | 心跳 catch 里删掉 `pause('lock-lost: 心跳调用抛错')` | 1 | `beat 抛错同样按 lost 停写` |
+> | `rescue()` 里删掉 `rescuedTurns` 两行记账 | 1 | `队首一直失败：抢救一次都不许多，队列一条都不许丢` |
+>
+> **新发现（给下一棒）**：串行**不是**由 `pumping` 那道门保证的，而是由 `this.chain = this.chain.then(() => this.drain())` 保证 —— 变异实测显示**摘掉 `pumping` 门时 24 格仍全绿**（因为两个 `drain` 本来就串在同一条 chain 上），摘掉 chain 才打红 6 格。`pumping` 是**冗余的第二道保险**，它防的是"有人把 chain 改成直接调"这一型改法。注释与交接里不要把 `pumping` 说成串行的产地，否则下一个人会去优化掉它。
+>
+> **盘上读数**：`pnpm verify` exit=0，`Test Files 47`、`Tests 634`（T6 收口时是 46 / 603 ⇒ **+1 / +31**，含 core 7 + autosave 24）。`npx tsc --noEmit -p apps/desktop/tsconfig.json` exit=0。Step 5/6/6b 尚未落码，故本棒不与下面第 1 条的 `+3 / +41` 对账。
+
 ```bash
 pnpm verify > tmp/t7-verify.log 2>&1; echo "exit=$?"
 sed 's/\x1b\[[0-9;]*m//g' tmp/t7-verify.log | grep -E "^ *(Test Files|Tests) "
