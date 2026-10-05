@@ -1,5 +1,10 @@
 import { Document, type Entity, type EntityId, type Patch } from '@dajia/core';
-import { parseDocumentPayload, parseEntityShape, parsePatchShape } from '@dajia/protocol';
+import {
+  parseEntityShape,
+  parsePatchShape,
+  parseSnapshotPayload,
+  type SnapshotPayloadShape,
+} from '@dajia/protocol';
 
 export type RowTable = 'element' | 'command_log' | 'snapshot';
 
@@ -64,18 +69,32 @@ function byId(a: Entity, b: Entity): number {
  * 落盘形状与 `canonical()` 同一口径：实体按 id 升序。`document.ts` 里那个 `byId` 是模块私有的，
  * 为一次排序给它加导出 = 让 core 多一条只服务于磁盘的 API；这里复制两行比较符，
  * 而"两边排序一致"这条主张由 `codec.test.ts` 第 9 格守（它同时读 `encodeDocument` 的产物与形状表）。
+ *
+ * **键序是产物形状的一部分**：`['projectId','schemaVersion','journalTurn','entities']`，
+ * T8 的委托要吃它，`codec.test.ts` 的「两份契约」那一格逐字节钉住。
  */
-export function encodeDocument(doc: Document): string {
+export function encodeDocument(doc: Document, journalTurn: number): string {
   return JSON.stringify({
     projectId: doc.projectId,
     schemaVersion: doc.schemaVersion,
+    journalTurn,
     entities: [...doc.entities.values()].sort(byId),
   });
 }
 
-/** 只解码、不验不变式：引用与几何的放行证在 T5 的 `loadProject`（那里才知道一共读了几层）。 */
-export function decodeDocument(ref: RowRef, raw: unknown): Document {
-  const payload = parseDocumentPayload(where(ref), asJsonValue(raw));
+/** 快照正文里除了文档本身，还要说"这份正文是写到第几发的"（P-70）。 */
+export interface SnapshotBody {
+  readonly doc: Document;
+  readonly journalTurn: number;
+}
+
+/**
+ * 建 Map + 重复 id 当场抛。T4 那段循环整体搬进这里，抛错文案
+ * `${where(ref)} 的 entities 里实体 ${entity.id} 出现两次：一份快照不许有重复 id`
+ * **逐字保留** —— `codec.test.ts` 那两格吃它的正则，一字不改地继续成立。
+ * （T8 会把它改成 `documentFromPayload(payload, where)`，同一循环、参数顺序不同。）
+ */
+function documentOf(ref: RowRef, payload: SnapshotPayloadShape): Document {
   const next = new Map<EntityId, Entity>();
   for (const entity of payload.entities) {
     if (next.has(entity.id)) {
@@ -88,4 +107,18 @@ export function decodeDocument(ref: RowRef, raw: unknown): Document {
     next.set(entity.id, entity);
   }
   return Document.replaceEntities(Document.create(payload.projectId, payload.schemaVersion), next);
+}
+
+/**
+ * 读快照：验的是**盘上契约**（四键），缺 `journalTurn` 当场抛而不是当它是 null。
+ * 这一格就是"有人把 `encodeDocument` 里 `journalTurn,` 那一行删掉"的牙（T7-M25 的靶）。
+ */
+export function decodeSnapshot(ref: RowRef, raw: unknown): SnapshotBody {
+  const payload = parseSnapshotPayload(where(ref), asJsonValue(raw));
+  return { doc: documentOf(ref, payload), journalTurn: payload.journalTurn };
+}
+
+/** 只要正文的调用方（`repository.ts` 的重放循环之外都算）用它；快照读侧用 `decodeSnapshot`。 */
+export function decodeDocument(ref: RowRef, raw: unknown): Document {
+  return decodeSnapshot(ref, raw).doc;
 }

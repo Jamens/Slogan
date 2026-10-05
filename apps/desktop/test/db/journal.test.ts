@@ -314,7 +314,7 @@ describe('拒开：盘上账本不该被静默圆回来的那些形状', () => {
     await writeHouse();
     await pool.query(
       'INSERT INTO `snapshot` (`project_id`, `journal_turn`, `schema_version`, `payload`) VALUES (?, ?, ?, ?)',
-      [PROJECT_ID, 5, SCHEMA_VERSION, encodeDocument(Document.create(PROJECT_ID, SCHEMA_VERSION + 7))],
+      [PROJECT_ID, 5, SCHEMA_VERSION, encodeDocument(Document.create(PROJECT_ID, SCHEMA_VERSION + 7), 5)],
     );
     await expect(repo.loadProject('edit')).rejects.toThrow(/payload/);
   });
@@ -323,9 +323,42 @@ describe('拒开：盘上账本不该被静默圆回来的那些形状', () => {
     await writeHouse();
     await pool.query(
       'INSERT INTO `snapshot` (`project_id`, `journal_turn`, `schema_version`, `payload`) VALUES (?, ?, ?, ?)',
-      [PROJECT_ID, 5, SCHEMA_VERSION, encodeDocument(Document.create(OTHER_PROJECT, SCHEMA_VERSION))],
+      [PROJECT_ID, 5, SCHEMA_VERSION, encodeDocument(Document.create(OTHER_PROJECT, SCHEMA_VERSION), 5)],
     );
     await expect(repo.loadProject('edit')).rejects.toThrow(new RegExp(`payload 写的是工程 ${OTHER_PROJECT}`));
+  });
+
+  it('快照的列与正文说的是不同的一发 ⇒ 拒开（列快于正文、正文快于列两个方向各一发）', async () => {
+    // P-70 的那一型，也是本计划最难查的一型：列写 5、正文只到 turn 3 ⇒ 下面那条
+    // `AND turn > replayFrom` 会跳过 4 与 5 ⇒ 交出一份"形状全对"的旧文档。
+    // 上面三条判据（版本列 / 版本正文 / 工程归属）一条都不管这根turn 轴，
+    // 所以它必须有自己的一条。
+    // 夹具注意：writeHouse() 已经建过工程并写了五发，**别再调createProject**（撞主键会红在错误的原因上）。
+    const house = await writeHouse();
+    // 方向一：列快于正文（列 5、正文只到 3）
+    await pool.query('DELETE FROM `snapshot`');
+    await pool.query(
+      'INSERT INTO `snapshot` (`project_id`, `journal_turn`, `schema_version`, `payload`) VALUES (?, ?, ?, ?)',
+      [PROJECT_ID, 5, SCHEMA_VERSION, encodeDocument(at(house, 3), 3)],
+    );
+    await expect(repo.loadProject('read')).rejects.toThrow(/不是同一发，拒开/);
+
+    // 方向二：正文快于列（列 3、正文到 5）
+    await pool.query('DELETE FROM `snapshot`');
+    await pool.query(
+      'INSERT INTO `snapshot` (`project_id`, `journal_turn`, `schema_version`, `payload`) VALUES (?, ?, ?, ?)',
+      [PROJECT_ID, 3, SCHEMA_VERSION, encodeDocument(at(house, 5), 5)],
+    );
+    await expect(repo.loadProject('read')).rejects.toThrow(/不是同一发，拒开/);
+
+    // 反向对照：列与正文同一发时必须正常打开 —— 否则这一格证的是别的东西
+    //（夹具歪了、或者前面的判据抢了它），不是 P-70 那一型。
+    await pool.query('DELETE FROM `snapshot`');
+    await pool.query(
+      'INSERT INTO `snapshot` (`project_id`, `journal_turn`, `schema_version`, `payload`) VALUES (?, ?, ?, ?)',
+      [PROJECT_ID, 5, SCHEMA_VERSION, encodeDocument(at(house, 5), 5)],
+    );
+    await expect(repo.loadProject('read')).resolves.toBeDefined();
   });
 
   it('中间缺一发日志 ⇒ 拒开并说"缺号"（无静默丢失的反面就是静默补洞）', async () => {
@@ -597,7 +630,7 @@ describe('closeProject 的三方对账', () => {
 
   it('读路径不漏连接：connectionLimit=1 的池上连开两次再收尾都成功（少一次 release 就变成等 1 秒超时）', async () => {
     // 原文这里是 `const house = await writeHouse();`，但这一格通篇只用 `a`/`b` 两份 load 回来的文档
-    // —— 绑一个不用的名字在 `noUnusedLocals` 下直接编译不过（tsconfig.test.json 会红在 525 行）。
+    // —— 绑一个不用的名字在 `noUnusedLocals` 下直接编译不过（tsconfig.test.json 会红在本格）。
     // 判据不变：这一格证的是"三次取连接都还得回去"，与夹具返回值无关。
     await writeHouse();
     const a = await repo.loadProject('edit');

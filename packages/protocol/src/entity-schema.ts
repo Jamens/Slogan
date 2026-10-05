@@ -146,6 +146,30 @@ export const DocumentPayloadSchema = z.strictObject({
 });
 
 export type DocumentPayloadShape = z.output<typeof DocumentPayloadSchema>;
+
+/**
+ * 快照 payload 的**盘上契约** = 线上契约 + `journalTurn`（P-70）。
+ * 用 `.extend` 而不是重写四键：`schemaVersion` 那段 refine 复制一份就是第二份真源，
+ * 而它漂的时候没人红。`SnapshotPayloadSchema` 只服务于 `snapshot` 表；
+ * 线上（T8 的 IPC）继续用 `DocumentPayloadSchema` —— renderer 没有合法的 turn 可填（P-18）。
+ *
+ * **`.extend` 保留 strict：2026-10-06 实测**（T7 Step 6b H 档）。取本契约的产物再加
+ * 一个 `extra: 1`，`safeParse` 报 `: Unrecognized key: "extra"` ⇒ strictness 没丢。
+ * 常驻证人是 `codec.test.ts` 的「盘上契约仍然 strict：多一个键就拒」那一格；
+ * 哪天 zod 换了实现让 `.extend` 变松，只有那一格会红。
+ */
+export const SnapshotPayloadSchema = DocumentPayloadSchema.extend({
+  journalTurn: JournalTurnSchema,
+});
+
+export type SnapshotPayloadShape = z.output<typeof SnapshotPayloadSchema>;
+
+/** 文案前缀 `解不出文档快照：` 逐字沿用 T4/T5 那一族 —— `codec.test.ts` 与 T5 的格都吃这句正则。 */
+export function parseSnapshotPayload(where: string, value: unknown): SnapshotPayloadShape {
+  const r = SnapshotPayloadSchema.safeParse(value);
+  if (!r.success) throw new TypeError(`${where} 解不出文档快照：${issueText(r.error)}`);
+  return r.data;
+}
 export type PatchShape = z.output<typeof PatchSchema>;
 
 function issueText(err: z.ZodError): string {

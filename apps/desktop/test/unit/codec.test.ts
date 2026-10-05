@@ -11,12 +11,13 @@ import {
   type StoreyEntity,
   type WallEntity,
 } from '@dajia/core';
-import { DocumentPayloadSchema } from '@dajia/protocol';
+import { DocumentPayloadSchema, SnapshotPayloadSchema } from '@dajia/protocol';
 import {
   asJsonValue,
   decodeDocument,
   decodeEntity,
   decodePatch,
+  decodeSnapshot,
   encodeDocument,
   encodeEntity,
   encodePatch,
@@ -115,7 +116,7 @@ describe('codec：盘上字节 ↔ core 数据', () => {
 
   it('文档 encode→decode 之后 canonical() 逐字节相同', () => {
     const doc = docOf(ALL);
-    const back = decodeDocument(SNAP, encodeDocument(doc));
+    const back = decodeDocument(SNAP, encodeDocument(doc, 11));
     expect(back.canonical()).toBe(doc.canonical());
     expect(back.projectId).toBe(PID);
     expect(back.schemaVersion).toBe(doc.schemaVersion);
@@ -131,6 +132,7 @@ describe('codec：盘上字节 ↔ core 数据', () => {
         return out;
       }),
       schemaVersion: doc.schemaVersion,
+      journalTurn: 7,
       projectId: doc.projectId,
     });
     expect(decodeDocument(SNAP, shuffled).canonical()).toBe(doc.canonical());
@@ -174,21 +176,57 @@ describe('codec：盘上字节 ↔ core 数据', () => {
     expect(() => applyPatch(docOf(ALL), decoded)).toThrow(/Patch\.upsert 内 id 重复/);
   });
 
-  it('encodeDocument 的形状就是三键，且 entities 按 id 升序（与 canonical() 同一个口径）', () => {
+  it('两份契约：线上三键、盘上四键，且 entities 按 id 升序', () => {
+    // 线上三键（renderer ↔ main，文档的**内容**）：renderer 没有合法的 turn 可填（P-18）。
     expect(Object.keys(DocumentPayloadSchema.shape).sort()).toEqual([
       'entities',
       'projectId',
       'schemaVersion',
     ]);
-    const parsed = JSON.parse(encodeDocument(docOf(ALL))) as {
+    // 盘上四键（快照行的**正文**）= 线上 + journalTurn，由 `.extend` 派生。
+    expect(Object.keys(SnapshotPayloadSchema.shape).sort()).toEqual([
+      'entities',
+      'journalTurn',
+      'projectId',
+      'schemaVersion',
+    ]);
+    // 键**序**是产物形状的一部分：T8 的委托要吃它。
+    expect(Object.keys(JSON.parse(encodeDocument(docOf(ALL), 42)))).toEqual([
+      'projectId',
+      'schemaVersion',
+      'journalTurn',
+      'entities',
+    ]);
+    const parsed = JSON.parse(encodeDocument(docOf(ALL), 7)) as {
       projectId: string;
       schemaVersion: number;
+      journalTurn: number;
       entities: { id: string }[];
     };
     expect(parsed.projectId).toBe(PID);
     expect(parsed.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(parsed.journalTurn).toBe(7);
     const ids = parsed.entities.map((e) => e.id);
     expect(ids).toEqual([...ids].sort());
+  });
+
+  it('盘上契约仍然 strict：多一个键就拒（H 档实测的常驻证人）', () => {
+    // 2026-10-06 实测：DocumentPayloadSchema.extend 保留 strict（多一个 extra: 1
+    // 报 `: Unrecognized key: "extra"`）。**若哪天 zod 换了实现让 `.extend` 变松，
+    // 只有这一格会红** —— 那一刻"四键就是三键加一个键"这条主张就不成立了。
+    const text = JSON.stringify({ ...(JSON.parse(encodeDocument(docOf(ALL), 7)) as object), extra: 1 });
+    expect(() => decodeSnapshot(SNAP, text)).toThrow(/^snapshot 行 3 解不出文档快照：/);
+  });
+
+  it('缺 journalTurn 的旧三键 payload ⇒ 拒开（"有人把 journalTurn, 那一行删掉"的牙）', () => {
+    // T7-M25 的靶：encodeDocument 里少写 journalTurn 这一行时，本格是唯一会红的那一格
+    // —— 若没有它，三键 payload 会被当成合法的空 turn 快照读进来。
+    const text = JSON.stringify({
+      projectId: PID,
+      schemaVersion: SCHEMA_VERSION,
+      entities: [point, point2],
+    });
+    expect(() => decodeSnapshot(SNAP, text)).toThrow(/^snapshot 行 3 解不出文档快照：/);
   });
 
   it('encode 不是校验器：它把 -0 写成 "0"，且照样不抛', () => {
@@ -201,6 +239,10 @@ describe('codec：盘上字节 ↔ core 数据', () => {
     const text = JSON.stringify({
       projectId: PID,
       schemaVersion: SCHEMA_VERSION,
+      journalTurn: 7,
+      // journalTurn 必须补：缺键会在 strictObject 上先抛「解不出文档快照」，
+      // 那一格就再也吃不到"出现两次"那句文案了 —— 这是新契约的副作用，
+      // 别用"放松契约"绕开它。
       entities: [point, { ...point, x: 123 }, point2],
     });
     expect(() => decodeDocument(SNAP, text)).toThrow(/entities 里实体 \S+ 出现两次/);
@@ -223,7 +265,7 @@ describe('codec：盘上字节 ↔ core 数据', () => {
     // 零长那一发的两点用不同 id、同坐标（引用与同层判据对它全盲，只有 assertWallShape 拦得住）。
 
     // ① 厚 ≥ 墙长：docOf(ALL) 的 W1 厚 5000 装在 4000 长的 P1→P2 上。
-    const thick = decodeDocument(SNAP, encodeDocument(docOf(ALL)));
+    const thick = decodeDocument(SNAP, encodeDocument(docOf(ALL), 7));
     expect(() => assertTruthSourceInvariants(thick)).toThrow(/不小于墙长/);
 
     // ② 零长：P1、P2 同坐标 (0,0)、不同 id，墙 200 厚 —— 端点重合走的是 `零长` 那一句。
@@ -236,6 +278,7 @@ describe('codec：盘上字节 ↔ core 数据', () => {
           { ...point2, x: 0, y: 0 },
           { ...wall, thicknessMm: 200 },
         ]),
+        7,
       ),
     );
     expect(() => assertTruthSourceInvariants(zeroLen)).toThrow(/零长/);
@@ -252,6 +295,7 @@ describe('codec：盘上字节 ↔ core 数据', () => {
           { ...wall, thicknessMm: 200 },
           { ...opening, category: 'window', sillMm: 200, heightMm: 2900 },
         ]),
+        7,
       ),
     );
     expect(() => assertTruthSourceInvariants(badTop)).toThrow(/顶标高/);

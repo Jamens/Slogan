@@ -9,7 +9,7 @@ import {
 } from '@dajia/core';
 import { JournalTurnSchema } from '@dajia/protocol';
 import {
-  decodeDocument,
+  decodeSnapshot,
   decodeEntity,
   decodePatch,
   encodeDocument,
@@ -299,7 +299,8 @@ export class ProjectRepository {
     }
     await this.pool.query(
       'INSERT INTO `snapshot` (`project_id`, `journal_turn`, `schema_version`, `payload`) VALUES (?, ?, ?, ?)',
-      [this.projectId, t, doc.schemaVersion, encodeDocument(doc)],
+      // 列与正文的 turn 同源于同一个 `t`（P-70）：写侧没有第二份可比，牙在读侧那条判据上。
+      [this.projectId, t, doc.schemaVersion, encodeDocument(doc, t)],
     );
   }
 
@@ -363,28 +364,37 @@ export class ProjectRepository {
             )}：同一份快照的列上与工程上说的不是同一个版本，拒开`,
           );
         }
-        const decoded = decodeDocument({ table: 'snapshot', id: String(snapSeq) }, snap.payload);
-        if (decoded.schemaVersion !== schemaVersion) {
+        const body = decodeSnapshot({ table: 'snapshot', id: String(snapSeq) }, snap.payload);
+        if (body.doc.schemaVersion !== schemaVersion) {
           throw new RangeError(
             `snapshot 行 ${String(snapSeq)} 的 payload 写着 schemaVersion ${String(
-              decoded.schemaVersion,
+              body.doc.schemaVersion,
             )}，工程头记的是 ${String(schemaVersion)}：列与正文各说各话时以工程头为准，拒开`,
           );
         }
-        if (decoded.projectId !== this.projectId) {
+        if (body.doc.projectId !== this.projectId) {
           throw new RangeError(
-            `snapshot 行 ${String(snapSeq)} 的 payload 写的是工程 ${decoded.projectId}，` +
+            `snapshot 行 ${String(snapSeq)} 的 payload 写的是工程 ${body.doc.projectId}，` +
               `而这条快照挂在工程 ${this.projectId} 上：两份账指认的不是同一个工程，拒开`,
           );
         }
-        doc = decoded;
+        // 第四条：turn 自证（P-70）。**判据顺序是凭据不是偏好** —— 版本列 → 版本正文 →
+        // 工程归属 → turn 自证。新增的这一发必须放最后：`journal.test.ts` 那两格
+        // （版本列不符 / 工程归属不符）的期望文案靠前面两支先命中，挪到前面会让它们
+        // 红在**新文案**上，等于用一发改掉两格的证人。
+        if (body.journalTurn !== snapTurn) {
+          throw new RangeError(
+            `snapshot 行 ${String(snapSeq)} 的 payload 写着 journalTurn ${String(body.journalTurn)}，` +
+              `列上记的是 ${String(snapTurn)}：快照的正文与列说的不是同一发，拒开`,
+          );
+        }
+        doc = body.doc;
         snapshot = { seq: snapSeq, turn: snapTurn };
-        // 这一行把快照**列**上的 turn 直接当成"正文已经写到这一发"，而列无法自证：payload 里没有 turn 字段
-        // （codec 只写 projectId / schemaVersion / entities）。上面三条判据管的是版本列、版本正文、工程归属三根轴，
-        // 这根 turn 轴空着 ⇒「列快于正文 ⇒ 静默少重放 ⇒ 交出旧文档」这一型在本发**没有牙**：
-        // 列写 5 而正文只是 turn 3 的终态时，下面那条 `AND turn > replayFrom ORDER BY seq` 会跳过 4、5，
-        // 尾判据与放行证都看不出来（旧文档形状是全对的）。设牙在 T7（`encodeDocument` 增 `journalTurn` +
-        // `writeSnapshot` 校验 + `loadProject` 同形状拒开判据）；本发只登记，不动 codec、不加判据。
+        // 上面那第四条判据是 P-70 欠下的账的兑现：这一行把快照**列**上的 turn 当成
+        // "正文已经写到这一发"，而列**无法自证**这件事曾让本段没有牙 ——
+        // 列写 5 而正文只是 turn 3 的终态时，下面那条 `AND turn > replayFrom ORDER BY seq`
+        // 会跳过 4、5，交出一份"形状全对"的旧文档（尾判据与放行证都看不出来）。
+        // 现在 payload 里带着 `journalTurn`，列与正文两个读数能当场比对他们。
         replayFrom = snapTurn;
       } else {
         doc = Document.create(this.projectId, schemaVersion);
@@ -528,7 +538,11 @@ export class ProjectRepository {
         // 回滚交给下面那个 catch，这里不重复一发 —— 重复会让"谁在回滚"有两个答案。
         throw new RangeError(formatMismatches(this.projectId, mismatches));
       }
-      // 同样不许加 affectedRows 断言：收过尾的工程再收一次是 1→1。
+      // 同样不许加 affectedRows 断言。**未实测**：推演是"收过尾的工程再收一次是 1→1"，
+      // 但这一发写的是 `NOW(3)`，两次 UPDATE 落在同一毫秒刻度上时 affectedRows 仍可能是 0
+      // （M15 同族，取决于驱动怎么报"值未变化"）。断言它等于把一个未实测的推演
+      // 焊成判据 —— 哪天驱动换报法就红在错误的原因上。真要判"确实写了"，
+      // 该读的是下一次 `loadProject` 的 `wasCleanShutdown`，不是这一发的 affectedRows。
       await conn.query(
         'UPDATE `project` SET `clean_shutdown` = 1, `updated_at` = NOW(3) WHERE `id` = ?',
         [this.projectId],

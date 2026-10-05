@@ -11,7 +11,7 @@ export interface PoolOptions {
   readonly multipleStatements?: boolean;
   readonly connectionLimit?: number;
   /**
-   * 行锁等待秒数。**唯一读者是 `repository.test.ts` 的第 12 格**（裁决 P-15：外部连接持行锁
+   * 行锁等待秒数。**唯一读者是 `repository.test.ts` 的「半途被外部行锁掐断 ⇒ 全无账；释放后同 turn 重发成功」那一格**（裁决 P-15：外部连接持行锁
    * 把事务掐断）。默认 50 秒会让那一格看起来像挂死，而测试要的是一次**快速、可断言**的失败。
    * 生产连接不设它 —— "一次保存卡 50 秒"是产品问题，不该由存储层替产品决定。
    *
@@ -43,7 +43,7 @@ export function createDbPool(env: MysqlEnv, opts: PoolOptions = {}): Pool {
     // 超出 2^53 静默失精。supportBigNumbers 开 + bigNumberStrings 关 ⇒ "范围内回 number、范围外回 string"，
     // 而 string 过不了 MmSchema / JournalTurnSchema ⇒ 越界变成一次抛，不是一次悄悄写歪的账。
     // Step 1 的 D 档读数就是这两行的凭据（关着时 9007199254740993 → 失精 number，开着 → 精确 string）；
-    // 第 2 格把它钉成断言。本仓库这四列的实际取值都远小于 2^53 ⇒ 常态回 number，两条配置只在越界处起作用。
+    // `repository.test.ts` 的「越界的 LONGLONG 回 string」把它钉成断言。本仓库这四列的实际取值都远小于 2^53 ⇒ 常态回 number，两条配置只在越界处起作用。
     // 读数口径现在有两格读者：T4 的 BIGINT 字面量探针（repository.test.ts 的「越界的 LONGLONG 回 string」），
     // 与 T5 的 `asSafeInt64`（journal.test.ts 的「journal_turn 超出 JS 安全整数」那一格）。
     // brief 说"这两格的牙都在这两行配置上，关掉就红在那一格" —— 实测只对它一半，两格各有各的漂法：
@@ -82,7 +82,8 @@ export function createDbPool(env: MysqlEnv, opts: PoolOptions = {}): Pool {
       // 单参数既过类型（promise 重载里有 `query(sql): Promise<...>`，`void` 丢弃）又走 runtime（callback 版
       // 收到 1 个 sql 参数即入队执行）。实测：这样改完 `getConnection` 2ms 返回、`@@innodb_lock_wait_timeout`
       // 回 1（`probe-connection-callback.mjs`，见报告 Step 5 回填）。
-      // SET 的成败不靠这里观察：由第 12 格 `rejects.toThrow(/Lock wait timeout/)` 端到端兜底
+      // SET 的成败不靠这里观察：由「半途被外部行锁掐断 ⇒ 全无账；释放后同 turn 重发成功」
+      // 那一格的 `rejects.toThrow(/Lock wait timeout/)` 端到端兜底
       // —— 它若没生效会卡在默认 50 秒而不是快速抛，那一格超时红，不静默。
       void conn.query(sql);
     });

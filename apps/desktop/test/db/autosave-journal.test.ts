@@ -19,7 +19,7 @@ import { createDbPool } from '../../src/main/db/pool';
 import { readMysqlEnv } from '../../src/main/db/env';
 import { dropTestDatabase, ensureDatabase } from '../../src/main/db/database';
 import { migrate } from '../../src/main/db/migrate';
-import { decodeDocument } from '../../src/main/db/codec';
+import { decodeSnapshot } from '../../src/main/db/codec';
 import { ProjectRepository, type JournalEntry } from '../../src/main/db/repository';
 import { Autosave, type JournalSink } from '../../src/main/persist/autosave';
 import { EMERGENCY_DIR_NAME, writeEmergencySnapshot } from '../../src/main/persist/emergency';
@@ -279,7 +279,7 @@ describe('引擎接真 repository', () => {
     );
     for (const r of rs) {
       const turn = Number(r.journal_turn);
-      const decoded = decodeDocument({ table: 'snapshot', id: String(Number(r.seq)) }, r.payload);
+      const decoded = decodeSnapshot({ table: 'snapshot', id: String(Number(r.seq)) }, r.payload).doc;
       const expected = entries[turn - 1];
       if (!expected) throw new TypeError(`快照行指认 turn ${turn}，夹具没有那一发`);
       // 这一句盯的是 `trySnapshot(head.turn, head.doc)` 那一对实参。假 sink 只数调用次数，
@@ -424,5 +424,64 @@ describe('引擎接真 repository', () => {
     const loaded = await repo.loadProject('read');
     expect(loaded.replayed.rows).toBe(0);
     expect(loaded.doc.canonical()).toBe(atTurn(entries, 5).doc.canonical());
+  });
+
+  it('每份快照的正文都自证着同一个 turn（P-70：列与正文同源的读侧凭据）', async () => {
+    // 引擎的 `sink.writeSnapshot(turn, doc)` 递给 repository 的是**一对** (turn, doc)，
+    // repository 把同一个 `t` 同时写进列与 `encodeDocument(doc, t)`（同源自构造）。
+    // 这一格从**盘上**把那一对读回来对账：列的 journal_turn 与 payload 里的
+    // journalTurn 逐行必须相等。假 sink 只数调用次数，这道牙只有真库 + 真往返才咬得到。
+    const entries = mkEntries();
+    const engine = new Autosave({ sink: repo, snapshotEveryRows: 2, idleSnapshotMs: 60_000 });
+    for (const entry of entries.slice(0, 4)) engine.submit(entry);
+    await engine.settled();
+    await waitUntil('两份阈值快照', async () => (await count('snapshot')) === 2);
+
+    const rs = await rows<{ seq: number | string; journal_turn: number | string; payload: unknown }>(
+      'SELECT `seq`, `journal_turn`, `payload` FROM `snapshot` ORDER BY `journal_turn` ASC',
+    );
+    expect(rs.length).toBe(2);
+    for (const r of rs) {
+      const turn = Number(r.journal_turn);
+      const body = decodeSnapshot({ table: 'snapshot', id: String(Number(r.seq)) }, r.payload);
+      // 列与正文说的是同一发。写侧是同源自构造（同一个 `t` 既进列也进 payload），
+      // 写侧没有第二份可比所以那里不做运行时比对—— 牙长在这里。
+      expect(body.journalTurn).toBe(turn);
+    }
+    engine.stop();
+  });
+
+  it('`updated_seq` 说的是"哪一发写了我"：被碰的那一行等于这一发的 seq，没被碰的那一行留在旧 seq（P-69）', async () => {
+    // 这一列由 T4 写、到本棒为止一个读者都没有（P-69 的原文）。这一格是它的**第一个读者**，
+    // 而且故意用**部分覆盖**的序列：全表每发都被重写的话，"没碰的那行不许动"这条主张看不出来。
+    // 夹具直接用 buildEntries()：1 建下层、2 建墙 A、6 只改墙 A 的承重 ⇒ 八发落完，
+    // 楼层行的 updated_seq 必须还停在第 1 发的 seq 上，墙 A 的那一行停在第 6 发。
+    const entries = buildEntries();
+    for (const entry of entries) {
+      expect(await repo.appendJournal(entry)).toBe('applied');
+    }
+    const seqAt = async (turn: number): Promise<number> => {
+      const rs = await rows<{ seq: number | string }>(
+        'SELECT `seq` FROM `command_log` WHERE `project_id` = ? AND `turn` = ?',
+        [PROJECT_ID, turn],
+      );
+      const only = rs[0];
+      if (!only || rs.length !== 1) throw new TypeError(`第 ${turn} 发的 command_log 不是一行`);
+      // P-17：seq 在 supportBigNumbers 下既可能是 number 也可能是 string，出口一律 Number()。
+      return Number(only.seq);
+    };
+    const updatedSeq = async (id: EntityId): Promise<number> => {
+      const rs = await rows<{ updated_seq: number | string }>(
+        'SELECT `updated_seq` FROM `element` WHERE `project_id` = ? AND `id` = ?',
+        [PROJECT_ID, id],
+      );
+      const only = rs[0];
+      if (!only || rs.length !== 1) throw new TypeError('element 表上没有这一行，或不止一行');
+      return Number(only.updated_seq);
+    };
+    const lower = firstUpsertId(atTurn(entries, 1).patch, 'storey');
+    const wallA = firstUpsertId(atTurn(entries, 2).patch, 'wall');
+    expect(await updatedSeq(lower)).toBe(await seqAt(1)); // 只在第 1 发被写过，后面七发都没碰它
+    expect(await updatedSeq(wallA)).toBe(await seqAt(6)); // 第 2 发写、第 6 发改写 ⇒ 记最后一次
   });
 });
