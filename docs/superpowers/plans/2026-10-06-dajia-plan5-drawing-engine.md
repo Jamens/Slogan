@@ -67,15 +67,14 @@ core  ←  drawing  ←  { desktop（导出入口）, scene-3d（M1.6 之后）}
 | `packages/drawing/src/linetypes.ts` | 线型表（纸面语义）+ `toScreenLineType()` 映射 | 7 |
 | `packages/drawing/src/ir.ts` | 图面 IR 的类型与构造助手 | 5 |
 | `packages/drawing/src/plan.ts` | 平面图内容：墙/洞口/柱/板 → IR 图元 | 11 |
-| `packages/drawing/src/dimensioning/chains.ts` | 从轴网点收集尺寸链 | 7 |
-| `packages/drawing/src/dimensioning/render.ts` | 三道尺寸线分道 + 45° 端点符号 | 9 |
+| `packages/drawing/src/dimensioning.ts` | 尺寸链收集 + 三道分道 + 45° 端点符号 + 断线（**合一**） | 17 |
 | `packages/drawing/src/frame.ts` | A3 横式图框 + 标题栏 | 6 |
 | `packages/drawing/src/section/clip.ts` | 剖切线对 core 几何求交（D3：只轮廓） | 7 |
 | `packages/drawing/src/annotate.ts` | 指北针 + 标高符号 | 4 |
 | `packages/drawing/test/*.test.ts` | 上述各模块的 vitest（纯 node，不连库） | — |
 | `apps/desktop/src/main/draw/export-plan.ts` | **唯一** Electron 出口：拼图面 IR → 存盘 | 4（unit） |
 
-合计 **79 格**（unit 档，不连库；**2026-10-06 三次订正**：79 → 78（`linetypes` 原写 8 实测 7，L5 是变异靶而非独立判据）→ 79（T4 执行时给 `plan.ts` 补了 P3b / P7b 两格，实测 11）。**已落 29 格**（T2 11 + T3 7 + T4 11）。
+合计 **80 格**（unit 档，不连库；**2026-10-06 四次订正**：79 → 78（`linetypes` 原写 8 实测 7，L5 是变异靶而非独立判据）→ 79（T4 补 P3b / P7b，实测 11）→ 80（T5 给「去重那型」单独立了C1d 变体靶，实测 17）。**已落 46 格**（T2 11 + T3 7 + T4 11 + T5 17）。
 
 ---
 
@@ -165,7 +164,7 @@ export function deriveStoreyGeometry(doc: Document, storeyId: EntityId): StoreyG
 - `P3b` **（2026-10-06 执行 T4 时补）** 洞口正压墙端时**不产零长空壳** —— core 的 `piecesFromSpans` 明确"零长段跳过"，drawing 侧照原样透出，而不是自己补一个 `[3600,3600]` 的退化多边形
 - `P7b` **（2026-10-06 执行 T4 时补）** `structure` 层**必须有图元**，且 `frame` / `section` 在 `plan.ts` 里不许出现 —— 只钉"层号单调不减"允许了 `[4,4,4,4]`（全标 annotation）这一型，那不是单调性坏掉而是**结构层空着**，图已经错了
 
-### `dimensioning/chains.ts` + `render.ts`（16 格，本计划最费时的一族）
+### `dimensioning.ts`（**17 格**，2026-10-06 实测：16 → 17；**chains 与 render 合一**，见 §九）
 
 **C1 的链（照核准的字段写）：** 轴网点 = 该层的全部 `PointEntity`；每个点的坐标 `(x, y)`。**取 projectId 必须 `point.storeyId → doc.get(storeyId).projectId`**，不许直接读（`PointEntity` 没有 `projectId`）。
 
@@ -338,7 +337,8 @@ export function deriveStoreyGeometry(doc: Document, storeyId: EntityId): StoreyG
 > 2. **恒绿**（T7 一次）：天平两端都落在同一个值上。问"没有这个功能时它会红吗"。
 > 3. **判据自伤**（T3 一次）：源码扫描型判据扫到了注释。写这类判据先想"本文件注释里会不会出现那些词"。
 > 4. **过宽、打不红**（T4 这一次）：变异打下去还是绿的 ⇒ 判据允许了不该允许的形态。补判据，别换实现。
-> 5. **多出来/少一格**（T3 的 8→7、T4 的 10→11）：按实测重数，**不许追幻影差异**（也不许为了对上计划数改判据）。
+> 5. **多出来/少一格**（T3 的 8→7、T4 的 10→11、T5 的 16→17）：按实测重数，**不许追幻影差异**（也不许为了对上计划数改判据）。
+> 6. **守卫掩盖缺陷**（T5 一次）：一个"顺手加的容错"（`if (a === b) continue`）让它本该防的缺陷**不可见** ⇒ 变异打不死。**判据打不死某个变异时，先去找是不是有守卫在滤掉症状。**
 
 **③ 两处判据我写错了，实现一直是对的**：
 
@@ -352,7 +352,38 @@ export function deriveStoreyGeometry(doc: Document, storeyId: EntityId): StoreyG
 
 **盘上**：`pnpm verify` exit=0，**`Test Files 52` / `Tests 673`**（T3 时 51 / 662 ⇒ +1 / +11）；`pnpm typecheck` exit=0；`tsc -p packages/drawing` exit=0。`test:db` 未跑（T4 不碰连库档），仍 6 / 110。
 
-**待办**：T5 `dimensioning/` 16 格（本计划最费时的一族）→ T6 `frame.ts` + `annotate.ts` 10 格 → T7 `section/clip.ts` 7 格 → T8 `export-plan.ts` 4 格 + 全量。
+### T5（三道尺寸线，2026-10-06）
+
+**落码**：`dimensioning.ts` + `dimensioning.test.ts` **17 格**（§二 原写 16）。**chains 与 render 合成一个文件** —— 它们共用 `LANE_GAPS_MM` / `TICK_LENGTH_MM` 这几个图面规范量，拆两个文件就得让其中一个 import 另一个或复制一份常量，而 plan5 §一 的精神是"同一个量只有一个产地"。
+
+**① 先确认了一条 plan5 假设：core 里没有"轴网"对象。** `grep axisGrid/axisLine/轴网` 在 `packages/core/src` 里**零命中**。查清了不是缺口：`entity.ts` 第 13 行注释写着「真源是轴线两端点 + 厚度；轮廓与接头一律派生（spec 5.2）」，`WallEntity.startId/endId` 指向的就是那两个 `PointEntity` —— **"轴线端点"就是那层的全部 `point`**，C1 那条决策成立。`PointEntity` 没有 `projectId`（§一 C1 已写明），取工程号经 `storeyId → StoreyEntity → projectId`。
+
+**② 一处结构性重写（给 T6–T8 的规矩）。** 第一版把 `dir === 'x' ? … : …` 散写在 `renderChain` 的四个几何计算里，**y 向那一支的两端点被写成 0**，竖线段长度成了 0 ⇒ 断线 / 符号 / 层 / 文字**四条判据全在 y 向上，一次红四条**。已重写为 `pt(dir, along, cross)` 这**一个**坐标出口。
+> **规矩：方向/坐标这类"每处都要写一遍"的判断，必须收成单一出口。** 散在N 处 = N 个错点，而且它们往往**同时**坏在一处 ⇒ 一次红一片，看起来像"很多判据都错了"。
+
+**③ 三处实现 bug（判据对、实现错）**：
+
+| 现象 | 错在哪 |
+|---|---|
+| 45° 符号长度 `L·√2 ≈ 2.83` | 每分量半量应是 `L / (2·√2)` 而不是 `L / 2`。**"看着对、印出来粗一圈"的那一型** |
+| 三道给了**四个**间隔（读数 `[10,17,22,27]`） | 规格的"7 / 5 / 5"对应「细部↔轴线 7、轴线↔总尺寸 5、**总尺寸↔图框 5**」—— 第三个 5 是留白，不是第四道。已改成 `[7, 5]` + 溢出那道单独用 5 |
+| 溢出判定恒不成立 | 原来判"标注线的 cross 坐标是否越出图幅"，可那三道从留白起排**永远不会越界**。尺寸线画不下是因为它**太长**（40000mm ⇒ 400 纸面 mm > A3 可用 385）。已改成按 `along` 长度（`paperSpan`）判 |
+
+**④ 变异实测：一条 `continue` 掩盖了一个真缺陷（本棒最值得记的一条）。**
+
+| 变异 | 红格 | 打中的格 |
+|---|---|---|
+| 删掉 `uniqueSorted` 里的去重 | **5** | C1 / C1b / C1c / C1d 等 |
+
+**打红的过程本身**：第一版打**不红**（17 格全绿）。查下去发现 `chainsOf` 里那个 `if (a === b) continue` **恰好把"不去重"产生的零长链 `[0,0]` 滤掉了** —— 于是"去重"与"不去重"给出同一个结果。**一个看起来 defensive 的守卫，正在掩盖它本该防的那个缺陷。**
+处理：删掉那条 `continue`，把 `chainsOf` 的契约收紧成「**输入必须已去重**」（去重只剩 `uniqueSorted` 一个产地），真的传进未去重输入时它会产出零长链 —— **看得见的错误比静默滤掉好**。判据同步改成钉「任何一条链都**不许零长**」，那才是"去重了"的可观测证据。删掉 `continue` 后同一变异打红 5 格。
+> **升为 §九 常设提醒的第 6 形态**：**守卫掩盖缺陷** —— 一个"顺手加的容错"让它本该防的缺陷不可见。判据打不死某个变异时，先去找**是不是有守卫在滤掉症状**。
+
+**⑤ 判据侧三处我算错（实现对）**：C1b 那个夹具 y 取值 4 个（3 条链）我写成 3；C1d 里又混了一次"取值数 vs 链数"。**本棒第三次犯同一个错**，已在判据注释里记下。
+
+**盘上**：`pnpm verify` exit=0，**`Test Files 53` / `Tests 690`**（T4 时 52 / 673 ⇒ +1 / +17）；`pnpm typecheck` exit=0；`tsc -p packages/drawing` exit=0。`test:db` 未跑（T5 不碰连库档），仍 6 / 110。
+
+**待办**：T6 `frame.ts` + `annotate.ts` 10 格 → T7 `section/clip.ts` 7 格 → T8 `export-plan.ts` 4 格 + 全量。
 
 **需人工验证、本计划不打勾的项**（沿用 spec §10 的口径）：
 
