@@ -123,7 +123,7 @@ MySQL 不可达、断网、盘满时,屏幕上的模型必须仍在。表现为�
 |---|---|---|
 | `pnpm verify` | typecheck + lint:deps + test | **不连库**,CI 跑这个 |
 | `pnpm test:db` | 真 MySQL 集成测试 | **需环境变量**,故意不进 verify |
-| `pnpm typecheck` | 四个包的 tsc --noEmit | |
+| `pnpm typecheck` | 6 次 tsc --noEmit:core / protocol / scene-2d 三包 + desktop 三个 tsconfig |
 | `pnpm build` | 构建 desktop | |
 | `pnpm dev` | Electron 开发窗口 | |
 | `pnpm shot` / `pick-shot` / `edit-shot` / `draw-shot` / `prop-shot` | 真窗口像素回读闸门 | |
@@ -132,8 +132,8 @@ MySQL 不可达、断网、盘满时,屏幕上的模型必须仍在。表现为�
 
 CI 的 ubuntu runner 没有 MySQL,也没有口令。所以:
 
-- `vitest.config.ts` → 只收 `apps/desktop/test/unit/**`,进 `pnpm verify`
-- `vitest.db.config.ts` → 只收 `apps/desktop/test/db/**`,`fileParallelism: false`(多文件共享 `dajia_test` 会互踩)
+- `vitest.config.ts` → 收 `packages/*/test/**` + `scripts/test/**` + `apps/desktop/test/unit/**`,进 `pnpm verify`
+- `vitest.db.config.ts` → 只收 `apps/desktop/test/db/**`,`fileParallelism: false`(多文件共享 `dajia_test` 会互踩),`testTimeout: 60s`
 
 **缺环境变量时 `pnpm test:db` 必须以点名缺哪个变量的方式响亮失败(exit ≠ 0),不许 skip。** 静默跳过的集成测试等于没有测试。
 
@@ -221,7 +221,9 @@ dajia
 - 跑闸门一律重定向取 exit:`pnpm verify > tmp/x.log 2>&1; echo exit=$?`,**绝不 `| tail`**(管道吃 CJK 行)
 - 一次性脚本与日志写进 `.superpowers/sdd/<日期-计划名>/`(该目录被自身 `.gitignore` 的 `*` 忽略);`tmp/` 只放 `*.log`
 
-### 两个容易踩的坑
+### 三个容易踩的坑
+
+**`drawing` 与 `scene-3d` 不在 `pnpm typecheck` 里。** `pnpm typecheck` 显式列了 core / protocol / scene-2d 与 desktop 三处,这两个占位包没被串进去(它们也没有 test 目录)。**往这两个包写第一批代码时,记得同步把它们加进根 `package.json` 的 `typecheck` 串**,否则类型错误要等 build 才暴露。`lint:deps` 倒是已经覆盖它们——`ALLOWED_DEPS` 里有条目,一旦违反依赖方向仍会被拦下。
 
 **别用 `byKind(...).at(-1)` 当"刚创建的那个"。** `uuidv7` 同毫秒不单调。取新建实体只认 `log.affected` + `kind` 判别式。
 
