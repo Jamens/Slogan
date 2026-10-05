@@ -28,6 +28,16 @@ export class TransactionLog {
   private readonly redoStack: Entry[] = [];
   private lastAffected: Set<EntityId> = new Set();
 
+  /**
+   * 最近一次**真的打过**的补丁：`dispatch` 记正向、`undo` 记逆向、`redo` 记正向。
+   * 计划 4 的 `command_log` 存的就是这一发（裁决 P-3的 `{ type, patch }`），
+   * 而 undo/redo 各产出一发新的账（裁决 P-5），所以这一发在外面无法重算：
+   * `invertPatch(entry.patch, entry.previous)` 的两个输入都住在本类内部。
+   * 抛错时它停在上一发 —— `dispatch` 里赋值点在 `applyPatch` 之后，`cmd.build` 抛则一个字都没改，
+   * 把失败的补丁报出去等于让保存引擎把一次没发生过的状态变更写进库。
+   */
+  private lastPatchApplied: Patch | null = null;
+
   constructor(doc: Document) {
     this.doc = doc;
   }
@@ -39,6 +49,11 @@ export class TransactionLog {
   /** 最近一次 dispatch/undo/redo 触及的实体 id，供计划 3 的 3D 增量重建使用。 */
   get affected(): ReadonlySet<EntityId> {
     return this.lastAffected;
+  }
+
+  /** 最近一次成功落地的补丁；`undo()`/`redo()` 返回 false 时它不动（没打过就没得报）。 */
+  get lastPatch(): Patch | null {
+    return this.lastPatchApplied;
   }
 
   get depth(): number {
@@ -60,14 +75,19 @@ export class TransactionLog {
     this.undoStack.push({ patch, previous: result.previous });
     this.redoStack.length = 0;
     this.lastAffected = affectedIds(patch);
+    this.lastPatchApplied = patch;
   }
 
   undo(): boolean {
     const entry = this.undoStack.pop();
     if (!entry) return false;
-    this.doc = applyPatch(this.doc, invertPatch(entry.patch, entry.previous)).doc;
+    // 逆补丁**必须命名**：否则记进 lastPatchApplied 的那份与打出去的那份是两次
+    // invertPatch 调用的两个对象 —— 值相同、来源不同，读账的人无从判断哪个是"打过的那一发"。
+    const inverse = invertPatch(entry.patch, entry.previous);
+    this.doc = applyPatch(this.doc, inverse).doc;
     this.redoStack.push(entry);
     this.lastAffected = affectedIds(entry.patch);
+    this.lastPatchApplied = inverse;
     return true;
   }
 
@@ -77,6 +97,7 @@ export class TransactionLog {
     this.doc = applyPatch(this.doc, entry.patch).doc;
     this.undoStack.push(entry);
     this.lastAffected = affectedIds(entry.patch);
+    this.lastPatchApplied = entry.patch;
     return true;
   }
 }
