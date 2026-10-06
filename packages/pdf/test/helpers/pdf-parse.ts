@@ -21,9 +21,19 @@ export interface SegmentMm {
   widthMm: number;
 }
 
+export interface TextRun {
+  /** baseline 左基点 x（毫米，已逆翻转 IR 坐标）。 */
+  x: number;
+  /** baseline 左基点 y（毫米，已逆翻转 IR 坐标）。 */
+  y: number;
+  /** Identity-H 的 2 字节 GID 十六进制串（不含尖括号），reader 不解码，交给字体。 */
+  hex: string;
+}
+
 export interface ParsedPage {
   mediaBoxMm: [number, number, number, number];
   segments: SegmentMm[];
+  textRuns: TextRun[];
 }
 
 export interface ParsedPdf {
@@ -99,7 +109,11 @@ export function parsePdf(bytes: Uint8Array): ParsedPdf {
     else if (contentObj[start] === '\r') start += 2;
     const stream = contentObj.slice(start, ce);
 
-    pages.push({ mediaBoxMm, segments: interpret(stream, hpt / PT_PER_MM_LOCAL) });
+    pages.push({
+      mediaBoxMm,
+      segments: interpret(stream, hpt / PT_PER_MM_LOCAL),
+      textRuns: interpretText(stream, hpt / PT_PER_MM_LOCAL),
+    });
   }
 
   return { version, pages };
@@ -191,4 +205,63 @@ function interpret(content: string, heightMm: number): SegmentMm[] {
     }
   }
   return segs;
+}
+
+/**
+ * 抽文字 run（BT…Tj/TJ…ET）。独立实现，不引用 `../src/font.ts`：只把 Identity-H 的
+ * `<GIDhex>` 原样记下（连同baseline 左基点，mm），解码交回字体做 —— 这样 reader 与
+ * writer 不在「解码」这件事上共享同一份代码，往返校验才不「绿得虚假」。
+ */
+function interpretText(content: string, heightMm: number): TextRun[] {
+  const tokens = content.match(/[A-Za-z]+|-?\d+\.?\d*|\/[\w]+|\[|\]|<[0-9A-Fa-f]*>/g) ?? [];
+  const runs: TextRun[] = [];
+  let tx = 0;
+  let ty = 0;
+  let inText = false;
+
+  const toRun = (hx: string): TextRun => ({
+    x: tx / PT_PER_MM_LOCAL,
+    y: heightMm - ty / PT_PER_MM_LOCAL, // 逆翻转
+    hex: hx.replace(/^<|>$/g, ''),
+  });
+
+  let i = 0;
+  while (i < tokens.length) {
+    const t = tokens[i]!;
+    if (t === 'BT') {
+      tx = 0;
+      ty = 0;
+      inText = true;
+      i++;
+    } else if (t === 'ET') {
+      inText = false;
+      i++;
+    } else if (t === 'Tm') {
+      // `a b c d e f Tm`：平移量 = (e, f) = 末两个数
+      tx = Number(tokens[i - 2]);
+      ty = Number(tokens[i - 1]);
+      i++;
+    } else if (t === 'Td') {
+      tx += Number(tokens[i - 2]);
+      ty += Number(tokens[i - 1]);
+      i++;
+    } else if (t === 'Tj') {
+      const hx = tokens[i - 1]!;
+      if (inText && hx.startsWith('<')) runs.push(toRun(hx));
+      i++;
+    } else if (t === 'TJ') {
+      // `[ ... ] TJ`：从匹配的 `]` 回退到 `[`，拼起所有 `<hex>` 段（忽略字距数）。
+      let j = i - 1;
+      while (j >= 0 && tokens[j] !== '[') j--;
+      let hx = '';
+      for (let k = j + 1; k < i - 1; k++) {
+        if (tokens[k]!.startsWith('<')) hx += tokens[k]!.slice(1, -1);
+      }
+      if (inText && hx) runs.push(toRun(hx));
+      i++;
+    } else {
+      i++;
+    }
+  }
+  return runs;
 }

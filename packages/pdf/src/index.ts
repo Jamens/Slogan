@@ -1,18 +1,22 @@
 import type { Pen, PaperLineType, Sheet } from '@dajia/drawing';
+import type { PdfFont } from './font';
 
 /**
- * 自研 PDF 内容流后端（spec D4，M1.5a）。
+ * 自研 PDF 内容流后端（spec D4，M1.5a + M1.5b）。
  *
  * 它吃什么：图面 IR（`Sheet`）—— 已经乘过比例、单位是纸面毫米、原点在图框左上、
- * y 向下（见 `packages/drawing/src/ir.ts` 的注释）。
+ * y 向下（见 `packages/drawing/src/ir.ts`）。
  *
  * 它产什么：一份**合法、未压缩内容流**的 PDF（`Uint8Array`）。内容流不压缩是有意的：
- * M1.5a 的验收是「产物能被一个真 PDF 解析器读回，线宽与坐标逐字对得上」，未压缩让
- * 最简的解析器（见 `test/helpers/pdf-parse.ts`）也能逐字节读回；压缩是 M1.5c 的活。
+ * 让最简的解析器（见 `test/helpers/pdf-parse.ts`）也能逐字节读回做往返校验；
+ * 压缩是 M1.5c 的活。
  *
- * **M1.5a 不含文字**（spec 要求「中文字体嵌入」，字体方案待 M1.5b 与用户定）。
- * `text` op 在这里被静默跳过，`G9` 锁住「输出里没有文字算子」—— 免得以后悄悄丢字
- * 还以为对了。
+ * **M1.5b 加文字**：传给 `writeSheets(sheets, { font })` 一个 `PdfFont`（思源黑体子集），
+ * `text` op 就被渲染成真·可显示的中文 —— Type0/Identity-H + 内嵌 CIDFontType0C。
+ * 不传 font 时 `text` 仍被跳过（M1.5a 行为），保持后端对「无字体」场景的兼容。
+ *
+ * **字节组装**：PDF 里混了 ASCII 文本字典和裸二进制 CFF 流，所以整体用 `Uint8Array`
+ * 块拼接（不是字符串），xref 偏移按字节精确记账 —— 否则二进制塞进 JS 字符串会错位。
  */
 
 /** 1 英寸 = 25.4 毫米 = 72 点（PDF 用户空间单位）。 */
@@ -56,7 +60,7 @@ function fmtPt(p: { x: number; y: number }): string {
   return `${num(p.x)} ${num(p.y)}`;
 }
 
-/** 一笔的画笔设置：线宽（pt）+ 虚线 + 黑（M1.5a 全黑，IR 不带颜色）。`q`/`Q` 隔离不泄漏。 */
+/** 一笔的画笔设置：线宽（pt）+ 虚线 + 黑（IR 不带颜色，全黑）。`q`/`Q` 隔离不泄漏。 */
 function penOps(pen: Pen): string {
   return `q ${num(mmToPt(pen.widthMm))} w ${dashOp(pen.lineType)} 0 0 0 RG`;
 }
@@ -72,10 +76,20 @@ function emitPath(pts: readonly { x: number; y: number }[], close: boolean, out:
   if (close) out.push('h');
 }
 
-function sheetContent(sheet: Sheet): string {
+function sheetContent(sheet: Sheet, font: PdfFont | undefined): string {
   const out: string[] = [];
   for (const op of sheet.ops) {
-    if (op.kind === 'text') continue; // M1.5a：文字延后（见文件头注释）
+    if (op.kind === 'text') {
+      if (!font) continue; // 没给字体 → 跳过（兼容 M1.5a）
+      const sizePt = mmToPt(op.heightMm);
+      const p = toPt(sheet, op.at.x, op.at.y); // baseline 原点，y 翻转
+      const enc = font.encode(op.s);
+      // 文字用填充色（rg），不是描边色（RG）。Identity-H：`<GIDhex>` 是 2 字节 GID。
+      out.push('q 0 0 0 rg');
+      out.push(`BT /F1 ${num(sizePt)} Tf 1 0 0 1 ${num(p.x)} ${num(p.y)} Tm <${enc}> Tj ET`);
+      out.push('Q');
+      continue;
+    }
     out.push(penOps(op.pen));
     switch (op.kind) {
       case 'line':
@@ -106,64 +120,153 @@ function sheetContent(sheet: Sheet): string {
 interface PdfObject {
   readonly num: number;
   readonly dict: string;
-  readonly stream?: string;
+  /** 内容流：字符串（ASCII 内容流）或 Uint8Array（二进制，如 /FontFile3）。 */
+  readonly stream?: string | Uint8Array;
 }
 
-function buildPdf(sheets: readonly Sheet[]): Uint8Array {
+export interface WriteOptions {
+  /** 内嵌字体。给了就渲染 `text` op，否则跳过（M1.5a 行为）。 */
+  readonly font?: PdfFont;
+  /** 是否把 CFF 字节塞进 /FontFile3。默认 true。false = 字体不内嵌（M1.5b 变异测试）。 */
+  readonly embed?: boolean;
+}
+
+function buildPdf(sheets: readonly Sheet[], opts: WriteOptions = {}): Uint8Array {
+  const font = opts.font;
+  const embed = opts.embed ?? true;
   const n = sheets.length;
   const catalogNum = 1;
   const pagesNum = 2;
   const pageNums = sheets.map((_, i) => 3 + i);
   const contentNums = sheets.map((_, i) => 3 + n + i);
 
+  // 字体对象号（仅当给了 font）
+  let type0Num = 0;
+  let descNum = 0;
+  let fdNum = 0;
+  let ffNum = 0;
+  if (font) {
+    const base = 3 + 2 * n;
+    type0Num = base;
+    descNum = base + 1;
+    fdNum = base + 2;
+    ffNum = base + 3;
+  }
+
   const objs: PdfObject[] = [{ num: catalogNum, dict: `<< /Type /Catalog /Pages ${pagesNum} 0 R >>` }];
   objs.push({
     num: pagesNum,
     dict: `<< /Type /Pages /Kids [${pageNums.map((p) => `${p} 0 R`).join(' ')}] /Count ${n} >>`,
   });
+
   sheets.forEach((sheet, i) => {
     const wpt = num(mmToPt(sheet.widthMm));
     const hpt = num(mmToPt(sheet.heightMm));
+    const res = font
+      ? `/Resources << /ProcSet [/PDF] /Font << /F1 ${type0Num} 0 R >> >>`
+      : `/Resources << /ProcSet [/PDF] >>`;
     objs.push({
       num: pageNums[i]!,
       dict:
         `<< /Type /Page /Parent ${pagesNum} 0 R /MediaBox [0 0 ${wpt} ${hpt}] ` +
-        `/Contents ${contentNums[i]!} 0 R /Resources << /ProcSet [/PDF] >> >>`,
+        `/Contents ${contentNums[i]!} 0 R ${res} >>`,
     });
-    const content = sheetContent(sheet);
-    // /Length = 内容字节数。内容全 ASCII（UTF-8 = 字节），string.length == 字节数。
+    const content = sheetContent(sheet, font);
+    // 内容流全 ASCII（含 Identity-H 的 <hex>），字节长 == 字符串长。
     objs.push({ num: contentNums[i]!, dict: `<< /Length ${content.length} >>`, stream: content });
   });
 
-  let s = `%PDF-${PDF_VERSION}\n`;
-  const offsets: number[] = [];
-  for (const o of objs) {
-    offsets[o.num] = s.length;
-    s += `${o.num} 0 obj\n${o.dict}`;
-    if (o.stream !== undefined) s += `\nstream\n${o.stream}\nendstream`;
-    s += '\nendobj\n';
+  if (font) {
+    objs.push({
+      num: type0Num,
+      dict:
+        `<< /Type /Font /Subtype /Type0 /BaseFont /${font.baseName} ` +
+        `/Encoding /Identity-H /DescendantFonts [${descNum} 0 R] >>`,
+    });
+    const fdRef = embed ? ` /FontFile3 ${ffNum} 0 R` : '';
+    objs.push({
+      num: descNum,
+      dict:
+        `<< /Type /Font /Subtype /CIDFontType0C /BaseFont /${font.baseName} ` +
+        `/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> ` +
+        `/FontDescriptor ${fdNum} 0 R /CIDToGIDMap /Identity /W [ ${font.wArray()} ] >>`,
+    });
+    const bb = font.bbox.map((v) => v.toString(10)).join(' ');
+    // Ascent/Descent/CapHeight 用 1000-em 制合理默认（reader 不严格校验）。
+    objs.push({
+      num: fdNum,
+      dict:
+        `<< /Type /FontDescriptor /FontName /${font.baseName} /Flags 4 ` +
+        `/FontBBox [${bb}] /ItalicAngle 0 /Ascent 880 /Descent -120 /CapHeight 700 ` +
+        `/StemV 80${fdRef} >>`,
+    });
+    if (embed) {
+      objs.push({
+        num: ffNum,
+        dict:
+          `<< /Length ${font.cff.length} /Subtype /CIDFontType0C /Length1 ${font.cff.length} >>`,
+        stream: font.cff,
+      });
+    }
   }
-  const xrefStart = s.length;
+
+  // 字节拼接：ASCII 字典/内容用 TextEncoder，二进制 CFF 用裸字节；xref 偏移按字节记账。
+  const enc = new TextEncoder();
+  const chunks: Uint8Array[] = [];
+  let len = 0;
+  const offsets: number[] = [];
+  const pushStr = (s: string): void => {
+    const b = enc.encode(s);
+    chunks.push(b);
+    len += b.length;
+  };
+  const pushBytes = (b: Uint8Array): void => {
+    chunks.push(b);
+    len += b.length;
+  };
+
+  pushStr(`%PDF-${PDF_VERSION}\n`);
+  for (const o of objs) {
+    offsets[o.num] = len;
+    pushStr(`${o.num} 0 obj\n${o.dict}`);
+    if (o.stream !== undefined) {
+      pushStr('\nstream\n');
+      if (typeof o.stream === 'string') pushStr(o.stream);
+      else pushBytes(o.stream);
+      pushStr('\nendstream');
+    }
+    pushStr('\nendobj\n');
+  }
+
+  const xrefStart = len;
   const size = objs.length + 1; // 最高对象号 = objs.length，Size = 最高 + 1
-  s += `xref\n0 ${size}\n`;
-  s += `0000000000 65535 f \n`; // 0 号空闲项
+  pushStr(`xref\n0 ${size}\n`);
+  pushStr('0000000000 65535 f \n'); // 0 号空闲项
   for (let i = 1; i < size; i++) {
     const off = offsets[i] ?? 0;
-    s += `${off.toString().padStart(10, '0')} 00000 n \n`; // 每条 20 字节
+    pushStr(`${off.toString().padStart(10, '0')} 00000 n \n`);
   }
-  s += `trailer\n<< /Size ${size} /Root ${catalogNum} 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
+  pushStr(`trailer\n<< /Size ${size} /Root ${catalogNum} 0 R >>\nstartxref\n${xrefStart}\n%%EOF`);
 
-  // 全 ASCII → UTF-8 编码后字节偏移 == 字符串下标，xref 偏移逐字节精确。
-  return new TextEncoder().encode(s);
+  const out = new Uint8Array(len);
+  let pos = 0;
+  for (const c of chunks) {
+    out.set(c, pos);
+    pos += c.length;
+  }
+  return out;
 }
 
 /** 多张图 → 多页 PDF。T8 的导出计划直接复用它。 */
-export function writeSheets(sheets: readonly Sheet[]): Uint8Array {
+export function writeSheets(sheets: readonly Sheet[], opts: WriteOptions = {}): Uint8Array {
   if (sheets.length === 0) throw new Error('writeSheets: 至少要有一张图');
-  return buildPdf(sheets);
+  return buildPdf(sheets, opts);
 }
 
 /** 单张图 → 单页 PDF。 */
-export function writeSheet(sheet: Sheet): Uint8Array {
-  return writeSheets([sheet]);
+export function writeSheet(sheet: Sheet, opts: WriteOptions = {}): Uint8Array {
+  return writeSheets([sheet], opts);
 }
+
+export { loadSubsetFont } from './font';
+export type { PdfFont } from './font';

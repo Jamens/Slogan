@@ -435,5 +435,9 @@ export function deriveStoreyGeometry(doc: Document, storeyId: EntityId): StoreyG
 
 - **M1.5a 已完成**（`packages/pdf`，commit `7681df0`）：自研 PDF 内容流后端，`writeSheet`/`writeSheets` 从 `Sheet` IR 逐字落成合法 PDF（9 格，独立 reader 校验 ≤0.01mm 往返）。
 - **T7（剖切轮廓）/ T8（导出出口）仍待做**：它们是「IR 完整」的一部分，但导出一张平面图不需要它们。M1.5a 已能导出**无剖切、无文字**的平面图。
-- **M1.5b（中文字体）待用户定**：仓库零字体；系统 `simsun/msyh` 商业授权不能进仓库。三条路 ① 开源字体子集化 ② 文字转轮廓 ③ 运行时读系统字体。未定前 `text` op 被 writer 静默跳过，由 `pdf.test.ts` G9 锁住「输出无文字算子」。
-- **M1.5c（校准页 + 压缩）待做**：100mm 刻度对照页供打印实测误差；内容流压缩（M1.5a 故意不压缩以便读回）。
+- **M1.5b（中文字体）已完成**（commit 见下）：用户选 ① 开源子集化（思源黑体 Noto Sans SC，SIL OFL 可随仓库分发）。
+  - 子集脚本 `scripts/subset-font.py`：fonttools 子集化 → `packages/pdf/assets/noto-sans-sc.subset.otf`（37KB / 189 字 / 0 缺字）。
+  - 解析器 `packages/pdf/src/font.ts` `loadSubsetFont()`：只解析 `cmap`(u2g) + `hmtx`(字宽) + `head`(em/bbox) + 裸 CFF 字节，**不碰 CFF 内部 charset**——靠 PDF 的 `/CIDToGIDMap /Identity` 把编码字节直接当 GID 用（ROS `Adobe-Identity-0` 与 CFF 对齐）。后端自包含、可独立单测。
+  - writer 给 `writeSheets(sheets, { font })` 即渲染中文：`text` op → `BT /F1 size Tf 1 0 0 1 x y Tm <GIDhex> Tj ET`；字体按 Type0/Identity-H + 内嵌 `CIDFontType0C`(`/FontFile3`) 落地。不传 font 仍跳过 `text`（兼容 M1.5a）。
+  - 校验（6 格 G10–G15）：字体解析 GID 锚定 fontTools 事实（图→107 等）；中文 `write→reader抽hex→字体解码` 回原 Unicode 且 baseline 坐标 ≤0.01mm 往返；两处变异——缺字落 `.notdef`(GID0)、`embed:false` 不出 `/FontFile3`；产物 `tmp/sample-a3-cn.pdf`（A3 中文标题栏）可被独立 reader 读回。
+- **M1.5c（校准页 + 压缩）待做**：100mm 刻度对照页供打印实测误差；内容流压缩（M1.5a/b 故意不压缩以便读回）。
