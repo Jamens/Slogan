@@ -106,7 +106,7 @@ function isSolid(op: PaperOp): op is Extract<PaperOp, { kind: 'polygon' }> {
  * **不重算几何**：交段完全来自 plan 的纸面多边形与剖切线，本模块一个模型坐标都不碰
  * （与 plan.ts 的 P1/P3 同一纪律：几何的唯一产地在 core，drawing 只读结果）。
  */
-export function clipSheet(doc: Document, opts: PlanOptions, clipLine: ClipLine): Sheet {
+export function clipSheet(doc: Document, opts: PlanOptions, clipLine: ClipLine, date?: string): Sheet {
   const plan = planSheet(doc, opts);
   const solids = plan.ops.filter(isSolid);
   const cutOps: PaperOp[] = [];
@@ -119,16 +119,16 @@ export function clipSheet(doc: Document, opts: PlanOptions, clipLine: ClipLine):
     }
   }
   // X8：独立图幅（自带图框），不是往平面图 IR 里加层。
-  const frame = frameSheet(sectionTitle(opts));
+  const frame = frameSheet(sectionTitle(opts, date));
   return { ...frame, ops: [...frame.ops, ...cutOps] };
 }
 
 /** 剖切轮廓图幅的标题栏：五格都是入参（F3c），不许在这里取 `new Date()`。 */
-function sectionTitle(opts: PlanOptions): TitleBlock {
+function sectionTitle(opts: PlanOptions, date: string | undefined): TitleBlock {
   return {
     title: `${opts.title} 剖切轮廓`,
     scaleText: '1:100',
-    date: '', // 入参，不是 new Date()
+    date: date ?? '', // 入参，不是 new Date()
     drafter: opts.drafter,
     sheetNo: opts.sheetNo,
   };

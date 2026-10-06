@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
+import { loadSubsetFont } from './font';
 import type { Pen, PaperLineType, Sheet } from '@dajia/drawing';
 import type { PdfFont } from './font';
 
@@ -281,6 +284,17 @@ export function writeSheets(sheets: readonly Sheet[], opts: WriteOptions = {}): 
 /** 单张图 → 单页 PDF。 */
 export function writeSheet(sheet: Sheet, opts: WriteOptions = {}): Uint8Array {
   return writeSheets([sheet], opts);
+}
+
+/**
+ * 加载随仓库分发的默认中文字体（思源黑体子集，SIL OFL）。
+ * T8 的导出入口直接调它拿 `PdfFont`，字体的物理路径留在 pdf 包内，
+ * 不向外层（desktop）暴露相对路径。字节是常数 ⇒ 不影响导出字节稳定性（E2）。
+ */
+const DEFAULT_FONT_ASSET = new URL('../assets/noto-sans-sc.subset.otf', import.meta.url);
+export function loadDefaultFont(baseName = 'NotoSansSC'): PdfFont {
+  const bytes = new Uint8Array(readFileSync(fileURLToPath(DEFAULT_FONT_ASSET)));
+  return loadSubsetFont(bytes, baseName);
 }
 
 export { loadSubsetFont } from './font';

@@ -20,7 +20,7 @@ export const ALLOWED_DEPS = {
   drawing: ['core'],
   'scene-2d': ['core', 'protocol'],
   'scene-3d': ['core', 'protocol'],
-  desktop: ['core', 'drawing', 'scene-2d', 'scene-3d', 'protocol'],
+  desktop: ['core', 'drawing', 'pdf', 'scene-2d', 'scene-3d', 'protocol'],
   pdf: ['drawing'],
 };
 

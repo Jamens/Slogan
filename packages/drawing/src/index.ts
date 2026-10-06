@@ -4,5 +4,7 @@ export const DRAWING_PACKAGE = 'drawing';
 // 而不是让后端去 `import '../drawing/src/ir'`（跨包够文件是 D2b 要堵的写法）。
 export * from './ir';
 export * from './units';
+export * from './plan';
+export * from './frame';
 export * from './section/clip';
 

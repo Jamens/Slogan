@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@dajia/core": "workspace:*",
+    "@dajia/drawing": "workspace:*",
+    "@dajia/pdf": "workspace:*",
     "@dajia/protocol": "workspace:*",
     "@dajia/scene-2d": "workspace:*",
     "mysql2": "^3.24.5",

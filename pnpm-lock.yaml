@@ -26,6 +26,12 @@ importers:
       '@dajia/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@dajia/drawing':
+        specifier: workspace:*
+        version: link:../../packages/drawing
+      '@dajia/pdf':
+        specifier: workspace:*
+        version: link:../../packages/pdf
       '@dajia/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
