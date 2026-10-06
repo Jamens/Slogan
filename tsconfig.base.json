@@ -9,7 +9,8 @@
       "@dajia/protocol": ["./packages/protocol/src/index.ts"],
       "@dajia/drawing": ["./packages/drawing/src/index.ts"],
       "@dajia/scene-2d": ["./packages/scene-2d/src/index.ts"],
-      "@dajia/scene-3d": ["./packages/scene-3d/src/index.ts"]
+      "@dajia/scene-3d": ["./packages/scene-3d/src/index.ts"],
+      "@dajia/pdf": ["./packages/pdf/src/index.ts"]
     },
     "strict": true,
     "noImplicitOverride": true,

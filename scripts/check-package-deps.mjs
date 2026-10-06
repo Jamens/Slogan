@@ -10,6 +10,7 @@ export const PACKAGE_DIRS = {
   'scene-3d': 'packages/scene-3d',
   protocol: 'packages/protocol',
   desktop: 'apps/desktop',
+  pdf: 'packages/pdf',
 };
 
 /** D2b：core 为真源，三个消费方互不相识 */
@@ -20,6 +21,7 @@ export const ALLOWED_DEPS = {
   'scene-2d': ['core', 'protocol'],
   'scene-3d': ['core', 'protocol'],
   desktop: ['core', 'drawing', 'scene-2d', 'scene-3d', 'protocol'],
+  pdf: ['drawing'],
 };
 
 const IMPORT_RE =

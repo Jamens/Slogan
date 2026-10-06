@@ -71,6 +71,12 @@ importers:
 
   packages/drawing: {}
 
+  packages/pdf:
+    dependencies:
+      '@dajia/drawing':
+        specifier: workspace:*
+        version: link:../drawing
+
   packages/protocol:
     dependencies:
       zod:

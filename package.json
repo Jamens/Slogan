@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/protocol/tsconfig.json && tsc --noEmit -p packages/scene-2d/tsconfig.json && tsc --noEmit -p packages/drawing/tsconfig.json && pnpm --filter @dajia/desktop typecheck",
+    "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/protocol/tsconfig.json && tsc --noEmit -p packages/scene-2d/tsconfig.json && tsc --noEmit -p packages/drawing/tsconfig.json && tsc --noEmit -p packages/pdf/tsconfig.json && pnpm --filter @dajia/desktop typecheck",
     "build": "pnpm --filter @dajia/desktop build",
     "lint:deps": "node scripts/check-package-deps.mjs",
     "test": "vitest run",

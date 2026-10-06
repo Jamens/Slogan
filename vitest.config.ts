@@ -13,6 +13,7 @@ export default defineConfig({
         new URL('./packages/scene-2d/src/index.ts', import.meta.url),
       ),
       '@dajia/scene-3d': fileURLToPath(new URL('./packages/scene-3d/src/index.ts', import.meta.url)),
+      '@dajia/pdf': fileURLToPath(new URL('./packages/pdf/src/index.ts', import.meta.url)),
     },
   },
   test: {
