@@ -5,11 +5,14 @@
  * **独立性是第一要务**：这里的坐标变换、PT_PER_MM、xref 解析全部重新实现，**不引用**
  * `../src/index.ts` 的任何常量或函数。若 writer 与 reader 共享同一份常量、同一处笔误，
  * 测试会「绿得虚假」—— 所以 reader 是 writer 的「对立面」，不是它的镜像。
+ * （`inflateSync` 是系统库 zlib，不是 writer 的逻辑，借它解压内容流不影响独立性。）
  *
- * 它真解析：跟 xref 偏移走对象表、拆 `N 0 obj`、取内容流、分词内容流、按图形状态机
- * 解释 `m/l/h/re/w/d/RG/rg/q/Q/S/B/...` 算子，吐出每段线的**纸面毫米**坐标与线宽。
- * 文字算子（`BT/Tj/TJ`）M1.5a 不产出，reader 也不解释（M1.5b 再加）。
+ * 它真解析：跟 xref 偏移走对象表、拆 `N 0 obj`、取内容流（若 `/FlateDecode` 先 inflate）、
+ * 分词内容流、按图形状态机解释 `m/l/h/re/w/d/RG/rg/q/Q/S/B/...` 算子，吐出每段线的
+ * **纸面毫米**坐标与线宽；文字算子（`BT/Tj/TJ`）抽成 `textRuns`（解码交回字体）。
  */
+
+import { inflateSync } from 'node:zlib';
 
 const PT_PER_MM_LOCAL = 72 / 25.4;
 
@@ -101,18 +104,25 @@ export function parsePdf(bytes: Uint8Array): ParsedPdf {
     ];
     const contentRef = /Contents (\d+) 0 R/.exec(pageObj);
     if (!contentRef) throw new Error(`页 ${kid} 缺少 /Contents`);
-    const contentObj = objects[Number(contentRef[1])]!;
+    const cNum = Number(contentRef[1]);
+    const contentObj = objects[cNum]!;
     const cs = contentObj.indexOf('stream');
     const ce = contentObj.indexOf('endstream');
     let start = cs + 'stream'.length;
     if (contentObj[start] === '\n') start++;
     else if (contentObj[start] === '\r') start += 2;
-    const stream = contentObj.slice(start, ce);
+    // 内容流可能 `/FlateDecode` 压缩：dict 在 `stream` 之前；原始字节用 bytes 按
+    // 对象偏移 + 串内偏移截取（latin1 串下标 == 字节下标）。
+    const dictPart = contentObj.slice(0, cs);
+    const raw = bytes.subarray(offsets[cNum]! + start, offsets[cNum]! + ce);
+    const streamStr = /\/FlateDecode/.test(dictPart)
+      ? new TextDecoder('latin1').decode(inflateSync(raw))
+      : new TextDecoder('latin1').decode(raw);
 
     pages.push({
       mediaBoxMm,
-      segments: interpret(stream, hpt / PT_PER_MM_LOCAL),
-      textRuns: interpretText(stream, hpt / PT_PER_MM_LOCAL),
+      segments: interpret(streamStr, hpt / PT_PER_MM_LOCAL),
+      textRuns: interpretText(streamStr, hpt / PT_PER_MM_LOCAL),
     });
   }
 

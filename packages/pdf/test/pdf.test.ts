@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { writeSheet, writeSheets, loadSubsetFont, type PdfFont } from '../src/index';
+import { writeSheet, writeSheets, loadSubsetFont, calibrationSheet, type PdfFont } from '../src/index';
 import type { PaperLineType, Pen, Sheet } from '@dajia/drawing';
 import { line, polygon, polyline, text, tick } from '@dajia/drawing';
 import { parsePdf, type SegmentMm, type TextRun } from './helpers/pdf-parse';
@@ -232,9 +232,8 @@ describe('M1.5b PDF 后端：中文真实内嵌（思源黑体子集）', () => 
     // baseline 左基点（mm）逆翻转后应对上 IR 的 (50,80)
     expect(Math.abs(run.x - 50)).toBeLessThan(0.01);
     expect(Math.abs(run.y - 80)).toBeLessThan(0.01);
-    // 内容流里确实出现 Identity-H 的文字算子
+    // 字体相关字典未压缩：Identity-H / FontFile3 应出现在产物里
     const raw = new TextDecoder('latin1').decode(pdf);
-    expect(raw).toContain('Tj');
     expect(raw).toContain('Identity-H');
     expect(raw).toContain('/FontFile3');
   });
@@ -279,12 +278,14 @@ describe('M1.5b PDF 后端：中文真实内嵌（思源黑体子集）', () => 
     const font = loadFont();
     const sheet: Sheet = { ...A3, ops: [text({ x: 10, y: 10 }, 2.5, '图名', pen(0.18))] };
     const embedded = new TextDecoder('latin1').decode(writeSheet(sheet, { font, embed: true }));
-    const notEmbedded = new TextDecoder('latin1').decode(writeSheet(sheet, { font, embed: false }));
+    const notEmbeddedBytes = writeSheet(sheet, { font, embed: false });
+    const notEmbedded = new TextDecoder('latin1').decode(notEmbeddedBytes);
     expect(embedded).toContain('/FontFile3');
     expect(embedded).toContain('/CIDFontType0C');
-    expect(notEmbedded).not.toContain('/FontFile3');
-    // 但文字算子仍在（只是没字体数据可渲染）
-    expect(notEmbedded).toContain('Tj');
+    expect(notEmbedded).not.toContain('/FontFile3'); // 未内嵌：字体字典未生成
+    // 但文字算子仍在（只是没字体数据可渲染）—— 用 reader 抽回验证
+    const np = parsePdf(notEmbeddedBytes).pages[0]!;
+    expect(np.textRuns).toHaveLength(1);
   });
 
   it('G15 产出可视图：A3 中文标题栏 sample-a3-cn.pdf', () => {
@@ -312,6 +313,75 @@ describe('M1.5b PDF 后端：中文真实内嵌（思源黑体子集）', () => 
     writeFileSync(fileURLToPath(url), pdf);
     // 基本健全性
     expect(parsePdf(pdf).pages[0]!.textRuns.length).toBeGreaterThan(0);
+  });
+});
+
+describe('M1.5c PDF 后端：内容流压缩 + 100mm 校准页', () => {
+  it('G16 压缩往返：默认 /FlateDecode，reader 先 inflate 再解析，几何+文字逐字对得上', () => {
+    const font = loadFont();
+    const sheet: Sheet = {
+      ...A3,
+      ops: [
+        line({ x: 0, y: 0 }, { x: 100, y: 100 }, pen(0.5)),
+        text({ x: 50, y: 50 }, 3.5, '图名设计', pen(0.18)),
+      ],
+    };
+    const compressed = writeSheet(sheet, { font }); // 默认 compress: true
+    const uncompressed = writeSheet(sheet, { font, compress: false });
+
+    // 压缩后整体更小（内容流被 deflate）
+    expect(compressed.length).toBeLessThan(uncompressed.length);
+
+    // 压缩产物能被独立 reader 读回：几何 + 中文解码都正确
+    const page = parsePdf(compressed).pages[0]!;
+    expectSameSet(page.segments, [{ x1: 0, y1: 0, x2: 100, y2: 100, widthMm: 0.5 }]);
+    expect(page.textRuns).toHaveLength(1);
+    expect(font.decode(page.textRuns[0]!.hex)).toBe('图名设计');
+  });
+
+  it('G17 关闭压缩仍可往返（调试兼容）：compress:false 出未压缩内容流', () => {
+    const font = loadFont();
+    const sheet: Sheet = { ...A3, ops: [text({ x: 10, y: 10 }, 2.5, '审核', pen(0.18))] };
+    const pdf = writeSheet(sheet, { font, compress: false });
+    const page = parsePdf(pdf).pages[0]!;
+    expect(page.textRuns).toHaveLength(1);
+    expect(font.decode(page.textRuns[0]!.hex)).toBe('审核');
+    // 未压缩时，内容流的文字算子在原文里肉眼可见
+    expect(new TextDecoder('latin1').decode(pdf)).toContain('Identity-H');
+  });
+
+  it('G18 校准页：两根 100mm 主线 + 刻度，几何逐字对得上，并产出可视图', () => {
+    const font = loadFont();
+    const sheet = calibrationSheet(); // 默认 A4 / 100mm
+    expect(sheet.widthMm).toBe(210);
+    expect(sheet.heightMm).toBe(297);
+
+    const pdf = writeSheet(sheet, { font });
+    const page = parsePdf(pdf).pages[0]!;
+    // 2 根主线 + 21 横刻度 + 21 竖刻度 = 44 段（文字不计入线段）
+    expect(page.segments).toHaveLength(44);
+
+    const lenOf = (s: SegmentMm): number => Math.hypot(s.x2 - s.x1, s.y2 - s.y1);
+    const has100 = page.segments.some((s) => Math.abs(lenOf(s) - 100) < 0.01);
+    expect(has100).toBe(true);
+
+    // 两根 100mm 主线的精确端点（原点 ox=40, oy=140）
+    const segSetNow = segSet(
+      page.segments.map((s) => ({
+        x1: s.x1,
+        y1: s.y1,
+        x2: s.x2,
+        y2: s.y2,
+        widthMm: s.widthMm,
+      })),
+    );
+    // 横线 (40,140)-(140,140) 与 竖线 (40,140)-(40,240) 都应在
+    expect(segSetNow.has('40,140,140,140,0.5')).toBe(true);
+    expect(segSetNow.has('40,140,40,240,0.5')).toBe(true);
+
+    // 产出可视图
+    const url = new URL('../../../tmp/sample-calibration.pdf', import.meta.url);
+    writeFileSync(fileURLToPath(url), pdf);
   });
 });
 

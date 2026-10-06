@@ -440,4 +440,9 @@ export function deriveStoreyGeometry(doc: Document, storeyId: EntityId): StoreyG
   - 解析器 `packages/pdf/src/font.ts` `loadSubsetFont()`：只解析 `cmap`(u2g) + `hmtx`(字宽) + `head`(em/bbox) + 裸 CFF 字节，**不碰 CFF 内部 charset**——靠 PDF 的 `/CIDToGIDMap /Identity` 把编码字节直接当 GID 用（ROS `Adobe-Identity-0` 与 CFF 对齐）。后端自包含、可独立单测。
   - writer 给 `writeSheets(sheets, { font })` 即渲染中文：`text` op → `BT /F1 size Tf 1 0 0 1 x y Tm <GIDhex> Tj ET`；字体按 Type0/Identity-H + 内嵌 `CIDFontType0C`(`/FontFile3`) 落地。不传 font 仍跳过 `text`（兼容 M1.5a）。
   - 校验（6 格 G10–G15）：字体解析 GID 锚定 fontTools 事实（图→107 等）；中文 `write→reader抽hex→字体解码` 回原 Unicode 且 baseline 坐标 ≤0.01mm 往返；两处变异——缺字落 `.notdef`(GID0)、`embed:false` 不出 `/FontFile3`；产物 `tmp/sample-a3-cn.pdf`（A3 中文标题栏）可被独立 reader 读回。
-- **M1.5c（校准页 + 压缩）待做**：100mm 刻度对照页供打印实测误差；内容流压缩（M1.5a/b 故意不压缩以便读回）。
+- **M1.5c 已完成**（commit 见下）：内容流默认 `/FlateDecode` 压缩（用 `node:zlib`，
+  Electron/node 环境）+ `calibrationSheet()` 产出 100mm 校准页（横竖两根 100mm 主线 +
+  每 5mm 短刻/每 10mm 长刻并标数）。**独立 reader 先 `inflateSync` 再解析**，两种形态都
+  能逐字往返—— 压缩不破坏校验。写 `{ compress: false }` 出未压缩内容流便于调试。
+  `pdf.test.ts` 加 G16（压缩往返，产物更小且几何/中文解码正确）、G17（关压缩兼容）、
+  G18（校准页 44 段、两根 100mm 主线端点精确、产出 `tmp/sample-calibration.pdf`）。共 18 格。

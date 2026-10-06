@@ -1,15 +1,18 @@
+import { deflateSync } from 'node:zlib';
 import type { Pen, PaperLineType, Sheet } from '@dajia/drawing';
 import type { PdfFont } from './font';
 
 /**
- * 自研 PDF 内容流后端（spec D4，M1.5a + M1.5b）。
+ * 自研 PDF 内容流后端（spec D4，M1.5a + M1.5b + M1.5c）。
  *
  * 它吃什么：图面 IR（`Sheet`）—— 已经乘过比例、单位是纸面毫米、原点在图框左上、
  * y 向下（见 `packages/drawing/src/ir.ts`）。
  *
- * 它产什么：一份**合法、未压缩内容流**的 PDF（`Uint8Array`）。内容流不压缩是有意的：
- * 让最简的解析器（见 `test/helpers/pdf-parse.ts`）也能逐字节读回做往返校验；
- * 压缩是 M1.5c 的活。
+ * 它产什么：一份**合法**的 PDF（`Uint8Array`）。M1.5a 故意不压缩内容流以便读回；
+ * M1.5c 起内容流默认用 `/Filter /FlateDecode` 压缩（用 `node:zlib`，Electron/node 环境），
+ * 独立的 reader（见 `test/helpers/pdf-parse.ts`）会先 inflate 再解析 —— 两种形态都能
+ * 逐字节读回做往返校验。想关压缩调试传 `{ compress: false }`。
+ *
  *
  * **M1.5b 加文字**：传给 `writeSheets(sheets, { font })` 一个 `PdfFont`（思源黑体子集），
  * `text` op 就被渲染成真·可显示的中文 —— Type0/Identity-H + 内嵌 CIDFontType0C。
@@ -120,7 +123,7 @@ function sheetContent(sheet: Sheet, font: PdfFont | undefined): string {
 interface PdfObject {
   readonly num: number;
   readonly dict: string;
-  /** 内容流：字符串（ASCII 内容流）或 Uint8Array（二进制，如 /FontFile3）。 */
+  /** 内容流：字符串（ASCII 内容流）或 Uint8Array（二进制，如 /FontFile3 或压缩后的内容流）。 */
   readonly stream?: string | Uint8Array;
 }
 
@@ -129,11 +132,18 @@ export interface WriteOptions {
   readonly font?: PdfFont;
   /** 是否把 CFF 字节塞进 /FontFile3。默认 true。false = 字体不内嵌（M1.5b 变异测试）。 */
   readonly embed?: boolean;
+  /**
+   * 内容流是否用 `/FlateDecode` 压缩。默认 true（M1.5c）。reader 会先 inflate 再解析，
+   * 往返校验不受影响；传 false 出未压缩内容流便于肉眼调试。
+   */
+  readonly compress?: boolean;
 }
 
 function buildPdf(sheets: readonly Sheet[], opts: WriteOptions = {}): Uint8Array {
   const font = opts.font;
   const embed = opts.embed ?? true;
+  const compress = opts.compress ?? true;
+  const enc = new TextEncoder();
   const n = sheets.length;
   const catalogNum = 1;
   const pagesNum = 2;
@@ -172,8 +182,14 @@ function buildPdf(sheets: readonly Sheet[], opts: WriteOptions = {}): Uint8Array
         `/Contents ${contentNums[i]!} 0 R ${res} >>`,
     });
     const content = sheetContent(sheet, font);
-    // 内容流全 ASCII（含 Identity-H 的 <hex>），字节长 == 字符串长。
-    objs.push({ num: contentNums[i]!, dict: `<< /Length ${content.length} >>`, stream: content });
+    // 内容流压缩：deflate 后是二进制 Uint8Array；不压缩则是 ASCII 字符串（字节长 == 串长）。
+    const contentBytes = compress ? deflateSync(enc.encode(content)) : enc.encode(content);
+    const filter = compress ? ' /Filter /FlateDecode' : '';
+    objs.push({
+      num: contentNums[i]!,
+      dict: `<< /Length ${contentBytes.length}${filter} >>`,
+      stream: contentBytes,
+    });
   });
 
   if (font) {
@@ -210,8 +226,7 @@ function buildPdf(sheets: readonly Sheet[], opts: WriteOptions = {}): Uint8Array
     }
   }
 
-  // 字节拼接：ASCII 字典/内容用 TextEncoder，二进制 CFF 用裸字节；xref 偏移按字节记账。
-  const enc = new TextEncoder();
+  // 字节拼接：ASCII 字典/内容用 TextEncoder，二进制（CFF / 压缩内容流）用裸字节；xref 偏移按字节记账。
   const chunks: Uint8Array[] = [];
   let len = 0;
   const offsets: number[] = [];
@@ -270,3 +285,5 @@ export function writeSheet(sheet: Sheet, opts: WriteOptions = {}): Uint8Array {
 
 export { loadSubsetFont } from './font';
 export type { PdfFont } from './font';
+export { calibrationSheet } from './calibration';
+export type { CalibrationOptions } from './calibration';
