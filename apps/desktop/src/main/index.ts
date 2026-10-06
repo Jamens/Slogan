@@ -10,6 +10,7 @@ import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CORE_SCHEMA_VERSION } from '@dajia/core';
 import { IPC } from '@dajia/protocol';
+import { registerExportPlanIpc } from './ipc/export-plan';
 
 /**
  * 取 `<flag> <path>` 的落盘路径。`--shot` 之外，T5 的 `--edit-shot` / T4 的 `--pick-shot`
@@ -2530,6 +2531,18 @@ async function runPropShot(win: BrowserWindow, out: string): Promise<void> {
  * 脚本侧同样只允许一个具体 flag 生效（`mode` 只有一个值），两边配成一对。
  */
 void app.whenReady().then(async () => {
+  /**
+   * 导出平面图通道（plan5 T7/T8 的产物经真实 IPC 落盘）。
+   *
+   * **注册在 `whenReady` 而不是 `createWindow` 里**（`ping` 那两行在 `createWindow`）：
+   * 这一条是**无状态**的 —— 它不持有窗口、不持有工程会话，窗口只是弹对话框时挂个模态父窗。
+   * 放进 `createWindow` 的话每次建窗都要 remove + handle 一遍，而 macOS 上"关掉最后一扇窗再
+   * 从 dock 唤回"会重建窗口 ⇒ handler 被重装；虽不出错，却是"注册位置"变成了一件
+   * 要靠 `removeHandler` 兜的事。取窗用**惰性 getter**（`getFocusedWindow` 优先），
+   * 于是注册与建窗的先后顺序不再是任何人的负担。
+   */
+  registerExportPlanIpc(() => BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0] ?? null);
+
   // fail-fast：五个开关的路径都在起窗之前读完，任何一个开关后面缺路径或跟了另一个开关，
   // 立刻 stderr + exit(2)（毫秒级），绝不落到被丢弃的 promise rejection 里挂到脚本超时。
   let shotPath: string | null;

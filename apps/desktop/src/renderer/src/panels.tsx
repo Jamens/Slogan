@@ -19,6 +19,7 @@ import {
 } from '@dajia/scene-2d';
 import { useEditor } from './stores/editorStore';
 import { useSelection } from './stores/selectionStore';
+import { clipLineAcrossStorey, requestPlanExport } from './export-plan';
 
 /**
  * 楼层 tab 条与右侧属性面板（Task 8）。
@@ -236,6 +237,9 @@ export function PropPanel(): React.JSX.Element {
 
   const [typing, setTyping] = useState<Typing | null>(null);
   const [trial, setTrial] = useState<PanelTrialReport | null>(null);
+  /** 导出平面图（T7/T8 经真实 IPC）。`busy` 防连点，`status` 是给用户看的那一句话。 */
+  const [exporting, setExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
   /** 成功提交那一发的标记：下一帧（真源已经落地）把当时的 `wallPropsOf` 读数钉成 `propsAfterEdit`。 */
   const afterCommitRef = useRef<boolean>(false);
 
@@ -340,10 +344,75 @@ export function PropPanel(): React.JSX.Element {
     if (report.ok) submit(wallSetLoadBearing({ wallId, loadBearing: next }));
   };
 
+  /**
+   * 导出当前层的平面图（走真实 IPC → 主进程弹保存框 → 落盘 PDF，plan5 T7/T8 的产物）。
+   *
+   * **日期是一个写死的入参**（`2026-10-06`），不是 `new Date()`：标题栏日期在真实产品里
+   * 来自一个日期输入框，而 E3 要求「同 doc + 同 opts 两次导出字节逐字相同」——
+   * 时钟读数会让这条判据没法存在。S2 接上日期输入框时换掉这个常量即可。
+   *
+   * 给了 `clipLine` ⇒ 主进程多导一页剖切轮廓（X8 的两页 PDF）。
+   * 剖切线由 `clipLineAcrossStorey` 从**真源轴线**现算（视图状态 D1，不进真源）。
+   *
+   * 失败一律落在 `exportStatus`（红字），**不动 `lastError` / `revision`** ——
+   * 导出失败与"拖不动"是两件事，混进同一个通道会让那两条判据分不清是哪一路抛的
+   * （同 `reportPaintError` 那条纪律）。
+   */
+  const onExportClick = async (): Promise<void> => {
+    if (exporting) return;
+    setExporting(true);
+    setExportStatus(null);
+    try {
+      const clipLine = clipLineAcrossStorey(log.document, storeyId);
+      const result = await requestPlanExport({
+        title: '平面图',
+        drafter: '搭家',
+        sheetNo: 'A-101',
+        date: '2026-10-06',
+        clipLine: clipLine ?? undefined,
+      });
+      if (result.ok) {
+        setExportStatus(`已导出：${result.outPath ?? '(路径未知)'}`);
+      } else if (result.error === '已取消保存对话框') {
+        setExportStatus(null); // 用户主动取消：静默，不当成失败红字。
+      } else {
+        setExportStatus(`导出失败：${result.error ?? '未知错误'}`);
+      }
+    } catch (err) {
+      // 兜底：invoke 本身不该抛（handler 把错误收成 ok:false），抛到这里说明 preload 通道断了。
+      setExportStatus(`导出失败：${String(err)}`);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   // 没有可展示的墙 ⇒ 外壳照旧渲染（260px 那一格是画布尺寸口径的一部分，不能时有时无），
   // 里面一个字都不放：`panelWallId` 与 `panelProps` 由 effect 报 null。
   return (
     <div data-dajia="prop-panel" style={panelStyle}>
+      {/* 导出平面图：常驻在面板顶部，**不依赖选中墙**（导出的是这一层，不是某面墙）。 */}
+      <button
+        data-dajia="export-plan"
+        type="button"
+        style={{ ...tabButtonStyle, width: '100%' }}
+        disabled={exporting}
+        onClick={() => {
+          void onExportClick();
+        }}
+      >
+        {exporting ? '导出中…' : '导出平面图'}
+      </button>
+      {exportStatus !== null ? (
+        <div
+          data-dajia="export-status"
+          style={{
+            color: exportStatus.startsWith('导出失败') ? '#a01010' : '#186a3b',
+            wordBreak: 'break-all',
+          }}
+        >
+          {exportStatus}
+        </div>
+      ) : null}
       {props === null ? <span data-dajia="no-wall">未选中墙</span> : null}
       {props === null ? null : (
         <>
