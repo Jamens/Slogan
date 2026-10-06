@@ -408,7 +408,7 @@ export function deriveStoreyGeometry(doc: Document, storeyId: EntityId): StoreyG
 
 **盘上**：`pnpm verify` exit=0，**`Test Files 54` / `Tests 705`**（T5 时 53 / 690 ⇒ +1 / +15）；`pnpm typecheck` exit=0；`pnpm lint:deps` exit=0。`test:db` 未跑（T6 不碰连库档），仍 6 / 110。
 
-**待办**：T7 `section/clip.ts` 7 格 → T8 `export-plan.ts` 4 格 + 全量。
+**待办**：T8 `export-plan.ts` 4 格 + 全量（T7 已完成，见下）。
 
 **需人工验证、本计划不打勾的项**（沿用 spec §10 的口径）：
 
@@ -434,7 +434,13 @@ export function deriveStoreyGeometry(doc: Document, storeyId: EntityId): StoreyG
 用户在第 7 棒后选了「跳去 M1.5 先导出真 PDF」，于是 T7/T8 延后、先做了 M1.5a。
 
 - **M1.5a 已完成**（`packages/pdf`，commit `7681df0`）：自研 PDF 内容流后端，`writeSheet`/`writeSheets` 从 `Sheet` IR 逐字落成合法 PDF（9 格，独立 reader 校验 ≤0.01mm 往返）。
-- **T7（剖切轮廓）/ T8（导出出口）仍待做**：它们是「IR 完整」的一部分，但导出一张平面图不需要它们。M1.5a 已能导出**无剖切、无文字**的平面图。
+- **T7（剖切轮廓）已完成**（commit `7517666`）：`packages/drawing/src/section/clip.ts` 的 `clipSheet(doc, opts, clipLine)` 取 `planSheet` 的墙/柱/板纸面多边形，对剖切线求交段，仅保留法向右侧构件，作为 `polyline` 轮廓（不填充）落进自带图框的独立图幅。7 格对应 X1–X8：
+  - X1/X2：`clipLine` 是视图状态，只出现在本模块入参，不进 `Document`（`doc.canonical()` 调用前后逐字不变）、不进 `PaperOp`。
+  - X3 求交段；X4 只保留法向右侧（`sideOf(centroid) <= EPS`，EPS 兜住薄墙被剖时重心落在线上）；X5 只轮廓不填充（`polyline`，无 `fill`）；X6 楼板轮廓线剖到仍只画线。
+  - X7 变异守门：手工把 `retainRight` 的 `<= EPS` 翻成 `>= -EPS`，X3/X4/X6/X7 共 4 格红、X1/X2/X5/X8 不受影响 ⇒ 判据非假绿（已实测）。
+  - X8 独立图幅（自带 A3 图框 + `section` 层），与平面图 IR 分层不同。
+  - **不重算几何**：交段全来自 plan 的纸面多边形，沿用 P1/P3 纪律。
+- **T8（导出出口）仍待做**：`apps/desktop/src/main/draw/export-plan.ts`（4 格，unit 不连库），它们是「IR→存盘」的收尾，但导出一张平面图不需要它们。M1.5a/b/c 已能导出**含中文标注、无剖切**的平面图。
 - **M1.5b（中文字体）已完成**（commit 见下）：用户选 ① 开源子集化（思源黑体 Noto Sans SC，SIL OFL 可随仓库分发）。
   - 子集脚本 `scripts/subset-font.py`：fonttools 子集化 → `packages/pdf/assets/noto-sans-sc.subset.otf`（37KB / 189 字 / 0 缺字）。
   - 解析器 `packages/pdf/src/font.ts` `loadSubsetFont()`：只解析 `cmap`(u2g) + `hmtx`(字宽) + `head`(em/bbox) + 裸 CFF 字节，**不碰 CFF 内部 charset**——靠 PDF 的 `/CIDToGIDMap /Identity` 把编码字节直接当 GID 用（ROS `Adobe-Identity-0` 与 CFF 对齐）。后端自包含、可独立单测。
