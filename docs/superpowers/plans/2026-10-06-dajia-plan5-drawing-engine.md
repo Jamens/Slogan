@@ -440,7 +440,13 @@ export function deriveStoreyGeometry(doc: Document, storeyId: EntityId): StoreyG
   - X7 变异守门：手工把 `retainRight` 的 `<= EPS` 翻成 `>= -EPS`，X3/X4/X6/X7 共 4 格红、X1/X2/X5/X8 不受影响 ⇒ 判据非假绿（已实测）。
   - X8 独立图幅（自带 A3 图框 + `section` 层），与平面图 IR 分层不同。
   - **不重算几何**：交段全来自 plan 的纸面多边形，沿用 P1/P3 纪律。
-- **T8（导出出口）仍待做**：`apps/desktop/src/main/draw/export-plan.ts`（4 格，unit 不连库），它们是「IR→存盘」的收尾，但导出一张平面图不需要它们。M1.5a/b/c 已能导出**含中文标注、无剖切**的平面图。
+- **T8（导出出口）已完成**（commit `760300e`）：`apps/desktop/src/main/draw/export-plan.ts`（4 格 unit，E1–E4 全绿）+ `apps/desktop/test/unit/export-plan.test.ts`。这是「唯一」允许把图面 IR 落盘的 Electron 侧文件，纯函数 `(doc, opts, outPath) => void`，**不 import electron**（E1，源码扫 `from 'electron'` 为 false、有 `writeFileSync`/`loadDefaultFont`）。
+  - E2 字节稳定：同 `doc` + 同 `opts` 连跑两次 `Buffer.compare === 0`。基石 = PDF 后端固定对象序、不嵌 `/CreationDate`、字体常量字节、日期入参。
+  - E3 日期/设计人是入参非 `new Date()`/`os.userInfo()`（源码扫描须避开字面量陷阱：注释里不能写 "new Date()" 这种词，否则扫到自己）。
+  - E4 实体排序按 id 稳定：`doc.byKind('slab')` 按 id 升序（非插入序）；手工换成 `[...doc.entities.values()].filter(kind==='slab')` ⇒ E4 红、两同 kind slab 插入序倒序时字节漂 ⇒ 已还原。
+  - X8 两页：给了 `clipLine` ⇒ `sheets` 加 `clipSheet(doc, planOpts, clipLine, date)`，出「平面图 + 剖切轮廓」两页 PDF（比单页长、复现稳定）。
+  - **配套改动**：`pdf` 包加 `loadDefaultFont()`（读自带思源黑体子集字节）；`drawing` 包 `index.ts` 暴露 `plan`/`frame`（`planSheet`/`PlanOptions`/`frameSheet`/`TitleBlock`）；`clipSheet` 加可选第 4 形参 `date?`（向后兼容，T7 测试不受影响）；`desktop/package.json` 声明 `@dajia/drawing`/`@dajia/pdf` 依赖 + `scripts/check-package-deps.mjs` 的 `ALLOWED_DEPS` 放行 `pdf`。
+  - **验证**：desktop unit **96 格全绿**、drawing **68 格全绿**、full `pnpm typecheck`（含 desktop 三 tsconfig）/ `pnpm lint:deps` exit=0；E2/E4 均做过 mutation probe 证红并还原。
 - **M1.5b（中文字体）已完成**（commit 见下）：用户选 ① 开源子集化（思源黑体 Noto Sans SC，SIL OFL 可随仓库分发）。
   - 子集脚本 `scripts/subset-font.py`：fonttools 子集化 → `packages/pdf/assets/noto-sans-sc.subset.otf`（37KB / 189 字 / 0 缺字）。
   - 解析器 `packages/pdf/src/font.ts` `loadSubsetFont()`：只解析 `cmap`(u2g) + `hmtx`(字宽) + `head`(em/bbox) + 裸 CFF 字节，**不碰 CFF 内部 charset**——靠 PDF 的 `/CIDToGIDMap /Identity` 把编码字节直接当 GID 用（ROS `Adobe-Identity-0` 与 CFF 对齐）。后端自包含、可独立单测。
