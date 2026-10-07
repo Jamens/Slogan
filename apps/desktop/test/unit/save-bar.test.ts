@@ -151,6 +151,30 @@ describe('存盘横幅：读数通路（B3–B6，store 级）', () => {
     expect(src).toContain('if (banner === null) return null;');
   });
 
+  it('B7 灰态的指针穿透只给文字格，不给整条（整条穿透会让「收尾并关闭」永远点不到）', () => {
+    const src = codeOf(BAR);
+    // 灰色常态是 `closable: true`（`computeBanner` 的兜底那一句），它带按钮。
+    // 若 `pointerEvents: 'none'` 挂在**条**上，那个按钮就永远点不到（看得见点不动）。
+    // ⇒ 穿透必须挂在 `data-dajia="save-status-text"` 那一格的 style 上。
+    expect(src).toMatch(/data-dajia="save-status-text"[\s\S]{0,400}pointerEvents/);
+    // 反向判据：条自己（`save-status-bar` 之后、`<span` 之前）不得带 pointerEvents。
+    const barAt = src.indexOf('data-dajia="save-status-bar"');
+    const spanAt = src.indexOf('data-dajia="save-status-text"');
+    expect(barAt).toBeGreaterThan(-1);
+    expect(spanAt).toBeGreaterThan(barAt);
+    expect(src.slice(barAt, spanAt)).not.toContain('pointerEvents');
+  });
+
+  it('B8 动作在失败时也要解锁 busy（只靠"文案变了"清 ⇒ 同文案失败时按钮永久卡死）', () => {
+    const src = codeOf(BAR);
+    // `run` 里必须有 `.finally(` —— 成功路径横幅会换文案（`closed` / `opening`），
+    // 那一支由 effect 清；**失败路径文案可能与上一次逐字相同**（同一个 code、同一句话）
+    // ⇒ effect 不触发 ⇒ 没有 finally 就是两个按钮永久卡死、只能重启应用。
+    expect(src).toContain('.finally(');
+    // 且 finally 里要真的 setBusy(false)，不是空函数。
+    expect(/\.finally\(\(\) =>\s*\{\s*setBusy\(false\);/.test(src)).toBe(true);
+  });
+
   it('B5 读数初值是"横幅还没上过屏"，不是"文案为空"', () => {
     // 组件的 effect 才会写它；import 进来时它就该是初值。
     const r = saveBarReadout();

@@ -18,8 +18,10 @@ import { useProject, type ProjectBannerTone } from './stores/projectStore';
  * ## 代价（明写，不藏）
  *
  * 浮层会**盖住画布顶部一小块**。只在两种情况下出现横幅：会话生命周期切换，
- * 或异常（`failed` /锁丢了）。灰色常态（"已保存到第 N 发"）给`pointer-events: none`
- * 且半透明 —— 鼠标能穿透过去继续画图，不打扰。
+ * 或异常（`failed` / 锁丢了）。为了不打扰画图，**灰色常态下只有文字那一格
+ * `pointer-events: none`**（手能穿过字继续画）—— 而**条本身与按钮照常接事件**：
+ * 灰态横幅是 `closable: true`，它带着「收尾并关闭」按钮，整条设穿透会让那个按钮
+ * 永远点不到（看得见点不动，最坏的一型）。
  *
  * ## 为什么横幅文案一个字都不在这里写
  *
@@ -85,9 +87,7 @@ export function SaveStatusBar(): React.JSX.Element | null {
     });
   });
 
-  // 两个动作都要等 main 回来，所以给一个"正在处理"的闸：连点会连着发两次 `closeSession`
-  // （第二次 `opened` 已经是 null，函数自己会 return，但用户会看到两次抖动）。
-  // 换一帧就清：横幅内容变了（新一句话）说明上一轮已经结束。
+  // 横幅内容变了（新一句话）说明上一轮动作已经走完 —— 这是"清busy"的**主**通路。
   useEffect(() => {
     setBusy(false);
   }, [banner?.tone, banner?.text]);
@@ -97,29 +97,61 @@ export function SaveStatusBar(): React.JSX.Element | null {
   if (banner === null) return null;
 
   const tone = TONE_STYLE[banner.tone];
+  /**
+   * 跑一个动作，并在**它结束时**（不论成败）解锁。
+   *
+   * 为什么 `finally` 是必需的（code review 查出来的）：原先只有上面那个 effect 清
+   * `busy`，而它依赖"横幅文字变了"。成功路径确实会变（`closeSession` 成功 ⇒
+   * `phase: 'closed'` ⇒ 文案换成"工程已关闭：…"，`reopenAsEdit` 也会途经
+   * `closed` → `opening`）—— 但**失败路径不换文字**：`reopenAsEdit` 在
+   * `closeSession('abandon')` 成功、`open()` 失败时，最终横幅是 `failure` 那一格，
+   * 而失败那一瞬的 `put` 可能给出与上一次相同的文字（同一个 code、同一句话）⇒
+   * effect 不触发 ⇒ **两个按钮永久卡死，用户只能重启应用**。
+   *
+   * `closeSession` 抛错同理：`failure.message` 与原句相同时 effect 不跑。
+   * 所以解锁放在 `finally`，effect 那一条只当"文案变了就顺手解锁"的补充。
+   */
   const run = (action: () => Promise<void>): void => {
     if (busy) return;
     setBusy(true);
-    void action().catch(() => {
-      // 动作自己会把失败写进 `failure`（进而变成横幅），这里不重复报 ——
-      // 同一个错误说两遍，屏幕上就会出现两句矛盾的话。
-    });
+    void action()
+      .catch(() => {
+        // 动作自己会把失败写进 `failure`（进而变成横幅），这里不重复报 ——
+        // 同一个错误说两遍，屏幕上就会出现两句矛盾的话。
+      })
+      .finally(() => {
+        setBusy(false);
+      });
   };
 
   return (
     <div
       data-dajia="save-status-bar"
       data-tone={banner.tone}
-      // 灰色常态不拦鼠标（见文件头"代价"）；红/琥珀要拦，否则点不到条上的按钮。
       style={{
         ...barStyle,
         background: tone.bg,
         color: tone.fg,
         borderColor: tone.border,
-        pointerEvents: banner.tone === 'grey' ? 'none' : 'auto',
       }}
     >
-      <span data-dajia="save-status-text" style={{ flex: '1 1 auto', minWidth: 0, wordBreak: 'break-all' }}>
+      {/*
+        穿透只给**文字**这一格，不给整条 —— code review 查出来的矛盾：
+        灰色常态（`tone: 'grey'`）的横幅是 `closable: true`（`computeBanner` 的兜底那一句），
+        它带着「收尾并关闭」按钮。若整条设 `pointerEvents: 'none'`，
+        **那个按钮永远点不到**（看得见、点不动，最坏的一型）。
+        所以：条本身与按钮正常接事件，只有文字那格穿透 ⇒ 画图时手能穿过字，
+        而按钮该点就点得到。
+      */}
+      <span
+        data-dajia="save-status-text"
+        style={{
+          flex: '1 1 auto',
+          minWidth: 0,
+          wordBreak: 'break-all',
+          pointerEvents: banner.tone === 'grey' ? 'none' : 'auto',
+        }}
+      >
         {banner.text}
       </span>
       {banner.reopenable ? (
