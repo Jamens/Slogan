@@ -153,6 +153,9 @@ describe('T8 的 import 边界：真把式只能住在 ipc-persist.ts', () => {
 
 const CONFIG_STORE = '../../src/main/persist/config-store.ts';
 const ADMIN = '../../src/main/persist/admin.ts';
+const ADMIN_PORTS = '../../src/main/persist/admin-ports.ts';
+const IPC_PERSIST = '../../src/main/ipc-persist.ts';
+const INDEX = '../../src/main/index.ts';
 const ZERO_IMPORT_FILES = [
   '../../src/main/db/errors.ts',
   '../../src/main/db/diagnostics.ts',
@@ -208,5 +211,47 @@ describe('T9 的 import 边界', () => {
     // `import type` 与值导入的区别在这一格成立：`db/repository.ts` 顶部有 mysql2 的类型导入，
     // 具名值导入会把那个模块真加载进纯 node 档 —— 上面第四条 banned 同时挡住了那两种写法。
     expect(src.includes('firstStoreyTurn')).toBe(true);
+  });
+
+  // —— Step 8 追加的三格 ——
+
+  it('9 格：admin-ports.ts 是"真把式但 electron-free"那一档：连库档因此装得出它', () => {
+    const src = srcOf(ADMIN_PORTS);
+    for (const banned of ["from 'electron'", "from 'node:fs'", "from 'node:os'", "from 'mysql2"]) {
+      expect(src.includes(banned)).toBe(false);
+    }
+    // 正控制四发，缺一发就是"文件被搬空了"（这一族扫描最怕的形状是全绿）。
+    // 这四发合起来才是 P-38 的那句话：建库、建表、开池、超时数值都从 mysql2 那一层进来，
+    // 而 `node:os` 不在其中（`actor` 是递进来的，见 `AdminPortDeps` 的注释）。
+    expect(src.includes('ensureDatabase(')).toBe(true);
+    expect(src.includes('migrate(')).toBe(true);
+    expect(src.includes('createDbPool(')).toBe(true);
+    expect(src.includes('CONFIG_TEST_CONNECT_TIMEOUT_MS')).toBe(true);
+  });
+
+  it('10 格：应用的配置源只有一个 —— safeStorage 那份文件，环境变量不再是它的通路', () => {
+    const src = srcOf(IPC_PERSIST);
+    // 正控制先走：这一发读的不是空文件（同格 8 那一句"别让人搬空"）。
+    expect(src.includes('configToEnv(readConfig(')).toBe(true);
+    // `readMysqlEnv` 在本文件里一个字节都不许留（连注释里都不许）。
+    expect(src.includes('readMysqlEnv')).toBe(false);
+    // 适配器的两个形状各扫一句（P-36）：getter 而不是常量，Buffer.from 而不是裸递 Uint8Array。
+    expect(src.includes('get available()')).toBe(true);
+    expect(src.includes('Buffer.from(bytes)')).toBe(true);
+  });
+
+  it('11 格：UI 指令只有一个发点，而它在闸门模式的早退之后（口径 ③ 的字面形状）', () => {
+    const src = srcOf(INDEX);
+    const sends = src.split('\n').filter((line) => line.includes('send(UI_COMMAND_EVENT'));
+    expect(sends).toHaveLength(1);
+    // 发点必须在 `attachInteractiveUi` 体内：写在 `createWindow` 里、写在 `whenReady` 里，
+    // 都会绕开那一道 `--shot` 早退，而屏幕上就长出向导/列表的 DOM 了。
+    expect(src.includes('function attachInteractiveUi')).toBe(true);
+    const body = src.slice(src.indexOf('function attachInteractiveUi'));
+    const guard = body.indexOf("process.argv.includes('--shot')");
+    const send = body.indexOf('send(UI_COMMAND_EVENT');
+    expect(guard).toBeGreaterThan(-1);
+    expect(send).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(send);
   });
 });

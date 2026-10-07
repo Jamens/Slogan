@@ -5,11 +5,11 @@
  * **本文件目前一行都不 import 它们**：接线（IPC、启动时恢复未合并片段）是 Task 8 那一档的活，
  * 这句话留在这里是为了让"目录已经在了、入口还没接"这件事不用下一个人重新发现。
  */
-import { app, BrowserWindow, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, type MenuItemConstructorOptions } from 'electron';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CORE_SCHEMA_VERSION } from '@dajia/core';
-import { IPC } from '@dajia/protocol';
+import { IPC, UI_COMMAND_EVENT, type UiCommand } from '@dajia/protocol';
 import { registerExportPlanIpc } from './ipc/export-plan';
 import { registerPersistIpc } from './ipc-persist';
 
@@ -52,6 +52,7 @@ function createWindow(visible: boolean): BrowserWindow {
   // T8：持久化那四条 channel 的注册与 ping 并列（shot 模式也要走到注册：注册本身
   // 不动 DOM、不改窗口尺寸、不连库 —— `readMysqlEnv` 只在 `open` 真的被调用时才跑）。
   registerPersistIpc(win);
+  attachInteractiveUi(win);
 
   // 闸门期间把 renderer 的 error 级 console 原样转发到 stdout：executeJavaScript 里抛异常时
   // Electron 只在主进程回一句 "check the renderer console"，真凶（renderer 抛的那行 + 栈）
@@ -89,6 +90,64 @@ function whenLoaded(win: BrowserWindow): Promise<void> {
     }
     win.webContents.once('did-finish-load', () => resolve());
   });
+}
+
+/**
+ * 交互模式的应用菜单（P-35）。它**不是往默认菜单上加一条** —— electron 没有"追加顶层项"的 API，
+ * 要加「工程」就得把整份菜单重建一遍，所以这是一份**重建的子集**：
+ * `editMenu` 必须在（向导那四个输入框的 Ctrl+C / Ctrl+V / Ctrl+Z 与"全选"全靠它，
+ * 摘掉等于把中文输入法的剪贴板路径一起摘掉），`viewMenu` 必须在（Reload / DevTools 是排查现场的门），
+ * `fileMenu` 给的是"关闭窗口"与"退出"。丢掉 `windowMenu`、`help` 与 macOS 那份应用菜单是**刻意的取舍**
+ * （S1 一个窗口，没有"最小化/全部前置"要管），登记在本步限度 ⑤。
+ *
+ * 两条 click 递的都是 `UiCommand` 的成员，不是字符串字面量：`'config'` 这类拼法漂了会静默
+ * （屏幕收到一个不认识的值 ⇒ 什么都不显示），而名字有 protocol 那张闭集表管，
+ * 加第四个值的代价由 `ipc-channels.test.ts` 第 4 格与 `panels.tsx` 那一支一起付（P-32）。
+ */
+function buildMenuTemplate(win: BrowserWindow): MenuItemConstructorOptions[] {
+  const sendCommand = (command: UiCommand): void => sendUiCommand(win, command);
+  return [
+    { role: 'fileMenu' },
+    { role: 'editMenu' },
+    { role: 'viewMenu' },
+    {
+      label: '工程',
+      submenu: [
+        { label: '连接设置…', accelerator: 'CmdOrCtrl+,', click: () => sendCommand('config') },
+        { label: '工程列表', accelerator: 'CmdOrCtrl+O', click: () => sendCommand('projects') },
+      ],
+    },
+  ];
+}
+
+/**
+ * 交互模式独有的两件事：菜单 + 首屏那发 `startup`。
+ *
+ * **第一道判据是闸门模式早退**，这一句就是 `persist-boundary.test.ts` 第 11 格判的东西（口径 ③ 的那条主张
+ * 的字面形状：向导与列表两块 DOM 只能从交互分支进来）。判据用 `--shot` 而不是 `visible` 参数：
+ * `--prop` / `--draw` / `--pick` / `--edit` 那四道闸门要 OS 级输入，窗口是**可见**的（实测 `whenReady`
+ * 里那句 `createWindow(shotPath === null || wantInput)`），拿 `visible` 当开关会让四道闸门带上菜单。
+ * 实测的凭据：`scripts/desktop-shot.mjs` 的 argv 链（第 70 行）永远把具体开关与 `--shot` **成对**给。
+ *
+ * `startup` 发在 `did-finish-load` 之后（`whenLoaded` 那一发既有的条件轮询，不是固定 sleep）：
+ * 屏幕侧的订阅发生在 `main.tsx` 同步 render 的那一刻，早于 `did-finish-load`，所以这一发不会落在无人监听的时候。
+ * 代价照登记（限度 ⑥）：`void` 掉的 promise 意味着这一发是 fire-and-forget —— 它没送到，屏幕停在
+ * `phase: 'off'`，症状与"这台机器没接持久化"完全同形，不报红。
+ *
+ * `'startup'` 的**语义是"你问我一次"**：main 不猜这台机器配没配（那是读盘那一发的事），
+ * 屏幕收到它之后自己调 `readConfig()`，再按 `state` 决定向导还是列表。被否掉的替代方案写在 t9a 第 ③ 段末
+ * （"store 挂载时自动 `readConfig()`" 会把闸门变成按机器绿）。
+ */
+function attachInteractiveUi(win: BrowserWindow): void {
+  if (process.argv.includes('--shot')) return;
+  Menu.setApplicationMenu(Menu.buildFromTemplate(buildMenuTemplate(win)));
+  void whenLoaded(win).then(() => sendUiCommand(win, 'startup'));
+}
+
+/** 全应用唯一的 UI 指令发点：persist-boundary.test.ts 第 11 格要求全文件只许这一个发送处。 */
+function sendUiCommand(win: BrowserWindow, command: UiCommand): void {
+  if (win.isDestroyed()) return;
+  win.webContents.send(UI_COMMAND_EVENT, command);
 }
 
 /** 条件轮询，不是固定 sleep：窗口慢不会导致误判白屏，等不到就是失败。 */

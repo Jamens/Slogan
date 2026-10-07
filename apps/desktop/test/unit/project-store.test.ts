@@ -109,6 +109,13 @@ function makeApi() {
         if (at >= 0) listeners.splice(at, 1);
       };
     },
+    // T9 把 `DajiaApi` 扩到十二件：这份假把式补上那六件（本档不驱动它们，回包照契约的失败支）。
+    readConfig: async () => ({ ok: false, code: 'not-configured', message: '夹具不接数据源' }),
+    saveConfig: async () => ({ ok: false, code: 'not-configured', message: '夹具不接数据源' }),
+    testConnection: async () => ({ ok: false, code: 'not-configured', message: '夹具不接数据源' }),
+    listProjects: async () => ({ ok: false, code: 'not-configured', message: '夹具不接数据源' }),
+    createProject: async () => ({ ok: false, code: 'not-configured', message: '夹具不接数据源' }),
+    onUiCommand: (_listener) => () => {},
   };
   return { api, submits, closes, opens, calls, listeners, queue, box };
 }

@@ -1,5 +1,5 @@
 import { hostname } from 'node:os';
-import { app, ipcMain, type BrowserWindow, type WebContents } from 'electron';
+import { app, ipcMain, safeStorage, type BrowserWindow, type WebContents } from 'electron';
 import type { Pool } from 'mysql2/promise';
 import {
   INVOKE_CHANNELS,
@@ -7,8 +7,17 @@ import {
   SAVE_STATUS_EVENT,
   parseCloseRequest,
   parseCloseValue,
+  parseConfigReadRequest,
+  parseConfigSaveRequest,
+  parseConfigTestRequest,
+  parseConfigValue,
+  parseConnectionTestValue,
   parseOpenRequest,
   parseOpenValue,
+  parseProjectCreateRequest,
+  parseProjectCreateValue,
+  parseProjectListRequest,
+  parseProjectListValue,
   parseSaveStatus,
   parseSubmitRequest,
   parseSubmitValue,
@@ -18,8 +27,18 @@ import {
   type PersistFail,
   type SaveStatusWire,
 } from '@dajia/protocol';
+import {
+  ConfigError,
+  configToEnv,
+  probeConfig,
+  readConfig,
+  writeConfig,
+  type ByteCipher,
+} from './persist/config-store';
+import { ProjectAdmin, buildDraftEnv, probeConnection } from './persist/admin';
+import { makeAdminPorts, probeOpener } from './persist/admin-ports';
 import type { EntityId } from '@dajia/core';
-import { readMysqlEnv, type MysqlEnv } from './db/env';
+import type { MysqlEnv } from './db/env';
 import { createDbPool } from './db/pool';
 import { migrate } from './db/migrate';
 import { acquireLock, heartbeat, newLockTicket, releaseLock, type LockTicket } from './db/locks';
@@ -45,9 +64,49 @@ function lockOwner(): string {
   return `${hostname()}:${process.pid}`;
 }
 
+/**
+ * `ByteCipher` 的 `safeStorage` 实现。它住在这里而不是 `persist/config-store.ts`，是 P-27 那一刀的正文：
+ * `config-store.ts` 保持 electron-free，它的 10 格才跑得了纯 node 档（t9a 第 ⑦ 段末那条"import 那一刻就炸"
+ * 的处境在这个文件里不存在 —— 本文件本来就被授权认识 electron）。
+ *
+ * `available` 是 getter 不是常量（P-36）：`safeStorage.isEncryptionAvailable()` 在 app ready 之前回 false，
+ * 而模块级常量等于把"这台机器能不能加密"冻在求值那一刻。留一个惰性的读数，代价是两次读之间它会变。
+ *
+ * `decrypt` 那一句要 `Buffer.from(bytes)`：`ByteCipher.decrypt(bytes: Uint8Array)` 交出来的是
+ * 普通 `Uint8Array`，而 `decryptString` 只认 Buffer —— 这是"类型过、运行不过"那一族（t9c 第 ② 段末预告的那发实测）。
+ * `encryptString` 返回 Buffer（Buffer 是 `Uint8Array` 的子类），出去那一向不会犯。
+ *
+ * **没有 unit 格**：它唯一的真读者是 T11 的 `--persist-shot`（第 ⑦ 段的限度 ③）。
+ */
+const safeStorageCipher: ByteCipher = {
+  get available() {
+    return safeStorage.isEncryptionAvailable();
+  },
+  encrypt: (text) => safeStorage.encryptString(text),
+  decrypt: (bytes) => safeStorage.decryptString(Buffer.from(bytes)),
+};
+
 /** 当前要送状态的窗口。S1 一个窗口一个工程（第 ⑩ 段），所以是一个，不是一张表。 */
 let target: WebContents | null = null;
 let session: ProjectSession | null = null;
+
+/**
+ * 会话之外那五条通道要的两样共用件：`userData` 目录（`config:*` 三条）与一份装配好的
+ * `ProjectAdmin`（`project:list` / `project:create`）。
+ *
+ * 它与 `session` 分成两份是刻意的：会话有"当前开着哪个工程"这件事，而列表与向导**没有**，
+ * 把两者塞进一个可空对象会得到"session 为 null 时 admin 是不是也为 null"这种没人能答的问题（P-22）。
+ * `userDataDir` 走模块态而不是 `app.getPath` 就地调用，是因为 `dispatch` 是模块级函数，
+ * 而 `app.getPath('userData')` 必须在 `whenReady` 之后 —— 同一个理由管 `registerPersistIpc` 的形状。
+ */
+let adminWiring: { readonly userDataDir: string; readonly admin: ProjectAdmin } | null = null;
+
+function requireWiring(): { userDataDir: string; admin: ProjectAdmin } {
+  if (adminWiring === null) {
+    throw new SessionError('internal', '管理通道在 registerPersistIpc 之前被调用了：窗口比端口早到');
+  }
+  return adminWiring;
+}
 
 // —— 三条端口实现（session.ts 不认识 electron / fs / mysql2，全部从这里进来）——
 
@@ -162,9 +221,15 @@ function writeEmergency(userDataDir: string, payload: EmergencyPayload): void {
  *
  * 唯一的例外是**出站**那一发 `parseXValue`，它也抛 `TypeError` 却必须是 `'internal'` —— 所以它不换码，
  * 而是就地换成 `SessionError('internal', …)`（`parseOutbound`），这一档才不必靠上下文猜方向。
+ *
+ * 第三支是 T9 加的（P-39）：`ConfigError` 是"这份连接配置不能用"三种处境的合称（没配 / 读不出来 /
+ * 这台机器存不了口令），它既不是屏幕递错了东西（`'bad-request'`），也不是我们拼错了包（`'internal'`），
+ * 而用户此刻要做的三件事里第一件都是"回向导重填一次" —— 那正是 `'not-configured'` 这个码在 T8 的定义。
+ * 三种处境不在码上分，在 `message` 与 `ConfigValue.state` 上分（那两个读者在屏幕上，而横幅读的是 message 原话）。
  */
 function errorCode(err: unknown): PersistErrorCode {
   if (err instanceof SessionError) return err.code;
+  if (err instanceof ConfigError) return 'not-configured';
   if (err instanceof TypeError) return 'bad-request';
   return 'internal';
 }
@@ -239,6 +304,57 @@ async function dispatch(channel: IpcChannel, raw: unknown): Promise<IpcResult<un
         const reply = await askSession(() => requireSession().close(req));
         return { ok: true, value: parseOutbound(channel, reply, parseCloseValue) };
       }
+      case IPC.configRead: {
+        // 空表请求（`ConfigReadRequestSchema`）在这一发唯一的价值是让"每条通道都过自己的请求表"
+        // 这句全称命题不需要特例（t9a 第 ① 段末）。它没有返回值可用，所以不接住 ——
+        // `parseConfigReadRequest` 的抛就是这一发要的抛。
+        parseConfigReadRequest(channel, raw);
+        const { userDataDir } = requireWiring();
+        // `probeConfig` **永不抛**：「还没配」是首屏要显示的常态，不是失败（第 ⑦ 段那条分工）。
+        const value = parseOutbound(
+          channel,
+          probeConfig(userDataDir, safeStorageCipher),
+          parseConfigValue,
+        );
+        return { ok: true, value };
+      }
+      case IPC.configSave: {
+        const req = parseConfigSaveRequest(channel, raw);
+        const { userDataDir } = requireWiring();
+        // `writeConfig` 的抛有三种：`ConfigError('unavailable')`（这台机器存不了）走改动 4 那一支；
+        // `ConfigRecordSchema.parse` 的 `TypeError` 走 `'bad-request'`；fs 的抛走默认档 `'internal'`
+        // —— 那一条是对的，因为"写不进去"确实是我们要查的（磁盘、权限、路径）。
+        const value = parseOutbound(
+          channel,
+          writeConfig(userDataDir, safeStorageCipher, req.connection),
+          parseConfigValue,
+        );
+        return { ok: true, value };
+      }
+      case IPC.configTest: {
+        const req = parseConfigTestRequest(channel, raw);
+        // 试连吃的是**屏幕上那份草稿**，不是盘上存过的那一份（口径 ⑤ 的另一半：用户在改 host
+        // 之后点「测试连接」，测的必须是他刚敲进去的那串）。`buildDraftEnv` 把库名钉成 `'dajia'`。
+        // `probeConnection` **自己不抛**（t9d 第 ① 段末），所以这一发只有 `parseOutbound` 会抛。
+        const value = parseOutbound(
+          channel,
+          await probeConnection(buildDraftEnv(req.connection), probeOpener),
+          parseConnectionTestValue,
+        );
+        return { ok: true, value };
+      }
+      case IPC.projectList: {
+        parseProjectListRequest(channel, raw);
+        const { admin } = requireWiring();
+        const value = parseOutbound(channel, await admin.list(), parseProjectListValue);
+        return { ok: true, value };
+      }
+      case IPC.projectCreate: {
+        const req = parseProjectCreateRequest(channel, raw);
+        const { admin } = requireWiring();
+        const value = parseOutbound(channel, await admin.create(req.name), parseProjectCreateValue);
+        return { ok: true, value };
+      }
       default:
         // 名册与 switch 漂开时（加了通道没写 case）必须报"我们错了"，而不是 `undefined` 回包 ——
         // `ipc-channels.test.ts` 第 1 格也钉这一句，但那一格扫的是文本，这一句兜的是运行时。
@@ -261,11 +377,19 @@ async function dispatch(channel: IpcChannel, raw: unknown): Promise<IpcResult<un
 export function registerPersistIpc(win: BrowserWindow): void {
   target = win.webContents;
   const userDataDir = app.getPath('userData');
+  // 配置源换血（P-27 的生产侧落点）：环境变量那一套从此只属于 `pnpm test:db` 与闸门夹具，
+  // 应用只认 `userData/connection.bin` 那份密文。这一发是惰性的闭包 —— 装端口的时候不读盘，
+  // 于是"没配"这件事只在用户真的要点开一个工程 / 刷新一次列表时才说话（第 ② 段末那条时序）。
+  const loadConfig = (): MysqlEnv => configToEnv(readConfig(userDataDir, safeStorageCipher));
+  // `ProjectAdmin` 与 `probeOpener` 各装配一次，随 `registerPersistIpc` 活（t9d 交接末句的那件事：
+  // `ports` 里没有请求级状态，而 `redact` 的 `Set` 与 `firstStoreyTurn` 都是纯函数，
+  // 每次请求新建一份只会让"重建窗口"那一族 bug 多一个可变因素）。
+  const adminPorts = makeAdminPorts({ loadConfig, actor: lockOwner });
+  adminWiring = { userDataDir, admin: new ProjectAdmin(adminPorts) };
   const ports: PersistPorts = {
     userDataDir,
     timer: realTimer,
-    // 配置源是环境变量（④ 段：renderer 没有口令可交，T8 的通道里也不许出现口令）。
-    loadConfig: () => readMysqlEnv(),
+    loadConfig,
     openDb,
     acquire,
     readEmergency: listEmergency,

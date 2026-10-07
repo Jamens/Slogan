@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { IPC, type IpcChannel } from '../src/ipc';
+import { IPC } from '../src/ipc';
 import {
   FailureReplySchema,
   INVOKE_CHANNELS,
@@ -144,33 +144,21 @@ describe('persist-schema：回包值与错误码', () => {
 });
 
 describe('persist-schema：名册与出口纪律', () => {
-  it('名册三条 + 两条事件 + 五个待登记的通道 == IPC 里除 ping 与 exportPlan 的全部（漏登记即红）', () => {
+  it('名册八条 + 两条事件 == IPC 里除 ping 与 exportPlan 的全部（漏登记即红）', () => {
     expect([...INVOKE_CHANNELS].sort()).toEqual(
-      [IPC.journalSubmit, IPC.projectClose, IPC.projectOpen].sort(),
+      [
+        IPC.configRead,
+        IPC.configSave,
+        IPC.configTest,
+        IPC.projectList,
+        IPC.projectCreate,
+        IPC.projectOpen,
+        IPC.journalSubmit,
+        IPC.projectClose,
+      ].sort(),
     );
-    // 【接线那一发要整段删掉】T9 这一发只落五个新请求通道的**契约**（表 + parse 出口），
-    // 它们的 main 侧 `case` 与 preload 侧 `invoke` 还没落，那时才进 `INVOKE_CHANNELS` ——
-    // 名册是"注册与扫描的同一份名单"（`apps/desktop/test/unit/ipc-channels.test.ts`
-    // 按它去扫 `ipc-persist.ts` 与 preload），先进名册会让那一格在 main 还没有 case 的时候红。
-    // 把"还没登记"写成五个显式的名字而不是一句含糊的 filter，是为了让它两头都红得起来：
-    // 接线那一发把 `configRead` 收进名册 ⇒ 下面那句 `toBe(false)` 红（⇒ 必须把这一行删掉）；
-    // 而删掉这一整段却不扩名册 ⇒ 那条等式红。于是唯一能绿的形状是"五条都进了名册"。
-    const NOT_YET_REGISTERED: readonly IpcChannel[] = [
-      IPC.configRead,
-      IPC.configSave,
-      IPC.configTest,
-      IPC.projectList,
-      IPC.projectCreate,
-    ];
-    for (const channel of NOT_YET_REGISTERED) {
-      expect(INVOKE_CHANNELS.includes(channel)).toBe(false);
-    }
-    const covered = [
-      ...INVOKE_CHANNELS,
-      SAVE_STATUS_EVENT,
-      UI_COMMAND_EVENT,
-      ...NOT_YET_REGISTERED,
-    ].sort();
+    expect(INVOKE_CHANNELS.length).toBe(8);
+    const covered = [...INVOKE_CHANNELS, SAVE_STATUS_EVENT, UI_COMMAND_EVENT].sort();
     // 裁决 t8-arbitration ②：`exportPlan` 的 handler 注册在 `main/ipc/export-plan.ts`，
     // 不在 `ipc-persist.ts` 的 switch 里 —— 把它收进 `INVOKE_CHANNELS` 会让
     // `ipc-channels.test.ts` 扫 `case IPC.${key}:` 那一格必红。漏登记即红的性质保留。

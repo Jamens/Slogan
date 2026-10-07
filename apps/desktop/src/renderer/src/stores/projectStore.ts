@@ -438,6 +438,37 @@ const NOT_INJECTED: DajiaApi = {
       // 注销函数照契约返回，但底下没有东西可撤。
     };
   },
+  // T9 把 `DajiaApi` 从六件扩到十二件：这份空壳必须一并补齐那六件，否则 `projectStore.ts`
+  // 这一处 `DajiaApi` 字面量编不过。口径与上面五件同族：诚实回答"没接口"，而不是抛。
+  readConfig: async () => ({
+    ok: false,
+    code: 'internal',
+    message: '没有 preload 注入的 dajia 接口：这一屏不会保存任何东西',
+  }),
+  saveConfig: async (_connection) => ({
+    ok: false,
+    code: 'internal',
+    message: '没有 preload 注入的 dajia 接口：这一屏不会保存任何东西',
+  }),
+  testConnection: async (_connection) => ({
+    ok: false,
+    code: 'internal',
+    message: '没有 preload 注入的 dajia 接口：这一屏不会保存任何东西',
+  }),
+  listProjects: async () => ({
+    ok: false,
+    code: 'internal',
+    message: '没有 preload 注入的 dajia 接口：这一屏不会保存任何东西',
+  }),
+  createProject: async (_name) => ({
+    ok: false,
+    code: 'internal',
+    message: '没有 preload 注入的 dajia 接口：这一屏不会保存任何东西',
+  }),
+  onUiCommand: (_listener) => () => {
+    // 与 `onSaveStatus` 同一个形状：没有桥可订 ⇒ 没有可撤的东西。
+    return () => {};
+  },
 };
 
 /**

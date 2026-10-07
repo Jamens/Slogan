@@ -1,10 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { INVOKE_CHANNELS, IPC, type IpcChannel } from '@dajia/protocol';
+import { INVOKE_CHANNELS, IPC, UiCommandSchema, type IpcChannel } from '@dajia/protocol';
 
 const MAIN = '../../src/main/ipc-persist.ts';
 const PRELOAD = '../../src/preload/index.ts';
+const INDEX = '../../src/main/index.ts';
 
 function srcOf(relative: string): string {
   return readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8');
@@ -30,8 +31,9 @@ describe('三条请求通道 + 一条事件的两端对账', () => {
       expect(main.includes(`case IPC.${key}:`)).toBe(true);
       expect(preload.includes(`ipcRenderer.invoke(IPC.${key}`)).toBe(true);
     }
-    // 正控制：名册悄悄变短（或为空）时上面那个循环一句都不断，这一行才是"扫过了三条"的凭据。
-    expect(INVOKE_CHANNELS.length).toBe(3);
+    // 正控制：名册悄悄变短（或为空）时上面那个循环一句都不断，这一行才是"扫过了八条"的凭据。
+    // 3 ⇒ 8 是 T9 的那五条请求通道（configRead / configSave / configTest / projectList / projectCreate）。
+    expect(INVOKE_CHANNELS.length).toBe(8);
   });
 
   it('保存状态这条事件两头都在：main 发、preload 订，且给得出注销', () => {
@@ -51,5 +53,33 @@ describe('三条请求通道 + 一条事件的两端对账', () => {
     for (const banned of ['mysql', 'node:fs', 'readFileSync', 'createPool', 'password']) {
       expect(preload.includes(banned)).toBe(false);
     }
+  });
+
+  // —— Step 8 追加的两格 ——
+
+  it('4 格：第二条事件通道两头都在 —— main 的交互分支发、preload 订，且给得出注销', () => {
+    // 靶在 `index.ts` 而不是 `ipc-persist.ts`（P-35）：这一发事件的读者是"那一个窗口该显示哪一层"，
+    // 而会话状态的读者是端口装配好的 main 侧逻辑。两份方向不同，不合并（第 ④ 段末那句分工）。
+    expect(srcOf(INDEX).includes('send(UI_COMMAND_EVENT')).toBe(true);
+    const preload = srcOf(PRELOAD);
+    expect(preload.includes('ipcRenderer.on(UI_COMMAND_EVENT')).toBe(true);
+    // 注销不是装饰（格 2 同一条理由，第二次成立）：`createProjectStore` 在模块加载时挂一次，
+    // 而 `project-store.test.ts` 每格建一个 store，撤不干净就是往一份已经作废的 store 里写指令。
+    expect(preload.includes('ipcRenderer.removeListener(UI_COMMAND_EVENT')).toBe(true);
+    // 三值是闭集：加第四个值必须同时改 `panels.tsx` 那一支与这一格（P-32 的第二半）。
+    expect(UiCommandSchema.options).toEqual(['startup', 'config', 'projects']);
+  });
+
+  it('5 格：`config-store` 的失败有自己的码（不许落进 internal 那一档）', () => {
+    const main = srcOf(MAIN);
+    // 逐字这一行（P-39）。它红的两种形状：那一支被删（⇒ `ConfigError` 走默认档 internal，
+    // 屏幕上出现"这一条我们没认出来"，而 stdout 里多一行假警报说我们拼错了包），
+    // 或者它被写在 `return 'internal';` **之后**（永远走不到，症状与删掉一模一样）。
+    expect(main).toContain("if (err instanceof ConfigError) return 'not-configured';");
+    const guard = main.indexOf('err instanceof ConfigError');
+    const fallback = main.indexOf("return 'internal';");
+    expect(guard).toBeGreaterThan(-1);
+    expect(fallback).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(fallback);
   });
 });

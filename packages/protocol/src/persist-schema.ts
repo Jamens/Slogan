@@ -489,17 +489,22 @@ export const INVOKE_CHANNELS: readonly IpcChannel[] = [
   IPC.projectOpen,
   IPC.journalSubmit,
   IPC.projectClose,
+  IPC.configRead,
+  IPC.configSave,
+  IPC.configTest,
+  IPC.projectList,
+  IPC.projectCreate,
 ];
 
 /**
  * 事件方向两条（main → renderer，没有请求方向），都不许进上面的名册。
  *
- * T9 这一发只把 `uiCommand` 那条**事件**加进来，五个新请求通道（`configRead` … `projectCreate`）
- * 暂时还留在名册外：名册是"注册与扫描的同一份名单"
- * （`apps/desktop/test/unit/ipc-channels.test.ts` 按它去扫 `ipc-persist.ts` 的 `case`
- * 与 preload 的 `invoke`），而那两端与这些表是同一发落的 —— 先进名册会让那一格在 main
- * 还没有 `case` 的时候红。"还没登记"这件事由 `persist-schema.test.ts` 第 7 格那张
- * `NOT_YET_REGISTERED` 点名，接线那一发删掉它并把五条收进名册。
+ * 名册目前收八条请求通道：`projectOpen` / `journalSubmit` / `projectClose`（T8 既有）
+ * + `configRead` / `configSave` / `configTest` / `projectList` / `projectCreate`（T9 新增）。
+ * `ipc-channels.test.ts` 按它去扫 `ipc-persist.ts` 的 `case` 与 preload 的 `invoke`，
+ * 只改一边（加通道不写 `case`、或不在 preload 落点）当场红。事件通道
+ * （`SAVE_STATUS_EVENT` / `UI_COMMAND_EVENT`）有意不进名册，由 `ipc-channels.test.ts`
+ * 第 2 / 第 4 格单独对账。
  */
 export const SAVE_STATUS_EVENT: IpcChannel = IPC.saveStatus;
 export const UI_COMMAND_EVENT: IpcChannel = IPC.uiCommand;
