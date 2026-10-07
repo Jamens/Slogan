@@ -12817,12 +12817,19 @@ export const UI_COMMAND_EVENT: IpcChannel = IPC.uiCommand;
 
 > `<待实测>`：本块新用到四样东西，T3–T8 都没实测过 ——（a）`.refine(fn, string)` **挂在 `strictObject` 上**（T8 只挂在本包那把 `SafeCountSchema` 这种 `z.number()` 上）；（b）`z.enum(['dajia'])` 单元素；（c）`z.strictObject({})` 空表；（d）`ConfigDatabaseSchema.options` 取值 —— T3 那几处只把 `z.enum(内联数组)` 当判据用过，**没读过 `.options`**（v4 里这个名字还在不在要实测，不在就改成 `Object.values` 那类的替代写法并同步第 4 格）。四样各有一格判它（新文件第 5、4、9、4 格），实测不符就按盘上现物订正计划文本，别改判据。另外 `.min(1, '主机名不能为空')` 这种"规则 + 文案"两参数写法在 T3 的 `z.string().min(1)` 上是单参数的，**带 message 的那一版没测过** —— 若 4.6.5 只认 `{ error: '…' }` 对象写法，就把这一族全部改成 `{ error: '…' }` 并让第 3 格（哨兵不回显）继续成立；执行时把实测结论回填这一格。
 
+> **2026-10-07 实测回填（四样全过，zod 4.6.5）**：(a) `.refine(fn, string)` 挂在 `strictObject` 上成立，`z.output` 仍推出那个对象类型（第 5 格的 `ConfigValue` 没退化成 `unknown`）；(b) `z.enum(['dajia'])` 单元素成立，`.options` 是 `['dajia']`（`Array.isArray` 为真、`length === 1`）—— 名字还在，不必改 `Object.values` 那类替代写法；(c) `z.strictObject({})` 空表成立：`{}` 过、`undefined` 拒、多一键拒；(d) 两参数 `.min(1, '…')` 成立，文案就是第二个参数。另附一条当初没列的观察：挂在对象上的 `.refine` 失败时 `issue.path` 是 `[]`，所以第 5/6 格那两条同向规则一旦红，点号路径落在 `(根)` —— 这两格因此靠 `safeParse().success` 判而不是靠文案里的路径。
+
+> **2026-10-07 落盘时的一处执行顺序调整（`INVOKE_CHANNELS` 不在这一发扩）**：Step 1 的代码块把名册一次写成八条，但名册是"注册与扫描的同一份名单" —— `apps/desktop/test/unit/ipc-channels.test.ts` 按它去扫 `ipc-persist.ts` 的 `case` 与 preload 的 `invoke`，那两端在 Step 8 才落。所以这一发的盘上形状是：`IPC` 已经 11 条、五张请求表与十一个 parse 出口都在、**名册仍是三条 + 两条事件**，那五个待登记的通道由 `persist-schema.test.ts` 第 7 格那张 `NOT_YET_REGISTERED` 名单点名。它两头都红得起来（收进名册 ⇒ 那句 `toBe(false)` 红 ⇒ 必须删掉这一行；删掉整段却不扩名册 ⇒ 那条等式红），唯一能绿的终态就是"五条都进了名册"。接线那一发把这一行删掉即可，判据本身不用改。
+
 - [ ] **Step 2: protocol 的用例 —— 新文件 10 格 + T8 那两格改写**
 
 `packages/protocol/test/persist-config-schema.test.ts`（10 格）
 
 ```ts
 import { describe, expect, it } from 'vitest';
+// 2026-10-07 补：`IPC` **不在** `persist-schema.ts` 的出口里（照初稿那一版 import 会拿到
+// `undefined`，三处 `IPC.configSave` 当场 "Cannot read properties of undefined"）。通道表在 `ipc.ts`。
+import { IPC } from '../src/ipc';
 import {
   CONNECTION_ERROR_KINDS,
   CONNECTION_TEST_KINDS,
@@ -12833,8 +12840,6 @@ import {
   ConfigValueSchema,
   ConnectionInputSchema,
   ConnectionTestValueSchema,
-  INVOKE_CHANNELS,
-  IPC,
   PERSIST_ERROR_CODES,
   ProjectCreateRequestSchema,
   ProjectListRequestSchema,
@@ -13107,7 +13112,12 @@ describe('T9：连接参数的形状', () => {
     );
     expect(INVOKE_CHANNELS.length).toBe(8);
     const covered = [...INVOKE_CHANNELS, SAVE_STATUS_EVENT, UI_COMMAND_EVENT].sort();
-    expect(covered).toEqual(Object.values(IPC).filter((c) => c !== IPC.ping).sort());
+    // 2026-10-07 订正：初稿这一句少了 `&& c !== IPC.exportPlan`，而 `exportPlan`（plan5）
+    // 一直在 `IPC` 表里、handler 却注册在 `main/ipc/export-plan.ts` —— 照初稿写，八条名册
+    // 加两条事件是 10，`IPC` 除 ping 是 11，这一格落地就红。
+    expect(covered).toEqual(
+      Object.values(IPC).filter((c) => c !== IPC.ping && c !== IPC.exportPlan).sort(),
+    );
     // 两条事件都不许混进名册（它们没有请求方向，被注册成 handler 是自己调自己）。
     expect(INVOKE_CHANNELS.includes(SAVE_STATUS_EVENT)).toBe(false);
     expect(INVOKE_CHANNELS.includes(UI_COMMAND_EVENT)).toBe(false);

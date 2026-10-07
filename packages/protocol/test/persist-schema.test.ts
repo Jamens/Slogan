@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { IPC } from '../src/ipc';
+import { IPC, type IpcChannel } from '../src/ipc';
 import {
   FailureReplySchema,
   INVOKE_CHANNELS,
@@ -10,6 +10,7 @@ import {
   PERSIST_ERROR_CODES,
   SAVE_STATUS_EVENT,
   SaveStatusSchema,
+  UI_COMMAND_EVENT,
   SubmitRequestSchema,
   CloseRequestSchema,
   parseOpenRequest,
@@ -143,26 +144,76 @@ describe('persist-schema：回包值与错误码', () => {
 });
 
 describe('persist-schema：名册与出口纪律', () => {
-  it('名册三条 + 事件那一条 == IPC 里除 ping 的全部（漏登记即红）', () => {
+  it('名册三条 + 两条事件 + 五个待登记的通道 == IPC 里除 ping 与 exportPlan 的全部（漏登记即红）', () => {
     expect([...INVOKE_CHANNELS].sort()).toEqual(
       [IPC.journalSubmit, IPC.projectClose, IPC.projectOpen].sort(),
     );
-    const covered = [...INVOKE_CHANNELS, SAVE_STATUS_EVENT].sort();
+    // 【接线那一发要整段删掉】T9 这一发只落五个新请求通道的**契约**（表 + parse 出口），
+    // 它们的 main 侧 `case` 与 preload 侧 `invoke` 还没落，那时才进 `INVOKE_CHANNELS` ——
+    // 名册是"注册与扫描的同一份名单"（`apps/desktop/test/unit/ipc-channels.test.ts`
+    // 按它去扫 `ipc-persist.ts` 与 preload），先进名册会让那一格在 main 还没有 case 的时候红。
+    // 把"还没登记"写成五个显式的名字而不是一句含糊的 filter，是为了让它两头都红得起来：
+    // 接线那一发把 `configRead` 收进名册 ⇒ 下面那句 `toBe(false)` 红（⇒ 必须把这一行删掉）；
+    // 而删掉这一整段却不扩名册 ⇒ 那条等式红。于是唯一能绿的形状是"五条都进了名册"。
+    const NOT_YET_REGISTERED: readonly IpcChannel[] = [
+      IPC.configRead,
+      IPC.configSave,
+      IPC.configTest,
+      IPC.projectList,
+      IPC.projectCreate,
+    ];
+    for (const channel of NOT_YET_REGISTERED) {
+      expect(INVOKE_CHANNELS.includes(channel)).toBe(false);
+    }
+    const covered = [
+      ...INVOKE_CHANNELS,
+      SAVE_STATUS_EVENT,
+      UI_COMMAND_EVENT,
+      ...NOT_YET_REGISTERED,
+    ].sort();
     // 裁决 t8-arbitration ②：`exportPlan` 的 handler 注册在 `main/ipc/export-plan.ts`，
     // 不在 `ipc-persist.ts` 的 switch 里 —— 把它收进 `INVOKE_CHANNELS` 会让
     // `ipc-channels.test.ts` 扫 `case IPC.${key}:` 那一格必红。漏登记即红的性质保留。
     expect(covered).toEqual(
       Object.values(IPC).filter((c) => c !== IPC.ping && c !== IPC.exportPlan).sort(),
     );
-    // 事件通道不许混进名册（它没有请求方向，被注册成 handler 是自己调自己）。
+    // 两条事件都不许混进名册（它们没有请求方向，被注册成 handler 是自己调自己）。
     expect(INVOKE_CHANNELS.includes(SAVE_STATUS_EVENT)).toBe(false);
+    expect(INVOKE_CHANNELS.includes(UI_COMMAND_EVENT)).toBe(false);
   });
 
-  it('persist-schema.ts 的源码里没有口令，也没有连接参数的影子（第 ④ 段）', () => {
-    // 三条 `\b` 前缀的尺为什么打得开却不误红：`import` / `export` 里的 "port" 前面是字母，
-    // 没有词边界 ⇒ 不匹配；这个文件里真正的连接参数一个都不许出现。
-    for (const re of [/password/i, /\bhost\s*:/, /\bport\s*:/, /(^|[^\w])user[^\w]/]) {
-      expect(SCHEMA_SRC).not.toMatch(re);
+  it('`password` 只许出现在两张进方向的表里；任何回包表都不许有它（第 ④ 段）', () => {
+    // 按 `const XSchema =` 切块，一块一张尺（`export` 可选：四把私有字段尺 `Host` / `Port` /
+    // `User` / `Password` 必须各自成块，否则它们会被上一张表的块吸收 —— 那会把 SaveStatus
+    // 那一块标成"含 password"，因为 `PasswordSchema` 这个标识符本身就含这个词。这一刀是实测出来的。）
+    // 为什么不再拿整文件一把尺判：T8 那一版判的是"这个文件里一个连接参数都不许出现"，
+    // 而向导把这句话作废了（第 ④ 段），剩下的判据必须能回答"口令有没有从回包方向漏出去"。
+    const parts = SCHEMA_SRC.split(/\n(?=(?:export )?const \w+Schema\b)/);
+    const nameOf = (block: string): string | null =>
+      /^(?:export )?const (\w+)Schema\b/.exec(block)?.[1] ?? null;
+    const named = parts
+      .map((p) => [nameOf(p), p] as const)
+      .filter((e): e is [string, string] => e[0] !== null);
+
+    // 先证扫描器自己会响（这一族判据最怕的形状是"名单为空所以全绿"）：
+    const fake = 'export const FooValueSchema = z.strictObject({ password: z.string() });\n';
+    expect(nameOf(fake)).toBe('FooValue');
+    expect(/password/i.test(fake)).toBe(true);
+    expect(named.length).toBeGreaterThanOrEqual(28); // 表少了就是切块切错了，别让改动悄悄通过
+
+    const withPassword = named
+      .filter(([, block]) => /password/i.test(block))
+      .map(([n]) => n)
+      .sort();
+    // `Password` 是那把私有字段尺自己：它的名字含这个词，命中是名字的自指，不是形状。
+    // 点名它而不是过滤掉它，是为了别让下一个人以为扫描器漏了一张表。
+    expect(withPassword).toEqual(['ConfigRecord', 'ConnectionInput', 'Password']);
+
+    const values = named.filter(([n]) => n.endsWith('Value'));
+    expect(values.length).toBeGreaterThanOrEqual(7); // Open/Submit/Close/Config/ConnectionTest/List/Create
+    for (const [name, block] of values) {
+      expect(/password/i.test(block)).toBe(false);
+      expect(name).toBeTruthy(); // 逐格都真判过，不是空循环
     }
   });
 

@@ -144,16 +144,16 @@ CI 的 ubuntu runner 没有 MySQL,也没有口令。所以:
 
 ## 测试现状
 
-`pnpm verify` 当前:**68 文件 / 778 条全绿**(Node 24.14.1 实测,2026-10-07)。
+`pnpm verify` 当前:**70 文件 / 852 条全绿**(Node 24.14.1 实测,2026-10-07)。
 
 | 层 | 文件 | 手段 |
 |---|---|---|
 | core | 26 | vitest + fast-check 属性测试 |
 | scene-2d | 7 | 逻辑单测(视口变换、吸附优先级) |
 | drawing | 6 | 图面 IR 快照 + 剖切轮廓(D1/D2/D3) |
-| protocol | 5 | zod shape 与 core 接口对账 |
+| protocol | 6 | zod shape 与 core 接口对账(T9 起多一份连接配置/列表/试连的契约档) |
 | pdf | 1 | PDF 字节往返 + 100mm 校准页 |
-| desktop unit | 21 | 不连库的部分 |
+| desktop unit | 22 | 不连库的部分(T9 起多一份库侧分型诊断档) |
 | scripts | 2 | 闸门基线 + 依赖守卫 |
 | **合计** | **68** | |
 | desktop db | 6 | 真 MySQL,**不计入上表** |
