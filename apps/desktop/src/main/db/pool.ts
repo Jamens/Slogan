@@ -23,7 +23,29 @@ export interface PoolOptions {
    * 超时已生效（探针读数 `@@innodb_lock_wait_timeout = 1`）。秒数先验成 1..65535 的整数再插值 ⇒ 无注入面。
    */
   readonly lockWaitTimeoutSeconds?: number;
+  /**
+   * 建连超时（毫秒）。**唯一读者是 `persist/admin-ports.ts` 的 `probeOpener`**（裁决 P-34）：
+   * 它只握"试连"这一发的手，会话那条常驻连接不受它管 —— 所以生产路径不设它。
+   *
+   * 为什么要它：mysql2 默认的建连超时是 10 秒，而「试连」那一发是用户在等一个按钮的结果。
+   * 10 秒不算坏，但一个填错的地址要让用户干等 10 秒才知道填错了，是能省掉的等待。
+   * 5 秒是本计划定的数（`diagnostics.test.ts` 第 8 格钉住它的字面量与交付方式）。
+   *
+   * **登记为人工验证项**：`connectTimeoutMs` 的**真实生效**没有自动化证人 ——
+   * "填一个黑洞主机名，五秒之内拿到 `timeout` 那一行"只能人工验一次
+   * （计划 t9e 登记的第 ② 条限度）。判据能证明它被交到了 mysql2 手上，
+   * 证明不了 mysql2 一定在 5 秒内放弃。
+   */
+  readonly connectTimeoutMs?: number;
 }
+
+/**
+ * 试连那一发的建连超时（毫秒）。**本文件是它的唯一产地**（P-34）。
+ *
+ * 判据（`diagnostics.test.ts` 第 8 格）不许它在别处再出现一份：那份会绕过这个读数，
+ * 于是"填错地址要等 10 秒"这件事回来了而没有人在代码里看得见。
+ */
+export const CONFIG_TEST_CONNECT_TIMEOUT_MS = 5_000;
 
 export function createDbPool(env: MysqlEnv, opts: PoolOptions = {}): Pool {
   const pool = createPool({
@@ -32,6 +54,11 @@ export function createDbPool(env: MysqlEnv, opts: PoolOptions = {}): Pool {
     user: env.user,
     password: env.password,
     database: env.database,
+    // **逐字写 `connectTimeout: opts.connectTimeoutMs`**（值可以是 `undefined`）：
+    // mysql2 见到 `undefined` 就用它的默认 10 秒，所以这一行在生产路径上等价于"不设"，
+    // 而写法保持成一个字段而不是条件展开 —— 判据（`diagnostics.test.ts` 第 8 格）要能
+    // 证明"这个读数真的交到 mysql2 手上"，条件展开会让那句话变成两处分支而证不准。
+    connectTimeout: opts.connectTimeoutMs,
     waitForConnections: true,
     connectionLimit: opts.connectionLimit ?? 4,
     charset: 'utf8mb4',
