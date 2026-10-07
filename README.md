@@ -6,7 +6,7 @@
 
 这句差异不是口号,它决定了仓库里每一个取舍:第一类实体是**墙 / 柱 / 板 / 洞口**(带标高、层高、承重属性),而不是"客厅 / 卧室"这种空间。
 
-当前进度:**S1 阶段 M1.0– M1.3**,其中 M1.3(持久化)进行中。
+当前进度:**S1 阶段 M1.0 – M1.5 已完成**,M1.3(持久化)接线落地、M1.6(`scene-3d`)未动。
 
 ---
 
@@ -64,14 +64,17 @@ pnpm dev           # 启动 Electron 开发窗口
 
 | 包 | 职责 | 状态 |
 |---|---|---|
-| `@dajia/core` | 几何内核:毫米坐标、构件实体、拓扑、command 层。**零运行时依赖** | ✅ 3011 行 |
+| `@dajia/core` | 几何内核:毫米坐标、构件实体、拓扑、command 层。**零运行时依赖** | ✅ 3032 行 |
 | `@dajia/scene-2d` | 2D 视口:Canvas 场景图、命中、吸附、手柄 | ✅ 2552 行 |
-| `@dajia/protocol` | IPC 契约 + zod schema,main 与 renderer 共用 | ✅ 212 行 |
-| `@dajia/drawing` | 图纸引擎:图面 IR → SVG / PDF | ⬜ 占位 |
-| `@dajia/scene-3d` | 3D 投影:从 core 单向派生 | ⬜ 占位 |
-| `@dajia/desktop` | Electron 壳 + 持久化(主进程) | ✅ 进行中 |
+| `@dajia/protocol` | IPC 契约 + zod schema,main 与 renderer 共用 | ✅ 556 行 |
+| `@dajia/drawing` | 图纸引擎:图面 IR → SVG / PDF(M1.4) | ✅ 1133 行 |
+| `@dajia/pdf` | 自研 PDF 内容流后端 + 中文字体嵌入(M1.5) | ✅ 581 行 |
+| `@dajia/scene-3d` | 3D 投影:从 core 单向派生 | ⬜ 占位(M1.6/M1.7) |
+| `@dajia/desktop` | Electron 壳 + 持久化(主进程) | ✅ 8423 行(src) |
 
-`drawing` 与 `scene-3d` 目前各只有一行占位。**这是刻意的** —— spec §3.1 明确把它们划到 S2 / S3 范围外。
+`scene-3d` 目前只有一行占位。**这是刻意的** —— spec §3.1 明确把它划到 M1.6 / M1.7。
+`drawing` 与 `pdf` 已落地,「导出平面图 PDF」这条路从几何到落盘全通
+(计划 5 闭环),且已串进真实 Electron IPC(见「导出平面图」那一节)。
 
 ---
 
@@ -141,20 +144,21 @@ CI 的 ubuntu runner 没有 MySQL,也没有口令。所以:
 
 ## 测试现状
 
-`pnpm verify` 当前:**49 文件 / 644 条全绿**(Node 24.14.1 实测,2026-10-06)。
+`pnpm verify` 当前:**67 文件 / 774 条全绿**(Node 24.14.1 实测,2026-10-07)。
 
-| 层 | 文件 | 条数 | 手段 |
-|---|---|---|---|
-| core | 26 | 346 | vitest + fast-check 属性测试 |
-| scene-2d | 7 | 172 | 逻辑单测(视口变换、吸附优先级) |
-| desktop unit | 10 | 91 | 不连库的部分 |
-| protocol | 3 | 17 | zod shape 与 core 接口对账 |
-| scripts | 2 | 18 | 闸门基线 + 依赖守卫 |
-| **合计** | **49** | **644** | |
-| desktop db | 6 | 110 | 真 MySQL,**不计入上表** |
+| 层 | 文件 | 手段 |
+|---|---|---|
+| core | 26 | vitest + fast-check 属性测试 |
+| scene-2d | 7 | 逻辑单测(视口变换、吸附优先级) |
+| drawing | 6 | 图面 IR 快照 + 剖切轮廓(D1/D2/D3) |
+| protocol | 5 | zod shape 与 core 接口对账 |
+| pdf | 1 | PDF 字节往返 + 100mm 校准页 |
+| desktop unit | 20 | 不连库的部分 |
+| scripts | 2 | 闸门基线 + 依赖守卫 |
+| **合计** | **67** | |
+| desktop db | 6 | 真 MySQL,**不计入上表** |
 
-`pnpm test:db` 最近一次实跑(2026-10-06,MySQL 8.0.45):**6 文件 / 110 条全绿,零skip**。
-分层:migrate 14 / journal 35 / locks 29 / repository 20 / autosave-journal 9 / env 3。
+`pnpm test:db` 最近一次实跑(2026-10-07,MySQL 8.0.45):**6 文件 / 110 条全绿,零skip**。
 跑完 `dajia` 与 `dajia_test` **无残留**,15 个用户库逐名等于基线。
 
 核心不变式用属性测试锁住:
@@ -163,6 +167,7 @@ CI 的 ubuntu runner 没有 MySQL,也没有口令。所以:
 - 洞口永不超出宿主墙长
 - `quantize`幂等
 - `apply → inverse` 回到**逐字节相同**的状态
+- 导出:同 doc + 同 opts 连跑两次**字节逐字相同**(E2),实体排序不随插入序漂(E4)
 
 ---
 
@@ -208,10 +213,11 @@ dajia
 
 ### 需要人工验证、设计文档不打勾的项
 
-- A3 实体打印后拿尺量图框与标注
+- A3 实体打印后拿尺量图框与标注(校准页已能产出,但没量过)
 - 干净虚拟机上的安装体验
 - Windows Defender / 防火墙弹窗
 - 真实断电或强杀进程后的恢复
+- **真窗口闸门**(`pnpm shot` 等五道)—— 见上「已知未跑通」,需先装上 Electron
 
 ---
 
@@ -246,6 +252,12 @@ pnpm test:db > tmp/testdb.log 2>&1; echo "exit=$?"
 
 **每条新判据提交前先证明它能红。** 改坏一个界看它叫——这一条在"对账型"测试上尤其当真(`element` 表与文档对账、`storey` 表与 `element` 对账、zod shape 与 core 接口对账,三条都必须有"只改一边"的变异样本能打到红)。
 
+**测试要 import `.tsx` 就得给 `tsconfig.test.json` 加 `"jsx": "react-jsx"`。** 它不随 `tsconfig.json` 继承(那份显式写了 jsx、这份只 extends base),缺了就报 `TS6142: … but '--jsx' is not set`。屏幕侧组件**刻意不进**那个文件的 `include` —— 它由自己的读者传递带进来。
+
+**源码级判据必须剥掉注释再扫。** 本仓注释里到处写着被禁的词名(`SaveStatusBar.tsx` 文件头就写着"不许 import `computeBanner`"),连注释一起扫那一格永远红 —— 而若为让判据绿而删掉那句注释,等于**为迁就判据删掉纪律原文**。见 `save-bar.test.ts` 的 `codeOf()`。
+
+**判据里"取基线"必须在被测动作之前。** 写成 `expect(x).toBe(baseline() + n)` 而 `baseline()` 读的是当前值,它就是"和刚才那发比"而不是"和调用前比" —— 恒红。同族:撤销栈的深浅取决于同文件前面几格打过几发,判据不能靠"打三次就假定空了"。
+
 ---
 
 ## 路线图
@@ -266,12 +278,36 @@ S1 内部里程碑:
 | M1.0 | pnpm workspace、electron-vite、TS strict、依赖 lint、CI | ✅ |
 | M1.1 | `@dajia/core`:实体模型、command 层与撤销、几何派生、属性测试 | ✅ |
 | M1.2 | `@dajia/scene-2d`:三层 canvas、拉墙/拖点/删除、吸附、属性面板 | ✅ |
-| M1.3 | 持久化:迁移、repository、工程锁、自动保存与崩溃恢复 | 🔄 T1–T7 落码,剩 T8(IPC 接线)/ T9(连接配置与首屏) |
-| M1.4 | `@dajia/drawing`:图面 IR、图框、线型表、三道尺寸线、A3 排版 | ⬜ |
-| M1.5 | 自研 PDF 后端 + 中文字体嵌入 + 比例尺自检 | ⬜ |
-| M1.6 | `@dajia/scene-3d` M1 形态:只读拉伸体 + 选中双向同步 | ⬜ |
+| M1.3 | 持久化:迁移、repository、工程锁、自动保存与崩溃恢复 | ✅ T1–T8 落码并接线(三条通道 +存盘状态事件 + 横幅上屏),剩 T9(连接配置向导与首屏)/ T10(双进程闸门)/ T11(关窗握手) |
+| M1.4 | `@dajia/drawing`:图面 IR、图框、线型表、三道尺寸线、A3 排版 | ✅ |
+| M1.5 | 自研 PDF 后端 + 中文字体嵌入 + 比例尺自检 | ✅ 代码侧完成;**打印实测未做**(见「需要人工验证」) |
+| M1.6 | `@dajia/scene-3d` M1 形态:只读拉伸体 + 选中双向同步 | ⬜ `scene-3d` 仍 1 行占位 |
 | M1.7 | 3D 视口内拖动整层(解释为 `storey.setElevation`) | ⬜ |
 | M1.8 | 描图底图 + 两点定标(可裁剪) | ⬜ |
+
+### 导出平面图(T7/T8 → 真实 IPC)
+
+面板右上「导出平面图」→ preload → main 弹保存框 → `@dajia/pdf` 落盘 PDF。
+给了剖切线就多导一页剖切轮廓(两页 PDF)。日期与设计人是**入参**—— 契约层不给
+运行时时钟开口子,这样「同 doc + 同 opts 连跑两次字节逐字相同」才成立。
+
+**存盘状态横幅**已在屏幕侧:`projectStore.computeBanner` 的八级优先级(failed /
+锁丢了 / 只读 / 恢复提示 / 兜底灰话)是文案的唯一产地,组件只做选色与接线。
+它是**浮层**(`position: absolute`,挂在画布格内)—— 因为画布原点被五道真窗口闸门
+逐字钉在 `y === 32`,横幅一旦占位就会让五道闸门全红。
+
+### 已知未跑通:真窗口闸门与 Electron 二进制
+
+`pnpm shot` / `pick-shot` / `edit-shot` / `draw-shot` / `prop-shot` 五道真窗口闸门
+**目前在本机跑不起来**,两个原因都已定位、第一个已修:
+
+1. ~~`main` 产物格式冲突~~ ✅ 已修(`cb7841f`)。`"type": "module"` 下产物要落成
+   `index.mjs`,否则 Electron 按 CJS 解释 ESM,启动即 `SyntaxError`。
+2. **Electron 二进制未装上**(`node_modules/electron/` 空,postinstall 下载被跳过)。
+   `pnpm install` 需要网络。装上后五道闸门即可运行。
+
+因此**「画布原点实测仍是 (0,32)」这一条目前只有源码级保证**
+(`save-bar.test.ts` B1/B2),没有真窗口读数。装上 Electron 后应补跑 `--prop-shot`。
 
 ### S1 验收标准
 
