@@ -5923,7 +5923,7 @@ feat(persist): 工程锁 —— 服务端时钟的三发 CAS，判决来自写�
 
 locks.ts：acquireLock / heartbeat / releaseLock / lockState 全部单语句 CAS，
 过期判定与写入都用 NOW(3) / TIMESTAMPADD / TIMESTAMPDIFF，客户机时钟一次都不读（P-4）。
-affectedRows 只当快路（MySQL 数真变化的行），同毫秒重发与"工程行不存在"都靠读回分家；
+affectedRows 只当快路（本仓驱动默认 FOUND_ROWS，它数的是**匹配**的行、不是真变化的行 —— `locks.ts` 第 3 段），同毫秒重发与"工程行不存在"都靠读回分家；
 心跳只认票不认余额，接管后原持有者 beat 得 lost、release 得 not-mine。
 两个池抢同一行有格（并发恰好一个赢家），"拿锁不动账"与"没拿锁也能写"两格把
 第 ⑥ 段那条口径钉住 —— appendJournal 不认票，闸门在调用侧（T7/T8）。
@@ -12412,7 +12412,7 @@ EOF
   - `main/ipc-persist.ts` 追加：`const safeStorageCipher: ByteCipher`（那八行适配器住在 P-2 名单里唯一被授权认识 electron 的文件里；它**没有 unit 格**，读者是 T11 的读字节判据 —— 第 ⑦ 段）
   - `persist/admin.ts`：`class ProjectAdmin`（`constructor(ports: AdminPorts)`、`list(): Promise<ProjectListValue>`、`create(name: string): Promise<ProjectCreateValue>`）、`interface AdminPorts { loadConfig(): MysqlEnv; openCreateDb(env, projectId): Promise<AdminCreateDb>; openListDb(env): Promise<AdminListDb> }`（**只有这三键** —— `newProjectId()` 与 `readonly schemaVersion` 是原预估里多出来的两个注入点，t9d 第 ③ 段 P-31 把它们删了：假的 id 产地会让"回包 id ≠ 仓库绑的 id"那一发绿着过去，而可注入的 `schemaVersion` 允许"建出一个自己的读路径拒开的工程"；`uuidv7` 与 `Document.create` 的默认 `SCHEMA_VERSION` 就是这两样的唯一产地）、`interface AdminCreateDb { readonly repo: CreateRepo; end() }`、`interface CreateRepo { createProject; appendJournal; deleteProject }`、`interface AdminListDb { listProjects(): Promise<ProjectSummary[]>; end(): Promise<void> }`、`probeConnection(env, open: ProbeOpener): Promise<ConnectionTestValue>`、`interface ProbeHandle { ping(): Promise<{ version: string }>; end(): Promise<void> }`、`buildDraftEnv(input: ConnectionInput): MysqlEnv`、`redact(text: string, secrets: readonly string[]): string`、`FIRST_STOREY = { index: 0, elevationMm: 0, heightMm: 3000 } as const`
   - preload：`DajiaApi = { ping; openProject; submitJournal; closeProject; readConfig; saveConfig; testConnection; listProjects; createProject; onSaveStatus; onUiCommand }`（**11 件**：4 旧 + 5 新请求 + 2 事件订阅）
-  - renderer：`ProjectPhase` 七值（`'off' | 'config' | 'list' | 'opening' | 'open' | 'closed'`）、`useProject` 追加状态格 `config: ConfigValue | null` / `projects: ProjectSummary[] | null` / `test: ConnectionTestValue | null` / `wizardBusy: boolean`，追加动作 `probe()` / `showConfig()` / `showProjects()` / `saveDraft(input)` / `testDraft(input)` / `createProject(name)`、`type WizardField = 'host' | 'port' | 'user' | 'password'`
+  - renderer：`ProjectPhase` 六值（`'off' | 'config' | 'list' | 'opening' | 'open' | 'closed'`）、`useProject` 追加状态格 `config: ConfigValue | null` / `projects: ProjectSummary[] | null` / `testResult: ConnectionTestValue | null` / `busy: 'none' | 'saving' | 'testing' | 'creating' | 'listing'`，追加动作 `probe()` / `openWizard()` / `openList()` / `list()` / `saveConfig(input)` / `testCfg(input)`（新建工程**不是**第七动作：`busy='creating'` ⇒ `api.createProject(name)` ⇒ 成功后 `list()`；六名与四格的定形正文在 Step 9 第 ① 段与 Files 行）、`type WizardField = 'host' | 'port' | 'user' | 'password'`。（2026-10-07 订正：这一行拼接时抄的是 t9a 初稿 —— 当时写作"七值"而枚举实列六枚、动作名 `showConfig`/`showProjects`/`saveDraft`/`testDraft`/`createProject` 与 `wizardBusy` 都被 t9f 终稿替换；t9f 那句"落盘后要在 t9a 的 Interfaces 行补上这六个名字"当时只兑现到 Files 行，本行是迟到的一半。**读者以本行为准**，初稿名字在计划文本里不再有任何读者。）
 
 **①（裁决 P-22）T9 的通道全部走"会话之外"：`ProjectAdmin` 不认识 `ProjectSession`，`ProjectSession` 也不认识它。**
 列一张工程单与新建一个工程，都必须先连上库，但**都不能占住会话**：会话的不变式是"一个窗口 ↔ 一个工程 ↔ 一份锁 ↔ 一条保存链"（T8 第 ⑩ 段），而"用户在看列表还没选"与"用户在填向导还没连上"这两件事恰恰是会话的**反面**。把 `list`/`create` 塞进 `ProjectSession` 会得到第三种 `active` 形状（有连接、无工程、无锁），而 T8 那 16 格有一半判的就是"`active === true` 时 `projectId` 一定不是 null"。
