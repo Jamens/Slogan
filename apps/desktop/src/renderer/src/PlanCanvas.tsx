@@ -58,6 +58,7 @@ import {
   VIEW_PAD_PX,
   type PanelTrialReport,
 } from './panels';
+import { SaveStatusBar, saveBarReadout, type SaveBarReadout } from './SaveStatusBar';
 
 export interface DropReport {
   outcome: 'ok' | 'noop' | 'failed';
@@ -220,6 +221,17 @@ export interface DebugReport {
    * 与 `edit` / `draw` 同一条纪律：主进程只读它，不猜坐标、也不猜哪面墙改得动。
    */
   prop: PropProbe | null;
+  /**
+   * 存盘状态横幅的上屏读数（`SaveStatusBar` 自己在 commit 之后公布的，`__dajiaDebug` 是唯一读者）。
+   *
+   * 为什么走 `saveBarReadout()` 而不在这里重算：横幅那一行字是 `computeBanner` 的产物，
+   * 本文件既没那段优先级、也不该有第二份 —— 同 `storeyTabs` / `panelProps` 那五条
+   * 「面板报什么这里就报什么，不许重算」的纪律。
+   *
+   * **判据为什么需要它**：本仓测试跑在 node 档（没有 jsdom），React 组件**渲染不出来** ——
+   * 屏幕上有没有那一条，判据读不到 DOM。值由组件写进模块级账，这里只是读出来。
+   */
+  saveBar: SaveBarReadout;
 }
 
 declare global {
@@ -992,6 +1004,8 @@ export function PlanCanvas(): React.JSX.Element {
         viewport,
         viewportStoreyId: s.viewportStoreyId,
         prop: propProbe(s.log.document, s.storeyId, ops, viewport),
+        //存盘横幅的上屏读数：直通 `saveBarReadout()`，这里一个字的优先级都不重算。
+        saveBar: saveBarReadout(),
       };
     };
     return () => {
@@ -1024,6 +1038,12 @@ export function PlanCanvas(): React.JSX.Element {
           ref={canvasCellRef}
           style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, overflow: 'hidden' }}
         >
+          {/* 存盘状态横幅：**浮层**（`position: absolute`，见 `SaveStatusBar.tsx` 文件头）。
+              挂在这格内而不是 tab 栏之上，是因为画布原点被五道真窗口闸门逐字钉在
+              `y === 32`（`desktop-shot.mjs`）—— 横幅一旦占位，原点下移，五道闸门当场全红。
+              浮层不进 flex 流 ⇒ `fit()` 量到的格子尺寸不变 ⇒ 原点必然仍是 32。
+              `banner === null`（没打开工程）时它不渲染任何 DOM（`computeBanner` 的 ⑧段那一屏）。 */}
+          <SaveStatusBar />
           <canvas
             ref={canvasRef}
             onPointerDown={onPointerDown}

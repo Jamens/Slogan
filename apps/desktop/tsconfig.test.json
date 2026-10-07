@@ -2,7 +2,19 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    // **必需**：测试要 import `SaveStatusBar.tsx`（存盘横幅那一格判据读它的源码，
+    // 而 B3 还要 import 组件本体验读数通路）。没有这一项时 tsc 报
+    // `TS6142: Module '…SaveStatusBar' was resolved to '…tsx', but '--jsx' is not set`。
+    //
+    // 为什么它不与 `tsconfig.json` 一起继承：那个文件显式写了 `"jsx": "react-jsx"`，
+    // 而本文件**只** extends base（base 里没有 jsx）—— 两处各写各的，加一处不够。
+    "jsx": "react-jsx",
     "types": ["node"]
   },
+  // `src/renderer/src` **不在** include 里，这是有意的：include 里的每个文件都会被
+  // 逐个编一遍，而屏幕侧组件只需要被"它唯一的读者"（本目录的判据）传递带进来。
+  // `projectStore.ts` 就是这么能编过的 —— 它由 `project-store.test.ts` import 进来，
+  // 不是靠 include。少这一项的代价是：如果哪天没有测试 import 它，它就退出 typecheck 视野
+  // （与 README 里"drawing / scene-3d 不在 typecheck 里"同族的坑）。
   "include": ["test", "src/main", "src/preload"]
 }
