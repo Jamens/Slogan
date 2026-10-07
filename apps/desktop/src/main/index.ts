@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { CORE_SCHEMA_VERSION } from '@dajia/core';
 import { IPC } from '@dajia/protocol';
 import { registerExportPlanIpc } from './ipc/export-plan';
+import { registerPersistIpc } from './ipc-persist';
 
 /**
  * 取 `<flag> <path>` 的落盘路径。`--shot` 之外，T5 的 `--edit-shot` / T4 的 `--pick-shot`
@@ -47,6 +48,10 @@ function createWindow(visible: boolean): BrowserWindow {
 
   ipcMain.removeHandler(IPC.ping);
   ipcMain.handle(IPC.ping, () => `pong:${CORE_SCHEMA_VERSION}`);
+
+  // T8：持久化那四条 channel 的注册与 ping 并列（shot 模式也要走到注册：注册本身
+  // 不动 DOM、不改窗口尺寸、不连库 —— `readMysqlEnv` 只在 `open` 真的被调用时才跑）。
+  registerPersistIpc(win);
 
   // 闸门期间把 renderer 的 error 级 console 原样转发到 stdout：executeJavaScript 里抛异常时
   // Electron 只在主进程回一句 "check the renderer console"，真凶（renderer 抛的那行 + 栈）

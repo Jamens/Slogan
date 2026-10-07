@@ -5,6 +5,6 @@
     "jsx": "react-jsx",
     "types": ["node"]
   },
-  "include": ["src/main", "src/preload", "src/renderer/src"],
+  "include": ["src/main", "src/preload", "src/shared", "src/renderer/src"],
   "exclude": ["src/renderer/index.html"]
 }

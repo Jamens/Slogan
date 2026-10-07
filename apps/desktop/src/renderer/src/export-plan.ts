@@ -41,7 +41,14 @@ export async function requestPlanExport(opts: {
 }): Promise<ExportOutcome> {
   // 现取 store：`log` 是可变类实例、引用永不变，订阅拿到的永远是同一份壳（editorStore D6）。
   const { log, storeyId } = useEditor.getState();
-  return window.dajia.exportPlan({
+  // T8 把 `Window['dajia']` 改成可选（裁决 T8-A④：真实调用点在这一份文件，不在 panels.tsx）。
+  // 漏注入那一支的文案口径照「没有 preload 注入的 dajia 接口」一族 —— 返回而不是抛：
+  // 这一族的契约本来就是"错误走 `ok:false`，不拿 reject 穿 IPC"。
+  const api = window.dajia;
+  if (api === undefined) {
+    return { ok: false, error: '没有 preload 注入的 dajia 接口：这一屏不会保存任何东西' };
+  }
+  return api.exportPlan({
     doc: encodeDocumentPayload(log.document),
     opts: {
       storeyId,

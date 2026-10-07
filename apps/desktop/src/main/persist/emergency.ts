@@ -160,3 +160,47 @@ export function pruneEmergency(userDataDir: string, keep: number): string[] {
   }
   return removed;
 }
+
+/**
+ * 抢救件的读侧形状。为什么**不** import protocol 的 `EmergencyRef`：这一族文件住在 fs 侧，
+ * `{ turn, path }` 与那张表结构同型，直接写得让 fs 侧认识 protocol —— T9 换 wire 形状时就得改两个包。
+ * 同一理由见 `EmergencyInput` 为什么比 `EmergencyPayload` 少一个 `patch`（T7 ⑨ 段）。
+ */
+export interface EmergencyFound {
+  readonly turn: number;
+  readonly path: string;
+}
+
+/**
+ * 读出某个工程在盘上的现场，**按 turn 升序**（写侧的 `pruneEmergency` 是"新的在前"，因为裁剪要砍尾巴；
+ * 读侧给横幅，升序才读得出"最新那一份是第几发"）。
+ *
+ * 除 `userDataDir` 为空串那一刀（`emergencyDir` 的参数守卫，与写侧同一把尺，**不吞** ——
+ * 吞了就把"我们没接线"说成"盘上没有现场"），其余失败一律不抛：这一发发生在 `open` 的途中，
+ * 读目录失败不能把"打开工程"整个拒掉。但**也不能悄悄返回空**：横幅上"有 K 发没进库"那句
+ * 要是因为读不动就说成"没有"，那是这一族文件最不该撒的一句谎 —— 所以除 ENOENT 之外都 `console.error` 一声。
+ */
+export function listEmergency(userDataDir: string, projectId: EntityId): EmergencyFound[] {
+  const dir = emergencyDir(userDataDir);
+  const found: EmergencyFound[] = [];
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch (err) {
+    if ((err as { code?: unknown }).code !== 'ENOENT') {
+      console.error(`[dajia] 抢救件目录读不动，"有几发没进库"这一发只能空着：${describeError(err)}`);
+    }
+    return found;
+  }
+  for (const name of names) {
+    const m = FILE_RE.exec(name);
+    const stem = m?.[1];
+    const rawTurn = m?.[2];
+    // 词干直接等于要查的工程号：形状不认识与别人的文件都从这里出局（与 pruneEmergency 同一口径）。
+    if (stem !== projectId || rawTurn === undefined) continue;
+    const turn = Number(rawTurn);
+    if (!Number.isSafeInteger(turn) || turn < 1) continue;
+    found.push({ turn, path: join(dir, name) });
+  }
+  return found.sort((a, b) => a.turn - b.turn);
+}

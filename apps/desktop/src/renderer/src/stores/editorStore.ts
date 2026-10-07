@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import type { Command, TransactionLog, WallEnd } from '@dajia/core';
+import type { Command, Document, WallEnd } from '@dajia/core';
+import { TransactionLog } from '@dajia/core';
 import {
   demoHouse,
   type DraftWall,
@@ -96,6 +97,29 @@ export interface EditorState {
    * 而且更狠：这一抛什么都没改（真源没动、几何没变），重绘只会拿同一份坏几何再抛一次。
    */
   reportPaintError: (err: unknown) => void;
+  /**
+   * 只读闸门。`true` 时 `dispatch`/`dispatchBatch`/`undo`/`redo` 四个**写**动作一律只落
+   * `lastError` 一个字节都不动真源 —— 视图动作（`setStorey`/`setViewport`/`setTool`/`setDraft`/
+   * `setDrag`）不受它管：它们不改文档，挡住只是把"看"也一起废掉。
+   *
+   * 初始值 `false`：闸门环境里没人调 `setReadOnly`，那一屏与没接持久化时逐字节同（第 ⑧ 段）。
+   * 写它只有两个读者：`projectStore.open`（按 `decision`）与 `closeSession`（关掉就停手）。
+   */
+  readonly readOnly: boolean;
+  setReadOnly: (readOnly: boolean) => void;
+  /**
+   * 换手：把屏幕上这份真源换成**库里那一份**。返回 `false` = 拒收（`storeyId` 在这份文档里
+   * 不是 storey），拒收时整个 state 一个字都不动 —— 不许出现"文档换了、层还指着上一层"。
+   *
+   * `viewport` 与 `viewportStoreyId` 同时置 null，与 `setStorey` 那条 P10 配对同一个理由：
+   * 留着上一层的口径配新文档，画出来是一帧错位图；而 `PlanCanvas` 的绘制 effect 第一行就是
+   * `if (viewport === null) return`，null 那一帧是干净空白 + 它自己的占位 tab 栏。
+   * 重算由 `PlanCanvas` 那个 fit effect 负责 —— 它现在多带一个依赖 `log`，见本步第 ③ 段，
+   * 那一行是本发 `set` 能画出来的**前提**，不是顺手加的。
+   *
+   * 不碰 `readOnly`：写权限由调用方（`projectStore`）按回包的 `decision` 决定，换手本身不越权。
+   */
+  loadProject: (doc: Document, storeyId: string) => boolean;
   undo: () => void;
   redo: () => void;
 }
@@ -110,6 +134,7 @@ export const useEditor = create<EditorState>((set, get) => ({
   drag: null,
   tool: 'select',
   draft: null,
+  readOnly: false,
   // `viewport === null` 时那一格也必须 null：留着一层的 id 配一份不存在的视口，
   // 判据读到的是"记账说有、屏幕上没有"。
   setViewport: (viewport, storeyId) =>
@@ -131,8 +156,30 @@ export const useEditor = create<EditorState>((set, get) => ({
   setDrag: (drag) => set({ drag }),
   setTool: (tool) => set({ tool }),
   setDraft: (draft) => set({ draft }),
+  setReadOnly: (readOnly) => set({ readOnly }),
+  // 拒收那一支**不 `set`**：调用方拿到 false 的时候屏幕上还是原来那一屏，
+  // 于是"被拒"这件事的记账只有一条路 —— 走 `projectStore` 的 failure 通道，不在这里另开一份。
+  loadProject: (doc, storeyId) => {
+    if (doc.get(storeyId)?.kind !== 'storey') return false;
+    set({
+      log: new TransactionLog(doc),
+      storeyId,
+      viewport: null,
+      viewportStoreyId: null,
+      drag: null,
+      draft: null,
+      tool: 'select',
+      lastError: null,
+      revision: get().revision + 1,
+    });
+    return true;
+  },
   // 失败路径**必须**只动 lastError：动 revision 就是"为一件没发生的事重绘整张图"。
   dispatch: (cmd) => {
+    if (get().readOnly) {
+      set({ lastError: `只读工程：这一发改不动（${cmd.type}）` });
+      return;
+    }
     try {
       get().log.dispatch(cmd);
     } catch (err) {
@@ -153,24 +200,27 @@ export const useEditor = create<EditorState>((set, get) => ({
    * "连发多条 + 出错回滚" 拼一个假事务：回滚要逆序重放补丁，那是第二套 `invertPatch`。
    */
   dispatchBatch: (cmds) => {
+    if (get().readOnly) {
+      set({ lastError: `只读工程：这一批删不掉（${String(cmds.length)} 条命令）` });
+      return;
+    }
     const log = get().log;
-    let applied = 0;
     let failed: string | null = null;
     for (const cmd of cmds) {
       try {
         log.dispatch(cmd);
-        applied += 1;
       } catch (err) {
         failed = String(err);
         break;
       }
+      // P-21：**每应用一条扳一次**。原先循环外那一发合并 `set` 没了 —— 理由见 Step 6 第 ① 段：
+      // `log.lastPatch` 是覆盖式的，一批只扳一次等于把前 N−1 发补丁永久吞掉，
+      // 屏幕上删四件、库里记一件，且不抛任何东西。
+      set((s) => ({ revision: s.revision + 1, lastError: null }));
     }
-    // 应用了几条就只 +1 一次 revision：扳机管的是"该重绘了"，不是"重绘几次"。
-    // 半途失败时 `applied > 0` 也要 +1 —— 真源已经变了，不动它才是"屏幕画旧账"。
-    set((s) => ({
-      revision: applied > 0 ? s.revision + 1 : s.revision,
-      lastError: failed === null ? null : `删不动：${failed}`,
-    }));
+    // 半途失败：真源已经变了的那些发各扳过了，这里只补那一格文案，**不再动 revision**。
+    // 一条都没应用成功时循环没进 ⇒ revision 一字不动，与改前同一语义（失败不动扳机那条纪律没破）。
+    if (failed !== null) set({ lastError: `删不动：${failed}` });
   },
   /**
    * 绘制那一趟的抛点记账：**只动 lastError，一个字的 revision 都不碰**（接口上那条注释是纪律原文）。
@@ -182,6 +232,10 @@ export const useEditor = create<EditorState>((set, get) => ({
     set({ lastError: `画不出来：${String(err)}` });
   },
   undo: () => {
+    if (get().readOnly) {
+      set({ lastError: '只读工程：撤销不动（账本没开，退了也没地方记）' });
+      return;
+    }
     if (!get().log.undo()) {
       set({ lastError: '没有可撤销的操作' }); // D7：栈空要给反馈，不许静默返回 false
       return;
@@ -189,6 +243,10 @@ export const useEditor = create<EditorState>((set, get) => ({
     set((s) => ({ revision: s.revision + 1, lastError: null }));
   },
   redo: () => {
+    if (get().readOnly) {
+      set({ lastError: '只读工程：重做不动（账本没开，前进也没有账号可挂）' });
+      return;
+    }
     if (!get().log.redo()) {
       set({ lastError: '没有可重做的操作' });
       return;

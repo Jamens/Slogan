@@ -574,12 +574,19 @@ export function PlanCanvas(): React.JSX.Element {
       // 漂到 (332,75)，第 7 步「原地松手」按到了空白）。闸门侧由 `waitForLayoutSettled`
       // 把 resize 收敛掉，这里则由"要当下的文档就从 store 一次性取"保证读到的不是陈旧闭包。
       // 换层与改尺寸才是重算视口的两个真实理由。
+      // 「依赖里不写 `log`」这句话到计划 4 为止是永真的，现在多了**一个**例外：
+      // `loadProject` 换手会换掉 `log` 这个实例（`editorStore` 里 `new TransactionLog(doc)` 那一行）。
+      // 引用在除换手以外的每一发 `set` 上都不变 ⇒ 加进依赖表挡不住任何东西（改文档、拖墙、切层
+      // 全都还是靠 `revision` 扳），只有换手那一发会重跑 —— 而那正是我们想要的第三个理由：
+      // 换手把 `viewport` 置了 null（P10 配对），不重跑就永远空白。
+      // 实测过的那一型：`reopenAsEdit()` 重开同一个工程，`storeyId` 逐字回到同一个值，
+      // 只有 `log` 的引用变了 ⇒ 少了这一行屏幕是一张不会消失的空画布。
       setViewport(fitStorey(useEditor.getState().log.document, storeyId, wPx, hPx, VIEW_PAD_PX), storeyId);
     };
     fit();
     window.addEventListener('resize', fit);
     return () => window.removeEventListener('resize', fit);
-  }, [storeyId, setViewport]);
+  }, [storeyId, setViewport, log]);
 
   // 一条绘制通路：指令表 → 把手 → 临时线/标记，同一个 effect、同一次 ctx 获取。
   // `revision` 进了依赖却没被读：它是扳机不是数据（见 editorStore 的 D6 注释）。

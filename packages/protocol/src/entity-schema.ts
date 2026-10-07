@@ -108,10 +108,18 @@ export const EntitySchema = z.discriminatedUnion('kind', [
 
 export type EntityShape = z.output<typeof EntitySchema>;
 
-/** 落库的写路径单位。core 的 `Patch` 是纯数据，所以这一格没有转换层。 */
+/**
+ * 落库的写路径单位。core 的 `Patch` 是纯数据，所以这一格没有转换层。
+ *
+ * **`readonly()` 是必需的，不是修饰**（T8 接线时由 tsc 抓出来的）：zod 的 `z.array(...)`
+ * 解出的是**可变**数组 `Entity[]`，而 core 的 `Patch.upsert` 是 `readonly Entity[]`。
+ * TS 的数组 readonly 是**逆变**的 —— `readonly Entity[]` 不能喂给要 `Entity[]` 的位置，
+ * 于是一份逐字相同的补丁也会报TS2322。加 `.readonly()` 让**类型层**与 core 对齐，
+ * 而运行时解析结果一个字节都不变（zod 的 freeze 只在 `.readonly()` 上生效，且仍返回同样内容）。
+ */
 export const PatchSchema = z.strictObject({
-  upsert: z.array(EntitySchema),
-  remove: z.array(EntityIdSchema),
+  upsert: z.array(EntitySchema).readonly(),
+  remove: z.array(EntityIdSchema).readonly(),
 });
 
 /** 幂等键：客户端分配的单调计数（P-6）。非负安全整数，别的都不收。 */
@@ -172,7 +180,7 @@ export function parseSnapshotPayload(where: string, value: unknown): SnapshotPay
 }
 export type PatchShape = z.output<typeof PatchSchema>;
 
-function issueText(err: z.ZodError): string {
+export function issueText(err: z.ZodError): string {
   return err.issues.map((i) => `${i.path.join('.') || '(根)'}: ${i.message}`).join('; ');
 }
 

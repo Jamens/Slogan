@@ -4,6 +4,9 @@ out/
 release/
 coverage/
 .vite/
+# vitest 的缓存目录（带点，与上面的 `.vite/` 是两回事：那个是 vite dev server 的）。
+# 不忽略的话它会出现在 `git status` 的未跟踪清单里，而 `git add .` 会把它一起入库。
+.vitest/
 *.log
 .DS_Store
 Thumbs.db
