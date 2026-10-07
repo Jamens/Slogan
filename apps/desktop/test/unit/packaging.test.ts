@@ -17,14 +17,21 @@ import { describe, expect, it } from 'vitest';
  * 恒绿的判据是本仓踩过两次的坑（§九 第 2 种形态）。
  */
 const DESKTOP = join(fileURLToPath(new URL('../..', import.meta.url)));
-const MAIN_JS = join(DESKTOP, 'out', 'main', 'index.js');
+/**
+ * main段产物是 **`.mjs`**（不是 `.js`）—— 见 W5/W6 那一族：`"type": "module"` 下产出
+ * ESM 到 `.js` 会让 Electron 按 CJS 解释它，启动即SyntaxError。
+ * `MAIN_JS` 保留一个旧名做**反向存在性**检查：若哪天配置改动让产物又落回 `.js`，
+ * `W1`/`W2` 会因为读不到文件而静默跳过（`built` 为 false）—— 那是"判据变恒绿"的最坏形态，
+ * 所以 W5 显式断言 `package.json` 的 `main` 与实际文件名对齐。
+ */
+const MAIN_MJS = join(DESKTOP, 'out', 'main', 'index.mjs');
 const CONFIG = join(DESKTOP, 'electron.vite.config.ts');
 
-const built = existsSync(MAIN_JS);
+const built = existsSync(MAIN_MJS);
 const suite = built ? describe : describe.skip;
 
 function mainBundle(): string {
-  return readFileSync(MAIN_JS, 'utf8');
+  return readFileSync(MAIN_MJS, 'utf8');
 }
 
 suite('打包配置（产物存在时才判）', () => {
@@ -41,7 +48,7 @@ suite('打包配置（产物存在时才判）', () => {
   it('W2 字体是内联字节，不在运行时按路径找文件（否则打包后 ENOENT）', () => {
     const src = mainBundle();
     // `loadDefaultFont` 原本是 `readFileSync(fileURLToPath(new URL('../assets/…', import.meta.url)))`。
-    // 打进 out/main/index.js 后那个相对路径指向 out/assets/ —— 空的（vite 不会搬它，
+    // 打进 out/main/index.mjs 后那个相对路径指向 out/assets/ —— 空的（vite 不会搬它，
     // 因为它是被 fileURLToPath 读的、不是被 import 的资产）⇒ 真进程第一次导出 ENOENT。
     // 修法是把 base64 编进产物（rolldown 拒了 emitFile 到 `../assets/…`）。
     expect(src).toContain('DEFAULT_FONT_B64');
@@ -54,6 +61,42 @@ suite('打包配置（产物存在时才判）', () => {
       join(DESKTOP, '..', '..', 'packages', 'pdf', 'assets', 'noto-sans-sc.subset.otf'),
     );
     expect(Buffer.compare(inlined, onDisk)).toBe(0);
+  });
+});
+
+describe('main 入口：产物名与 package.json 的 main 字段逐字对齐', () => {
+  /**
+   * **这一族判据守的是"build 通过、真进程起不来"**。它与 W1/W2 同族，但守的是**入口**：
+   *
+   *`"type": "module"` +产物 `index.js`（ESM）⇒ Electron 按 CJS 解释那个 `.js` ⇒
+   * 启动即`SyntaxError: The requested module 'electron' does not provide an export named 'BrowserWindow'`。
+   * 而 `pnpm build` **exit=0**、所有单测全绿（它们都不加载产物）。
+   *
+   * 为什么会踩：electron-vite 5 在 `type: module` 下默认输出 ESM 到 `.js`，与 2.x 的
+   * `.cjs` 行为不同；而**只写 `format: 'es'` 也不够** —— 实测 `entryFileNames` 的默认值
+   * 这一档被固定成 `[name].js`，产物仍是 `.js`。**两处一起写**才落到 `.mjs`。
+   */
+  const pkg = JSON.parse(readFileSync(join(DESKTOP, 'package.json'), 'utf8')) as { main: string };
+
+  it('W5 package.json 的 main 指向 .mjs，且那个文件真的存在（源码 + 产物双证）', () => {
+    // 源码层：`main` 字段必须写 `.mjs`。写成 `.js` 而产物是 `.mjs` ⇒ 入口失配；
+    // 两者都写 `.js` ⇒ 上面那个 SyntaxError。
+    expect(pkg.main).toBe('out/main/index.mjs');
+    // **反向存在性**：产物**不该**再是 `.js`。它存在就说明配置改动让格式退回去了，
+    // 而那时 `built` 为 false ⇒ W1/W2 整组被 skip ⇒ 本文件会"全绿且什么都没验"。
+    // 这一行是那个最坏形态的牙齿（判据自己失效时，必须由另一格抓住）。
+    expect(existsSync(join(DESKTOP, 'out', 'main', 'index.js'))).toBe(false);
+    // 产物层：文件真的在那儿。
+    expect(existsSync(MAIN_MJS)).toBe(true);
+  });
+
+  it('W6 main 段显式声明 format: es + entryFileNames: [name].mjs（两处缺一不可）', () => {
+    const cfg = readFileSync(CONFIG, 'utf8');
+    const mainBlock = /main:\s*\{[\s\S]*?\n  \},\n  preload:/.exec(cfg);
+    expect(mainBlock).not.toBeNull();
+    const block = mainBlock![0]!;
+    expect(block).toContain("format: 'es'");
+    expect(block).toContain("entryFileNames: '[name].mjs'");
   });
 });
 

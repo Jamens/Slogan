@@ -116,7 +116,30 @@ const workspaceDeps = {
 
 export default defineConfig({
   // 字体只被**主进程**的导出通路读（renderer 不引 `@dajia/pdf`），所以只挂 main。
-  main: { ...workspaceDeps, plugins: [inlinePdfFont()] },
+  // `format: 'es'` 是**必需**的一行：electron-vite 5 在 `"type": "module"` 下默认输出
+  // ESM 到 `index.js`，而 Electron 的 main 进程按 **CJS** 解释那个 `.js` ⇒ 每个具名 import
+  // 都报 `SyntaxError: The requested module 'electron' does not provide an export named
+  // 'BrowserWindow'`，**真进程一起就崩，而 `pnpm build` 照样 exit=0**。
+  // 显式写 `es` 让入口落成 `index.mjs`，与 `package.json` 的 `main` 字段逐字对齐
+  // （那一处改动在下面 `package.json` 的 diff 里）。
+  //
+  // **这一条是 `pnpm shot` 那一族真窗口闸门长期 exit=1 的根因**，与 plan5 的改动无关：
+  // 在 T8 接线之前（`HEAD~2`）重建产物同样是 ESM，同样报这一句。
+  main: {
+    ...workspaceDeps,
+    plugins: [inlinePdfFont()],
+    build: {
+      rollupOptions: {
+        output: {
+          format: 'es',
+          // `format: 'es'` 单独写**不够** —— 实测产物仍是 `index.js`：`entryFileNames`
+          // 的默认值在这一档被固定成 `[name].js`，与 ESM 应落的 `.mjs` 对不上。
+          // 两处一起写才落到 `.mjs`，而 `package.json` 的 `main` 字段要跟着改（见该文件 diff）。
+          entryFileNames: '[name].mjs',
+        },
+      },
+    },
+  },
   preload: workspaceDeps,
   renderer: {
     plugins: [react()],
