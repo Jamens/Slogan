@@ -144,7 +144,7 @@ CI 的 ubuntu runner 没有 MySQL,也没有口令。所以:
 
 ## 测试现状
 
-`pnpm verify` 当前:**67 文件 / 774 条全绿**(Node 24.14.1 实测,2026-10-07)。
+`pnpm verify` 当前:**68 文件 / 778 条全绿**(Node 24.14.1 实测,2026-10-07)。
 
 | 层 | 文件 | 手段 |
 |---|---|---|
@@ -153,9 +153,9 @@ CI 的 ubuntu runner 没有 MySQL,也没有口令。所以:
 | drawing | 6 | 图面 IR 快照 + 剖切轮廓(D1/D2/D3) |
 | protocol | 5 | zod shape 与 core 接口对账 |
 | pdf | 1 | PDF 字节往返 + 100mm 校准页 |
-| desktop unit | 20 | 不连库的部分 |
+| desktop unit | 21 | 不连库的部分 |
 | scripts | 2 | 闸门基线 + 依赖守卫 |
-| **合计** | **67** | |
+| **合计** | **68** | |
 | desktop db | 6 | 真 MySQL,**不计入上表** |
 
 `pnpm test:db` 最近一次实跑(2026-10-07,MySQL 8.0.45):**6 文件 / 110 条全绿,零skip**。
@@ -217,7 +217,7 @@ dajia
 - 干净虚拟机上的安装体验
 - Windows Defender / 防火墙弹窗
 - 真实断电或强杀进程后的恢复
-- **真窗口闸门**(`pnpm shot` 等五道)—— 见上「已知未跑通」,需先装上 Electron
+- **抗锯齿边缘的像素判据在正常 GPU 机器上复跑一次**(见上面软件光栅那条)
 
 ---
 
@@ -296,18 +296,38 @@ S1 内部里程碑:
 它是**浮层**(`position: absolute`,挂在画布格内)—— 因为画布原点被五道真窗口闸门
 逐字钉在 `y === 32`,横幅一旦占位就会让五道闸门全红。
 
-### 已知未跑通:真窗口闸门与 Electron 二进制
+### 真窗口闸门:五道全部跑通(2026-10-07)
 
-`pnpm shot` / `pick-shot` / `edit-shot` / `draw-shot` / `prop-shot` 五道真窗口闸门
-**目前在本机跑不起来**,两个原因都已定位、第一个已修:
+`pnpm shot` / `pick-shot` / `edit-shot` / `draw-shot` / `prop-shot` **首次全部 exit=0**。
 
-1. ~~`main` 产物格式冲突~~ ✅ 已修(`cb7841f`)。`"type": "module"` 下产物要落成
-   `index.mjs`,否则 Electron 按 CJS 解释 ESM,启动即 `SyntaxError`。
-2. **Electron 二进制未装上**(`node_modules/electron/` 空,postinstall 下载被跳过)。
-   `pnpm install` 需要网络。装上后五道闸门即可运行。
+`shot` 报告的关键读数:`canvasOriginPx = (0, 32)` —— 存盘横幅用浮层
+(`position: absolute`,挂在画布格内)所以没有破坏布局;`saveBar: {text: null}`
+印证「没打开工程时不渲染横幅」。
 
-因此**「画布原点实测仍是 (0,32)」这一条目前只有源码级保证**
-(`save-bar.test.ts` B1/B2),没有真窗口读数。装上 Electron 后应补跑 `--prop-shot`。
+这一晚踩穿了**四层「build 通过但真进程起不来」**,全部实测、全部记在
+`electron.vite.config.ts` 与 `scripts/desktop-shot.mjs` 的注释里:
+
+| 层 | 症状 | 根因 |
+|---|---|---|
+| 1 | `SyntaxError: does not provide an export named 'BrowserWindow'` | `type: module` 下产物是 ESM,Electron 按 CJS 解释 |
+| 2 | 同一句错(改了 ESM + `.mjs` 之后) | Electron 加载 `.mjs` 的桥接**不支持具名 ESM import**(文档把 ESM 标为实验档) |
+| 3 | 入口失配 | `format: 'cjs'` 单独写会落 `.cjs`,而 `main` 字段还指 `.js` |
+| 4 | `Electron failed to install correctly` | `electron` 在 `devDependencies` ⇒ 没被 external ⇒ 它的 `index.js` 被内联 |
+
+⇒ 定在 **CJS + `.cjs` + 同步 `main` 字段 + `electron` external**,四处一致。
+
+另有两个**环境层**(不是代码问题,但同样让五道闸门全红):
+
+- **`ELECTRON_RUN_AS_NODE=1`**:来自**跑命令的那个 shell**,不在仓库配置里、profile 也没有。
+  决定性证据 —— `electron.exe --version` 打印 `v24.21.0`(Node 的版本)而不是 `v44.4.5`。
+  那个模式下 `require('electron')` 拿到的是 npm 包装包 ⇒ `app` 是 `undefined`。
+  现在 `desktop-shot.mjs` 在 spawn 的 `env` 里**显式删掉它**,不要求每个调用方记得 unset。
+- **GPU**:容器环境里 GPU 子进程反复 ACCESS_VIOLATION ⇒ `GPU process isn't usable`。
+  **单给 `--disable-gpu` 不够,缺的是 `--no-sandbox`**。
+
+> ⚠️ **软件光栅的代价**:上面关了 GPU,而 `--shot` 那一族是 Canvas 2D 像素回读、
+> 本来不经 GPU,所以闸门要验的东西不受影响。**但抗锯齿边缘的亚像素精度与 GPU 路径
+> 略有差异** —— 涉及抗锯齿边缘的像素判据,仍应在一台正常 GPU 的机器上复跑一次。
 
 ### S1 验收标准
 
