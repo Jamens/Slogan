@@ -25,9 +25,34 @@ function runPnpm(commandLine, timeoutMs) {
 // Electron 直接起二进制、不经 shell：args 数组原样进 argv（Node 在 Windows 构造进程命令行时
 // 会给含空格的参数补引号），--shot 回读路径无论含不含空格都完整。
 // cwd 指到 desktop 包目录："." 即应用根，与原先 pnpm --filter … exec electron . 语义一致。
+//
+// **`ELECTRON_RUN_AS_NODE` 必须清掉**（2026-10-07 实测，这是"闸门一直红"的**最外层**根因）：
+// 设着它时 `electron.exe` 以**纯 Node** 模式启动 —— 证据是 `electron.exe --version`
+// 打印 `v24.21.0`（Node 的版本）而不是 `v44.4.5`（Electron 的版本）。
+// 那个模式下 `require('electron')` 拿到的是 npm 包装包（只导出 exe 路径字符串），
+// 于是 `app` 是 `undefined`，报`Cannot read properties of undefined (reading 'whenReady')`。
+// 它不是仓库配置、profile 里也没有 —— 是**跑命令的那个 shell 继承下来的**。
+// 做法：在 spawn 的 `env` 里显式删掉（不改动调用方的 shell）。
+//
+// **`--no-sandbox` + `--disable-gpu` 也必需**（同上，实测）：这台机器上 GPU 子进程
+// 反复 `exit_code=-1073741819`（ACCESS_VIOLATION）⇒ `FATAL: GPU process isn't usable`。
+// 单给 `--disable-gpu` 不够，**缺的是 `--no-sandbox`**（沙箱同样会让 GPU 子进程崩）。
+// 而 `--shot` 这一族是 Canvas 2D 的**像素回读**，本来就不经过 GPU ⇒ 关掉不影响闸门要验的东西
+// （真要说影响：软件光栅下抗锯齿的亚像素精度与 GPU 路径略有差异，所以**颜色/像素判据
+// 里凡涉及抗锯齿边缘的，仍应在一台正常 GPU 的机器上复跑一次**）。
+const gpuFlags = ['--no-sandbox', '--disable-gpu'];
+
 function runElectron(args, timeoutMs) {
+  const env = { ...process.env };
+  delete env.ELECTRON_RUN_AS_NODE;
   assertRan(
-    spawnSync(electronBin, args, { encoding: 'utf8', cwd: desktopDir, stdio: 'inherit', timeout: timeoutMs }),
+    spawnSync(electronBin, args, {
+      encoding: 'utf8',
+      cwd: desktopDir,
+      stdio: 'inherit',
+      timeout: timeoutMs,
+      env,
+    }),
     `electron ${args.join(' ')}`,
     timeoutMs,
   );
@@ -67,7 +92,15 @@ const specificFlag = wantProp
       : wantPick
         ? '--pick-shot'
         : null;
-const electronArgs = ['.', ...(specificFlag === null ? [] : [specificFlag, out]), '--shot', out];
+// `gpuFlags` 追加在**末尾**：Electron 只认 `--flag` 与 `--flag=value` 两种形态，
+// 位置无关，但放末尾读起来最清楚（"前两个是应用与它的报告路径，最后这两个是运行环境"）。
+const electronArgs = [
+  '.',
+  ...(specificFlag === null ? [] : [specificFlag, out]),
+  '--shot',
+  out,
+  ...gpuFlags,
+];
 try {
   runPnpm('pnpm --filter @dajia/desktop build');
   // 只有 draw 与 prop 那一发放宽到 300 秒：它们一次跑要过 20+ 处等待（每处上限 10 秒 —— 但一处等不到就抛、

@@ -18,20 +18,20 @@ import { describe, expect, it } from 'vitest';
  */
 const DESKTOP = join(fileURLToPath(new URL('../..', import.meta.url)));
 /**
- * main段产物是 **`.mjs`**（不是 `.js`）—— 见 W5/W6 那一族：`"type": "module"` 下产出
- * ESM 到 `.js` 会让 Electron 按 CJS 解释它，启动即SyntaxError。
- * `MAIN_JS` 保留一个旧名做**反向存在性**检查：若哪天配置改动让产物又落回 `.js`，
- * `W1`/`W2` 会因为读不到文件而静默跳过（`built` 为 false）—— 那是"判据变恒绿"的最坏形态，
- * 所以 W5 显式断言 `package.json` 的 `main` 与实际文件名对齐。
+ * main段产物是 **`.cjs`**（不是 `.js`，也不是 `.mjs`）—— 见 W5/W6/W7 那一族：
+ * 那是**四层**「build 通过但真进程起不来」走完才定下来的档。
+ * `MAIN_MJS` 保留一个旧名做**反向存在性**检查：若哪天配置改动让产物又落回 `.js`/`.mjs`，
+ * `built` 为 false ⇒ W1/W2 会因为读不到文件而整组 skip ⇒ 那是"判据变恒绿"的最坏形态，
+ * 所以 W5 显式断言那两个名字**都不该**存在。
  */
-const MAIN_MJS = join(DESKTOP, 'out', 'main', 'index.mjs');
+const MAIN_CJS = join(DESKTOP, 'out', 'main', 'index.cjs');
 const CONFIG = join(DESKTOP, 'electron.vite.config.ts');
 
-const built = existsSync(MAIN_MJS);
+const built = existsSync(MAIN_CJS);
 const suite = built ? describe : describe.skip;
 
 function mainBundle(): string {
-  return readFileSync(MAIN_MJS, 'utf8');
+  return readFileSync(MAIN_CJS, 'utf8');
 }
 
 suite('打包配置（产物存在时才判）', () => {
@@ -48,7 +48,7 @@ suite('打包配置（产物存在时才判）', () => {
   it('W2 字体是内联字节，不在运行时按路径找文件（否则打包后 ENOENT）', () => {
     const src = mainBundle();
     // `loadDefaultFont` 原本是 `readFileSync(fileURLToPath(new URL('../assets/…', import.meta.url)))`。
-    // 打进 out/main/index.mjs 后那个相对路径指向 out/assets/ —— 空的（vite 不会搬它，
+    // 打进 out/main/index.cjs 后那个相对路径指向 out/assets/ —— 空的（vite 不会搬它，
     // 因为它是被 fileURLToPath 读的、不是被 import 的资产）⇒ 真进程第一次导出 ENOENT。
     // 修法是把 base64 编进产物（rolldown 拒了 emitFile 到 `../assets/…`）。
     expect(src).toContain('DEFAULT_FONT_B64');
@@ -64,39 +64,65 @@ suite('打包配置（产物存在时才判）', () => {
   });
 });
 
-describe('main 入口：产物名与 package.json 的 main 字段逐字对齐', () => {
-  /**
-   * **这一族判据守的是"build 通过、真进程起不来"**。它与 W1/W2 同族，但守的是**入口**：
-   *
-   *`"type": "module"` +产物 `index.js`（ESM）⇒ Electron 按 CJS 解释那个 `.js` ⇒
-   * 启动即`SyntaxError: The requested module 'electron' does not provide an export named 'BrowserWindow'`。
-   * 而 `pnpm build` **exit=0**、所有单测全绿（它们都不加载产物）。
-   *
-   * 为什么会踩：electron-vite 5 在 `type: module` 下默认输出 ESM 到 `.js`，与 2.x 的
-   * `.cjs` 行为不同；而**只写 `format: 'es'` 也不够** —— 实测 `entryFileNames` 的默认值
-   * 这一档被固定成 `[name].js`，产物仍是 `.js`。**两处一起写**才落到 `.mjs`。
-   */
-  const pkg = JSON.parse(readFileSync(join(DESKTOP, 'package.json'), 'utf8')) as { main: string };
+/**
+ * main 段产物是 **`.cjs`**（不是 `.js`、也不是 `.mjs`）—— 见 W5/W6 那一族：
+ * 这一族是**四层坑**走完才定下来的，每一层都实测过、都曾让"真进程起不来"而`pnpm build` exit=0。
+ *
+ * 1. 默认（ESM → `index.js`）：Electron 按 CJS 解释 ⇒ `SyntaxError: does not provide an
+ *    export named 'BrowserWindow'`。
+ * 2. `format: 'es'` + `entryFileNames: '[name].mjs'`：名字对了、格式对了，但 Electron 加载
+ *    `.mjs` 时经的桥接**不支持具名 ESM import** ⇒ 还是同一句错（electron-vite 文档把 ESM
+ *    标为实验档，在 electron 44 上不通）。
+ * 3. `format: 'cjs'` 单独写：产物落`index.cjs`，而 `package.json` 的 `main` 还指`index.js`
+ *    ⇒ 入口失配。
+ * 4. **定在 CJS + `.cjs` + 同步 `main` 字段**，三处一致。
+ *
+ * 与之并列的还有两个「进程起得来但跑不对」的层（同样实测过）：
+ * - **`electron` 必须 external**（W7）：否则它的 `index.js` 被内联进产物，运行时按
+ *   `path.txt` 去找 `out/main/install.js` ⇒ `Electron failed to install correctly`。
+ * - **`ELECTRON_RUN_AS_NODE` 必须清、且要 `--no-sandbox --disable-gpu`**（W8，判据在
+ *   `desktop-shot.test.mjs` 那侧）：前者让 `electron.exe` 以纯 Node 模式跑（`app` 是
+ *   `undefined`），后者让 GPU 子进程反复 ACCESS_VIOLATION ⇒ `GPU process isn't usable`。
+ */
+const pkg = JSON.parse(readFileSync(join(DESKTOP, 'package.json'), 'utf8')) as { main: string };
 
-  it('W5 package.json 的 main 指向 .mjs，且那个文件真的存在（源码 + 产物双证）', () => {
-    // 源码层：`main` 字段必须写 `.mjs`。写成 `.js` 而产物是 `.mjs` ⇒ 入口失配；
-    // 两者都写 `.js` ⇒ 上面那个 SyntaxError。
-    expect(pkg.main).toBe('out/main/index.mjs');
-    // **反向存在性**：产物**不该**再是 `.js`。它存在就说明配置改动让格式退回去了，
+describe('main 入口：产物名与 package.json 的 main 字段逐字对齐', () => {
+  it('W5 package.json 的 main 指向 .cjs，且那个文件真的存在（源码 + 产物双证）', () => {
+    // 源码层：`main` 字段必须写 `.cjs`。写成 `.js` 而产物是 `.cjs` ⇒ 入口失配；
+    // 两者都写 `.js` ⇒ 第一层那个 SyntaxError。
+    expect(pkg.main).toBe('out/main/index.cjs');
+    // **反向存在性**：产物**不该**是 `.js` 或 `.mjs`。它们存在就说明配置退回去了，
     // 而那时 `built` 为 false ⇒ W1/W2 整组被 skip ⇒ 本文件会"全绿且什么都没验"。
     // 这一行是那个最坏形态的牙齿（判据自己失效时，必须由另一格抓住）。
     expect(existsSync(join(DESKTOP, 'out', 'main', 'index.js'))).toBe(false);
+    expect(existsSync(join(DESKTOP, 'out', 'main', 'index.mjs'))).toBe(false);
     // 产物层：文件真的在那儿。
-    expect(existsSync(MAIN_MJS)).toBe(true);
+    expect(existsSync(MAIN_CJS)).toBe(true);
   });
 
-  it('W6 main 段显式声明 format: es + entryFileNames: [name].mjs（两处缺一不可）', () => {
+  it('W6 main 段显式声明 format: cjs + entryFileNames: [name].cjs（两处缺一不可）', () => {
     const cfg = readFileSync(CONFIG, 'utf8');
     const mainBlock = /main:\s*\{[\s\S]*?\n  \},\n  preload:/.exec(cfg);
     expect(mainBlock).not.toBeNull();
     const block = mainBlock![0]!;
-    expect(block).toContain("format: 'es'");
-    expect(block).toContain("entryFileNames: '[name].mjs'");
+    expect(block).toContain("format: 'cjs'");
+    expect(block).toContain("entryFileNames: '[name].cjs'");
+  });
+
+  it('W7 electron 必须留在产物之外（否则它的 index.js 被内联，真进程去找 out/main/install.js）', () => {
+    const cfg = readFileSync(CONFIG, 'utf8');
+    const mainBlock = /main:\s*\{[\s\S]*?\n  \},\n  preload:/.exec(cfg);
+    expect(mainBlock).not.toBeNull();
+    // 判据两条腿：配置里写了 `electron` 的 external 判定，且产物里**真的没有**它。
+    expect(mainBlock![0]!).toContain("id === 'electron'");
+    if (!built) return; // eslint-disable-line no-useless-return
+    // `getElectronPath` / `readElectronPath` 是 `node_modules/electron/index.js` 的两个函数；
+    // 它们出现在产物里就说明那个文件被内联了（实测症状：`Electron failed to install correctly`）。
+    const src = mainBundle();
+    expect(src.includes('getElectronPath')).toBe(false);
+    expect(src.includes('readElectronPath')).toBe(false);
+    // 但具名 import 必须留着（它由 Electron 启动器注入，是宿主对象）。
+    expect(/require\("electron"\)|from "electron"/.test(src)).toBe(true);
   });
 });
 

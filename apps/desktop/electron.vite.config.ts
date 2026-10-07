@@ -131,12 +131,36 @@ export default defineConfig({
     build: {
       rollupOptions: {
         output: {
-          format: 'es',
-          // `format: 'es'` 单独写**不够** —— 实测产物仍是 `index.js`：`entryFileNames`
-          // 的默认值在这一档被固定成 `[name].js`，与 ESM 应落的 `.mjs` 对不上。
-          // 两处一起写才落到 `.mjs`，而 `package.json` 的 `main` 字段要跟着改（见该文件 diff）。
-          entryFileNames: '[name].mjs',
+          /**
+           * **必须是 CJS，且必须落成 `.cjs`** —— 三层坑走完才定下来的那一档。
+           *
+           * 试过的三条路，逐一说明为什么不通（都实测过，别重走）：
+           *
+           * 1. **默认（ESM → `index.js`）**：Electron 按 CJS 解释那个 `.js` ⇒
+           *    `SyntaxError: does not provide an export named 'BrowserWindow'`。
+           * 2. **`format: 'es'` + `entryFileNames: '[name].mjs'`**：产物名对了、格式对了，
+           *    但 Electron 加载 `.mjs` 时经的那层桥接**不支持具名 ESM import**
+           *    ⇒ 还是同一句 `does not provide an export named 'BrowserWindow'`。
+           *    （electron-vite 文档里 ESM 是"实验档"，主进程具名导入这条路在
+           *    electron 44 上不通。）
+           * 3. **`format: 'cjs'`（只写这一处）**：产物落成 `index.cjs`，
+           *    但 `package.json` 的 `main` 还指着 `index.js` ⇒ **入口失配**。
+           *
+           * 于是定在：**CJS + `.cjs` + 同步 `main` 字段**。三处必须一致，
+           * 而"一致"这件事由 `packaging.test.ts` 的 W5/W6 钉住。
+           *
+           * 顺带：`preload` 段默认 `.mjs`（electron-vite 的 preload 走 ESM 那一档），
+           * 而 `main/index.ts` 里那行`join(import.meta.dirname, '../preload/index.mjs')`
+           * 本来就对，不用动 —— **preload 与 main 的格式要求不同，这是 electron-vite 的既有分工**。
+           */
+          format: 'cjs',
+          entryFileNames: '[name].cjs',
         },
+        // `electron` **必须留在产物之外**（否则它被内联进 main，真进程去找
+        // `out/main/install.js`）。它按 `dependencies` 外部化，而 `electron` 在
+        // `devDependencies` ⇒ 不在名单上 ⇒ 走普通打包路径被内联。
+        // 也不用 `externalizeDeps.include`：那个选项只认 dependencies 里的包名。
+        external: (id) => id === 'electron' || id.startsWith('electron/') || id.startsWith('node:'),
       },
     },
   },
