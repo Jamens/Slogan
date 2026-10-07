@@ -458,8 +458,10 @@ describe('那一把行锁的两个方向（P-71：T5-M9 那发恒绿的可达补
   // T5 的 T5-M9（删掉 `repository.ts:320` 的 `FOR UPDATE`）在 `journal.test.ts` 里 53 格全绿 ——
   // 一个池、一条连接、串行执行，那把锁根本没有第二个要锁的人，所以它是**登记过的限度**。
   // 这里补的是可达形状（照 `repository.test.ts` 的「半途被外部行锁掐断 ⇒ 全无账；释放后同 turn 重发成功（P-15…）」那一发）：
-  // 让**另一个连接**真把 `project` 那一行锁住不提交，`edit` 支的那把 `FOR UPDATE` 才撞得出来。
-  // 两格是**方向相反的一对牙**：`edit` 支必须等，`read` 支必须不等 —— 中间那个三元式只有两边都红过一次才算被钉住。
+  // 让**另一个连接**真把 `project` 那一行锁住不提交：`edit` 支必须在 1 秒内被拒开（fail-fast），`read` 支必须不等。
+  // 限度照 T6-M17 实测：删掉 `repository.ts:320` 的 `FOR UPDATE` 这两格**不会红** —— 裸 SELECT 是 MVCC 的
+  // 非锁定读，而 edit 支后续的 `clean_shutdown` UPDATE 照样撞同一把未提交锁。所以这两格证的是
+  // "edit 路径 1 秒拒开"，**不是**":320 是等锁那一句"；语句级的证人靠 fail-fast 结构 + T6-M18 的反向牙。
   it('外部连接锁住 project 行 ⇒ edit 支等锁超时拒开；放锁后同池再走一次 ⇒ 读得开也收得尾', async () => {
     const blocker = await holderPool.getConnection();
     try {
