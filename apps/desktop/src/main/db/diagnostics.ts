@@ -3,8 +3,9 @@
  *
  * ## 这个文件的边界：零 import
  *
- * **一行 import 都不许有**，`import type` 也不算（`persist-boundary.test.ts` 第 7 格
- * 用 `from '` 扫，`import type { x } from` 同样命中）。三条理由：
+ * **一行 import 都不许有**，`import type` 也不算 —— `persist-boundary.test.ts` 第 7 格扫的是
+ * 源码里有没有出现**模块说明符那个样子**（一句完整 import 的尾部那三四个字符），
+ * 而 type-only 写法同样带它。所以本文件的注释里也不许把那串原样写出来。三条理由：
  *
  * 1. 它住在 `main/db/` 里，而**连库档的夹具（`test/db/**`）要能 import 它**。
  *    那个档跑在纯 node，不该被任何 import链拖进 electron 或 zod。

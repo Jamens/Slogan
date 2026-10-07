@@ -11,6 +11,9 @@ import {
   type SubmitValue,
 } from '@dajia/protocol';
 import type { MysqlEnv } from '../db/env';
+// 本文件**第一条**来自 `db/**` 的运行时 import —— T8 那两条都是 `import type`；
+// T9 第 ⑥ 段说清了为什么这一条必须是运行时：`instanceof` 要拿类本体比，类型比不上。
+import { MissingProjectError } from '../db/errors';
 import type { CloseReport, LoadOutcome, OpenIntent } from '../db/repository';
 import { documentFromPayload, payloadFromDocument } from '../../shared/document-wire';
 import {
@@ -87,7 +90,11 @@ export class SessionError extends Error {
  * / `ECONNREFUSED`）⇒ `'db'`，下一步是"查服务"；不带 `code` 的都是我们自己抛的
  * （T5 的三方对账不平、T5 的 `loadProject` 拒开、T4 的归属守卫）⇒ `'reconcile'`，下一步是"先别再写"。
  */
-function persistErrorCode(err: unknown): PersistErrorCode {
+export function persistErrorCode(err: unknown): PersistErrorCode {
+  // T9 第 ⑥ 段：自家那一发"工程不在库里"必须先认 —— 它有身份、没有 `code`，
+  // 走到下面那行会被读成 `'reconcile'`，屏幕上就会说"这份账坏了先别再动"，
+  // 而真相是"这个工程不存在，去新建一个"。两条下一步是相反的。
+  if (err instanceof MissingProjectError) return 'no-project';
   const code = typeof err === 'object' && err !== null ? (err as { code?: unknown }).code : undefined;
   return typeof code === 'string' && code.length > 0 ? 'db' : 'reconcile';
 }
@@ -98,7 +105,7 @@ function persistErrorCode(err: unknown): PersistErrorCode {
  * T9 的 `loadConfig` 会区分"没配"与"解不开已存的配置"。没有这条通道，端口只能把已经查清的结论
  * 降级成一个 `RangeError`，再被下一步的默认码重新解释一遍 —— 那是把事实丢了两次。
  */
-function wrap(err: unknown, code: PersistErrorCode, prefix: string): SessionError {
+export function wrap(err: unknown, code: PersistErrorCode, prefix: string): SessionError {
   return err instanceof SessionError ? err : new SessionError(code, `${prefix}：${describeError(err)}`);
 }
 

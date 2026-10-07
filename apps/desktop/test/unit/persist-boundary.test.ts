@@ -118,7 +118,9 @@ describe('T8 的 import 边界：真把式只能住在 ipc-persist.ts', () => {
     // 名单比字面量：这条边界的价值在"没写进名单的那个文件就是漂移"，
     // 而 `length <= 2` 那种宽松判据会把"有人把 createDbPool 挪进 persist/config-store.ts"说成合规。
     // T9 的落盘结论（裁决 P-27）：`safeStorage` 的适配器住在本名单里**已有**的 ipc-persist.ts，
-    // 没有人在 config-store.ts 里 import 它 —— 所以这一格一字未动，spec §8.2 的那条例外没有被启用。
+    // 没有人在 `persist/config-store.ts` 里 import 它 —— 所以这一格一字未动，
+    // spec §8.2 的那条例外没有被启用。有人把 `safeStorage` 搬进 `persist/**` 的那天，
+    // 红的不是"例外没登记"，而是这个等式。`persist/**` 的 electron 白名单因此**继续是空集**。
     // brief 定稿于计划 5 之前，名单里只有两员；盘上事实是 `ipc/export-plan.ts`（计划 5 落地）
     // 也 import electron，所以名单按实测补第三员 —— 判据的字符（"没写进名单的那个文件就是漂移"）原样保留。
     expect(hit).toEqual(['index.ts', 'ipc-persist.ts', join('ipc', 'export-plan.ts')]);
@@ -144,5 +146,67 @@ describe('T8 的 import 边界：真把式只能住在 ipc-persist.ts', () => {
     for (const rel of files) {
       expect(untypedProtocolImports(readFileSync(join(RENDERER_ROOT, rel), 'utf8'))).toEqual([]);
     }
+  });
+});
+
+// —— T9 Step 6 追加的两格 ——
+
+const CONFIG_STORE = '../../src/main/persist/config-store.ts';
+const ADMIN = '../../src/main/persist/admin.ts';
+const ZERO_IMPORT_FILES = [
+  '../../src/main/db/errors.ts',
+  '../../src/main/db/diagnostics.ts',
+  '../../src/shared/diagnostics-text.ts',
+];
+
+describe('T9 的 import 边界', () => {
+  it('6. config-store.ts 碰 fs、不碰 electron，加解密只从 cipher 进来', () => {
+    const src = srcOf(CONFIG_STORE);
+    expect(src.includes("from 'node:fs'")).toBe(true);
+    // P-27：那 10 格要在纯 node 里 import 这个文件。一旦它顶层 import electron，
+    // `electron` 在非 Electron 进程里 require 出来是一串路径（T7 引言写过的盘上事实），
+    // 具名拿到 undefined ⇒ "在 it 跑起来之前就炸"，而那 10 格会变成一档没人知道为什么红的文件。
+    expect(src.includes("from 'electron'")).toBe(false);
+    // `require(` 那一刀挡的是"绕开 import 的第二个后门"（`const { safeStorage } = require('electron')`
+    // 在上面那条判据下会静默通过）。注释里可以写 safeStorage 这个名字，判据只认这两种形态。
+    expect(src.includes('require(')).toBe(false);
+    // 正控制：注入通道确实在用。少任何一条，"外部世界只从 cipher 进来"就退化成一句注释。
+    expect(src.includes('cipher.available')).toBe(true);
+    expect(src.includes('cipher.encrypt')).toBe(true);
+    expect(src.includes('cipher.decrypt')).toBe(true);
+    // 目录与文件名都从参数与常量来：`userData` 目录由调用方递进来（T7 `emergency.ts` 立的先例）。
+    expect(src.includes('app.getPath')).toBe(false);
+  });
+
+  it('7. 三个零 import 文件：errors / diagnostics / diagnostics-text 谁都不认识', () => {
+    // 这一条是 P-25 与 P-26 的常驻证人，而不是一句自我表扬：
+    // 那 14 格（`diagnostics.test.ts` 8 + `diagnostics-text.test.ts` 6）跑在纯 node 档、
+    // 拿的是人造错误对象，前提就是这三个文件不许因为哪天"顺手 import 了 describeError / zod / mysql2 类型"
+    // 而变成连库文件。`import type` 也算破 —— 判据扫的是模块说明符那个样子
+    // （与 T7 那一族同一个代价：注释里把它原样写出来会误红，已按同一条限度登记）。
+    for (const rel of ZERO_IMPORT_FILES) {
+      const src = srcOf(rel);
+      expect(src.includes("from '")).toBe(false);
+    }
+    // 反向：三个文件都不是空壳（"零 import"最怕的是"零内容"）。
+    expect(srcOf(ZERO_IMPORT_FILES[0]).length).toBeGreaterThan(200);
+    expect(srcOf(ZERO_IMPORT_FILES[1]).length).toBeGreaterThan(200);
+    expect(srcOf(ZERO_IMPORT_FILES[2]).length).toBeGreaterThan(200);
+  });
+
+  // —— Step 7 追加的第 8 格 ——
+
+  it('8. admin.ts 既不碰 electron / node:fs / node:os，也不 import mysql2', () => {
+    const src = srcOf(ADMIN);
+    for (const banned of ["from 'electron'", "from 'node:fs'", "from 'node:os'", "from 'mysql2"]) {
+      expect(src.includes(banned)).toBe(false);
+    }
+    // 正控制：三条注入通道都在。这一族扫描最怕的形状是"文件被搬空了外部依赖，于是全绿"。
+    expect(src.includes('this.ports.loadConfig')).toBe(true);
+    expect(src.includes('this.ports.openCreateDb')).toBe(true);
+    expect(src.includes('this.ports.openListDb')).toBe(true);
+    // `import type` 与值导入的区别在这一格成立：`db/repository.ts` 顶部有 mysql2 的类型导入，
+    // 具名值导入会把那个模块真加载进纯 node 档 —— 上面第四条 banned 同时挡住了那两种写法。
+    expect(src.includes('firstStoreyTurn')).toBe(true);
   });
 });

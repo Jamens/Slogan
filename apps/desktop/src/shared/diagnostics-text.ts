@@ -4,7 +4,8 @@
  * ## 为什么它零 import（P-25 的另一半）
  *
  * `classifyDbError` 只分型不写文案，文案住在这里。两个文件**都不许 import 任何东西**
- * （连 `import type` 都不许 —— `persist-boundary.test.ts` 第 7 格用 `from '` 扫）。
+ * （连 `import type` 都不许 —— `persist-boundary.test.ts` 第 7 格扫的是源码里有没有出现
+ * **模块说明符那个样子**，而 type-only 写法同样带它；本文件的注释因此也不许把它原样写一遍）。
  *
  * 零 import 的实际收益是它能被**任何一侧独立编译**：渲染进程要显示这一行、
  * main 要拿它拼 `detail`、连库档要断言它逐字出现在 `install-mysql.md` 里 ——

@@ -7,7 +7,7 @@ import {
   type EntityId,
   type Patch,
 } from '@dajia/core';
-import { JournalTurnSchema } from '@dajia/protocol';
+import { JournalTurnSchema, ProjectSummarySchema, type ProjectSummary } from '@dajia/protocol';
 import {
   decodeSnapshot,
   decodeEntity,
@@ -30,6 +30,7 @@ import {
   type ElementRowView,
   type StoreyRowView,
 } from './reconcile';
+import { MissingProjectError } from './errors';
 
 export type JournalOutcome = 'applied' | 'already-applied';
 
@@ -175,6 +176,19 @@ export class ProjectRepository {
       'INSERT INTO `project` (`id`, `schema_version`, `name`, `journal_turn`, `clean_shutdown`) VALUES (?, ?, ?, 0, 1)',
       [this.projectId, input.schemaVersion, input.name],
     );
+  }
+
+  /**
+   * 补偿用（T9 第 ② 段）：删掉自己那一行，`element` / `storey` / `command_log` / `snapshot` / `asset`
+   * 五张子表靠 T2 建好的 `ON DELETE CASCADE` 一起走。
+   * **删不到也算成功** —— 补偿的语义是"确保没有"，不是"确认刚才有"。拿 `affectedRows` 抛会把
+   * "另一条链已经先删过"报成故障，而那一刻真正该做的是继续往下走（同 T4 对 `affectedRows` 的那条纪律：
+   * 判决不来自它）。
+   * 不做 `journal_turn === 0` 的前置检查：这一发要能删掉半建成（turn 1 已落）与建成但没人开过的工程，
+   * 一个都不该留 —— 留着哪一个都会在列表里变成一个点不开的小图标。
+   */
+  async deleteProject(): Promise<void> {
+    await this.pool.query('DELETE FROM `project` WHERE `id` = ?', [this.projectId]);
   }
 
   /**
@@ -325,9 +339,7 @@ export class ProjectRepository {
       ]);
       const project = (projectRows as ProjectRow[])[0];
       if (!project) {
-        throw new RangeError(
-          `工程 ${this.projectId} 不在库里：要么它从没建过，要么它已经被删；不能凭空开一份文档当它是读来的`,
-        );
+        throw new MissingProjectError(this.projectId);
       }
       const schemaVersion = asSafeInt64(project.schema_version, 'project.schema_version');
       // 两处常量当前同值，读的是 Document 那个（Document.create 的默认参数就是它）；
@@ -560,4 +572,67 @@ export class ProjectRepository {
       conn.release();
     }
   }
+}
+
+/** `listProjects` 的一行读数。列名按 SQL 原样写，与 T4/T5 那几把 row 尺同一个风格。 */
+interface ProjectListRow {
+  readonly id: string;
+  readonly name: string;
+  readonly schema_version: unknown;
+  readonly journal_turn: unknown;
+  readonly updated_at: string;
+  readonly locked: unknown;
+}
+
+/**
+ * 0/1 的读数。**不写 `Boolean(...)`**：`Boolean('0')` 是 `true`，
+ * 而"字符串 0 被说成真"正是列表把没锁的工程说成锁着的那条路。
+ * 形状一变（驱动哪天回 `true`/`null`）就拒读而不是猜 —— 列表里那个锁记号的唯一读者
+ * 是"打开它，让 T6 去裁决"那个按钮，猜错不会伤人，但撒谎会。
+ *
+ * 登记的限度：这一发的抛在 unit 里测不到（它是模块私有，而库里这一列只可能给 0/1）。
+ * 它的价值是**封路**：把"哪天驱动换个形状就把没锁的说成锁着"这条路变成一次红，
+ * 而不是一次静默的误报。真凭据在 `test/db/projects.test.ts`（锁着/没锁着两行各种）。
+ */
+function toBit(raw: unknown, label: string): boolean {
+  if (raw === 1 || raw === 0) return raw === 1;
+  throw new RangeError(`${label} 的读数 ${String(raw)} 不是 0/1，拒读`);
+}
+
+function summaryFromRow(row: ProjectListRow): ProjectSummary {
+  return ProjectSummarySchema.parse({
+    projectId: row.id,
+    name: row.name,
+    // 两把 `asSafeInt64` 都在（T5 的私有函数，同一个文件里第二个读者）：
+    // `schema_version` 是 INT 不会越界，但把"越界怎么办"这件事写成第二份 `Number(...)`
+    // 才是这一族真正的漂移源。`journal_turn` 是 BIGINT，越界是设计里就有的处境（P-17），
+    // 那一发由 `test/db/projects.test.ts` 第 6 格用一行 `journal_turn = 9007199254740993` 逼出来。
+    schemaVersion: asSafeInt64(row.schema_version, 'project.schema_version'),
+    journalTurn: asSafeInt64(row.journal_turn, `project ${row.id} 的 journal_turn`),
+    // `dateStrings: true` ⇒ 这里拿到的是 `'2026-10-04 11:22:33.444'` 这样的**服务端**原话。
+    // 不做任何换算、不格式化（P-4）：面板上那句"上次改动"读的就是库里那句话。
+    updatedAt: row.updated_at,
+    locked: toBit(row.locked, '`lock_owner` IS NOT NULL'),
+  });
+}
+
+/**
+ * 工程列表。六列点名（`SELECT *` 会把 `lock_token` 与 `clean_shutdown` 也拖过来，
+ * 而那两个字段一个不该过界、一个此刻没有读者）—— 这条与 T8 第 ④ 段"格子要有读者"同一条尺。
+ *
+ * 排序 `ORDER BY updated_at DESC, id ASC`：第二把 `id` 是**故意的**稳定针。同毫秒保存两个工程
+ * （`DATETIME(3)` 会撞）时，没有它就有"两次刷新顺序不同"，而 T10/T11 的截图判据要吃这个列表。
+ *
+ * 不分页（T9 第 ⑨ 段：S1 一台机器上的工程数量级是十）。这条限度登记在 Step 10 的表里。
+ * 这里也**不开事务、不加 `FOR UPDATE`**：列表是一次读，锁的事由点开之后的会话裁决。
+ *
+ * 它是**模块级**而不是 `ProjectRepository` 的类方法（第 ⑨ 段）：那个类每次查询都带
+ * `WHERE project_id = ?`（T4 归属守卫的形状），而列表要的恰恰是**别的工程**的行。
+ */
+export async function listProjects(pool: Pool): Promise<ProjectSummary[]> {
+  const [rows] = await pool.query(
+    'SELECT `id`, `name`, `schema_version`, `journal_turn`, `updated_at`, (`lock_owner` IS NOT NULL) AS `locked` ' +
+      'FROM `project` ORDER BY `updated_at` DESC, `id` ASC',
+  );
+  return (rows as ProjectListRow[]).map(summaryFromRow);
 }

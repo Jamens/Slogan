@@ -32,6 +32,7 @@ import type {
 import type { MysqlEnv } from '../../src/main/db/env';
 import type { EmergencyPayload, SaveStatus } from '../../src/main/persist/autosave';
 import { documentFromPayload, payloadFromDocument } from '../../src/shared/document-wire';
+import { MissingProjectError } from '../../src/main/db/errors';
 import { FakeTimer, tick } from './fake-timer';
 
 const PID = '0193aa00-0000-7000-8000-00000000000a';
@@ -450,5 +451,59 @@ describe('close 的五种收场', () => {
     expect(ctx.calls).toContain('release');
     expect(ctx.calls).toContain('end');
     expect(ctx.timer.pending()).toBe(0);
+  });
+});
+
+describe('T9 的分型补格：no-project 有身份，不对称有证人', () => {
+  it('17. 缺行那一发 ⇒ no-project，屏幕上说的是 T5 的原话，且会话拆干净', async () => {
+    const ctx = harness();
+    ctx.repo.loadThrows = new MissingProjectError(PID);
+    const err = await ctx.session.open(PID).then(() => null).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SessionError);
+    expect((err as SessionError).code).toBe('no-project');
+    // 文案逐字：`wrap` 只会前置"读不出这份工程：MissingProjectError: "，不许改写后半句。
+    expect((err as SessionError).message).toContain(
+      `工程 ${PID} 不在库里：要么它从没建过，要么它已经被删；不能凭空开一份文档当它是读来的`,
+    );
+    expect(ctx.calls).toContain('release');
+    expect(ctx.calls).toContain('end');
+    expect(ctx.session.active).toBe(false);
+  });
+
+  it('18. 同一发位置的三种错各归各码：新支路只吃这一型，其余照旧', async () => {
+    const missing = harness();
+    missing.repo.loadThrows = new MissingProjectError(PID);
+    await expect(missing.session.open(PID)).rejects.toMatchObject({ code: 'no-project' });
+
+    // 带 `code` 的一律 `'db'`（"查服务"），哪怕它长得像我们自己的错。
+    const driver = harness();
+    driver.repo.loadThrows = Object.assign(new Error('read ECONNRESET'), { code: 'ECONNRESET' });
+    await expect(driver.session.open(PID)).rejects.toMatchObject({ code: 'db' });
+
+    // 不带 `code` 的自家抛仍是 `'reconcile'`（"先别再写"）：这一格是"新支路没有把别的日子也接管走"的证人。
+    const ours = harness();
+    ours.repo.loadThrows = new RangeError('snapshot 行 7 的 schema_version 是 2，工程头记的是 1');
+    await expect(ours.session.open(PID)).rejects.toMatchObject({ code: 'reconcile' });
+  });
+
+  it('19. MissingProjectError 只有身份与文案：不给 code 字段，也不留 projectId 字段', () => {
+    const err = new MissingProjectError(PID);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.name).toBe('MissingProjectError');
+    // 第一条是 P-26 的正面：它不许冒领 mysql2 错误的形状（有 `code` ⇒ 会被归成 `'db'`）。
+    expect((err as { code?: unknown }).code).toBeUndefined();
+    // 第二条是"不留字段"的证人：哪天有人加回来，这一格红，逼他同时写出那个读者。
+    expect((err as { projectId?: unknown }).projectId).toBeUndefined();
+  });
+
+  it('20. 有意不对称：close 里那句"不在库里：没有可收尾的账"仍是 reconcile', async () => {
+    const ctx = await opened();
+    // T5 的 `closeProject` 缺行那一发**故意不换类**：此刻会话开着、账在动，
+    // 唯一正确的建议是"这份账先别再动"，而不是"去建个工程"（T9 第 ⑥ 段末）。
+    ctx.repo.closeThrows = new RangeError(`工程 ${PID} 不在库里：没有可收尾的账`);
+    await expect(ctx.session.close(closeReq(PID, DOC, 'graceful'))).rejects.toMatchObject({
+      code: 'reconcile',
+    });
+    expect(ctx.session.active).toBe(false);
   });
 });
